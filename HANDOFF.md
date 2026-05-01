@@ -180,6 +180,11 @@ specific compatibility test requires otherwise. The wrapper uses that value by
 default because `vllm bench serve` needs the DeepSeek chat template when it
 formats representative HF prompts.
 
+The benchmark wrapper treats partial prompt completion as a failed concurrency
+point even when `vllm bench` exits with status 0. It also applies
+`BENCH_TIMEOUT=1800` seconds per concurrency point by default; raise that only
+when a known-slow profile is expected to complete usefully.
+
 You do not need to run the full matrix for every edit. Use `1,2` or `1,2,4`
 for quick iteration, then widen to `1,2,4,8,16,24` before promoting a change.
 For MTP, concurrency 8 and above may exceed available VRAM on endpoint-class

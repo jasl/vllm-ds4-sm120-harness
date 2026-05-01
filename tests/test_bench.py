@@ -99,7 +99,7 @@ def test_bench_matrix_keeps_random_dataset_length_controls(monkeypatch):
         captured.append(command)
         return {
             "returncode": 0,
-            "metrics": {},
+            "metrics": {"successful_requests": 80},
             "stdout": "",
             "command": command,
         }
@@ -127,3 +127,31 @@ def test_bench_matrix_keeps_random_dataset_length_controls(monkeypatch):
     assert command[command.index("--random-input-len") + 1] == "8192"
     assert command[command.index("--random-output-len") + 1] == "512"
     assert "--ignore-eos" in command
+
+
+def test_bench_matrix_marks_partial_successful_requests_as_failed(monkeypatch):
+    def fake_run(command, timeout=None):
+        return {
+            "returncode": 0,
+            "metrics": {"successful_requests": 4},
+            "stdout": "",
+            "command": command,
+        }
+
+    monkeypatch.setattr(cli, "run_bench_command", fake_run)
+
+    rc = cli.main(
+        [
+            "bench-matrix",
+            "--dataset-name",
+            "hf",
+            "--dataset-path",
+            "philschmid/mt-bench",
+            "--num-prompts",
+            "80",
+            "--concurrency",
+            "4",
+        ]
+    )
+
+    assert rc == 1

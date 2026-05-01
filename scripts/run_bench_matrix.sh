@@ -10,6 +10,7 @@ DATASET_NAME="${DATASET_NAME:-hf}"
 DATASET_PATH="${DATASET_PATH:-philschmid/mt-bench}"
 TOKENIZER_MODE="${TOKENIZER_MODE:-deepseek_v4}"
 NUM_PROMPTS="${NUM_PROMPTS:-80}"
+BENCH_TIMEOUT="${BENCH_TIMEOUT:-1800}"
 RANDOM_INPUT_LEN="${RANDOM_INPUT_LEN:-1024}"
 RANDOM_OUTPUT_LEN="${RANDOM_OUTPUT_LEN:-1024}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
@@ -47,6 +48,7 @@ fi
   --random-output-len "${RANDOM_OUTPUT_LEN}" \
   --num-prompts "${NUM_PROMPTS}" \
   --temperature "${TEMPERATURE}" \
+  --timeout "${BENCH_TIMEOUT}" \
   ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
   --json-output "${OUT_DIR}/bench.json" \
   --log-dir "${OUT_DIR}/logs"

@@ -248,6 +248,21 @@ def _cmd_oracle_compare(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def _check_bench_result(result: dict[str, Any], expected_requests: int) -> tuple[bool, str]:
+    if result["returncode"] != 0:
+        return False, f"vllm bench exited {result['returncode']}"
+
+    successful = result["metrics"].get("successful_requests")
+    if successful is None:
+        return False, "successful_requests metric missing"
+    if successful != expected_requests:
+        return (
+            False,
+            f"successful_requests {successful} != expected {expected_requests}",
+        )
+    return True, f"successful_requests {successful}/{expected_requests}"
+
+
 def _cmd_bench_matrix(args: argparse.Namespace) -> int:
     concurrencies = [int(value) for value in args.concurrency.split(",") if value]
     rows: list[dict[str, Any]] = []
@@ -296,9 +311,11 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
         command.extend(args.extra_bench_arg or [])
 
         result = run_bench_command(command, timeout=args.timeout)
+        ok, detail = _check_bench_result(result, args.num_prompts)
         row = {
             "concurrency": concurrency,
-            "ok": result["returncode"] == 0,
+            "ok": ok,
+            "detail": detail,
             "metrics": result["metrics"],
             "command": result["command"],
         }

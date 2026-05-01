@@ -35,10 +35,12 @@ def test_bench_script_defaults_to_representative_hf_dataset():
     assert 'DATASET_NAME="${DATASET_NAME:-hf}"' in script
     assert 'DATASET_PATH="${DATASET_PATH:-philschmid/mt-bench}"' in script
     assert 'TOKENIZER_MODE="${TOKENIZER_MODE:-deepseek_v4}"' in script
+    assert 'BENCH_TIMEOUT="${BENCH_TIMEOUT:-1800}"' in script
     assert 'IGNORE_EOS="${IGNORE_EOS:-0}"' in script
     assert '--dataset-name "${DATASET_NAME}"' in script
     assert '--dataset-path "${DATASET_PATH}"' in script
     assert '--tokenizer-mode "${TOKENIZER_MODE}"' in script
+    assert '--timeout "${BENCH_TIMEOUT}"' in script
     assert 'EXTRA_ARGS+=(--ignore-eos)' in script
     assert '${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}' in script
 
