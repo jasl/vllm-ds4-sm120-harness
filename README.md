@@ -54,6 +54,12 @@ The full matrix can be expensive. For daily iteration, run the smallest profile
 that targets the risk in the change, then run the broader real-scenario matrix
 before promoting to a community branch.
 
+MTP can also hit hard memory limits before no-MTP, especially at higher
+concurrency. Treat MTP failures at concurrency 8 or above as acceptable capacity
+limits when the logs point to VRAM/KV-cache/CUDA-graph pressure; record the
+highest passing concurrency and the failure evidence instead of blocking a
+change solely on that tier.
+
 `scripts/run_bench_matrix.sh` defaults to the HF/MT-Bench profile. Set
 `DATASET_NAME=random IGNORE_EOS=1` when intentionally running random shape
 stress tests.
@@ -167,4 +173,6 @@ Before promoting an optimization:
   deployment behavior.
 - MTP should be tested separately from no-MTP. MTP changes generation behavior
   and can expose scheduler/CUDA graph bugs that are not present in the normal
-  decode path.
+  decode path. High-concurrency MTP failures can also be plain capacity limits;
+  distinguish OOM/KV-cache/CUDA-graph reservation failures from correctness or
+  scheduler bugs before treating them as regressions.

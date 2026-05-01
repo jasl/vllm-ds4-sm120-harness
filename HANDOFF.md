@@ -168,6 +168,11 @@ python -m ds4_harness.cli bench-matrix \
 
 You do not need to run the full matrix for every edit. Use `1,2` or `1,2,4`
 for quick iteration, then widen to `1,2,4,8,16,24` before promoting a change.
+For MTP, concurrency 8 and above may exceed available VRAM on endpoint-class
+hardware. That is an acceptable physical-limit failure when the logs show
+memory pressure; preserve the highest passing concurrency and the failure
+snippet, and continue optimizing only if the change is likely to reduce real
+memory use.
 
 Use random prompts for controlled shape tests rather than final user-visible
 throughput claims. For long-prefill stability, use smaller concurrency first:
@@ -210,7 +215,10 @@ they catch obvious degradation, not subtle quality differences.
   garbage under compile/CUDA graph but pass under eager, stop and investigate
   graph safety before benchmarking.
 - MTP is useful only after correctness and stability gates pass. It may alter
-  generation trajectories and can expose scheduler or graph bugs.
+  generation trajectories and can expose scheduler or graph bugs. MTP
+  high-concurrency failures can also be capacity limits, especially when C >= 8;
+  do not block promotion solely on those tiers if lower-concurrency real
+  workload gates pass and the failure is clearly memory-bound.
 - Long-prompt prefill is a separate stability axis from 1024/1024 decode
   benchmarks. Always test it before recommending a branch to agent users.
 - DGX Spark dual-node failures during safetensors loading are likely load-time
