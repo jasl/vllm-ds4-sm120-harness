@@ -588,6 +588,8 @@ def test_generate_baseline_report_wrapper_uses_report_cli():
     assert "BASELINE_RUN_DIR" in script
     assert "BASELINE_SUPPLEMENT_DIR" in script
     assert "BASELINE_REPORT_OUTPUT" in script
+    assert "BASELINE_REPORT_DATE" in script
+    assert 'reports/baselines/${BASELINE_REPORT_DATE}_${output_label}.md' in script
 
 
 def test_runtime_stats_helper_slices_serve_log_per_phase(tmp_path):

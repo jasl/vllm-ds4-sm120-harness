@@ -183,7 +183,7 @@ To turn a finished artifact tree into a checked-in baseline report, run:
 ```bash
 BASELINE_RUN_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a/20260501-184103 \
 BASELINE_SUPPLEMENT_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a_logsliced_bench/20260501-190608 \
-BASELINE_REPORT_OUTPUT=reports/baselines/b200_main_51295793a.md \
+BASELINE_REPORT_OUTPUT=reports/baselines/20260501_b200_main_51295793a.md \
 BASELINE_REPORT_TITLE="B200 vLLM Main DeepSeek V4 Flash Baseline" \
 BASELINE_REPORT_LABEL=b200_main_51295793a \
 scripts/generate_baseline_report.sh
