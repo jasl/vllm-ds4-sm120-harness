@@ -180,12 +180,16 @@ run intentionally has no live server metrics. If a serve log exists, pass
 `SERVE_LOG=/path/to/serve.log` so the runtime summary can also include
 vLLM-reported prompt/generation throughput and MTP acceptance metrics.
 
-Keep `SERVER_GUARD=1` for expensive reference runs. The live wrappers run short
-health probes and write `server_unresponsive.txt`, `*.server_unresponsive`, or
-`*.skipped` artifacts when the server stops responding, instead of serially
-waiting through every remaining heavy gate. Use `SERVER_HEALTH_TIMEOUT=10` as
-the default probe timeout. Set `SERVER_RECOVERY_CMD` only for an intentional
-local intervention command after an unresponsive-server detection.
+Keep `SERVER_GUARD=1` for expensive reference runs. The live wrappers first
+allow slow model loading with `SERVER_STARTUP_TIMEOUT=1800`, then run short
+health probes around the live gates. After a failed live request or benchmark,
+they wait up to `SERVER_FAILURE_GRACE_TIMEOUT=300` before writing
+`server_unresponsive.txt`, `*.server_unresponsive`, or `*.skipped` artifacts.
+This is intended to catch runtime hangs, including the known B200 MTP C>1
+benchmark failure, without misclassifying slow startup or warmup. Use
+`SERVER_HEALTH_TIMEOUT=10` as the default probe timeout. Set
+`SERVER_RECOVERY_CMD` only for an intentional local intervention command after
+an unresponsive-server detection.
 
 For stricter kernel correctness, compare against a B200/SM100 or H100 HTTP
 oracle bundle:
@@ -298,6 +302,9 @@ they catch obvious degradation, not subtle quality differences.
   high-concurrency failures can also be capacity limits, especially when C >= 8;
   do not block promotion solely on those tiers if lower-concurrency real
   workload gates pass and the failure is clearly memory-bound.
+- B200 official/reference vLLM is known to hang under MTP with benchmark
+  concurrency greater than 1. Treat that as a runtime unresponsive-server case;
+  do not infer the same problem from slow model load or first-request warmup.
 - Long-prompt prefill is a separate stability axis from 1024/1024 decode
   benchmarks. Always test it before recommending a branch to agent users.
 - DGX Spark dual-node failures during safetensors loading are likely load-time

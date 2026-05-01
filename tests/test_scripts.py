@@ -82,7 +82,10 @@ def test_env_sample_and_local_env_are_configured():
     assert "ORACLE_TIMEOUT=300" in sample
     assert "ORACLE_CASES=" in sample
     assert "SERVER_GUARD=1" in sample
+    assert "SERVER_STARTUP_TIMEOUT=1800" in sample
+    assert "SERVER_STARTUP_INTERVAL_SECONDS=15" in sample
     assert "SERVER_HEALTH_TIMEOUT=10" in sample
+    assert "SERVER_FAILURE_GRACE_TIMEOUT=300" in sample
     assert "SERVER_RECOVERY_CMD=" in sample
     assert "GPU_TOPOLOGY_SLUG=" in sample
     assert ".env" in gitignore
@@ -173,8 +176,10 @@ def test_live_scripts_guard_against_unresponsive_servers():
     helper = (ROOT / "scripts" / "run_context.sh").read_text(encoding="utf-8")
 
     assert "server_ready()" in helper
+    assert "wait_for_server_ready()" in helper
     assert "mark_server_unresponsive()" in helper
     assert "SERVER_RECOVERY_CMD" in helper
+    assert "SERVER_STARTUP_TIMEOUT" in helper
     assert "server_unresponsive.txt" in helper
 
     acceptance = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
@@ -184,8 +189,42 @@ def test_live_scripts_guard_against_unresponsive_servers():
     assert "run_live_gate_capture" in acceptance
     assert "mark_gate_skipped" in acceptance
     assert "SERVER_HEALTH_TIMEOUT" in acceptance
+    assert "SERVER_STARTUP_TIMEOUT" in acceptance
     assert "--stop-on-unresponsive" in bench
     assert "--health-timeout" in bench
+    assert "--failure-grace-timeout" in bench
+
+
+def test_wait_for_server_ready_allows_slow_startup(tmp_path):
+    script = f"""
+set -euo pipefail
+REPO_ROOT="{ROOT}"
+OUT_DIR="{tmp_path}"
+PYTHON=python
+BASE_URL=http://127.0.0.1:9
+SERVER_GUARD=1
+SERVER_STARTUP_TIMEOUT=5
+SERVER_STARTUP_INTERVAL_SECONDS=0
+source "{ROOT / "scripts" / "run_context.sh"}"
+count=0
+server_ready() {{
+  count=$((count + 1))
+  [[ "${{count}}" -ge 2 ]]
+}}
+wait_for_server_ready "${{SERVER_STARTUP_TIMEOUT}}" "${{SERVER_STARTUP_INTERVAL_SECONDS}}" "test startup"
+printf 'count=%s\\n' "${{count}}"
+"""
+    result = subprocess.run(
+        ["bash", "-c", script],
+        check=True,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert "count=2" in result.stdout
+    assert (tmp_path / "server_wait.log").exists()
 
 
 def test_scripts_write_run_environment_artifacts():

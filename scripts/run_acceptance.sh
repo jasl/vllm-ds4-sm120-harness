@@ -13,7 +13,11 @@ ORACLE_TOP_N="${ORACLE_TOP_N:-20}"
 RUN_TOOLCALL15="${RUN_TOOLCALL15:-1}"
 PYTHON="${PYTHON:-python}"
 SERVER_GUARD="${SERVER_GUARD:-1}"
+SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT:-1800}"
+SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS:-15}"
 SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT:-10}"
+SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT:-300}"
+SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS:-10}"
 SERVER_RECOVERY_CMD="${SERVER_RECOVERY_CMD:-}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
 RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
@@ -23,7 +27,9 @@ BRANCH_SLUG="${BRANCH_SLUG:-unknown-branch}"
 GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"
 OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${RUN_TIMESTAMP}}"
 export BASE_URL MODEL ORACLE_DIR ORACLE_TOP_N RUN_TOOLCALL15 PYTHON
-export SERVER_GUARD SERVER_HEALTH_TIMEOUT SERVER_RECOVERY_CMD
+export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
+export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
+export SERVER_RECOVERY_CMD
 export ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME GPU_TOPOLOGY_SLUG OUT_DIR
 
 mkdir -p "${OUT_DIR}"
@@ -86,7 +92,7 @@ run_live_gate() {
     return
   fi
   run_gate "${name}" "$@"
-  if [[ "$(cat "${OUT_DIR}/${name}.exit_code")" != "0" ]] && ! server_ready; then
+  if [[ "$(cat "${OUT_DIR}/${name}.exit_code")" != "0" ]] && ! wait_for_server_ready "${SERVER_FAILURE_GRACE_TIMEOUT}" "${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" "server after ${name}"; then
     server_failed=1
     mark_server_unresponsive "${name}" "server unresponsive after ${name}"
   fi
@@ -101,7 +107,7 @@ run_live_gate_capture() {
     return
   fi
   run_gate_capture "${name}" "${output}" "$@"
-  if [[ "$(cat "${OUT_DIR}/${name}.exit_code")" != "0" ]] && ! server_ready; then
+  if [[ "$(cat "${OUT_DIR}/${name}.exit_code")" != "0" ]] && ! wait_for_server_ready "${SERVER_FAILURE_GRACE_TIMEOUT}" "${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" "server after ${name}"; then
     server_failed=1
     mark_server_unresponsive "${name}" "server unresponsive after ${name}"
   fi
@@ -110,6 +116,11 @@ run_live_gate_capture() {
 run_gate pytest "${PYTHON}" -m pytest -q tests
 run_gate ruff "${PYTHON}" -m ruff check ds4_harness tests
 run_gate compileall "${PYTHON}" -m compileall -q ds4_harness
+
+if ! wait_for_server_ready "${SERVER_STARTUP_TIMEOUT}" "${SERVER_STARTUP_INTERVAL_SECONDS}" "server startup before acceptance"; then
+  server_failed=1
+  mark_server_unresponsive "startup" "server not ready after startup wait"
+fi
 
 run_live_gate_capture health "${OUT_DIR}/health.jsonl" \
   "${PYTHON}" -m ds4_harness.cli health \

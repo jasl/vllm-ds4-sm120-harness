@@ -77,6 +77,41 @@ server_ready() {
     2> "${OUT_DIR}/server_health_last.err"
 }
 
+wait_for_server_ready() {
+  local timeout_seconds="${1:-${SERVER_STARTUP_TIMEOUT:-1800}}"
+  local interval_seconds="${2:-${SERVER_STARTUP_INTERVAL_SECONDS:-15}}"
+  local label="${3:-server startup}"
+
+  if [[ "${SERVER_GUARD:-1}" == "0" ]]; then
+    return 0
+  fi
+
+  local started now elapsed
+  started="$(date +%s)"
+  while true; do
+    if server_ready; then
+      printf '[%s] %s ready after %ss\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${label}" "$(( $(date +%s) - started ))" \
+        >> "${OUT_DIR}/server_wait.log"
+      return 0
+    fi
+
+    now="$(date +%s)"
+    elapsed="$((now - started))"
+    if (( elapsed >= timeout_seconds )); then
+      printf '[%s] %s not ready after %ss\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${label}" "${elapsed}" \
+        >> "${OUT_DIR}/server_wait.log"
+      return 1
+    fi
+
+    printf '[%s] waiting for %s: elapsed=%ss timeout=%ss\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${label}" "${elapsed}" "${timeout_seconds}" \
+      >> "${OUT_DIR}/server_wait.log"
+    sleep "${interval_seconds}"
+  done
+}
+
 run_server_recovery() {
   if [[ -z "${SERVER_RECOVERY_CMD:-}" ]]; then
     return 0

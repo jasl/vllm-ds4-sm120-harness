@@ -14,7 +14,11 @@ ORACLE_TIMEOUT="${ORACLE_TIMEOUT:-300}"
 ORACLE_STOP_ON_ERROR="${ORACLE_STOP_ON_ERROR:-1}"
 BASELINE_LABEL="${BASELINE_LABEL:-b200_oracle}"
 SERVER_GUARD="${SERVER_GUARD:-1}"
+SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT:-1800}"
+SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS:-15}"
 SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT:-10}"
+SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT:-300}"
+SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS:-10}"
 SERVER_RECOVERY_CMD="${SERVER_RECOVERY_CMD:-}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
 RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
@@ -24,7 +28,9 @@ BRANCH_SLUG="${BRANCH_SLUG:-unknown-branch}"
 GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"
 OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${BASELINE_LABEL}/${RUN_TIMESTAMP}}"
 export BASE_URL MODEL PYTHON ORACLE_LOGPROBS ORACLE_TIMEOUT ORACLE_STOP_ON_ERROR
-export BASELINE_LABEL SERVER_GUARD SERVER_HEALTH_TIMEOUT SERVER_RECOVERY_CMD
+export BASELINE_LABEL SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
+export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
+export SERVER_RECOVERY_CMD
 export ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME GPU_TOPOLOGY_SLUG OUT_DIR
 
 mkdir -p "${OUT_DIR}"
@@ -35,9 +41,9 @@ start_gpu_stats
 start_runtime_stats
 trap 'stop_runtime_stats; stop_gpu_stats' EXIT
 
-if ! server_ready; then
+if ! wait_for_server_ready "${SERVER_STARTUP_TIMEOUT}" "${SERVER_STARTUP_INTERVAL_SECONDS}" "server startup before oracle export"; then
   printf '%s\n' "124" > "${OUT_DIR}/oracle_export.exit_code"
-  mark_server_unresponsive "oracle_export" "server unresponsive before oracle export"
+  mark_server_unresponsive "oracle_export" "server not ready after startup wait"
   echo "wrote ${OUT_DIR}"
   exit 1
 fi
@@ -64,7 +70,7 @@ set +e
 code="$?"
 set -e
 printf '%s\n' "${code}" > "${OUT_DIR}/oracle_export.exit_code"
-if [[ "${code}" != "0" ]] && ! server_ready; then
+if [[ "${code}" != "0" ]] && ! wait_for_server_ready "${SERVER_FAILURE_GRACE_TIMEOUT}" "${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" "server after oracle export"; then
   mark_server_unresponsive "oracle_export" "server unresponsive after oracle export"
 fi
 

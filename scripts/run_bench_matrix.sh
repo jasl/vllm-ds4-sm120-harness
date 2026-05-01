@@ -22,7 +22,11 @@ RANDOM_OUTPUT_LEN="${RANDOM_OUTPUT_LEN:-1024}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
 IGNORE_EOS="${IGNORE_EOS:-0}"
 PYTHON="${PYTHON:-python}"
+SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT:-1800}"
+SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS:-15}"
 SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT:-10}"
+SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT:-300}"
+SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS:-10}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
 RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
 BRANCH_NAME="${BRANCH_NAME:-$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown-branch)}"
@@ -33,7 +37,9 @@ OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${RUN_T
 export VLLM_BIN MODEL HOST PORT BASE_URL CONCURRENCY DATASET_NAME DATASET_PATH
 export TOKENIZER_MODE NUM_PROMPTS BENCH_TIMEOUT RANDOM_INPUT_LEN RANDOM_OUTPUT_LEN
 export TEMPERATURE IGNORE_EOS PYTHON ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME
-export SERVER_HEALTH_TIMEOUT GPU_TOPOLOGY_SLUG OUT_DIR
+export SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS SERVER_HEALTH_TIMEOUT
+export SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
+export GPU_TOPOLOGY_SLUG OUT_DIR
 
 mkdir -p "${OUT_DIR}"
 write_run_environment
@@ -42,6 +48,13 @@ source "${SCRIPT_DIR}/runtime_stats.sh"
 start_gpu_stats
 start_runtime_stats
 trap 'stop_runtime_stats; stop_gpu_stats' EXIT
+
+if ! wait_for_server_ready "${SERVER_STARTUP_TIMEOUT}" "${SERVER_STARTUP_INTERVAL_SECONDS}" "server startup before benchmark"; then
+  printf '%s\n' "124" > "${OUT_DIR}/bench.exit_code"
+  mark_server_unresponsive "bench" "server not ready after startup wait"
+  echo "wrote ${OUT_DIR}"
+  exit 1
+fi
 
 EXTRA_ARGS=()
 if [[ "${IGNORE_EOS}" == "1" || "${IGNORE_EOS}" == "true" ]]; then
@@ -65,6 +78,8 @@ fi
   --timeout "${BENCH_TIMEOUT}" \
   --stop-on-unresponsive \
   --health-timeout "${SERVER_HEALTH_TIMEOUT}" \
+  --failure-grace-timeout "${SERVER_FAILURE_GRACE_TIMEOUT}" \
+  --failure-grace-interval "${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
   ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
   --json-output "${OUT_DIR}/bench.json" \
   --log-dir "${OUT_DIR}/logs"

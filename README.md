@@ -153,13 +153,16 @@ to reduce polling. If you have the server log path, pass
 `SERVE_LOG=/path/to/serve.log`; the summary will also include vLLM log-derived
 prompt/generation throughput and speculative decoding acceptance metrics.
 
-The live wrappers guard against server deadlocks or unresponsive vLLM workers.
-They run short health probes before expensive live gates and record
-`server_unresponsive.txt`, `*.server_unresponsive`, or `*.skipped` artifacts
-instead of continuing through every remaining test. Keep `SERVER_GUARD=1` for
-B200/SM12x reference runs. Set `SERVER_HEALTH_TIMEOUT=10` to tune the probe
-timeout, and set `SERVER_RECOVERY_CMD` only when you explicitly want the
-wrapper to run a local recovery command after detecting an unresponsive server.
+The live wrappers guard against server deadlocks or unresponsive vLLM workers,
+without treating slow model load or first-request warmup as a deadlock. They
+wait up to `SERVER_STARTUP_TIMEOUT=1800` seconds before the live gate sequence,
+then use short health probes before expensive live gates. After a failed live
+gate or benchmark, they wait up to `SERVER_FAILURE_GRACE_TIMEOUT=300` seconds
+before recording `server_unresponsive.txt`, `*.server_unresponsive`, or
+`*.skipped` artifacts. Keep `SERVER_GUARD=1` for B200/SM12x reference runs.
+Set `SERVER_HEALTH_TIMEOUT=10` to tune the probe timeout, and set
+`SERVER_RECOVERY_CMD` only when you explicitly want the wrapper to run a local
+recovery command after detecting an unresponsive server.
 
 ## Expected Workflow
 
@@ -283,3 +286,7 @@ Before promoting an optimization:
   decode path. High-concurrency MTP failures can also be plain capacity limits;
   distinguish OOM/KV-cache/CUDA-graph reservation failures from correctness or
   scheduler bugs before treating them as regressions.
+- On B200 reference servers, the known stable hang is MTP with benchmark
+  concurrency greater than 1. Treat that as a runtime unresponsive-server case;
+  slow model loading and warmup should be handled by the startup and
+  failure-grace waits above.

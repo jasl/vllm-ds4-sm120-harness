@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import urllib.error
 from pathlib import Path
 from typing import Any
@@ -341,6 +342,23 @@ def _server_responding(base_url: str, timeout: float) -> bool:
         return False
 
 
+def _server_responding_after_grace(
+    base_url: str,
+    *,
+    health_timeout: float,
+    grace_timeout: float,
+    grace_interval: float,
+) -> bool:
+    deadline = time.monotonic() + max(0.0, grace_timeout)
+    while True:
+        if _server_responding(base_url, health_timeout):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        remaining = deadline - time.monotonic()
+        time.sleep(min(max(0.1, grace_interval), max(0.0, remaining)))
+
+
 def _cmd_bench_matrix(args: argparse.Namespace) -> int:
     concurrencies = [int(value) for value in args.concurrency.split(",") if value]
     health_base_url = args.base_url or f"http://{args.host}:{args.port}"
@@ -410,7 +428,12 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
         if (
             not ok
             and args.stop_on_unresponsive
-            and not _server_responding(health_base_url, args.health_timeout)
+            and not _server_responding_after_grace(
+                health_base_url,
+                health_timeout=args.health_timeout,
+                grace_timeout=args.failure_grace_timeout,
+                grace_interval=args.failure_grace_interval,
+            )
         ):
             for skipped_concurrency in concurrencies[len(rows) :]:
                 skipped = {
@@ -573,6 +596,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--ignore-eos", action="store_true")
     bench.add_argument("--timeout", type=float)
     bench.add_argument("--health-timeout", type=float, default=10.0)
+    bench.add_argument("--failure-grace-timeout", type=float, default=0.0)
+    bench.add_argument("--failure-grace-interval", type=float, default=10.0)
     bench.add_argument("--stop-on-unresponsive", action="store_true")
     bench.add_argument("--json-output", type=Path)
     bench.add_argument("--log-dir", type=Path)
