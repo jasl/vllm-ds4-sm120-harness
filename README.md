@@ -200,12 +200,22 @@ and each variant's `serve_command.sh`. It writes stable Markdown tables for raw
 throughput/latency, ToolCall-15, oracle export, phase-local runtime stats, MTP
 speculative decoding, structured provenance, serve-shape parameters, and
 normalized efficiency. It also places a quick performance summary near the top
-with best benchmark output throughput and phase-local prefill/decode average
-`tok/s` values. The normalized columns include `tok/s/GPU`, `tok/s/total GiB`,
+with best benchmark output throughput, an OpenRouter-style observed overview,
+and phase-local prefill/decode average `tok/s` values. The overview reports
+mean TTFT as latency, output token throughput as throughput, and benchmark
+observed context/output tokens per request. It does not claim model context
+window or model max-output limits unless those values are present in the
+benchmark artifact.
+
+The normalized columns include `tok/s/GPU`, `tok/s/total GiB`,
 `tok/s/used GiB`, `tok/J`, and `tok/s/kW`, which are intended for comparing
 different GPU counts and classes such as B200, RTX Pro 6000, RTX 5090, and
 GB10. Power efficiency uses sampled GPU-side average power for the whole phase,
-not wall-plug power.
+not wall-plug power. The provider-style price columns are synthetic break-even
+reference numbers for internal comparison only: the script hard-codes typical
+US datacenter assumptions, including 3-year GPU amortization at 70% useful
+utilization, `$0.12/kWh`, PUE `1.25`, and reference GPU prices for B200, RTX
+Pro 6000, RTX 5090, and DGX Spark / GB10.
 
 The same script also publishes a sanitized reference bundle in that directory.
 It keeps the data needed to resume work in a fresh environment

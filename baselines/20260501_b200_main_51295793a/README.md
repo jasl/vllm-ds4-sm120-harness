@@ -8,6 +8,8 @@ paths, server logs, tokens, and private connection details.
 
 - `manifest.json`: model, GPU topology, vLLM provenance, serve shape, and phase
   exit codes.
+- `report.md`: readable baseline report with throughput, latency, correctness,
+  runtime telemetry, and synthetic provider-style cost metrics.
 - `oracle/`: no-MTP deterministic `/v1/completions` cases with prompt token ids,
   generated tokens, token logprobs, top logprobs, and usage.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.

@@ -50,6 +50,29 @@
 | Supplement | `mtp` | HF/MT-Bench | 24 | 1711.24 | 427.81 | 228.85 | 11.82 |
 | Supplement | `mtp` | Random 8192/512 | 2 | 217.73 | 54.43 | 182.96 | 8.42 |
 
+### Provider-Style Overview
+
+Latency is mean TTFT. Throughput is output token throughput. Context and output are benchmark-observed per request, not model limits.
+
+| Source | Variant | Phase | C | Latency s | Throughput tok/s | Context/req | Output/req | Input $/M | Output $/M | Cache read $/M | Cost/h |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Primary | `nomtp` | HF/MT-Bench | 24 | 3.31 | 686.52 | 257 | 188 | $7.38 | $2.71 | $1.48 | $6.71 |
+| Primary | `nomtp` | Random 8192/512 | 2 | 0.17 | 253.20 | 8704 | 512 | $0.46 | $7.36 | $0.09 | $6.71 |
+| Primary | `mtp` | HF/MT-Bench | 24 | 0.22 | 1756.57 | 255 | 186 | $2.86 | $1.06 | $0.57 | $6.71 |
+| Primary | `mtp` | Random 8192/512 | 2 | 0.18 | 208.90 | 8704 | 512 | $0.56 | $8.93 | $0.11 | $6.72 |
+| Supplement | `nomtp` | HF/MT-Bench | 16 | 0.16 | 1092.18 | 258 | 188 | $4.65 | $1.71 | $0.93 | $6.71 |
+| Supplement | `nomtp` | Random 8192/512 | 2 | 0.17 | 254.47 | 8704 | 512 | $0.46 | $7.32 | $0.09 | $6.71 |
+| Supplement | `mtp` | HF/MT-Bench | 24 | 0.23 | 1711.24 | 255 | 186 | $2.93 | $1.09 | $0.59 | $6.72 |
+| Supplement | `mtp` | Random 8192/512 | 2 | 0.18 | 217.73 | 8704 | 512 | $0.54 | $8.57 | $0.11 | $6.72 |
+
+### Reference Cost Model
+
+- Hardware prices: B200: `$30,000/GPU`; RTX PRO 6000: `$8,565/GPU`; RTX 5090: `$1,999/GPU`; DGX Spark / GB10: `$3,999/GPU`.
+- Amortization: 3 years at 70% useful utilization.
+- Power: sampled average GPU power multiplied by PUE 1.25 and $0.12/kWh.
+- Cache read price is a synthetic 20% of the input break-even price.
+- Input and output prices each allocate the full hourly cost to that token class; do not add them together.
+
 ### Runtime Prefill/Decode Averages
 
 These are phase-local averages parsed from vLLM server logs.

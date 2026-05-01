@@ -313,6 +313,7 @@ def _write_manifest(
         "serve_commands": _serve_commands(run_dir),
         "phase_exit_codes": _phase_exit_codes(run_dir),
         "contents": {
+            "report": "Readable baseline report with correctness, performance, and cost metrics.",
             "oracle": "Deterministic no-MTP /v1/completions logprobs oracle cases.",
             "smoke": "no-MTP and MTP chat smoke request/response captures.",
             "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
@@ -335,6 +336,8 @@ paths, server logs, tokens, and private connection details.
 
 - `manifest.json`: model, GPU topology, vLLM provenance, serve shape, and phase
   exit codes.
+- `report.md`: readable baseline report with throughput, latency, correctness,
+  runtime telemetry, and synthetic provider-style cost metrics.
 - `oracle/`: no-MTP deterministic `/v1/completions` cases with prompt token ids,
   generated tokens, token logprobs, top logprobs, and usage.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.

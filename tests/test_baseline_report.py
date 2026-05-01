@@ -105,6 +105,9 @@ def _write_fixture_phase(root, variant, phase, *, output_tok_s=1600.0):
                 "detail": "successful_requests 80/80",
                 "metrics": {
                     "successful_requests": 80,
+                    "benchmark_duration_s": 10.0,
+                    "total_input_tokens": 20000,
+                    "total_generated_tokens": 16000,
                     "request_throughput_req_s": 8.0,
                     "output_token_throughput_tok_s": output_tok_s,
                     "mean_ttft_ms": 100.0,
@@ -181,6 +184,12 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert "## Quick Performance Summary" in report
     assert "### Best Benchmark Throughput" in report
     assert "| Primary | `nomtp` | HF/MT-Bench | 1 | 1600.00 | 400.00 | 100.00 | 5.50 |" in report
+    assert "### Provider-Style Overview" in report
+    assert (
+        "| Primary | `nomtp` | HF/MT-Bench | 1 | 0.10 | 1600.00 | 450 | "
+        "200 | $0.93 | $1.17 | $0.19 | $6.72 |"
+    ) in report
+    assert "B200: `$30,000/GPU`" in report
     assert "## Normalized Efficiency" in report
     assert "tok/s/GPU" in report
     assert "tok/J" in report

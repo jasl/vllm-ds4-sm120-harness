@@ -2,7 +2,7 @@
   "schema_version": 1,
   "label": "20260501_b200_main_51295793a",
   "date": "20260501",
-  "generated_at_utc": "2026-05-01T20:26:01.584227+00:00",
+  "generated_at_utc": "2026-05-01T20:38:05.183351+00:00",
   "source": {
     "primary_run": "20260501-184103",
     "supplement_run": "20260501-190608",
@@ -118,6 +118,7 @@
     }
   ],
   "contents": {
+    "report": "Readable baseline report with correctness, performance, and cost metrics.",
     "oracle": "Deterministic no-MTP /v1/completions logprobs oracle cases.",
     "smoke": "no-MTP and MTP chat smoke request/response captures.",
     "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",

@@ -13,6 +13,20 @@ BENCH_PHASE_LABELS = {
     "bench_random_8192x512": "Random 8192/512",
 }
 VARIANT_ORDER = {"nomtp": 0, "mtp": 1}
+REFERENCE_COST_MODEL = {
+    "amortization_years": 3.0,
+    "useful_utilization_fraction": 0.70,
+    "electricity_usd_per_kwh": 0.12,
+    "datacenter_pue": 1.25,
+    "cache_read_fraction_of_input_price": 0.20,
+}
+REFERENCE_GPU_PRICES_USD = (
+    ("B200", 30000.0),
+    ("RTX PRO 6000", 8565.0),
+    ("RTX 5090", 1999.0),
+    ("GB10", 3999.0),
+    ("DGX SPARK", 3999.0),
+)
 
 
 @dataclass(frozen=True)
@@ -59,6 +73,13 @@ def _fmt_int(value: Any) -> str:
     if number is None:
         return "n/a"
     return str(int(round(number)))
+
+
+def _fmt_usd(value: Any, digits: int = 2) -> str:
+    number = _to_float(value)
+    if number is None:
+        return "n/a"
+    return f"${number:,.{digits}f}"
 
 
 def _fmt_path(path: Path) -> str:
@@ -285,6 +306,65 @@ def _safe_divide(numerator: float | None, denominator: float | None) -> float | 
     return numerator / denominator
 
 
+def _reference_gpu_price_usd(name: Any) -> float | None:
+    normalized = str(name or "").upper()
+    for pattern, price in REFERENCE_GPU_PRICES_USD:
+        if pattern in normalized:
+            return price
+    return None
+
+
+def _reference_gpu_purchase_cost_usd(env: dict[str, Any]) -> float | None:
+    total = 0.0
+    matched = False
+    for model in env.get("gpu", {}).get("models", []):
+        count = _to_float(model.get("count"))
+        price = _reference_gpu_price_usd(model.get("name"))
+        if count is None or price is None:
+            continue
+        total += count * price
+        matched = True
+    return total if matched else None
+
+
+def _reference_capex_hourly_usd(env: dict[str, Any]) -> float | None:
+    purchase_cost = _reference_gpu_purchase_cost_usd(env)
+    if purchase_cost is None:
+        return None
+    hours = (
+        REFERENCE_COST_MODEL["amortization_years"]
+        * 365.0
+        * 24.0
+        * REFERENCE_COST_MODEL["useful_utilization_fraction"]
+    )
+    return _safe_divide(purchase_cost, hours)
+
+
+def _reference_power_hourly_usd(total_power_w: float | None) -> float | None:
+    if total_power_w is None:
+        return None
+    return (
+        total_power_w
+        / 1000.0
+        * REFERENCE_COST_MODEL["datacenter_pue"]
+        * REFERENCE_COST_MODEL["electricity_usd_per_kwh"]
+    )
+
+
+def _reference_break_even_price_usd_per_mtok(
+    hourly_cost_usd: float | None,
+    token_throughput_tok_s: float | None,
+) -> float | None:
+    if hourly_cost_usd is None:
+        return None
+    tokens_per_hour = (
+        token_throughput_tok_s * 3600.0
+        if token_throughput_tok_s is not None
+        else None
+    )
+    return _safe_divide(hourly_cost_usd * 1_000_000.0, tokens_per_hour)
+
+
 def _bench_rows(
     records: list[PhaseRecord],
     fallback_env: dict[str, Any],
@@ -305,6 +385,11 @@ def _bench_rows(
         used_vram_gib = _total_used_vram_gib(gpu_stats, gpu_count)
         total_power_w = _total_avg_power_w(gpu_stats, gpu_count)
         gpu_overall = gpu_stats.get("overall", {}) if isinstance(gpu_stats, dict) else {}
+        capex_hourly_usd = _reference_capex_hourly_usd(env)
+        power_hourly_usd = _reference_power_hourly_usd(total_power_w)
+        total_hourly_usd = None
+        if capex_hourly_usd is not None:
+            total_hourly_usd = capex_hourly_usd + (power_hourly_usd or 0.0)
 
         for item in bench:
             if not isinstance(item, dict):
@@ -312,7 +397,38 @@ def _bench_rows(
             metrics = item.get("metrics", {})
             output_tok_s = _to_float(metrics.get("output_token_throughput_tok_s"))
             req_s = _to_float(metrics.get("request_throughput_req_s"))
+            duration_s = _to_float(metrics.get("benchmark_duration_s"))
+            total_input_tokens = _to_float(metrics.get("total_input_tokens"))
+            total_generated_tokens = _to_float(metrics.get("total_generated_tokens"))
+            successful_requests = _to_float(metrics.get("successful_requests"))
+            input_tok_s = _to_float(metrics.get("input_token_throughput_tok_s"))
+            if input_tok_s is None:
+                input_tok_s = _safe_divide(total_input_tokens, duration_s)
+            if output_tok_s is None:
+                output_tok_s = _safe_divide(total_generated_tokens, duration_s)
+            total_tok_s = _to_float(metrics.get("total_token_throughput_tok_s"))
+            if total_tok_s is None and total_input_tokens is not None:
+                generated = total_generated_tokens or 0.0
+                total_tok_s = _safe_divide(total_input_tokens + generated, duration_s)
+            avg_input_tokens = _safe_divide(total_input_tokens, successful_requests)
+            avg_output_tokens = _safe_divide(total_generated_tokens, successful_requests)
+            avg_context_tokens = (
+                avg_input_tokens + (avg_output_tokens or 0.0)
+                if avg_input_tokens is not None
+                else None
+            )
             tok_joule = _safe_divide(output_tok_s, total_power_w)
+            input_price = _reference_break_even_price_usd_per_mtok(
+                total_hourly_usd, input_tok_s
+            )
+            output_price = _reference_break_even_price_usd_per_mtok(
+                total_hourly_usd, output_tok_s
+            )
+            cache_read_price = (
+                input_price * REFERENCE_COST_MODEL["cache_read_fraction_of_input_price"]
+                if input_price is not None
+                else None
+            )
             rows.append(
                 {
                     "variant": record.variant,
@@ -323,6 +439,11 @@ def _bench_rows(
                     "requests": _requests_label(item, metrics),
                     "request_throughput_req_s": req_s,
                     "output_token_throughput_tok_s": output_tok_s,
+                    "input_token_throughput_tok_s": input_tok_s,
+                    "total_token_throughput_tok_s": total_tok_s,
+                    "avg_input_tokens_per_request": avg_input_tokens,
+                    "avg_output_tokens_per_request": avg_output_tokens,
+                    "avg_context_tokens_per_request": avg_context_tokens,
                     "mean_ttft_ms": _to_float(metrics.get("mean_ttft_ms")),
                     "mean_tpot_ms": _to_float(metrics.get("mean_tpot_ms")),
                     "mean_itl_ms": _to_float(metrics.get("mean_itl_ms")),
@@ -340,6 +461,12 @@ def _bench_rows(
                     "avg_gpu_util_percent": _to_float(
                         gpu_overall.get("gpu_utilization_percent_avg")
                     ),
+                    "reference_capex_hourly_usd": capex_hourly_usd,
+                    "reference_power_hourly_usd": power_hourly_usd,
+                    "reference_total_hourly_usd": total_hourly_usd,
+                    "reference_input_price_usd_per_mtok": input_price,
+                    "reference_output_price_usd_per_mtok": output_price,
+                    "reference_cache_read_price_usd_per_mtok": cache_read_price,
                 }
             )
     return sorted(
@@ -509,6 +636,43 @@ def _append_quick_performance_summary(
             )
         lines.append("")
 
+        provider_rows = [
+            row
+            for row in best_rows
+            if row.get("reference_total_hourly_usd") is not None
+        ]
+        if provider_rows:
+            lines.extend(
+                [
+                    "### Provider-Style Overview",
+                    "",
+                    (
+                        "Latency is mean TTFT. Throughput is output token throughput. "
+                        "Context and output are benchmark-observed per request, not model limits."
+                    ),
+                    "",
+                    "| Source | Variant | Phase | C | Latency s | Throughput tok/s | Context/req | Output/req | Input $/M | Output $/M | Cache read $/M | Cost/h |",
+                    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for row in provider_rows:
+                latency_s = None
+                ttft_ms = _to_float(row.get("mean_ttft_ms"))
+                if ttft_ms is not None:
+                    latency_s = ttft_ms / 1000.0
+                lines.append(
+                    f"| {row['source']} | `{row['variant']}` | {row['phase_label']} | "
+                    f"{row['concurrency']} | {_fmt(latency_s)} | "
+                    f"{_fmt(row['output_token_throughput_tok_s'])} | "
+                    f"{_fmt_int(row.get('avg_context_tokens_per_request'))} | "
+                    f"{_fmt_int(row.get('avg_output_tokens_per_request'))} | "
+                    f"{_fmt_usd(row.get('reference_input_price_usd_per_mtok'))} | "
+                    f"{_fmt_usd(row.get('reference_output_price_usd_per_mtok'))} | "
+                    f"{_fmt_usd(row.get('reference_cache_read_price_usd_per_mtok'))} | "
+                    f"{_fmt_usd(row.get('reference_total_hourly_usd'))} |"
+                )
+            lines.extend(["", *_reference_cost_model_lines(), ""])
+
     if runtime_rows:
         lines.extend(
             [
@@ -532,6 +696,35 @@ def _append_quick_performance_summary(
                 f"{_fmt_int(metrics.get('running_requests_max'))} |"
             )
         lines.append("")
+
+
+def _reference_cost_model_lines() -> list[str]:
+    model = REFERENCE_COST_MODEL
+    return [
+        "### Reference Cost Model",
+        "",
+        (
+            "- Hardware prices: B200: `$30,000/GPU`; "
+            "RTX PRO 6000: `$8,565/GPU`; RTX 5090: `$1,999/GPU`; "
+            "DGX Spark / GB10: `$3,999/GPU`."
+        ),
+        (
+            "- Amortization: "
+            f"{_fmt(model['amortization_years'], 0)} years at "
+            f"{_fmt(model['useful_utilization_fraction'] * 100, 0)}% useful utilization."
+        ),
+        (
+            "- Power: sampled average GPU power multiplied by "
+            f"PUE {_fmt(model['datacenter_pue'])} and "
+            f"{_fmt_usd(model['electricity_usd_per_kwh'])}/kWh."
+        ),
+        (
+            "- Cache read price is a synthetic "
+            f"{_fmt(model['cache_read_fraction_of_input_price'] * 100, 0)}% "
+            "of the input break-even price."
+        ),
+        "- Input and output prices each allocate the full hourly cost to that token class; do not add them together.",
+    ]
 
 
 def _serve_shape_rows(run_dir: Path, records: list[PhaseRecord]) -> list[dict[str, Any]]:
