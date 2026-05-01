@@ -155,10 +155,14 @@ oracle bundle:
 python -m ds4_harness.cli oracle-compare \
   --base-url http://127.0.0.1:8000 \
   --oracle-dir /path/to/b200_or_h100_oracle_bundle \
+  --top-n 20 \
   --require-prompt-ids \
   --min-top1-match-rate 0.80 \
   --json-output artifacts/manual/oracle_compare.json
 ```
+
+The default oracle `top_n` is 20 because the current vLLM HTTP API rejects
+sample logprobs above that limit.
 
 Keep machine-local oracle bundle paths in ignored local notes, not in the public
 repository.

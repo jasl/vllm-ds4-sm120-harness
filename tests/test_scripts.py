@@ -75,6 +75,8 @@ def test_acceptance_script_runs_all_gates_and_records_exit_codes():
     assert "run_gate smoke_coding" in script
     assert "run_gate toolcall15" in script
     assert "run_gate oracle_compare" in script
+    assert 'ORACLE_TOP_N="${ORACLE_TOP_N:-20}"' in script
+    assert '--top-n "${ORACLE_TOP_N}"' in script
     assert '"${OUT_DIR}/${name}.exit_code"' in script
     assert "exit ${failures}" in script
 

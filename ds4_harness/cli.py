@@ -207,37 +207,56 @@ def _cmd_oracle_compare(args: argparse.Namespace) -> int:
     failures = 0
     rows: list[dict[str, Any]] = []
     for case in load_oracle_cases(args.oracle_dir):
-        request_payload = case.request
+        request_payload = dict(case.request)
         if args.model is not None:
-            request_payload = dict(request_payload)
             request_payload["model"] = args.model
-        response = post_json(
-            args.base_url,
-            case.path,
-            request_payload,
-            args.timeout,
-        )
-        report = compare_response(
-            case.name,
-            case.response,
-            response,
-            top_n=args.top_n,
-        )
-        ok = True
-        if args.require_prompt_ids and report["prompt_token_ids_match"] is False:
-            ok = False
-        if args.require_token_match and not report["tokens_match"]:
-            ok = False
         if (
-            args.min_top1_match_rate is not None
-            and report["top1_match_rate"] is not None
-            and report["top1_match_rate"] < args.min_top1_match_rate
+            isinstance(request_payload.get("logprobs"), int)
+            and request_payload["logprobs"] > args.top_n
         ):
-            ok = False
-        report["ok"] = ok
+            request_payload["logprobs"] = args.top_n
+        try:
+            response = post_json(
+                args.base_url,
+                case.path,
+                request_payload,
+                args.timeout,
+            )
+            report = compare_response(
+                case.name,
+                case.response,
+                response,
+                top_n=args.top_n,
+            )
+            ok = True
+            if args.require_prompt_ids and report["prompt_token_ids_match"] is False:
+                ok = False
+            if args.require_token_match and not report["tokens_match"]:
+                ok = False
+            if (
+                args.min_top1_match_rate is not None
+                and report["top1_match_rate"] is not None
+                and report["top1_match_rate"] < args.min_top1_match_rate
+            ):
+                ok = False
+            report["ok"] = ok
+        except (
+            OSError,
+            RuntimeError,
+            TimeoutError,
+            urllib.error.URLError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
+            report = {
+                "name": case.name,
+                "path": case.path,
+                "ok": False,
+                "error": repr(exc),
+            }
         print(json.dumps(report, ensure_ascii=False))
         rows.append(report)
-        failures += 0 if ok else 1
+        failures += 0 if report["ok"] else 1
 
     if args.json_output is not None:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
@@ -421,7 +440,7 @@ def build_parser() -> argparse.ArgumentParser:
     oracle.add_argument("--base-url", default="http://127.0.0.1:8000")
     oracle.add_argument("--oracle-dir", type=Path, required=True)
     oracle.add_argument("--model")
-    oracle.add_argument("--top-n", type=int, default=50)
+    oracle.add_argument("--top-n", type=int, default=20)
     oracle.add_argument("--timeout", type=float, default=300.0)
     oracle.add_argument("--json-output", type=Path)
     oracle.add_argument("--require-prompt-ids", action="store_true")

@@ -4,6 +4,7 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
 MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
 ORACLE_DIR="${ORACLE_DIR:-}"
+ORACLE_TOP_N="${ORACLE_TOP_N:-20}"
 RUN_TOOLCALL15="${RUN_TOOLCALL15:-1}"
 PYTHON="${PYTHON:-python}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -91,6 +92,7 @@ if [[ -n "${ORACLE_DIR}" ]]; then
   run_gate oracle_compare "${PYTHON}" -m ds4_harness.cli oracle-compare \
     --base-url "${BASE_URL}" \
     --oracle-dir "${ORACLE_DIR}" \
+    --top-n "${ORACLE_TOP_N}" \
     --require-prompt-ids \
     --min-top1-match-rate "${MIN_TOP1_MATCH_RATE:-0.80}" \
     --json-output "${OUT_DIR}/oracle_compare.json"
