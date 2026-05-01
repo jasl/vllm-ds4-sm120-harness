@@ -1,0 +1,233 @@
+[
+  {
+    "case": "writing_follow_instructions",
+    "tags": [
+      "quality",
+      "writing",
+      "user-report"
+    ],
+    "ok": true,
+    "detail": "matched expectation",
+    "payload": {
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a short article about the tradeoffs of running large language models locally. Follow this exact structure with four labeled sections: Context:, Benefits:, Risks:, Recommendation:. Keep each section concise."
+        }
+      ],
+      "max_tokens": 1024,
+      "temperature": 1.0
+    },
+    "response": {
+      "id": "chatcmpl-920ab4c7ac625d10",
+      "object": "chat.completion",
+      "created": 1777661698,
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "**Context:**  \nRunning large language models locally means hosting and executing the AI directly on your own hardware (e.g., a personal computer, server, or edge device) rather than relying on cloud-based APIs. This approach shifts control from third-party providers to the user, but introduces significant technical and resource tradeoffs.\n\n**Benefits:**  \n- **Privacy & Data Control:** No data is sent to external servers, eliminating exposure to cloud breaches or third-party logging.  \n- **Zero Latency & Offline Use:** Inference happens instantly without network dependency, ideal for sensitive or disconnected environments.  \n- **Customization & Cost Predictability:** Users can fine-tune models for niche tasks without per-query fees, avoiding API cost spikes at scale.\n\n**Risks:**  \n- **High Hardware Requirements:** Large models (e.g., 70B+ parameters) demand expensive GPUs, abundant RAM (32GB+), and substantial storage, often exceeding consumer-grade setups.  \n- **Performance Gaps:** Local models typically lag behind cloud counterparts in speed, accuracy, and model size—smaller quantized versions may lose nuance.  \n- **Maintenance Burden:** Users must manage updates, dependencies, and compatibility, plus face energy costs and thermal stress on hardware.\n\n**Recommendation:**  \nChoose local deployment only if (a) data privacy is non-negotiable, (b) you have dedicated high-end hardware (e.g., a multi-GPU workstation), and (c) you accept reduced model performance for fixed costs. For general users, cloud APIs remain more practical; consider hybrid setups (e.g., run smaller 7B models locally for simple tasks, use cloud for complex reasoning).",
+            "refusal": null,
+            "annotations": null,
+            "audio": null,
+            "function_call": null,
+            "tool_calls": [],
+            "reasoning": null
+          },
+          "logprobs": null,
+          "finish_reason": "stop",
+          "stop_reason": null,
+          "token_ids": null
+        }
+      ],
+      "service_tier": null,
+      "system_fingerprint": "vllm-0.20.1rc1.dev138+g51295793a-tp4-4f81a8bc",
+      "usage": {
+        "prompt_tokens": 41,
+        "total_tokens": 383,
+        "completion_tokens": 342,
+        "prompt_tokens_details": null
+      },
+      "prompt_logprobs": null,
+      "prompt_token_ids": null,
+      "kv_transfer_params": null
+    }
+  },
+  {
+    "case": "writing_quality_user_report_zh",
+    "tags": [
+      "quality",
+      "writing",
+      "subjective",
+      "user-report"
+    ],
+    "ok": true,
+    "detail": "matched expectation",
+    "payload": {
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "messages": [
+        {
+          "role": "user",
+          "content": "请写一篇面向工程团队负责人的中文短文，主题是“在本地部署大语言模型的收益与代价”。\n\n要求：\n1. 不要写成清单堆砌，要像一篇完整文章。\n2. 必须包含这些小标题：背景、收益、代价、建议。\n3. 需要具体讨论隐私、延迟、运维复杂度、成本和团队能力。\n4. 语气要克制、专业、可执行，不要营销腔。\n5. 不要解释你将如何写，直接给出正文。"
+        }
+      ],
+      "max_tokens": 2048,
+      "temperature": 1.0
+    },
+    "response": {
+      "id": "chatcmpl-aad82f0bd06bf7af",
+      "object": "chat.completion",
+      "created": 1777661699,
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "## 在本地部署大语言模型的收益与代价\n\n### 背景\n\n在云端大模型飞速发展的2025年，越来越多的工程团队开始重新审视“本地部署”这一选项。理由不难理解：当企业核心业务流程逐步接入LLM（大语言模型），数据合规、响应可控性以及长期成本结构都开始成为绕不开的现实问题。尤其是金融、医疗、制造等受严格监管的行业，外部API很可能在可预见的未来无法满足其合规要求。同时，开源模型生态在过去18个月中取得了显著进展，从LLaMA到Qwen、Mistral再到更细分的垂直小模型，使得本地部署在技术上成为可能。但是对于大多数工程负责人而言，真正的决策难点不在于“能不能做”，而在于“应不应该做”。\n\n### 收益\n\n从工程视角看，**隐私与数据主权**是本地部署最核心的收益。当用户对话、内部文档、业务数据完全留在自有服务器上时，团队不再需要担忧API调用时数据被用于训练第三方模型，或是因外包推理服务引发的泄露风险。对于医疗记录、客户隐私或商业机密场景，这是不可让步的基础。\n\n其次，**延迟可控性**值得单独讨论。本地部署消除了跨区域API调用的网络抖动，对于需要毫秒级响应的场景（如实时客服、代码自动补全、复杂工单的实时摘要），本地模型可以做到稳定且低延迟的推理，这对用户体验改善非常显著。\n\n此外，长期来看，某些高调用量场景下**成本结构会逆转**。尽管初期硬件投入较大，但若持续每个月调用数百万次，按次付费的云端API单价累积速度会远超硬件折旧。尤其是使用小参数量微调后的专用模型，本地推理的单位成本可以压低一个数量级以上。\n\n### 代价\n\n然而，**运维复杂度**是第一个无法回避的代价。部署大模型不再是安装一个软件包就能搞定的事情。CUDA驱动、NCCL通信库、推理框架选择（vLLM、llama.cpp、TGI等）的版本兼容，GPU内存管理、显存碎片处理、推理加速配置，每一项都可能花费团队数周试错。模型本身虽然开源，但它的优化状态、推理效率取决于运维人员的经验水平。\n\n这个问题进一步关系到**团队能力**的要求。如果团队没有至少一到两位熟悉GPU编程、容器化部署和分布式推理的工程师，或者缺乏对模型量化（INT4、FP16、AWQ）、KV-Cache调优等技术的实践积累，本地部署很容易陷入“模型能跑但跑不快”的泥潭。更糟糕的是，持续性的模型升级（比如如何把新微调版本快速替换旧版本）需要成熟的美蓝绿部署或A/B测试机制，这本身就是工程组织能力的体现。\n\n**成本问题也远比表面复杂**。购买A100/H100或消费级4090只是开端。机房冷却、电源改造、备卡、异地容灾都会在年度预算中被反复放大。但凡考虑7×24服务，还需为GPU硬件故障预备冗余。换算下来，TCO（全拥有成本）前18个月未必低于云API，只有在运行时间稳定且负载可预测时，成本优势才会逐渐释放。\n\n### 建议\n\n因此，针对决策中的工程负责人，我的建议是**先验证，后投入**。第一步：明确业务必须本地化部署的硬性约束（监管要求？毫秒响应？数据出口限制？），如果不存在这类刚性要求，优先保持API模式。第二步：用小参数量模型（如7B-14B）在单卡环境做POC，踩一遍部署流程中的运维坑，记录下团队排障所花费的人月数。第三步：评估团队当前是否具备或能从外部补充相关的GPU运维和模型推理调优能力，如果力量不足，考虑借助成熟推理托管方案（如本地化容器化推理平台）来缩短学习曲线。\n\n最后，不必强求“一步到位”。可以采取混合架构——敏感数据用本地模型处理，高容量、非敏感的场景仍走云端API，逐步平滑迁移。本地部署不是非此即彼的技术宣言，而应当是基于数据、成本和运维容量权衡后的务实选择。",
+            "refusal": null,
+            "annotations": null,
+            "audio": null,
+            "function_call": null,
+            "tool_calls": [],
+            "reasoning": null
+          },
+          "logprobs": null,
+          "finish_reason": "stop",
+          "stop_reason": null,
+          "token_ids": null
+        }
+      ],
+      "service_tier": null,
+      "system_fingerprint": "vllm-0.20.1rc1.dev138+g51295793a-tp4-4f81a8bc",
+      "usage": {
+        "prompt_tokens": 107,
+        "total_tokens": 982,
+        "completion_tokens": 875,
+        "prompt_tokens_details": null
+      },
+      "prompt_logprobs": null,
+      "prompt_token_ids": null,
+      "kv_transfer_params": null
+    }
+  },
+  {
+    "case": "translation_quality_en_to_zh",
+    "tags": [
+      "quality",
+      "translation",
+      "subjective",
+      "user-report"
+    ],
+    "ok": true,
+    "detail": "matched expectation",
+    "payload": {
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Translate the following paragraph into natural, polished Simplified Chinese. Preserve the meaning, tone, and paragraph structure. Do not add explanations.\n\nRunning a large language model locally can improve privacy and reduce latency, but it also shifts operational responsibility to the team. The practical question is not whether local inference is impressive, but whether the organization can maintain the hardware, monitor quality, and absorb the cost of slower iteration."
+        }
+      ],
+      "max_tokens": 1024,
+      "temperature": 1.0
+    },
+    "response": {
+      "id": "chatcmpl-97a048615e3a8e8b",
+      "object": "chat.completion",
+      "created": 1777661704,
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "本地运行大型语言模型可以提升隐私性并降低延迟，但也将运维责任转移到了团队身上。实际的关键问题不在于本地推理是否令人惊艳，而在于组织是否有能力维护硬件、监测质量，并承受迭代速度放缓所带来的成本。",
+            "refusal": null,
+            "annotations": null,
+            "audio": null,
+            "function_call": null,
+            "tool_calls": [],
+            "reasoning": null
+          },
+          "logprobs": null,
+          "finish_reason": "stop",
+          "stop_reason": null,
+          "token_ids": null
+        }
+      ],
+      "service_tier": null,
+      "system_fingerprint": "vllm-0.20.1rc1.dev138+g51295793a-tp4-4f81a8bc",
+      "usage": {
+        "prompt_tokens": 85,
+        "total_tokens": 137,
+        "completion_tokens": 52,
+        "prompt_tokens_details": null
+      },
+      "prompt_logprobs": null,
+      "prompt_token_ids": null,
+      "kv_transfer_params": null
+    }
+  },
+  {
+    "case": "translation_quality_zh_to_en",
+    "tags": [
+      "quality",
+      "translation",
+      "subjective",
+      "user-report"
+    ],
+    "ok": true,
+    "detail": "matched expectation",
+    "payload": {
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Translate the following Chinese paragraph into clear, idiomatic English for an engineering leadership audience. Preserve the cautious tone. Do not add explanations.\n\n本地部署大语言模型并不只是把权重下载到服务器上。它会把隐私、延迟和可控性带到团队手里，也会把容量规划、模型升级、故障排查和质量评估变成长期责任。真正需要判断的是，这些控制权是否值得相应的运维成本。"
+        }
+      ],
+      "max_tokens": 1024,
+      "temperature": 1.0
+    },
+    "response": {
+      "id": "chatcmpl-878380d1df0a74a2",
+      "object": "chat.completion",
+      "created": 1777661705,
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Deploying large language models on-premises is not simply a matter of downloading model weights onto a server. It brings privacy, latency, and controllability into the team’s hands, but also turns capacity planning, model upgrades, troubleshooting, and quality evaluation into long-term responsibilities. What truly needs to be assessed is whether this level of control is worth the corresponding operational cost.",
+            "refusal": null,
+            "annotations": null,
+            "audio": null,
+            "function_call": null,
+            "tool_calls": [],
+            "reasoning": null
+          },
+          "logprobs": null,
+          "finish_reason": "stop",
+          "stop_reason": null,
+          "token_ids": null
+        }
+      ],
+      "service_tier": null,
+      "system_fingerprint": "vllm-0.20.1rc1.dev138+g51295793a-tp4-4f81a8bc",
+      "usage": {
+        "prompt_tokens": 88,
+        "total_tokens": 165,
+        "completion_tokens": 77,
+        "prompt_tokens_details": null
+      },
+      "prompt_logprobs": null,
+      "prompt_token_ids": null,
+      "kv_transfer_params": null
+    }
+  }
+]

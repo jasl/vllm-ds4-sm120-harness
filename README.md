@@ -203,6 +203,24 @@ different GPU counts and classes such as B200, RTX Pro 6000, RTX 5090, and
 GB10. Power efficiency uses sampled GPU-side average power for the whole phase,
 not wall-plug power.
 
+To publish the reusable, sanitized comparison data from the same raw artifact
+tree, generate a reference bundle:
+
+```bash
+REFERENCE_RUN_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a/20260501-184103 \
+REFERENCE_SUPPLEMENT_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a_logsliced_bench/20260501-190608 \
+REFERENCE_LABEL=20260501_b200_main_51295793a \
+REFERENCE_DATE=20260501 \
+scripts/generate_reference_bundle.sh
+```
+
+Reference bundles live under `reference/baselines/` and are intended to be
+checked in. They keep the data needed to resume work in a fresh environment
+without raw `artifacts/`: deterministic no-MTP logprobs oracle cases,
+no-MTP/MTP smoke captures, ToolCall-15 traces, benchmark summaries,
+GPU/runtime telemetry summaries, and public provenance. Raw server logs,
+machine-local paths, private addresses, and secrets are deliberately excluded.
+
 ## Expected Workflow
 
 Run these after every SM12x kernel optimization before pushing to
@@ -329,7 +347,7 @@ the vLLM venv. If FlashInfer is installed, keep `flashinfer-python`,
 ```bash
 python -m ds4_harness.cli oracle-compare \
   --base-url http://127.0.0.1:8000 \
-  --oracle-dir /path/to/b200_or_h100_oracle_bundle \
+  --oracle-dir reference/baselines/20260501_b200_main_51295793a/oracle \
   --top-n 20 \
   --require-prompt-ids \
   --min-top1-match-rate 0.80 \

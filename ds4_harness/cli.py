@@ -21,6 +21,7 @@ from ds4_harness.oracle import (
     token_ids_from_tokenize_response,
 )
 from ds4_harness.oracle_export import export_completion_oracles
+from ds4_harness.reference_bundle import build_reference_bundle
 from ds4_harness.runtime_stats import (
     summarize_runtime_stats,
     write_runtime_json,
@@ -564,6 +565,23 @@ def _cmd_baseline_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_reference_bundle(args: argparse.Namespace) -> int:
+    findings = build_reference_bundle(
+        run_dir=args.run_dir,
+        supplement_dir=args.supplement_dir,
+        output_dir=args.output_dir,
+        label=args.label,
+        date=args.date,
+        fail_on_sensitive=False,
+    )
+    if findings:
+        for finding in findings:
+            print(finding, file=sys.stderr)
+        return 1
+    print(str(args.output_dir))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="DeepSeek V4 SM12x correctness and benchmark harness."
@@ -679,6 +697,15 @@ def build_parser() -> argparse.ArgumentParser:
     baseline_report.add_argument("--label")
     baseline_report.add_argument("--output", type=Path)
     baseline_report.set_defaults(func=_cmd_baseline_report)
+
+    reference_bundle = subparsers.add_parser("reference-bundle")
+    reference_bundle.add_argument("--run-dir", type=Path, required=True)
+    reference_bundle.add_argument("--supplement-dir", type=Path)
+    reference_bundle.add_argument("--output-dir", type=Path, required=True)
+    reference_bundle.add_argument("--label", required=True)
+    reference_bundle.add_argument("--date")
+    reference_bundle.add_argument("--fail-on-sensitive", action="store_true")
+    reference_bundle.set_defaults(func=_cmd_reference_bundle)
 
     return parser
 

@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "label": "20260501_b200_main_51295793a",
+  "date": "20260501",
+  "generated_at_utc": "2026-05-01T20:21:48.196339+00:00",
+  "source": {
+    "primary_run": "20260501-184103",
+    "supplement_run": "20260501-190608",
+    "raw_artifacts_are_not_required": true
+  },
+  "model": "deepseek-ai/DeepSeek-V4-Flash",
+  "gpu": {
+    "available": true,
+    "reason": null,
+    "count": 4,
+    "topology_slug": "4x_nvidia_b200",
+    "models": [
+      {
+        "name": "NVIDIA B200",
+        "count": 4,
+        "memory_total_mib_each": 183359.0
+      }
+    ],
+    "devices": [
+      {
+        "index": "0",
+        "name": "NVIDIA B200",
+        "memory_total_mib": 183359.0
+      },
+      {
+        "index": "1",
+        "name": "NVIDIA B200",
+        "memory_total_mib": 183359.0
+      },
+      {
+        "index": "2",
+        "name": "NVIDIA B200",
+        "memory_total_mib": 183359.0
+      },
+      {
+        "index": "3",
+        "name": "NVIDIA B200",
+        "memory_total_mib": 183359.0
+      }
+    ]
+  },
+  "collect_env": {
+    "os": "Ubuntu 22.04.5 LTS (x86_64)",
+    "pytorch_version": "2.11.0+cu130",
+    "pytorch_cuda_build": "13.0",
+    "python_version": "3.12.13 (main, Mar  4 2026, 09:23:07) [GCC 11.4.0] (64-bit runtime)",
+    "cuda_runtime_version": "13.0.88",
+    "nvidia_driver_version": "595.58.03",
+    "transformers_version": "5.7.0",
+    "triton_version": "3.6.0",
+    "vllm_version": "0.20.1rc1.dev138+g51295793a",
+    "vllm_cuda_archs": "Not Set",
+    "vllm_git_sha": "51295793a"
+  },
+  "serve_commands": {
+    "nomtp": "#!/usr/bin/env bash\nexport VLLM_ENGINE_READY_TIMEOUT_S=3600\nvllm serve deepseek-ai/DeepSeek-V4-Flash --trust-remote-code --kv-cache-dtype fp8 --block-size 256 --tensor-parallel-size 4 --host 127.0.0.1 --port 8080 --no-enable-flashinfer-autotune --attention_config.use_fp4_indexer_cache=True --reasoning-parser deepseek_v4 --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --enable-auto-tool-choice",
+    "mtp": "#!/usr/bin/env bash\nexport VLLM_ENGINE_READY_TIMEOUT_S=3600\nvllm serve deepseek-ai/DeepSeek-V4-Flash --trust-remote-code --kv-cache-dtype fp8 --block-size 256 --tensor-parallel-size 4 --host 127.0.0.1 --port 8080 --no-enable-flashinfer-autotune --attention_config.use_fp4_indexer_cache=True --reasoning-parser deepseek_v4 --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --enable-auto-tool-choice --speculative_config \\{\\\"method\\\":\\\"mtp\\\"\\,\\\"num_speculative_tokens\\\":2\\}"
+  },
+  "phase_exit_codes": [
+    {
+      "variant": "nomtp",
+      "phase": "server_startup",
+      "exit_code": 0,
+      "artifact": "nomtp/server_startup"
+    },
+    {
+      "variant": "nomtp",
+      "phase": "acceptance",
+      "exit_code": 1,
+      "artifact": "nomtp/acceptance"
+    },
+    {
+      "variant": "nomtp",
+      "phase": "bench_hf_mt_bench",
+      "exit_code": 0,
+      "artifact": "nomtp/bench_hf_mt_bench"
+    },
+    {
+      "variant": "nomtp",
+      "phase": "bench_random_8192x512",
+      "exit_code": 0,
+      "artifact": "nomtp/bench_random_8192x512"
+    },
+    {
+      "variant": "nomtp",
+      "phase": "oracle_export",
+      "exit_code": 0,
+      "artifact": "nomtp/oracle_export"
+    },
+    {
+      "variant": "mtp",
+      "phase": "server_startup",
+      "exit_code": 0,
+      "artifact": "mtp/server_startup"
+    },
+    {
+      "variant": "mtp",
+      "phase": "acceptance",
+      "exit_code": 1,
+      "artifact": "mtp/acceptance"
+    },
+    {
+      "variant": "mtp",
+      "phase": "bench_hf_mt_bench",
+      "exit_code": 0,
+      "artifact": "mtp/bench_hf_mt_bench"
+    },
+    {
+      "variant": "mtp",
+      "phase": "bench_random_8192x512",
+      "exit_code": 0,
+      "artifact": "mtp/bench_random_8192x512"
+    }
+  ],
+  "contents": {
+    "oracle": "Deterministic no-MTP /v1/completions logprobs oracle cases.",
+    "smoke": "no-MTP and MTP chat smoke request/response captures.",
+    "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
+    "performance": "Benchmark, runtime, and GPU telemetry summaries."
+  }
+}

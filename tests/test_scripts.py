@@ -306,6 +306,19 @@ def test_oracle_export_script_is_b200_ready():
     assert "--stop-on-error" in script
 
 
+def test_reference_bundle_script_generates_public_baseline_bundle():
+    script = (ROOT / "scripts" / "generate_reference_bundle.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "reference-bundle" in script
+    assert 'REFERENCE_RUN_DIR="${REFERENCE_RUN_DIR:?set REFERENCE_RUN_DIR}"' in script
+    assert 'REFERENCE_OUTPUT_DIR="${REFERENCE_OUTPUT_DIR:-${REPO_ROOT}/reference/baselines/${REFERENCE_LABEL}}"' in script
+    assert '--run-dir "${REFERENCE_RUN_DIR}"' in script
+    assert '--output-dir "${REFERENCE_OUTPUT_DIR}"' in script
+    assert "--fail-on-sensitive" in script
+
+
 def test_live_scripts_guard_against_unresponsive_servers():
     helper = (ROOT / "scripts" / "run_context.sh").read_text(encoding="utf-8")
 
