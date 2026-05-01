@@ -19,6 +19,8 @@ B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"
 B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"
 B200_BASELINE_LABEL="${B200_BASELINE_LABEL:-b200_official}"
 B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-nomtp,mtp}"
+B200_ARCHIVE_PREVIOUS="${B200_ARCHIVE_PREVIOUS:-1}"
+B200_ARCHIVE_PREFIX="${B200_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}"
 NO_MTP_CONCURRENCY="${NO_MTP_CONCURRENCY:-1,2,4,8,16,24}"
 MTP_CONCURRENCY="${MTP_CONCURRENCY:-1,2,4,8,16,24}"
 NUM_PROMPTS="${NUM_PROMPTS:-80}"
@@ -50,7 +52,8 @@ BRANCH_NAME="${BRANCH_NAME:-$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 
 BRANCH_SLUG="$(printf '%s' "${BRANCH_NAME}" | sed -E 's#[/[:space:]]+#_#g; s#[^A-Za-z0-9_.-]#_#g')"
 BRANCH_SLUG="${BRANCH_SLUG:-unknown-branch}"
 GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"
-RUN_ROOT="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${B200_BASELINE_LABEL}/${RUN_TIMESTAMP}}"
+ARTIFACT_PARENT="${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}"
+RUN_ROOT="${OUT_DIR:-${ARTIFACT_PARENT}/${B200_BASELINE_LABEL}/${RUN_TIMESTAMP}}"
 export MODEL HOST PORT BASE_URL PYTHON VLLM_BIN RUN_TIMESTAMP BRANCH_NAME
 export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_PROBE_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT
@@ -67,6 +70,56 @@ fi
 ACTIVE_SERVER_PID=""
 failures=0
 
+archive_previous_runs() {
+  if [[ "${B200_ARCHIVE_PREVIOUS}" != "1" && "${B200_ARCHIVE_PREVIOUS}" != "true" ]]; then
+    return 0
+  fi
+  if [[ -n "${OUT_DIR:-}" ]]; then
+    return 0
+  fi
+  if [[ ! -d "${ARTIFACT_PARENT}" ]]; then
+    return 0
+  fi
+
+  local archive_dir="${ARTIFACT_PARENT}/_archive_before_${RUN_TIMESTAMP}"
+  local manifest="${archive_dir}/archive_manifest.tsv"
+  local moved=0
+  local candidate name target suffix
+
+  shopt -s nullglob
+  for candidate in "${ARTIFACT_PARENT}/${B200_ARCHIVE_PREFIX}"*; do
+    if [[ ! -d "${candidate}" ]]; then
+      continue
+    fi
+    name="$(basename -- "${candidate}")"
+    if [[ "${name}" == _archive_before_* ]]; then
+      continue
+    fi
+
+    mkdir -p "${archive_dir}"
+    if [[ "${moved}" == "0" ]]; then
+      printf '%s\t%s\n' "source" "target" > "${manifest}"
+    fi
+
+    target="${archive_dir}/${name}"
+    suffix=1
+    while [[ -e "${target}" ]]; do
+      target="${archive_dir}/${name}.${suffix}"
+      suffix=$((suffix + 1))
+    done
+
+    mv "${candidate}" "${target}"
+    printf '%s\t%s\n' "${candidate}" "${target}" >> "${manifest}"
+    moved=1
+  done
+  shopt -u nullglob
+
+  if [[ "${moved}" == "1" ]]; then
+    printf 'archived previous B200 artifacts to %s\n' "${archive_dir}"
+  fi
+}
+
+archive_previous_runs
 mkdir -p "${RUN_ROOT}"
 PHASE_LOG="${RUN_ROOT}/phase_exit_codes.tsv"
 SUMMARY_MD="${RUN_ROOT}/baseline_summary.md"
@@ -245,6 +298,7 @@ write_summary() {
   {
     printf '# B200 Baseline Summary\n\n'
     printf -- '- label: `%s`\n' "${B200_BASELINE_LABEL}"
+    printf -- '- archive_previous: `%s`, prefix `%s`\n' "${B200_ARCHIVE_PREVIOUS}" "${B200_ARCHIVE_PREFIX}"
     printf -- '- model: `%s`\n' "${MODEL}"
     printf -- '- base_url: `%s`\n' "${BASE_URL}"
     printf -- '- variants: `%s`\n' "${B200_BASELINE_VARIANTS}"

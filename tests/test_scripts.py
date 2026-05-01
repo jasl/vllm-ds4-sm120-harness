@@ -87,6 +87,8 @@ def test_env_sample_and_local_env_are_configured():
     assert "OFFICIAL_TOOLCALL15_SCENARIO_SET=both" in sample
     assert "OFFICIAL_TOOLCALL15_REPEAT_COUNT=3" in sample
     assert "REAL_SCENARIO_REPEAT_COUNT=3" in sample
+    assert "B200_ARCHIVE_PREVIOUS=1" in sample
+    assert "B200_ARCHIVE_PREFIX=" in sample
     assert "QUALITY_TAG=quality" in sample
     assert "QUALITY_REPEAT_COUNT=3" in sample
     assert "CODING_TAG=coding" in sample
@@ -256,7 +258,12 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'MTP_CONCURRENCY="${MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"' in script
     assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
-    assert 'RUN_ROOT="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${B200_BASELINE_LABEL}/${RUN_TIMESTAMP}}"' in script
+    assert 'B200_ARCHIVE_PREVIOUS="${B200_ARCHIVE_PREVIOUS:-1}"' in script
+    assert 'B200_ARCHIVE_PREFIX="${B200_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}"' in script
+    assert "archive_previous_runs" in script
+    assert "_archive_before_${RUN_TIMESTAMP}" in script
+    assert 'ARTIFACT_PARENT="${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}"' in script
+    assert 'RUN_ROOT="${OUT_DIR:-${ARTIFACT_PARENT}/${B200_BASELINE_LABEL}/${RUN_TIMESTAMP}}"' in script
     assert '"${variant_dir}/acceptance"' in script
     assert '"${variant_dir}/bench_hf_mt_bench"' in script
     assert '"${variant_dir}/bench_random_8192x512"' in script
@@ -622,6 +629,64 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
         encoding="utf-8"
     )
     assert "wrote" in result.stdout
+
+
+def test_b200_baseline_driver_archives_previous_managed_artifacts(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    fake_vllm = tmp_path / "fake-vllm"
+    fake_vllm.write_text(
+        "#!/usr/bin/env sh\n"
+        "trap 'exit 0' TERM INT\n"
+        "while :; do sleep 1; done\n",
+        encoding="utf-8",
+    )
+    fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    artifact_root = tmp_path / "artifacts"
+    parent = artifact_root / "main" / "4x_b200"
+    old_label_dir = parent / "b200_main_51295793a"
+    old_supplement_dir = parent / "b200_main_51295793a_logsliced_bench"
+    old_label_dir.mkdir(parents=True)
+    old_supplement_dir.mkdir()
+    (old_label_dir / "old.txt").write_text("old", encoding="utf-8")
+    (old_supplement_dir / "old.txt").write_text("old", encoding="utf-8")
+
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "VLLM_BIN": str(fake_vllm),
+        "ARTIFACT_ROOT": str(artifact_root),
+        "BRANCH_NAME": "main",
+        "GPU_TOPOLOGY_SLUG": "4x_b200",
+        "B200_BASELINE_LABEL": "b200_main_51295793a",
+        "RUN_TIMESTAMP": "20260502010102",
+        "B200_BASELINE_VARIANTS": "nomtp",
+        "RUN_ACCEPTANCE": "0",
+        "RUN_BENCH_HF": "0",
+        "RUN_RANDOM_LONG": "0",
+        "RUN_ORACLE_EXPORT": "0",
+        "SERVER_GUARD": "0",
+        "GPU_STATS": "0",
+        "RUNTIME_STATS": "0",
+        "VLLM_COLLECT_ENV": "0",
+    }
+
+    subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_b200_baseline.sh")],
+        check=True,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    archive_dir = parent / "_archive_before_20260502010102"
+    assert (archive_dir / "b200_main_51295793a" / "old.txt").exists()
+    assert (archive_dir / "b200_main_51295793a_logsliced_bench" / "old.txt").exists()
+    assert (archive_dir / "archive_manifest.tsv").exists()
+    assert (parent / "b200_main_51295793a" / "20260502010102" / "baseline_summary.md").exists()
 
 
 def test_generate_baseline_report_wrapper_uses_report_cli():
