@@ -209,8 +209,6 @@ def write_gpu_markdown(path: Path, summary: dict[str, Any]) -> None:
         )
         for index, gpu in sorted(summary.get("gpus", {}).items()):
             label = gpu.get("name") or f"GPU {index}"
-            if gpu.get("uuid"):
-                label = f"{label} ({gpu['uuid']})"
             lines.append(
                 " | ".join(
                     [

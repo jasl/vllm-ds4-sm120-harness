@@ -50,6 +50,13 @@ def test_html_expectation_rejects_reasoning_without_artifact():
     assert not result.ok
 
 
+def test_malformed_empty_choices_response_is_failed_check():
+    result = check_chat_response(Expectation(all_terms=("anything",)), {"choices": []})
+
+    assert not result.ok
+    assert "missing required terms" in result.detail
+
+
 def test_case_selection_by_tag_and_name():
     cases = build_cases("deepseek-ai/DeepSeek-V4-Flash")
 

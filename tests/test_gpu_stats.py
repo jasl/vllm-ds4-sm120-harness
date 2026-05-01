@@ -64,6 +64,7 @@ def test_write_gpu_markdown_is_human_readable(tmp_path):
     report = output.read_text(encoding="utf-8")
     assert "# GPU Stats Summary" in report
     assert "RTX PRO 6000" in report
+    assert "GPU-0" not in report
     assert "2048.0 MiB" in report
     assert "300.0 W" in report
 

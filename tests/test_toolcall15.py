@@ -6,6 +6,7 @@ from ds4_harness.toolcall15 import (
     handle_tool_call,
     scenarios,
 )
+from ds4_harness import cli
 
 
 def test_toolcall15_has_fifteen_stable_scenarios():
@@ -102,3 +103,27 @@ def test_toolcall15_mock_tools_return_expected_payloads():
 
     assert weather["location"] == "Berlin"
     assert search_empty == {"results": []}
+
+
+def test_toolcall15_cli_writes_failure_artifact_on_request_error(monkeypatch, tmp_path):
+    def fake_post_json(base_url, path, payload, timeout):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr("ds4_harness.toolcall15.post_json", fake_post_json)
+    output = tmp_path / "toolcall15.json"
+
+    rc = cli.main(
+        [
+            "toolcall15",
+            "--scenario",
+            "TC-01",
+            "--json-output",
+            str(output),
+        ]
+    )
+
+    assert rc == 1
+    report = output.read_text(encoding="utf-8")
+    assert "TC-01" in report
+    assert "connection refused" in report
+    assert '"failures": 1' in report

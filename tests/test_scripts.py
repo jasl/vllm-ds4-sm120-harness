@@ -1,3 +1,5 @@
+import os
+import subprocess
 from pathlib import Path
 
 
@@ -36,7 +38,7 @@ def test_bench_script_defaults_to_representative_hf_dataset():
     assert '--dataset-name "${DATASET_NAME}"' in script
     assert '--dataset-path "${DATASET_PATH}"' in script
     assert 'EXTRA_ARGS+=(--ignore-eos)' in script
-    assert '"${EXTRA_ARGS[@]}"' in script
+    assert '${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}' in script
 
 
 def test_scripts_default_to_branch_timestamped_artifacts_dir():
@@ -66,6 +68,7 @@ def test_scripts_capture_gpu_stats_to_artifacts():
     assert "nvidia-smi" in helper
     assert "memory.used" in helper
     assert "power.draw" in helper
+    assert "uuid" not in helper
     assert '"${OUT_DIR}/gpu_stats.csv"' in helper
     assert "gpu-summary" in helper
     assert '"${OUT_DIR}/gpu_stats_summary.json"' in helper
@@ -77,3 +80,64 @@ def test_scripts_capture_gpu_stats_to_artifacts():
         assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
         assert "start_gpu_stats" in script
         assert "trap stop_gpu_stats EXIT" in script
+
+
+def test_sm12x_env_examples_use_requested_cuda_arch_family():
+    handoff = (ROOT / "HANDOFF.md").read_text(encoding="utf-8")
+    env_example = (ROOT / "configs" / "sm120_tp2_serve.env.example").read_text(
+        encoding="utf-8"
+    )
+
+    assert "12.0f" in handoff
+    assert "120f" in handoff
+    assert "12.0a" in handoff
+    assert "120a" in handoff
+    assert "12.1a" in handoff
+    assert "121a" in handoff
+    assert 'CUDA_ARCH_LIST="120a"' in env_example
+    assert 'TORCH_CUDA_ARCH_LIST="12.0a"' in env_example
+
+
+def test_scripts_have_valid_bash_syntax():
+    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh", "gpu_stats.sh"):
+        subprocess.run(
+            ["bash", "-n", str(ROOT / "scripts" / script_name)],
+            check=True,
+            cwd=ROOT,
+        )
+
+
+def test_bench_wrapper_can_run_with_mocked_python(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env sh\n"
+        "mkdir -p \"$OUT_DIR\"\n"
+        "printf '%s\\n' \"$@\" > \"$OUT_DIR/fake_python_args.txt\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    out_dir = tmp_path / "out"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "OUT_DIR": str(out_dir),
+        "GPU_STATS": "0",
+        "VLLM_BIN": "fake-vllm",
+        "CONCURRENCY": "1",
+        "NUM_PROMPTS": "1",
+    }
+
+    subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_bench_matrix.sh")],
+        check=True,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    args = (out_dir / "fake_python_args.txt").read_text(encoding="utf-8")
+    assert "ds4_harness.cli" in args
+    assert "bench-matrix" in args
+    assert "--json-output" in args

@@ -815,14 +815,32 @@ def run_suite(
         if scenario_id not in by_id:
             raise KeyError(f"unknown ToolCall-15 scenario {scenario_id}")
         selected.append(by_id[scenario_id])
-    return [
-        run_scenario(
-            base_url,
-            model,
-            scenario,
-            temperature=temperature,
-            timeout=timeout,
-            max_turns=max_turns,
-        )
-        for scenario in selected
-    ]
+    rows: list[Json] = []
+    for scenario in selected:
+        try:
+            rows.append(
+                run_scenario(
+                    base_url,
+                    model,
+                    scenario,
+                    temperature=temperature,
+                    timeout=timeout,
+                    max_turns=max_turns,
+                )
+            )
+        except Exception as exc:
+            rows.append(
+                {
+                    "id": scenario.id,
+                    "title": scenario.title,
+                    "category": scenario.category,
+                    "status": "error",
+                    "points": 0,
+                    "summary": f"scenario failed: {exc!r}",
+                    "note": None,
+                    "tool_calls": [],
+                    "final_answer": "",
+                    "trace": [{"error": repr(exc)}],
+                }
+            )
+    return rows

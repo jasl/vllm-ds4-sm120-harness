@@ -45,7 +45,7 @@ fi
   --random-output-len "${RANDOM_OUTPUT_LEN}" \
   --num-prompts "${NUM_PROMPTS}" \
   --temperature "${TEMPERATURE}" \
-  "${EXTRA_ARGS[@]}" \
+  ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
   --json-output "${OUT_DIR}/bench.json" \
   --log-dir "${OUT_DIR}/logs"
 

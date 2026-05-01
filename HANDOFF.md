@@ -27,6 +27,9 @@ branches.
 - Supported CUDA targets for this effort are only SM120 and SM121, the CUDA
   arch `12.0f` / `120f` family. Do not widen the support matrix without a new
   explicit requirement.
+- Prefer specific arch values for local builds to reduce compile time: SM120
+  uses `12.0a` / `120a`, and SM121 uses `12.1a` / `121a`. The broader
+  `12.0f` / `120f` family can cover both when a family target is required.
 - The local macOS machine is for code review, harness edits, docs, and artifact
   organization only. Do not treat local results as GPU-path validation.
 

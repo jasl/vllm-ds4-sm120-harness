@@ -1,6 +1,6 @@
 GPU_STATS="${GPU_STATS:-1}"
 GPU_STATS_INTERVAL_SECONDS="${GPU_STATS_INTERVAL_SECONDS:-1}"
-GPU_STATS_QUERY="${GPU_STATS_QUERY:-timestamp,index,name,uuid,memory.used,memory.total,power.draw,power.limit,utilization.gpu}"
+GPU_STATS_QUERY="${GPU_STATS_QUERY:-timestamp,index,name,memory.used,memory.total,power.draw,power.limit,utilization.gpu}"
 GPU_STATS_CSV="${OUT_DIR}/gpu_stats.csv"
 GPU_STATS_ERR="${OUT_DIR}/gpu_stats.err"
 GPU_STATS_PID=""

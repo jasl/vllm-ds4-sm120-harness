@@ -22,7 +22,8 @@ class CheckResult:
 
 
 def assistant_message(response: dict[str, Any]) -> dict[str, Any]:
-    choice = response.get("choices", [{}])[0]
+    choices = response.get("choices")
+    choice = choices[0] if isinstance(choices, list) and choices else {}
     message = choice.get("message")
     if isinstance(message, dict):
         return message
@@ -58,7 +59,8 @@ def check_chat_response(
     expectation: Expectation,
     response: dict[str, Any],
 ) -> CheckResult:
-    choice = response.get("choices", [{}])[0]
+    choices = response.get("choices")
+    choice = choices[0] if isinstance(choices, list) and choices else {}
     text = assistant_text(response)
     lowered = text.casefold()
 

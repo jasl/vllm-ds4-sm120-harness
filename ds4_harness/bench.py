@@ -66,6 +66,9 @@ def run_bench_command(command: list[str], timeout: float | None = None) -> dict[
         stdout_parts.append(f"\nTIMEOUT after {timeout} seconds\n")
         stdout = "".join(stdout_parts)
         returncode = -1
+    except OSError as exc:
+        stdout = f"{type(exc).__name__}: {exc}\n"
+        returncode = -2
     return {
         "returncode": returncode,
         "metrics": parse_bench_output(stdout),

@@ -1,4 +1,5 @@
 from ds4_harness.bench import parse_bench_output
+from ds4_harness.bench import run_bench_command
 from ds4_harness import cli
 
 
@@ -23,6 +24,14 @@ Mean TTFT (ms):                          1210.50
     assert report["successful_requests"] == 48
     assert report["output_token_throughput_tok_s"] == 500.91
     assert report["mean_tpot_ms"] == 15.25
+
+
+def test_run_bench_command_records_launch_errors():
+    result = run_bench_command(["/path/does/not/exist/vllm"])
+
+    assert result["returncode"] == -2
+    assert result["metrics"] == {}
+    assert "FileNotFoundError" in result["stdout"]
 
 
 def test_bench_matrix_builds_hf_dataset_commands(monkeypatch, tmp_path):
