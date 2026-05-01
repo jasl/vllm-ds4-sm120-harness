@@ -152,7 +152,7 @@ def build_cases(model: str) -> list[SmokeCase]:
             messages=[{"role": "user", "content": "What is 7*8?"}],
             expectation=Expectation(all_terms=("56",)),
             tags=("quick", "basic", "deterministic"),
-            max_tokens=64,
+            max_tokens=256,
             temperature=0.0,
         ),
         SmokeCase(
@@ -161,7 +161,7 @@ def build_cases(model: str) -> list[SmokeCase]:
             messages=[{"role": "user", "content": "Capital of France?"}],
             expectation=Expectation(all_terms=("Paris",)),
             tags=("quick", "basic", "deterministic"),
-            max_tokens=64,
+            max_tokens=256,
             temperature=0.0,
         ),
         SmokeCase(
@@ -170,7 +170,7 @@ def build_cases(model: str) -> list[SmokeCase]:
             messages=[{"role": "user", "content": "Hello in Spanish?"}],
             expectation=Expectation(all_terms=("hola",)),
             tags=("quick", "basic", "deterministic"),
-            max_tokens=64,
+            max_tokens=256,
             temperature=0.0,
         ),
         SmokeCase(

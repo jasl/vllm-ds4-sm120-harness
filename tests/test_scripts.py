@@ -61,6 +61,20 @@ def test_acceptance_script_writes_human_markdown_smoke_reports():
     assert '--markdown-output "${OUT_DIR}/smoke_coding.md"' in script
 
 
+def test_acceptance_script_runs_all_gates_and_records_exit_codes():
+    script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
+
+    assert "failures=0" in script
+    assert "run_gate pytest" in script
+    assert "run_gate smoke_quick" in script
+    assert "run_gate smoke_quality" in script
+    assert "run_gate smoke_coding" in script
+    assert "run_gate toolcall15" in script
+    assert "run_gate oracle_compare" in script
+    assert '"${OUT_DIR}/${name}.exit_code"' in script
+    assert "exit ${failures}" in script
+
+
 def test_scripts_capture_gpu_stats_to_artifacts():
     helper = (ROOT / "scripts" / "gpu_stats.sh").read_text(encoding="utf-8")
 

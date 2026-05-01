@@ -97,6 +97,14 @@ def test_subjective_writing_and_translation_cases_are_available():
         assert names[name].temperature == 1.0
 
 
+def test_basic_quick_cases_allow_reasoning_token_budget():
+    cases = build_cases("deepseek-ai/DeepSeek-V4-Flash")
+    names = {case.name: case for case in cases}
+
+    for name in ("math_7_times_8", "capital_of_france", "spanish_greeting"):
+        assert names[name].max_tokens >= 256
+
+
 def test_english_to_chinese_translation_accepts_concise_complete_translation():
     case = next(
         case

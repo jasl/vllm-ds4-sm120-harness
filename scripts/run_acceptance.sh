@@ -20,29 +20,58 @@ source "${SCRIPT_DIR}/gpu_stats.sh"
 start_gpu_stats
 trap stop_gpu_stats EXIT
 
-"${PYTHON}" -m pytest -q tests
-"${PYTHON}" -m ruff check ds4_harness tests
-"${PYTHON}" -m compileall -q ds4_harness
+failures=0
 
-"${PYTHON}" -m ds4_harness.cli health \
-  --base-url "${BASE_URL}" \
-  > "${OUT_DIR}/health.jsonl"
+run_gate() {
+  name="$1"
+  shift
+  set +e
+  "$@"
+  code="$?"
+  set -e
+  printf '%s\n' "${code}" > "${OUT_DIR}/${name}.exit_code"
+  if [[ "${code}" != "0" ]]; then
+    failures=1
+  fi
+}
 
-"${PYTHON}" -m ds4_harness.cli chat-smoke \
+run_gate_capture() {
+  name="$1"
+  output="$2"
+  shift 2
+  set +e
+  "$@" > "${output}"
+  code="$?"
+  set -e
+  printf '%s\n' "${code}" > "${OUT_DIR}/${name}.exit_code"
+  if [[ "${code}" != "0" ]]; then
+    failures=1
+  fi
+}
+
+run_gate pytest "${PYTHON}" -m pytest -q tests
+run_gate ruff "${PYTHON}" -m ruff check ds4_harness tests
+run_gate compileall "${PYTHON}" -m compileall -q ds4_harness
+
+run_gate_capture health "${OUT_DIR}/health.jsonl" \
+  "${PYTHON}" -m ds4_harness.cli health \
+  --base-url "${BASE_URL}"
+
+run_gate smoke_quick "${PYTHON}" -m ds4_harness.cli chat-smoke \
   --base-url "${BASE_URL}" \
   --model "${MODEL}" \
   --tag quick \
   --jsonl-output "${OUT_DIR}/smoke_quick.jsonl" \
   --markdown-output "${OUT_DIR}/smoke_quick.md"
 
-"${PYTHON}" -m ds4_harness.cli chat-smoke \
+run_gate smoke_quality "${PYTHON}" -m ds4_harness.cli chat-smoke \
   --base-url "${BASE_URL}" \
   --model "${MODEL}" \
   --tag quality \
   --jsonl-output "${OUT_DIR}/smoke_quality.jsonl" \
   --markdown-output "${OUT_DIR}/smoke_quality.md"
 
-"${PYTHON}" -m ds4_harness.cli chat-smoke \
+run_gate smoke_coding "${PYTHON}" -m ds4_harness.cli chat-smoke \
   --base-url "${BASE_URL}" \
   --model "${MODEL}" \
   --tag coding \
@@ -51,7 +80,7 @@ trap stop_gpu_stats EXIT
   --markdown-output "${OUT_DIR}/smoke_coding.md"
 
 if [[ "${RUN_TOOLCALL15}" == "1" ]]; then
-  "${PYTHON}" -m ds4_harness.cli toolcall15 \
+  run_gate toolcall15 "${PYTHON}" -m ds4_harness.cli toolcall15 \
     --base-url "${BASE_URL}" \
     --model "${MODEL}" \
     --min-points "${TOOLCALL15_MIN_POINTS:-2}" \
@@ -59,7 +88,7 @@ if [[ "${RUN_TOOLCALL15}" == "1" ]]; then
 fi
 
 if [[ -n "${ORACLE_DIR}" ]]; then
-  "${PYTHON}" -m ds4_harness.cli oracle-compare \
+  run_gate oracle_compare "${PYTHON}" -m ds4_harness.cli oracle-compare \
     --base-url "${BASE_URL}" \
     --oracle-dir "${ORACLE_DIR}" \
     --require-prompt-ids \
@@ -68,3 +97,4 @@ if [[ -n "${ORACLE_DIR}" ]]; then
 fi
 
 echo "wrote ${OUT_DIR}"
+exit ${failures}
