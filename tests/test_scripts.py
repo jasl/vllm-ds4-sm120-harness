@@ -99,7 +99,26 @@ def test_scripts_capture_gpu_stats_to_artifacts():
 
         assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
         assert "start_gpu_stats" in script
-        assert "trap stop_gpu_stats EXIT" in script
+        assert "stop_gpu_stats" in script
+
+
+def test_scripts_capture_vllm_runtime_stats_to_artifacts():
+    helper = (ROOT / "scripts" / "runtime_stats.sh").read_text(encoding="utf-8")
+
+    assert 'RUNTIME_STATS="${RUNTIME_STATS:-1}"' in helper
+    assert "curl" in helper
+    assert "/metrics" in helper
+    assert '"${OUT_DIR}/vllm_metrics.prom"' in helper
+    assert "runtime-summary" in helper
+    assert '"${OUT_DIR}/runtime_stats_summary.json"' in helper
+    assert '"${OUT_DIR}/runtime_stats_summary.md"' in helper
+
+    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh"):
+        script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
+
+        assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+        assert "start_runtime_stats" in script
+        assert "stop_runtime_stats" in script
 
 
 def test_sm12x_env_examples_use_requested_cuda_arch_family():
@@ -119,7 +138,12 @@ def test_sm12x_env_examples_use_requested_cuda_arch_family():
 
 
 def test_scripts_have_valid_bash_syntax():
-    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh", "gpu_stats.sh"):
+    for script_name in (
+        "run_acceptance.sh",
+        "run_bench_matrix.sh",
+        "gpu_stats.sh",
+        "runtime_stats.sh",
+    ):
         subprocess.run(
             ["bash", "-n", str(ROOT / "scripts" / script_name)],
             check=True,
@@ -142,6 +166,7 @@ def test_bench_wrapper_can_run_with_mocked_python(tmp_path):
         "PYTHON": str(fake_python),
         "OUT_DIR": str(out_dir),
         "GPU_STATS": "0",
+        "RUNTIME_STATS": "0",
         "VLLM_BIN": "fake-vllm",
         "CONCURRENCY": "1",
         "NUM_PROMPTS": "1",

@@ -148,6 +148,14 @@ run; they capture per-GPU memory usage, power draw, and utilization during the
 test window. Set `GPU_STATS=0` only when a run is intentionally CPU/local, and
 set `GPU_STATS_INTERVAL_SECONDS` if one-second sampling is too noisy.
 
+The wrappers also sample vLLM runtime telemetry from `/metrics` by default.
+Preserve `vllm_metrics.prom`, `runtime_stats_summary.json`, and
+`runtime_stats_summary.md` with each run. These summarize prefill/decode token
+deltas, request pressure, and KV-cache usage. Set `RUNTIME_STATS=0` only when a
+run intentionally has no live server metrics. If a serve log exists, pass
+`SERVE_LOG=/path/to/serve.log` so the runtime summary can also include
+vLLM-reported prompt/generation throughput and MTP acceptance metrics.
+
 For stricter kernel correctness, compare against a B200/SM100 or H100 HTTP
 oracle bundle:
 
@@ -175,6 +183,7 @@ progress:
 
 ```bash
 VLLM_BIN=/path/to/vllm/.venv/bin/vllm \
+SERVE_LOG=/path/to/serve.log \
 CONCURRENCY=1,2,4,8,16,24 \
 scripts/run_bench_matrix.sh
 ```
@@ -223,6 +232,8 @@ The harness currently includes:
 - ToolCall-15 multi-turn tool-call loop with mocked tool responses
 - logprobs oracle comparison for completion-style B200/H100 bundles
 - vLLM `bench serve` matrix wrapper for both HF datasets and random shapes
+- GPU and vLLM runtime telemetry summaries, including prefill/decode and MTP
+  acceptance metrics when available
 
 This is not a full semantic eval. Treat subjective cases as regression smoke:
 they catch obvious degradation, not subtle quality differences.

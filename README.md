@@ -32,6 +32,12 @@ The harness is deliberately stdlib-only at runtime. Unit tests use `pytest`.
   - keeps random synthetic prompts for controlled short/long context pressure
   - parses common throughput and latency metrics
   - stores raw logs per concurrency
+- vLLM runtime telemetry:
+  - samples `/metrics` during wrapper runs
+  - summarizes prefill/decode token counters, request pressure, and KV-cache
+    usage
+  - can parse serve logs for prompt/generation throughput and MTP acceptance
+    metrics
 
 ## Coverage Model
 
@@ -81,6 +87,15 @@ peak/average memory usage, power draw, and utilization. Set `GPU_STATS=0` to
 disable sampling, or `GPU_STATS_INTERVAL_SECONDS=2` to change the sample
 interval.
 
+The wrappers also sample vLLM runtime metrics from `/metrics` by default. Each
+run writes `vllm_metrics.prom`, `runtime_stats_summary.json`, and
+`runtime_stats_summary.md` when metrics are available. The summary includes
+prefill/decode token deltas, request pressure, and KV-cache usage. Set
+`RUNTIME_STATS=0` to disable sampling, or `RUNTIME_STATS_INTERVAL_SECONDS=10`
+to reduce polling. If you have the server log path, pass
+`SERVE_LOG=/path/to/serve.log`; the summary will also include vLLM log-derived
+prompt/generation throughput and speculative decoding acceptance metrics.
+
 ## Expected Workflow
 
 Run these after every SM12x kernel optimization before pushing to
@@ -124,6 +139,7 @@ only consumes `/v1/completions` logprobs cases.
 python -m ds4_harness.cli oracle-compare \
   --base-url http://127.0.0.1:8000 \
   --oracle-dir /path/to/b200_or_h100_oracle_bundle \
+  --top-n 20 \
   --require-prompt-ids \
   --min-top1-match-rate 0.80 \
   --json-output artifacts/manual/oracle_compare.json
@@ -134,6 +150,7 @@ configurations, then run the same HF dataset matrix against each:
 
 ```bash
 VLLM_BIN=/path/to/vllm/.venv/bin/vllm \
+SERVE_LOG=/path/to/serve.log \
 CONCURRENCY=1,2,4,8,16,24 \
 scripts/run_bench_matrix.sh
 ```

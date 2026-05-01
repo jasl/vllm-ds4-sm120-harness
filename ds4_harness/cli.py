@@ -13,6 +13,11 @@ from ds4_harness.checks import CheckResult, assistant_text, check_chat_response,
 from ds4_harness.client import get_json, get_status, post_json
 from ds4_harness.gpu_stats import summarize_gpu_csv, write_gpu_json, write_gpu_markdown
 from ds4_harness.oracle import compare_response, load_oracle_cases
+from ds4_harness.runtime_stats import (
+    summarize_runtime_stats,
+    write_runtime_json,
+    write_runtime_markdown,
+)
 from ds4_harness.toolcall15 import run_suite
 
 
@@ -405,6 +410,16 @@ def _cmd_gpu_summary(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_runtime_summary(args: argparse.Namespace) -> int:
+    summary = summarize_runtime_stats(args.metrics_input, args.serve_log)
+    print(json.dumps(summary, ensure_ascii=False))
+    if args.json_output is not None:
+        write_runtime_json(args.json_output, summary)
+    if args.markdown_output is not None:
+        write_runtime_markdown(args.markdown_output, summary)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="DeepSeek V4 SM12x correctness and benchmark harness."
@@ -484,6 +499,13 @@ def build_parser() -> argparse.ArgumentParser:
     gpu_summary.add_argument("--json-output", type=Path)
     gpu_summary.add_argument("--markdown-output", type=Path)
     gpu_summary.set_defaults(func=_cmd_gpu_summary)
+
+    runtime_summary = subparsers.add_parser("runtime-summary")
+    runtime_summary.add_argument("--metrics-input", type=Path)
+    runtime_summary.add_argument("--serve-log", type=Path)
+    runtime_summary.add_argument("--json-output", type=Path)
+    runtime_summary.add_argument("--markdown-output", type=Path)
+    runtime_summary.set_defaults(func=_cmd_runtime_summary)
 
     return parser
 
