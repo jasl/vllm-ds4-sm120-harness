@@ -212,14 +212,30 @@ def _copy_oracle(run_dir: Path, output_dir: Path) -> None:
         _copy_json(path, target_dir / path.name)
     for path in sorted(source_dir.glob("tokenize_completion_*.json")):
         _copy_json(path, target_dir / path.name)
-    _copy_json(
-        source_dir / "oracle_export_summary.json",
-        target_dir / "oracle_export_summary.json",
-    )
+    _copy_oracle_summary(source_dir, target_dir)
     _copy_text(
         source_dir / "oracle_export_summary.md",
         target_dir / "oracle_export_summary.md",
     )
+
+
+def _copy_oracle_summary(source_dir: Path, target_dir: Path) -> None:
+    source = source_dir / "oracle_export_summary.json"
+    if not source.exists():
+        return
+    data = _sanitize_json(_load_json(source))
+    if isinstance(data, dict) and isinstance(data.get("files"), list):
+        copied_files = {
+            path.name
+            for path in target_dir.glob("*.json")
+            if path.name.startswith(("completion_", "tokenize_completion_"))
+        }
+        data["files"] = [
+            name
+            for name in data["files"]
+            if isinstance(name, str) and Path(name).name in copied_files
+        ]
+    _write_json(target_dir / "oracle_export_summary.json", data)
 
 
 def _copy_smoke_and_toolcall(run_dir: Path, output_dir: Path) -> None:
@@ -314,6 +330,7 @@ def _write_manifest(
         "phase_exit_codes": _phase_exit_codes(run_dir),
         "contents": {
             "report": "Readable baseline report with correctness, performance, and cost metrics.",
+            "subjective_quality": "Optional side-by-side writing, translation, and coding samples.",
             "oracle": "Deterministic no-MTP /v1/completions logprobs oracle cases.",
             "smoke": "no-MTP and MTP chat smoke request/response captures.",
             "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
@@ -323,7 +340,45 @@ def _write_manifest(
     _write_json(output_dir / "manifest.json", _sanitize_json(manifest))
 
 
-def _write_readme(output_dir: Path, label: str) -> None:
+def _toolcall_known_non_green_lines(run_dir: Path) -> list[str]:
+    lines = []
+    for variant in VARIANTS:
+        path = run_dir / variant / "acceptance" / "toolcall15.json"
+        if not path.exists():
+            continue
+        data = _load_json(path)
+        if not isinstance(data, dict):
+            continue
+        summary = data.get("summary", {})
+        failures = [
+            result.get("id")
+            for result in data.get("results", [])
+            if isinstance(result, dict)
+            and (result.get("status") != "pass" or result.get("ok") is False)
+        ]
+        if not failures:
+            continue
+        points = summary.get("points", "n/a")
+        max_points = summary.get("max_points", "n/a")
+        failure_text = ", ".join(f"`{failure}`" for failure in failures if failure)
+        lines.append(f"- {variant}: `{points}/{max_points}`; failures {failure_text}.")
+    return lines
+
+
+def _write_readme(output_dir: Path, label: str, run_dir: Path) -> None:
+    non_green_lines = _toolcall_known_non_green_lines(run_dir)
+    known_non_green = ""
+    if non_green_lines:
+        known_non_green = (
+            "## Known Non-Green Gates\n\n"
+            "This bundle is a current reference baseline, not necessarily a "
+            "completely green acceptance run. Treat partial ToolCall-15 traces "
+            "as current behavior references unless a later branch is explicitly "
+            "trying to fix ToolCall policy quality.\n\n"
+            + "\n".join(non_green_lines)
+            + "\n\n"
+        )
+
     _write_text(
         output_dir / "README.md",
         f"""# {label}
@@ -332,12 +387,15 @@ This is a curated public reference bundle for DeepSeek V4 SM12x validation. It
 is derived from raw harness artifacts, but intentionally excludes machine-local
 paths, server logs, tokens, and private connection details.
 
+{known_non_green}\
 ## Contents
 
 - `manifest.json`: model, GPU topology, vLLM provenance, serve shape, and phase
   exit codes.
 - `report.md`: readable baseline report with throughput, latency, correctness,
   runtime telemetry, and synthetic provider-style cost metrics.
+- `subjective_quality/`: B200 no-MTP, B200 MTP, and DeepSeek official API
+  writing, translation, and coding samples for human comparison when present.
 - `oracle/`: no-MTP deterministic `/v1/completions` cases with prompt token ids,
   generated tokens, token logprobs, top logprobs, and usage.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
@@ -396,7 +454,7 @@ def build_reference_bundle(
         date=date,
         supplement_dir=supplement_dir,
     )
-    _write_readme(output_dir, label)
+    _write_readme(output_dir, label, run_dir)
     _copy_oracle(run_dir, output_dir)
     _copy_smoke_and_toolcall(run_dir, output_dir)
     _write_json(output_dir / "performance" / "primary.json", _performance_source("primary", run_dir))

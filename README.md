@@ -227,6 +227,23 @@ The script generates into a temporary directory, verifies that the bundle has
 loadable oracle cases and no non-public data, then replaces the final
 `baselines/...` directory only after validation passes.
 
+To refresh the human subjective comparison against the DeepSeek official API,
+put `DEEPSEEK_API_KEY` in ignored `.env`, then run:
+
+```bash
+SUBJECTIVE_BASELINE_DIR=baselines/20260501_b200_main_51295793a \
+scripts/run_official_subjective_baseline.sh
+```
+
+The script captures official API quality and coding smoke outputs under ignored
+`artifacts/official_api/...`, then writes a public side-by-side
+`subjective_quality/comparison.{md,json}` directory inside the selected
+baseline. API keys are only read from the environment and are not written to the
+public comparison. By default the script sends explicit DeepSeek V4 thinking
+parameters from `.env` (`thinking.type` and `reasoning_effort`) so the official
+run is reproducible; override `OFFICIAL_EXTRA_BODY_JSON` when comparing a
+different official serving mode.
+
 ## Expected Workflow
 
 Run these after every SM12x kernel optimization before pushing to
@@ -251,6 +268,13 @@ python -m ds4_harness.cli chat-smoke \
 
 python -m ds4_harness.cli chat-smoke \
   --base-url http://127.0.0.1:8000 \
+  --tag quality \
+  --timeout 600 \
+  --jsonl-output artifacts/manual/smoke_quality.jsonl \
+  --markdown-output artifacts/manual/smoke_quality.md
+
+python -m ds4_harness.cli chat-smoke \
+  --base-url http://127.0.0.1:8000 \
   --tag coding \
   --timeout 900 \
   --jsonl-output artifacts/manual/smoke_coding.jsonl \
@@ -261,6 +285,11 @@ python -m ds4_harness.cli toolcall15 \
   --model deepseek-ai/DeepSeek-V4-Flash \
   --json-output artifacts/manual/toolcall15.json
 ```
+
+Use the Markdown outputs for human review of writing, translation, and coding
+quality. Use the JSON/JSONL outputs for archiving and comparison against the
+checked-in `baselines/.../smoke/{nomtp,mtp}_quality.*` and
+`baselines/.../smoke/{nomtp,mtp}_coding.*` samples.
 
 Use the B200/SM100 or H100 HTTP oracle bundle when you need stricter kernel
 correctness checks. Chat exports are covered by `chat-smoke`; `oracle-compare`
@@ -420,7 +449,7 @@ Before promoting an optimization:
   decode path. High-concurrency MTP failures can also be plain capacity limits;
   distinguish OOM/KV-cache/CUDA-graph reservation failures from correctness or
   scheduler bugs before treating them as regressions.
-- On B200 reference servers, the known stable hang is MTP with benchmark
-  concurrency greater than 1. Treat that as a runtime unresponsive-server case;
-  slow model loading and warmup should be handled by the startup and
-  failure-grace waits above.
+- On the older official vLLM 0.20.0 B200 path, the known stable hang is MTP
+  with benchmark concurrency greater than 1. Treat that as a runtime
+  unresponsive-server case. For newer main-based reference builds, keep running
+  the guarded MTP C>1 matrix and record the observed result.

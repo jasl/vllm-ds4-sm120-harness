@@ -611,6 +611,21 @@ def test_generate_baseline_report_wrapper_uses_report_cli():
     assert 'baselines/${BASELINE_REPORT_DATE}_${output_label}/report.md' in script
 
 
+def test_official_subjective_baseline_script_uses_api_key_and_baseline_output():
+    script = (ROOT / "scripts" / "run_official_subjective_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "load_harness_env" in script
+    assert "--api-key-env DEEPSEEK_API_KEY" in script
+    assert "--max-case-tokens" in script
+    assert "--extra-body-json" in script
+    assert "DEEPSEEK_THINKING_TYPE" in script
+    assert "subjective-comparison" in script
+    assert "baselines/20260501_b200_main_51295793a" in script
+    assert "subjective_quality" in script
+
+
 def test_runtime_stats_helper_slices_serve_log_per_phase(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()

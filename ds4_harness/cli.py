@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -27,6 +28,7 @@ from ds4_harness.runtime_stats import (
     write_runtime_json,
     write_runtime_markdown,
 )
+from ds4_harness.subjective_comparison import build_subjective_comparison
 from ds4_harness.run_environment import (
     summarize_run_environment,
     write_run_environment_json,
@@ -127,6 +129,35 @@ def _write_chat_markdown(path: Path | None, rows: list[dict[str, Any]]) -> None:
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
+def _bearer_headers_from_env(env_name: str | None) -> dict[str, str] | None:
+    if not env_name:
+        return None
+    value = os.environ.get(env_name)
+    if not value:
+        raise RuntimeError(f"{env_name} is not set")
+    return {"Authorization": f"Bearer {value}"}
+
+
+def _apply_max_case_tokens_cap(
+    payload: dict[str, Any],
+    max_case_tokens: int | None,
+) -> None:
+    if max_case_tokens is None:
+        return
+    current = payload.get("max_tokens")
+    if isinstance(current, int) and current > max_case_tokens:
+        payload["max_tokens"] = max_case_tokens
+
+
+def _parse_extra_body_json(value: str | None) -> dict[str, Any]:
+    if not value:
+        return {}
+    data = json.loads(value)
+    if not isinstance(data, dict):
+        raise RuntimeError("--extra-body-json must decode to a JSON object")
+    return data
+
+
 def _print_case_result(case: SmokeCase, result: CheckResult, response: dict[str, Any]):
     status = "PASS" if result.ok else "FAIL"
     print(f"{status} {case.name}: {result.detail}")
@@ -172,6 +203,16 @@ def _cmd_chat_smoke(args: argparse.Namespace) -> int:
         print("No smoke cases selected.", file=sys.stderr)
         return 2
 
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except json.JSONDecodeError as exc:
+        print(f"invalid --extra-body-json: {exc}", file=sys.stderr)
+        return 2
+
     failures = 0
     markdown_rows: list[dict[str, Any]] = []
     for case in cases:
@@ -179,13 +220,24 @@ def _cmd_chat_smoke(args: argparse.Namespace) -> int:
             default_max_tokens=args.max_tokens,
             default_temperature=args.temperature,
         )
+        payload.update(extra_body)
+        _apply_max_case_tokens_cap(payload, args.max_case_tokens)
         try:
-            response = post_json(
-                args.base_url,
-                "/v1/chat/completions",
-                payload,
-                args.timeout,
-            )
+            if headers:
+                response = post_json(
+                    args.base_url,
+                    "/v1/chat/completions",
+                    payload,
+                    args.timeout,
+                    headers=headers,
+                )
+            else:
+                response = post_json(
+                    args.base_url,
+                    "/v1/chat/completions",
+                    payload,
+                    args.timeout,
+                )
             result = check_chat_response(case.expectation, response)
         except (
             OSError,
@@ -582,6 +634,17 @@ def _cmd_reference_bundle(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_subjective_comparison(args: argparse.Namespace) -> int:
+    build_subjective_comparison(
+        baseline_dir=args.baseline_dir,
+        official_paths=args.official_input or [],
+        output_dir=args.output_dir,
+        label=args.label or args.baseline_dir.name,
+    )
+    print(str(args.output_dir))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="DeepSeek V4 SM12x correctness and benchmark harness."
@@ -609,6 +672,9 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--max-tokens", type=int, default=256)
     smoke.add_argument("--temperature", type=float, default=0.0)
     smoke.add_argument("--timeout", type=float, default=300.0)
+    smoke.add_argument("--api-key-env")
+    smoke.add_argument("--max-case-tokens", type=int)
+    smoke.add_argument("--extra-body-json")
     smoke.add_argument("--jsonl-output", type=Path)
     smoke.add_argument("--markdown-output", type=Path)
     smoke.set_defaults(func=_cmd_chat_smoke)
@@ -706,6 +772,13 @@ def build_parser() -> argparse.ArgumentParser:
     reference_bundle.add_argument("--date")
     reference_bundle.add_argument("--fail-on-sensitive", action="store_true")
     reference_bundle.set_defaults(func=_cmd_reference_bundle)
+
+    subjective = subparsers.add_parser("subjective-comparison")
+    subjective.add_argument("--baseline-dir", type=Path, required=True)
+    subjective.add_argument("--official-input", type=Path, action="append")
+    subjective.add_argument("--output-dir", type=Path, required=True)
+    subjective.add_argument("--label")
+    subjective.set_defaults(func=_cmd_subjective_comparison)
 
     return parser
 

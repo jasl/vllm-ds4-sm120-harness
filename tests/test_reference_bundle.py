@@ -57,6 +57,10 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
             "base_url": "http://127.0.0.1:8080",
             "model": "deepseek-ai/DeepSeek-V4-Flash",
             "results": [],
+            "files": [
+                "completion_short_math_logprobs20.json",
+                "run_environment.json",
+            ],
         },
     )
     (oracle_dir / "oracle_export_summary.md").write_text(
@@ -164,9 +168,16 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     assert (out_dir / "performance" / "primary.json").exists()
 
     assert not scan_public_bundle(out_dir)
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    assert "subjective_quality" in manifest["contents"]
+    assert "Known Non-Green Gates" in (out_dir / "README.md").read_text()
     assert load_oracle_cases(out_dir / "oracle")[0].name == (
         "completion_short_math_logprobs20"
     )
+    oracle_summary = json.loads(
+        (out_dir / "oracle" / "oracle_export_summary.json").read_text()
+    )
+    assert oracle_summary["files"] == ["completion_short_math_logprobs20.json"]
 
     smoke = json.loads((out_dir / "smoke" / "nomtp_quick.json").read_text())
     assert smoke[0]["payload"]["messages"][0]["content"] == (

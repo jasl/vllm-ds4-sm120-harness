@@ -20,13 +20,23 @@ def get_status(base_url: str, path: str, timeout: float) -> Json:
         return {"status_code": exc.code, "body": body}
 
 
-def post_json(base_url: str, path: str, payload: Json, timeout: float) -> Json:
+def post_json(
+    base_url: str,
+    path: str,
+    payload: Json,
+    timeout: float,
+    *,
+    headers: dict[str, str] | None = None,
+) -> Json:
     url = base_url.rstrip("/") + path
     encoded = json.dumps(payload).encode("utf-8")
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
     request = urllib.request.Request(
         url,
         data=encoded,
-        headers={"Content-Type": "application/json"},
+        headers=request_headers,
         method="POST",
     )
     try:

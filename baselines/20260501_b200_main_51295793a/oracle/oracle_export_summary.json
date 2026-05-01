@@ -142,7 +142,6 @@
     "completion_raw_intro_logprobs20.json",
     "completion_short_math_logprobs20.json",
     "completion_translation_logprobs20.json",
-    "run_environment.json",
     "tokenize_completion_code_probe_logprobs20.json",
     "tokenize_completion_long_prefill_2048_logprobs20.json",
     "tokenize_completion_raw_intro_logprobs20.json",

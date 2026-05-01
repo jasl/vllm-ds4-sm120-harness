@@ -41,6 +41,101 @@ def test_chat_smoke_writes_human_markdown_report(monkeypatch, tmp_path):
     assert "7 * 8 = 56" in report
 
 
+def test_chat_smoke_can_use_bearer_token_from_env(monkeypatch):
+    captured = {}
+
+    def fake_post_json(base_url, path, payload, timeout, *, headers=None):
+        captured["headers"] = headers
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "7 * 8 = 56"},
+                }
+            ]
+        }
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-secret")
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+
+    rc = cli.main(
+        [
+            "chat-smoke",
+            "--case",
+            "math_7_times_8",
+            "--api-key-env",
+            "DEEPSEEK_API_KEY",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["headers"] == {"Authorization": "Bearer test-secret"}
+
+
+def test_chat_smoke_can_cap_case_max_tokens(monkeypatch):
+    captured = {}
+
+    def fake_post_json(base_url, path, payload, timeout):
+        captured["payload"] = payload
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "<html><style></style><script></script>updateClock Asia/Shanghai hour minute setInterval",
+                    },
+                }
+            ]
+        }
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+
+    rc = cli.main(
+        [
+            "chat-smoke",
+            "--case",
+            "clock_html",
+            "--max-case-tokens",
+            "8192",
+        ]
+    )
+
+    assert rc == 1
+    assert captured["payload"]["max_tokens"] == 8192
+
+
+def test_chat_smoke_merges_extra_body_json(monkeypatch):
+    captured = {}
+
+    def fake_post_json(base_url, path, payload, timeout):
+        captured["payload"] = payload
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "7 * 8 = 56"},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+
+    rc = cli.main(
+        [
+            "chat-smoke",
+            "--case",
+            "math_7_times_8",
+            "--extra-body-json",
+            '{"thinking":{"type":"enabled"},"reasoning_effort":"high"}',
+        ]
+    )
+
+    assert rc == 0
+    assert captured["payload"]["thinking"] == {"type": "enabled"}
+    assert captured["payload"]["reasoning_effort"] == "high"
+
+
 def test_chat_smoke_markdown_preserves_subjective_translation_output(
     monkeypatch, tmp_path
 ):

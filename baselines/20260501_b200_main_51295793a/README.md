@@ -4,12 +4,21 @@ This is a curated public reference bundle for DeepSeek V4 SM12x validation. It
 is derived from raw harness artifacts, but intentionally excludes machine-local
 paths, server logs, tokens, and private connection details.
 
+## Known Non-Green Gates
+
+This bundle is a current reference baseline, not necessarily a completely green acceptance run. Treat partial ToolCall-15 traces as current behavior references unless a later branch is explicitly trying to fix ToolCall policy quality.
+
+- nomtp: `24/30`; failures `TC-06`, `TC-08`, `TC-14`.
+- mtp: `23/30`; failures `TC-06`, `TC-08`, `TC-11`, `TC-14`.
+
 ## Contents
 
 - `manifest.json`: model, GPU topology, vLLM provenance, serve shape, and phase
   exit codes.
 - `report.md`: readable baseline report with throughput, latency, correctness,
   runtime telemetry, and synthetic provider-style cost metrics.
+- `subjective_quality/`: B200 no-MTP, B200 MTP, and DeepSeek official API
+  writing, translation, and coding samples for human comparison when present.
 - `oracle/`: no-MTP deterministic `/v1/completions` cases with prompt token ids,
   generated tokens, token logprobs, top logprobs, and usage.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
