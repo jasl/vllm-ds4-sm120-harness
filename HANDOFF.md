@@ -44,8 +44,10 @@ branches.
 - `ds4-sm120-perf-120`: temporary profiling branch. It may contain profiling
   instrumentation or throwaway measurement code and should not be treated as a
   promotion source without review.
-- `ds4-sm120-official-api-compat`: branch for aligning behavior with the
-  DeepSeek official API. Cherry-pick focused patches from it when needed.
+- `ds4-sm120-official-api-compat`: historical branch for DeepSeek official API
+  alignment. Its useful semantics have been absorbed into experimental/full;
+  keep it only for archaeology unless a new API-compat follow-up is explicitly
+  requested.
 - `fix-mtp-draft-probs-sampling`: generic MTP correctness PR branch. Treat as
   frozen unless reviewer feedback requires changes.
 
@@ -146,7 +148,8 @@ repository.
 ## Benchmark Gate
 
 Run no-MTP and MTP as separate server configurations, then use the same bench
-matrix for both:
+profile for both. Prefer a representative HF dataset when judging user-visible
+progress:
 
 ```bash
 python -m ds4_harness.cli bench-matrix \
@@ -154,16 +157,20 @@ python -m ds4_harness.cli bench-matrix \
   --model deepseek-ai/DeepSeek-V4-Flash \
   --host localhost \
   --port 8000 \
-  --concurrency 1,4,8,16,24 \
-  --random-input-len 1024 \
-  --random-output-len 1024 \
-  --num-prompts 48 \
-  --ignore-eos \
-  --json-output /tmp/ds4-sm120-bench.json \
-  --log-dir /tmp/ds4-sm120-bench-logs
+  --concurrency 1,2,4,8,16,24 \
+  --dataset-name hf \
+  --dataset-path philschmid/mt-bench \
+  --num-prompts 80 \
+  --temperature 1.0 \
+  --json-output /tmp/ds4-sm120-mt-bench.json \
+  --log-dir /tmp/ds4-sm120-mt-bench-logs
 ```
 
-For long-prefill stability, use smaller concurrency first:
+You do not need to run the full matrix for every edit. Use `1,2` or `1,2,4`
+for quick iteration, then widen to `1,2,4,8,16,24` before promoting a change.
+
+Use random prompts for controlled shape tests rather than final user-visible
+throughput claims. For long-prefill stability, use smaller concurrency first:
 
 ```bash
 python -m ds4_harness.cli bench-matrix \
@@ -172,6 +179,7 @@ python -m ds4_harness.cli bench-matrix \
   --host localhost \
   --port 8000 \
   --concurrency 1,2 \
+  --dataset-name random \
   --random-input-len 8192 \
   --random-output-len 512 \
   --num-prompts 8 \
@@ -191,7 +199,7 @@ The harness currently includes:
 - long HTML coding prompts: aquarium animation and wall clock
 - ToolCall-15 multi-turn tool-call loop with mocked tool responses
 - logprobs oracle comparison for completion-style B200/H100 bundles
-- vLLM `bench serve` matrix wrapper
+- vLLM `bench serve` matrix wrapper for both HF datasets and random shapes
 
 This is not a full semantic eval. Treat subjective cases as regression smoke:
 they catch obvious degradation, not subtle quality differences.

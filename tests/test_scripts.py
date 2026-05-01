@@ -24,3 +24,16 @@ def test_scripts_allow_explicit_python_interpreter():
 
         assert 'PYTHON="${PYTHON:-python}"' in script
         assert '"${PYTHON}" -m ds4_harness.cli' in script
+
+
+def test_bench_script_defaults_to_representative_hf_dataset():
+    script = (ROOT / "scripts" / "run_bench_matrix.sh").read_text(encoding="utf-8")
+
+    assert 'CONCURRENCY="${CONCURRENCY:-1,2,4,8,16,24}"' in script
+    assert 'DATASET_NAME="${DATASET_NAME:-hf}"' in script
+    assert 'DATASET_PATH="${DATASET_PATH:-philschmid/mt-bench}"' in script
+    assert 'IGNORE_EOS="${IGNORE_EOS:-0}"' in script
+    assert '--dataset-name "${DATASET_NAME}"' in script
+    assert '--dataset-path "${DATASET_PATH}"' in script
+    assert 'EXTRA_ARGS+=(--ignore-eos)' in script
+    assert '"${EXTRA_ARGS[@]}"' in script

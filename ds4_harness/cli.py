@@ -16,6 +16,8 @@ from ds4_harness.toolcall15 import run_suite
 
 
 DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Flash"
+DEFAULT_BENCH_DATASET = "hf"
+DEFAULT_BENCH_DATASET_PATH = "philschmid/mt-bench"
 
 
 def _write_jsonl(path: Path | None, row: dict[str, Any]) -> None:
@@ -173,16 +175,29 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
             "--port",
             str(args.port),
             "--dataset-name",
-            "random",
-            "--random-input-len",
-            str(args.random_input_len),
-            "--random-output-len",
-            str(args.random_output_len),
+            args.dataset_name,
             "--num-prompts",
             str(args.num_prompts),
             "--max-concurrency",
             str(concurrency),
         ]
+        if args.dataset_name == "random":
+            command.extend(
+                [
+                    "--random-input-len",
+                    str(args.random_input_len),
+                    "--random-output-len",
+                    str(args.random_output_len),
+                ]
+            )
+        elif args.dataset_path:
+            command.extend(["--dataset-path", args.dataset_path])
+        else:
+            print(
+                f"--dataset-path is required for dataset {args.dataset_name!r}",
+                file=sys.stderr,
+            )
+            return 2
         if args.ignore_eos:
             command.append("--ignore-eos")
         if args.temperature is not None:
@@ -300,10 +315,12 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--model", default=DEFAULT_MODEL)
     bench.add_argument("--host", default="localhost")
     bench.add_argument("--port", type=int, default=8000)
-    bench.add_argument("--concurrency", default="1,4,8")
+    bench.add_argument("--concurrency", default="1,2,4,8,16,24")
+    bench.add_argument("--dataset-name", default=DEFAULT_BENCH_DATASET)
+    bench.add_argument("--dataset-path", default=DEFAULT_BENCH_DATASET_PATH)
     bench.add_argument("--random-input-len", type=int, default=1024)
     bench.add_argument("--random-output-len", type=int, default=1024)
-    bench.add_argument("--num-prompts", type=int, default=48)
+    bench.add_argument("--num-prompts", type=int, default=80)
     bench.add_argument("--temperature", type=float)
     bench.add_argument("--ignore-eos", action="store_true")
     bench.add_argument("--timeout", type=float)

@@ -27,8 +27,36 @@ The harness is deliberately stdlib-only at runtime. Unit tests use `pytest`.
   - `request_*.json` / `response_*.json` bundles and wrapped
     `/v1/completions` export files
 - vLLM `bench serve` matrix wrapper:
+  - supports representative Hugging Face datasets such as
+    `philschmid/mt-bench`
+  - keeps random synthetic prompts for controlled short/long context pressure
   - parses common throughput and latency metrics
   - stores raw logs per concurrency
+
+## Coverage Model
+
+Use the harness as a layered gate, not as one monolithic command:
+
+- Correctness: deterministic quick chat, ToolCall-15, and optional logprobs
+  oracle comparison catch parser, CUDA graph, and token-level regressions.
+- Production-like behavior: quality and coding smoke cases cover writing,
+  translation, tool use, agent-like OpenClaw reads, and long HTML generation.
+- Realistic throughput: benchmark with `--dataset-name hf --dataset-path
+  philschmid/mt-bench` to avoid pure random prompts when judging user-visible
+  progress.
+- Synthetic pressure: benchmark with `--dataset-name random` for controlled
+  short/long context shapes such as 1024/1024 decode or 8192/512 prefill.
+- Serving variants: run no-MTP and MTP as separate server configurations. MTP
+  changes generation trajectories, so compare it against a no-MTP baseline
+  with the same harness profile.
+
+The full matrix can be expensive. For daily iteration, run the smallest profile
+that targets the risk in the change, then run the broader real-scenario matrix
+before promoting to a community branch.
+
+`scripts/run_bench_matrix.sh` defaults to the HF/MT-Bench profile. Set
+`DATASET_NAME=random IGNORE_EOS=1` when intentionally running random shape
+stress tests.
 
 ## Expected Workflow
 
@@ -38,10 +66,12 @@ Run these after every SM12x kernel optimization before pushing to
 ```bash
 cd /path/to/ds4-sm120-harness
 python -m pytest -q tests
+```
 
 If the harness should run with a specific interpreter or vLLM virtualenv, pass
 `PYTHON=/path/to/vllm/.venv/bin/python` to the shell scripts.
 
+```bash
 python -m ds4_harness.cli health --base-url http://127.0.0.1:8000
 
 python -m ds4_harness.cli chat-smoke \
@@ -74,8 +104,8 @@ python -m ds4_harness.cli oracle-compare \
   --json-output /tmp/ds4-sm120-oracle.json
 ```
 
-For throughput checks, run no-MTP and MTP as separate server configurations,
-then run the same matrix against each:
+For realistic throughput checks, run no-MTP and MTP as separate server
+configurations, then run the same HF dataset matrix against each:
 
 ```bash
 python -m ds4_harness.cli bench-matrix \
@@ -83,13 +113,32 @@ python -m ds4_harness.cli bench-matrix \
   --model deepseek-ai/DeepSeek-V4-Flash \
   --host localhost \
   --port 8000 \
-  --concurrency 1,4,8 \
+  --concurrency 1,2,4,8,16,24 \
+  --dataset-name hf \
+  --dataset-path philschmid/mt-bench \
+  --num-prompts 80 \
+  --temperature 1.0 \
+  --json-output /tmp/ds4-sm120-mt-bench.json \
+  --log-dir /tmp/ds4-sm120-mt-bench-logs
+```
+
+Use random prompts when you need a controlled shape rather than a representative
+conversation dataset:
+
+```bash
+python -m ds4_harness.cli bench-matrix \
+  --vllm-bin /path/to/vllm/.venv/bin/vllm \
+  --model deepseek-ai/DeepSeek-V4-Flash \
+  --host localhost \
+  --port 8000 \
+  --concurrency 1,2 \
+  --dataset-name random \
   --random-input-len 1024 \
   --random-output-len 1024 \
-  --num-prompts 48 \
+  --num-prompts 16 \
   --ignore-eos \
-  --json-output /tmp/ds4-sm120-bench.json \
-  --log-dir /tmp/ds4-sm120-bench-logs
+  --json-output /tmp/ds4-sm120-random-1024x1024.json \
+  --log-dir /tmp/ds4-sm120-random-1024x1024-logs
 ```
 
 ## Recommended Gates
@@ -104,7 +153,9 @@ Before promoting an optimization:
   evidence.
 - `oracle-compare` has matching prompt token ids and no early token divergence
   on deterministic oracle cases, or any divergence is explained and recorded.
-- Benchmark does not regress more than the explicitly accepted threshold.
+- Real-scenario benchmark on `philschmid/mt-bench` does not regress more than
+  the explicitly accepted threshold. Random-shape benchmark regressions are
+  useful diagnostics, but should not be the only performance signal.
 
 ## Notes
 
