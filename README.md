@@ -191,11 +191,13 @@ scripts/generate_baseline_report.sh
 
 The report generator reads `phase_exit_codes.tsv`, `bench.json`,
 `toolcall15.json`, `oracle_export_summary.json`, `gpu_stats_summary.json`,
-`runtime_stats_summary.json`, and `run_environment.json`. It writes stable
-Markdown tables for raw throughput/latency, ToolCall-15, oracle export,
-phase-local runtime stats, MTP speculative decoding, structured provenance,
-serve-shape parameters, and normalized efficiency. The normalized columns include
-`tok/s/GPU`, `tok/s/total GiB`,
+`runtime_stats_summary.json`, `run_environment.json`, `vllm_collect_env.txt`,
+and each variant's `serve_command.sh`. It writes stable Markdown tables for raw
+throughput/latency, ToolCall-15, oracle export, phase-local runtime stats, MTP
+speculative decoding, structured provenance, serve-shape parameters, and
+normalized efficiency. It also places a quick performance summary near the top
+with best benchmark output throughput and phase-local prefill/decode average
+`tok/s` values. The normalized columns include `tok/s/GPU`, `tok/s/total GiB`,
 `tok/s/used GiB`, `tok/J`, and `tok/s/kW`, which are intended for comparing
 different GPU counts and classes such as B200, RTX Pro 6000, RTX 5090, and
 GB10. Power efficiency uses sampled GPU-side average power for the whole phase,

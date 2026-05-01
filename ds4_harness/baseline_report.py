@@ -456,6 +456,84 @@ def _spec_decode_rows(runtime_rows: list[dict[str, Any]]) -> list[dict[str, Any]
     return rows
 
 
+def _best_benchmark_rows(
+    source: str,
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    best: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        output = _to_float(row.get("output_token_throughput_tok_s"))
+        if output is None:
+            continue
+        key = (row["variant"], row["phase"])
+        current = _to_float(best.get(key, {}).get("output_token_throughput_tok_s"))
+        if key not in best or current is None or output > current:
+            best[key] = {**row, "source": source}
+    return sorted(
+        best.values(),
+        key=lambda row: (_variant_sort_key(row["variant"]), row["phase"]),
+    )
+
+
+def _append_quick_performance_summary(
+    lines: list[str],
+    primary_bench_rows: list[dict[str, Any]],
+    supplement_bench_rows: list[dict[str, Any]],
+    runtime_rows: list[dict[str, Any]],
+    *,
+    runtime_source: str,
+) -> None:
+    best_rows = _best_benchmark_rows("Primary", primary_bench_rows)
+    if supplement_bench_rows:
+        best_rows.extend(_best_benchmark_rows("Supplement", supplement_bench_rows))
+
+    if not best_rows and not runtime_rows:
+        return
+
+    lines.extend(["## Quick Performance Summary", ""])
+    if best_rows:
+        lines.extend(
+            [
+                "### Best Benchmark Throughput",
+                "",
+                "| Source | Variant | Phase | C | Output tok/s | tok/s/GPU | Mean TTFT ms | Mean TPOT ms |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for row in best_rows:
+            lines.append(
+                f"| {row['source']} | `{row['variant']}` | {row['phase_label']} | "
+                f"{row['concurrency']} | {_fmt(row['output_token_throughput_tok_s'])} | "
+                f"{_fmt(row['tok_s_per_gpu'])} | {_fmt(row['mean_ttft_ms'])} | "
+                f"{_fmt(row['mean_tpot_ms'])} |"
+            )
+        lines.append("")
+
+    if runtime_rows:
+        lines.extend(
+            [
+                "### Runtime Prefill/Decode Averages",
+                "",
+                "These are phase-local averages parsed from vLLM server logs.",
+                "",
+                "| Source | Variant | Phase | Prefill avg tok/s | Decode avg tok/s | Prefill tokens | Decode tokens | Max running |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for row in runtime_rows:
+            metrics = row["metrics"]
+            serve_log = row["serve_log"]
+            lines.append(
+                f"| {runtime_source} | `{row['variant']}` | {row['phase_label']} | "
+                f"{_fmt(serve_log.get('prefill_throughput_tok_s_avg'))} | "
+                f"{_fmt(serve_log.get('decode_throughput_tok_s_avg'))} | "
+                f"{_fmt_int(metrics.get('prefill_tokens_delta'))} | "
+                f"{_fmt_int(metrics.get('decode_tokens_delta'))} | "
+                f"{_fmt_int(metrics.get('running_requests_max'))} |"
+            )
+        lines.append("")
+
+
 def _serve_shape_rows(run_dir: Path, records: list[PhaseRecord]) -> list[dict[str, Any]]:
     variants = sorted({record.variant for record in records}, key=_variant_sort_key)
     rows = []
@@ -854,6 +932,14 @@ def build_baseline_report(
 
     _append_provenance(lines, collect_env_summary)
     _append_serve_shape(lines, serve_shape_rows)
+    summary_runtime_rows = supplement_runtime_rows or runtime_rows
+    _append_quick_performance_summary(
+        lines,
+        bench_rows,
+        supplement_bench_rows,
+        summary_runtime_rows,
+        runtime_source="Supplement" if supplement_runtime_rows else "Primary",
+    )
     _append_phase_table(lines, records)
     _append_acceptance_gates(lines, acceptance_gate_rows)
     _append_benchmark_tables(lines, bench_rows)
@@ -893,6 +979,7 @@ def build_baseline_report(
             "- `tok/s/used GiB` divides output token throughput by sampled peak used GPU VRAM.",
             "- `tok/J` and `tok/s/kW` use sampled average GPU power for the phase.",
             "- Benchmark power and VRAM denominators are phase-level samples, not per-concurrency samples.",
+            "- Quick runtime prefill/decode averages use supplement rows when a supplement artifact is provided.",
             "",
         ]
     )

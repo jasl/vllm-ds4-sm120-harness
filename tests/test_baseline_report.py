@@ -178,6 +178,9 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert "## Serve Shape" in report
     assert "| `nomtp` | `fp8` | 256 | 4 | `n/a` | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |" in report
     assert '| `mtp` | `fp8` | 256 | 4 | `{"method":"mtp","num_speculative_tokens":2}` | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |' in report
+    assert "## Quick Performance Summary" in report
+    assert "### Best Benchmark Throughput" in report
+    assert "| Primary | `nomtp` | HF/MT-Bench | 1 | 1600.00 | 400.00 | 100.00 | 5.50 |" in report
     assert "## Normalized Efficiency" in report
     assert "tok/s/GPU" in report
     assert "tok/J" in report
@@ -254,6 +257,8 @@ def test_baseline_report_cli_writes_markdown_and_reads_supplement_runtime(tmp_pa
     assert rc == 0
     report = output.read_text(encoding="utf-8")
     assert "# Unit Report" in report
+    assert "### Runtime Prefill/Decode Averages" in report
+    assert "| Supplement | `mtp` | HF/MT-Bench | 111.00 | 222.00 | 1234 | 5678 | 24 |" in report
     assert "## Supplement Runtime Stats" in report
     assert "## MTP Speculative Decoding" in report
     assert "`[0.810, 0.540]`" in report
