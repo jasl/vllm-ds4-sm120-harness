@@ -1,7 +1,12 @@
 import json
+from pathlib import Path
 
 from ds4_harness.cases import build_cases, select_cases
 from ds4_harness.checks import Expectation, check_chat_response
+from ds4_harness.generation import load_generation_prompts
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _chat_response(content="", finish_reason="stop", tool_calls=None):
@@ -61,12 +66,12 @@ def test_case_selection_by_tag_and_name():
     cases = build_cases("deepseek-ai/DeepSeek-V4-Flash")
 
     quick = select_cases(cases, names=None, tags=["quick"], exclude_tags=None)
-    named = select_cases(cases, names=["clock_html"], tags=None, exclude_tags=None)
+    named = select_cases(cases, names=["math_7_times_8"], tags=None, exclude_tags=None)
     no_long = select_cases(cases, names=None, tags=None, exclude_tags=["long"])
 
     assert {case.name for case in quick} >= {"math_7_times_8", "openclaw_read_tool"}
-    assert [case.name for case in named] == ["clock_html"]
-    assert "clock_html" not in {case.name for case in no_long}
+    assert [case.name for case in named] == ["math_7_times_8"]
+    assert {case.name for case in no_long} == {case.name for case in cases}
 
 
 def test_case_payload_round_trips_as_json():
@@ -83,34 +88,50 @@ def test_case_payload_round_trips_as_json():
     assert payload["tool_choice"] == "auto"
 
 
-def test_subjective_writing_and_translation_cases_are_available():
-    cases = build_cases("deepseek-ai/DeepSeek-V4-Flash")
-    names = {case.name: case for case in cases}
+def test_subjective_writing_and_translation_prompts_are_available():
+    prompts = load_generation_prompts(ROOT / "prompts")
+    names = {prompt.name: prompt for prompt in prompts}
 
     for name in (
-        "writing_quality_user_report_zh",
-        "translation_quality_en_to_zh",
-        "translation_quality_zh_to_en",
+        "writing_local_llm_tradeoffs",
+        "translation_en_to_zh",
+        "translation_zh_to_en",
     ):
         assert name in names
         assert "subjective" in names[name].tags
         assert names[name].temperature == 1.0
 
 
-def test_chinese_real_scenario_suite_is_available_by_default_tags():
-    cases = build_cases("deepseek-ai/DeepSeek-V4-Flash")
-    quality_cn = select_cases(cases, names=None, tags=["quality-cn"], exclude_tags=None)
-    coding_cn = select_cases(cases, names=None, tags=["coding-cn"], exclude_tags=None)
+def test_chinese_real_scenario_prompts_are_available_by_default_group():
+    prompts = load_generation_prompts(ROOT / "prompts", languages=["zh"])
+    quality_cn = [prompt for prompt in prompts if "translation" in prompt.tags or "writing" in prompt.tags]
+    coding_cn = [prompt for prompt in prompts if "coding" in prompt.tags]
 
-    assert [case.name for case in quality_cn] == [
-        "writing_quality_user_report_zh",
-        "translation_quality_zh_to_en",
+    assert [prompt.name for prompt in quality_cn] == [
+        "translation_zh_to_en",
+        "writing_local_llm_tradeoffs",
     ]
-    assert [case.name for case in coding_cn] == [
-        "aquarium_html_zh",
-        "clock_html_zh",
+    assert [prompt.name for prompt in coding_cn] == [
+        "aquarium_html",
+        "clock_html",
     ]
-    assert all("subjective" in case.tags for case in quality_cn + coding_cn)
+    assert all("subjective" in prompt.tags for prompt in quality_cn + coding_cn)
+
+
+def test_english_real_scenario_prompts_include_coding_writing_translation():
+    prompts = load_generation_prompts(ROOT / "prompts", languages=["en"])
+
+    assert [prompt.name for prompt in prompts] == [
+        "aquarium_html",
+        "clock_html",
+        "translation_en_to_zh",
+        "writing_follow_instructions",
+    ]
+    assert {prompt.workload for prompt in prompts} == {
+        "coding",
+        "translation",
+        "writing",
+    }
 
 
 def test_basic_quick_cases_allow_reasoning_token_budget():
@@ -122,10 +143,10 @@ def test_basic_quick_cases_allow_reasoning_token_budget():
 
 
 def test_english_to_chinese_translation_accepts_concise_complete_translation():
-    case = next(
-        case
-        for case in build_cases("deepseek-ai/DeepSeek-V4-Flash")
-        if case.name == "translation_quality_en_to_zh"
+    prompt = next(
+        prompt
+        for prompt in load_generation_prompts(ROOT / "prompts")
+        if prompt.name == "translation_en_to_zh"
     )
     response = _chat_response(
         "本地运行大语言模型可以提升隐私性并降低延迟，但也将运维责任转移到了团队身上。"
@@ -133,6 +154,6 @@ def test_english_to_chinese_translation_accepts_concise_complete_translation():
         "并承担迭代速度放缓带来的成本。"
     )
 
-    result = check_chat_response(case.expectation, response)
+    result = check_chat_response(prompt.expectation, response)
 
     assert result.ok

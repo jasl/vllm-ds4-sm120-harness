@@ -13,14 +13,15 @@ Json = dict[str, Any]
 
 SYSTEM_PROMPT = """You are a helpful assistant with access to the tools provided.
 
-For this benchmark, today's date is Friday, 2026-03-20. Resolve relative
-calendar phrases such as "next Monday" and "tomorrow" from that date.
-
 Rules:
 - Use a tool ONLY when it is necessary to fulfill the user's request.
 - If you can answer directly from your own knowledge, do so without calling a tool.
 - If a tool call fails, explain the failure and suggest an alternative approach.
 - Never invent information that a tool should provide."""
+BENCHMARK_CONTEXT = (
+    "Benchmark context: today is 2026-03-20 (Friday). "
+    "Use this date for any relative time request."
+)
 
 
 @dataclass(frozen=True)
@@ -829,7 +830,7 @@ def run_scenario(
 ) -> Json:
     state = ToolCallState()
     messages: list[Json] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": f"{SYSTEM_PROMPT}\n\n{BENCHMARK_CONTEXT}"},
         {"role": "user", "content": scenario.user_message},
     ]
     trace: list[Json] = []

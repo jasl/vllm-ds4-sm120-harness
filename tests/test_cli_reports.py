@@ -83,7 +83,7 @@ def test_chat_smoke_can_cap_case_max_tokens(monkeypatch):
                     "finish_reason": "stop",
                     "message": {
                         "role": "assistant",
-                        "content": "<html><style></style><script></script>updateClock Asia/Shanghai hour minute setInterval",
+                        "content": "7 * 8 = 56",
                     },
                 }
             ]
@@ -95,14 +95,14 @@ def test_chat_smoke_can_cap_case_max_tokens(monkeypatch):
         [
             "chat-smoke",
             "--case",
-            "clock_html",
+            "math_7_times_8",
             "--max-case-tokens",
-            "8192",
+            "128",
         ]
     )
 
-    assert rc == 1
-    assert captured["payload"]["max_tokens"] == 8192
+    assert rc == 0
+    assert captured["payload"]["max_tokens"] == 128
 
 
 def test_chat_smoke_merges_extra_body_json(monkeypatch):
@@ -199,23 +199,43 @@ def test_chat_smoke_markdown_preserves_subjective_translation_output(
             ]
         }
 
-    monkeypatch.setattr(cli, "post_json", fake_post_json)
-    markdown_output = tmp_path / "smoke_quality.md"
+    prompt_root = tmp_path / "prompts"
+    (prompt_root / "en").mkdir(parents=True)
+    (prompt_root / "en" / "translation_quality_en_to_zh.md").write_text(
+        """---
+tags: translation, subjective
+all_terms: 隐私, 延迟, 运维
+min_chars: 80
+---
+Translate the following paragraph into natural, polished Simplified Chinese.
+""",
+        encoding="utf-8",
+    )
 
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+    markdown_output_dir = tmp_path / "generation"
     rc = cli.main(
         [
-            "chat-smoke",
-            "--case",
-            "translation_quality_en_to_zh",
-            "--markdown-output",
-            str(markdown_output),
+            "generation-matrix",
+            "--prompt-root",
+            str(prompt_root),
+            "--thinking-mode",
+            "non-thinking",
+            "--variant",
+            "nomtp",
+            "--markdown-output-dir",
+            str(markdown_output_dir),
         ]
     )
 
     assert rc == 0
-    report = markdown_output.read_text(encoding="utf-8")
-    assert "## translation_quality_en_to_zh" in report
-    assert "- Tags: quality, translation, subjective, user-report" in report
+    report = (
+        markdown_output_dir
+        / "en"
+        / "translation_quality_en_to_zh.1.non-thinking.nomtp.md"
+    ).read_text(encoding="utf-8")
+    assert "- Case: `translation_quality_en_to_zh`" in report
+    assert "- Workload: `translation`" in report
     assert "Translate the following paragraph" in report
     assert answer in report
 

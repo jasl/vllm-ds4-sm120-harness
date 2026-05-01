@@ -117,6 +117,26 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     (smoke_dir / "smoke_quick.md").write_text(
         "assistant used /home/user/state.md  \nsecond line\n", encoding="utf-8"
     )
+    (smoke_dir / "generation.jsonl").write_text(
+        json.dumps(
+            {
+                "case": "translation_en_to_zh",
+                "language": "en",
+                "thinking_mode": "think-high",
+                "variant": "nomtp",
+                "payload": {"model": "m", "messages": [{"content": "/workspace/leak"}]},
+                "response": {"usage": {"prompt_tokens": 1}},
+                "ok": True,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (smoke_dir / "generation" / "en").mkdir(parents=True)
+    (smoke_dir / "generation" / "en" / "translation_en_to_zh.1.think-high.nomtp.md").write_text(
+        "Prompt from /workspace/leak\n", encoding="utf-8"
+    )
     _write_json(
         smoke_dir / "toolcall15.json",
         {"summary": {"cases": 1}, "results": [{"final_answer": "/workspace/leak"}]},
@@ -187,6 +207,13 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         out_dir / "oracle" / "mtp" / "completion_short_math_logprobs20.json"
     ).exists()
     assert (out_dir / "smoke" / "nomtp_quick.json").exists()
+    assert (out_dir / "generation" / "nomtp.json").exists()
+    assert (
+        out_dir
+        / "generation"
+        / "en"
+        / "translation_en_to_zh.1.think-high.nomtp.md"
+    ).exists()
     assert (out_dir / "toolcall15" / "nomtp.json").exists()
     assert (out_dir / "performance" / "primary.json").exists()
 
@@ -206,7 +233,12 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     assert smoke[0]["payload"]["messages"][0]["content"] == (
         "read <synthetic-home>/state.md"
     )
+    generation = json.loads((out_dir / "generation" / "nomtp.json").read_text())
+    assert generation[0]["payload"]["messages"][0]["content"] == "<workspace>/leak"
     assert "  \n" not in (out_dir / "smoke" / "nomtp_quick.md").read_text()
+    assert "<workspace>/leak" in (
+        out_dir / "generation" / "en" / "translation_en_to_zh.1.think-high.nomtp.md"
+    ).read_text()
     toolcall = json.loads((out_dir / "toolcall15" / "nomtp.json").read_text())
     assert toolcall["results"][0]["final_answer"] == "<workspace>/leak"
     perf = json.loads((out_dir / "performance" / "primary.json").read_text())

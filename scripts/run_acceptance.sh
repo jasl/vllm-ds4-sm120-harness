@@ -27,19 +27,24 @@ BRANCH_SLUG="${BRANCH_SLUG:-unknown-branch}"
 GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"
 OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${RUN_TIMESTAMP}}"
 REAL_SCENARIO_REPEAT_COUNT="${REAL_SCENARIO_REPEAT_COUNT:-3}"
-QUALITY_TAG="${QUALITY_TAG:-quality}"
-CODING_TAG="${CODING_TAG:-coding}"
-QUALITY_REPEAT_COUNT="${QUALITY_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"
-CODING_REPEAT_COUNT="${CODING_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"
-TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-both}"
+GENERATION_PROMPT_ROOT="${GENERATION_PROMPT_ROOT:-${REPO_ROOT}/prompts}"
+GENERATION_LANGUAGES="${GENERATION_LANGUAGES:-en,zh}"
+GENERATION_THINKING_MODES="${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}"
+GENERATION_VARIANT="${GENERATION_VARIANT:-manual}"
+GENERATION_REPEAT_COUNT="${GENERATION_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"
+GENERATION_TIMEOUT="${GENERATION_TIMEOUT:-900}"
+GENERATION_MAX_CASE_TOKENS="${GENERATION_MAX_CASE_TOKENS:-12000}"
+TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-en}"
 TOOLCALL15_REPEAT_COUNT="${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"
 export BASE_URL MODEL ORACLE_DIR ORACLE_TOP_N RUN_TOOLCALL15 PYTHON
 export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
 export SERVER_RECOVERY_CMD
 export ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME GPU_TOPOLOGY_SLUG OUT_DIR
-export REAL_SCENARIO_REPEAT_COUNT QUALITY_REPEAT_COUNT CODING_REPEAT_COUNT
-export QUALITY_TAG CODING_TAG TOOLCALL15_SCENARIO_SET TOOLCALL15_REPEAT_COUNT
+export REAL_SCENARIO_REPEAT_COUNT GENERATION_REPEAT_COUNT GENERATION_VARIANT
+export GENERATION_PROMPT_ROOT GENERATION_LANGUAGES GENERATION_THINKING_MODES
+export GENERATION_TIMEOUT GENERATION_MAX_CASE_TOKENS
+export TOOLCALL15_SCENARIO_SET TOOLCALL15_REPEAT_COUNT
 
 mkdir -p "${OUT_DIR}"
 write_run_environment
@@ -144,22 +149,31 @@ run_live_gate smoke_quick "${PYTHON}" -m ds4_harness.cli chat-smoke \
   --jsonl-output "${OUT_DIR}/smoke_quick.jsonl" \
   --markdown-output "${OUT_DIR}/smoke_quick.md"
 
-run_live_gate smoke_quality "${PYTHON}" -m ds4_harness.cli chat-smoke \
-  --base-url "${BASE_URL}" \
-  --model "${MODEL}" \
-  --tag "${QUALITY_TAG}" \
-  --repeat-count "${QUALITY_REPEAT_COUNT}" \
-  --jsonl-output "${OUT_DIR}/smoke_quality.jsonl" \
-  --markdown-output "${OUT_DIR}/smoke_quality.md"
+generation_args=()
+IFS=',' read -r -a generation_languages <<< "${GENERATION_LANGUAGES}"
+for language in "${generation_languages[@]}"; do
+  if [[ -n "${language}" ]]; then
+    generation_args+=(--language "${language}")
+  fi
+done
+IFS=',' read -r -a generation_thinking_modes <<< "${GENERATION_THINKING_MODES}"
+for thinking_mode in "${generation_thinking_modes[@]}"; do
+  if [[ -n "${thinking_mode}" ]]; then
+    generation_args+=(--thinking-mode "${thinking_mode}")
+  fi
+done
 
-run_live_gate smoke_coding "${PYTHON}" -m ds4_harness.cli chat-smoke \
+run_live_gate generation "${PYTHON}" -m ds4_harness.cli generation-matrix \
   --base-url "${BASE_URL}" \
   --model "${MODEL}" \
-  --tag "${CODING_TAG}" \
-  --repeat-count "${CODING_REPEAT_COUNT}" \
-  --timeout "${CODING_TIMEOUT:-900}" \
-  --jsonl-output "${OUT_DIR}/smoke_coding.jsonl" \
-  --markdown-output "${OUT_DIR}/smoke_coding.md"
+  --prompt-root "${GENERATION_PROMPT_ROOT}" \
+  --variant "${GENERATION_VARIANT}" \
+  --repeat-count "${GENERATION_REPEAT_COUNT}" \
+  --timeout "${GENERATION_TIMEOUT}" \
+  --max-case-tokens "${GENERATION_MAX_CASE_TOKENS}" \
+  --jsonl-output "${OUT_DIR}/generation.jsonl" \
+  --markdown-output-dir "${OUT_DIR}/generation" \
+  "${generation_args[@]}"
 
 if [[ "${RUN_TOOLCALL15}" == "1" ]]; then
   run_live_gate toolcall15 "${PYTHON}" -m ds4_harness.cli toolcall15 \

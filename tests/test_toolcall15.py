@@ -1,6 +1,7 @@
 import json
 
 from ds4_harness.toolcall15 import (
+    BENCHMARK_CONTEXT,
     SYSTEM_PROMPT,
     ToolCallRecord,
     ToolCallState,
@@ -23,8 +24,9 @@ def test_toolcall15_has_fifteen_stable_scenarios():
 
 
 def test_toolcall15_system_prompt_pins_relative_date_context():
-    assert "2026-03-20" in SYSTEM_PROMPT
-    assert "Friday" in SYSTEM_PROMPT
+    assert "2026-03-20" in BENCHMARK_CONTEXT
+    assert "Friday" in BENCHMARK_CONTEXT
+    assert "Never invent information" in SYSTEM_PROMPT
 
 
 def test_toolcall15_weather_specialist_passes_only_with_right_tool():

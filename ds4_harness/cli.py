@@ -14,6 +14,15 @@ from ds4_harness.bench import run_bench_command
 from ds4_harness.cases import SmokeCase, build_cases, select_cases
 from ds4_harness.checks import CheckResult, assistant_text, check_chat_response, tool_call_names
 from ds4_harness.client import get_json, get_status, post_json
+from ds4_harness.generation import (
+    DEFAULT_THINKING_MODES,
+    evaluate_generation_response,
+    generation_result_row,
+    load_generation_prompts,
+    thinking_extra_body,
+    transcript_filename,
+    write_generation_transcript,
+)
 from ds4_harness.gpu_stats import summarize_gpu_csv, write_gpu_json, write_gpu_markdown
 from ds4_harness.oracle import (
     attach_prompt_token_ids,
@@ -290,6 +299,117 @@ def _cmd_chat_smoke(args: argparse.Namespace) -> int:
             )
             failures += 0 if result.ok else 1
     _write_chat_markdown(args.markdown_output, markdown_rows)
+    return 1 if failures else 0
+
+
+def _cmd_generation_matrix(args: argparse.Namespace) -> int:
+    if args.repeat_count < 1:
+        print("--repeat-count must be >= 1", file=sys.stderr)
+        return 2
+
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except json.JSONDecodeError as exc:
+        print(f"invalid --extra-body-json: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        prompts = load_generation_prompts(
+            args.prompt_root,
+            languages=args.language,
+            names=args.prompt,
+            tags=args.tag,
+        )
+    except OSError as exc:
+        print(f"failed to read generation prompts: {exc}", file=sys.stderr)
+        return 2
+
+    if not prompts:
+        print("No generation prompts selected.", file=sys.stderr)
+        return 2
+
+    failures = 0
+    thinking_modes = args.thinking_mode or list(DEFAULT_THINKING_MODES)
+    for thinking_mode in thinking_modes:
+        try:
+            mode_extra_body = thinking_extra_body(thinking_mode)
+        except KeyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        for round_index in range(1, args.repeat_count + 1):
+            for prompt in prompts:
+                payload = prompt.to_payload(
+                    model=args.model,
+                    default_max_tokens=args.max_tokens,
+                    default_temperature=args.temperature,
+                    max_case_tokens=args.max_case_tokens,
+                )
+                payload.update(mode_extra_body)
+                payload.update(extra_body)
+                started = time.monotonic()
+                try:
+                    if headers:
+                        response = post_json(
+                            args.base_url,
+                            "/v1/chat/completions",
+                            payload,
+                            args.timeout,
+                            headers=headers,
+                        )
+                    else:
+                        response = post_json(
+                            args.base_url,
+                            "/v1/chat/completions",
+                            payload,
+                            args.timeout,
+                        )
+                    result = evaluate_generation_response(prompt, response)
+                except (
+                    OSError,
+                    RuntimeError,
+                    TimeoutError,
+                    urllib.error.URLError,
+                    json.JSONDecodeError,
+                    ValueError,
+                ) as exc:
+                    response = {"error": repr(exc)}
+                    result = CheckResult(False, f"request failed: {exc!r}")
+                elapsed_seconds = time.monotonic() - started
+                row = generation_result_row(
+                    prompt=prompt,
+                    round_index=round_index,
+                    thinking_mode=thinking_mode,
+                    variant=args.variant,
+                    payload=payload,
+                    response=response,
+                    result=result,
+                    elapsed_seconds=elapsed_seconds,
+                )
+                status = "PASS" if result.ok else "FAIL"
+                print(
+                    f"{status} {prompt.language}/{prompt.name} "
+                    f"round={round_index} thinking={thinking_mode} "
+                    f"variant={args.variant}: {result.detail}"
+                )
+                _write_jsonl(args.jsonl_output, row)
+                if args.markdown_output_dir is not None:
+                    write_generation_transcript(
+                        args.markdown_output_dir
+                        / prompt.language
+                        / transcript_filename(
+                            prompt,
+                            round_index=round_index,
+                            thinking_mode=thinking_mode,
+                            variant=args.variant,
+                        ),
+                        row,
+                    )
+                failures += 0 if result.ok else 1
+
     return 1 if failures else 0
 
 
@@ -769,6 +889,26 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--jsonl-output", type=Path)
     smoke.add_argument("--markdown-output", type=Path)
     smoke.set_defaults(func=_cmd_chat_smoke)
+
+    generation = subparsers.add_parser("generation-matrix")
+    generation.add_argument("--prompt-root", type=Path, default=Path("prompts"))
+    generation.add_argument("--language", action="append")
+    generation.add_argument("--prompt", action="append")
+    generation.add_argument("--tag", action="append")
+    generation.add_argument("--thinking-mode", action="append", default=None)
+    generation.add_argument("--variant", default=os.environ.get("GENERATION_VARIANT", "manual"))
+    generation.add_argument("--base-url", default="http://127.0.0.1:8000")
+    generation.add_argument("--model", default=DEFAULT_MODEL)
+    generation.add_argument("--max-tokens", type=int, default=2048)
+    generation.add_argument("--max-case-tokens", type=int)
+    generation.add_argument("--temperature", type=float, default=1.0)
+    generation.add_argument("--timeout", type=float, default=900.0)
+    generation.add_argument("--repeat-count", type=int, default=3)
+    generation.add_argument("--api-key-env")
+    generation.add_argument("--extra-body-json")
+    generation.add_argument("--jsonl-output", type=Path)
+    generation.add_argument("--markdown-output-dir", type=Path)
+    generation.set_defaults(func=_cmd_generation_matrix)
 
     oracle = subparsers.add_parser("oracle-compare")
     oracle.add_argument("--base-url", default="http://127.0.0.1:8000")

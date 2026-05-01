@@ -7,12 +7,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_acceptance_script_runs_coding_smoke_gate():
+def test_acceptance_script_runs_generation_gate():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
 
-    assert 'CODING_TAG="${CODING_TAG:-coding}"' in script
-    assert '--tag "${CODING_TAG}"' in script
-    assert "smoke_coding.jsonl" in script
+    assert 'GENERATION_PROMPT_ROOT="${GENERATION_PROMPT_ROOT:-${REPO_ROOT}/prompts}"' in script
+    assert "generation-matrix" in script
+    assert '--jsonl-output "${OUT_DIR}/generation.jsonl"' in script
+    assert '--markdown-output-dir "${OUT_DIR}/generation"' in script
 
 
 def test_acceptance_script_runs_static_harness_gates():
@@ -84,18 +85,18 @@ def test_env_sample_and_local_env_are_configured():
     assert "ORACLE_TIMEOUT=300" in sample
     assert "ORACLE_CASES=" in sample
     assert "OFFICIAL_RUN_TOOLCALL15=1" in sample
-    assert "OFFICIAL_TOOLCALL15_SCENARIO_SET=both" in sample
+    assert "OFFICIAL_TOOLCALL15_SCENARIO_SET=en" in sample
     assert "OFFICIAL_TOOLCALL15_REPEAT_COUNT=3" in sample
     assert "REAL_SCENARIO_REPEAT_COUNT=3" in sample
     assert "ARTIFACT_ARCHIVE_PREVIOUS=1" in sample
     assert "ARTIFACT_ARCHIVE_PREFIX=" in sample
     assert "B200_ARCHIVE_PREVIOUS" not in sample
     assert "B200_ARCHIVE_PREFIX" not in sample
-    assert "QUALITY_TAG=quality" in sample
-    assert "QUALITY_REPEAT_COUNT=3" in sample
-    assert "CODING_TAG=coding" in sample
-    assert "CODING_REPEAT_COUNT=3" in sample
-    assert "TOOLCALL15_SCENARIO_SET=both" in sample
+    assert "GENERATION_PROMPT_ROOT=" in sample
+    assert "GENERATION_LANGUAGES=en,zh" in sample
+    assert "GENERATION_THINKING_MODES=non-thinking,think-high,think-max" in sample
+    assert "GENERATION_REPEAT_COUNT=3" in sample
+    assert "TOOLCALL15_SCENARIO_SET=en" in sample
     assert "TOOLCALL15_REPEAT_COUNT=3" in sample
     assert "SERVER_GUARD=1" in sample
     assert "SERVER_STARTUP_TIMEOUT=1800" in sample
@@ -112,25 +113,20 @@ def test_acceptance_script_writes_human_markdown_smoke_reports():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
 
     assert '--markdown-output "${OUT_DIR}/smoke_quick.md"' in script
-    assert '--markdown-output "${OUT_DIR}/smoke_quality.md"' in script
-    assert '--markdown-output "${OUT_DIR}/smoke_coding.md"' in script
+    assert '--markdown-output-dir "${OUT_DIR}/generation"' in script
 
 
 def test_acceptance_script_repeats_real_scenario_gates_three_times():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
 
     assert 'REAL_SCENARIO_REPEAT_COUNT="${REAL_SCENARIO_REPEAT_COUNT:-3}"' in script
-    assert 'QUALITY_TAG="${QUALITY_TAG:-quality}"' in script
-    assert 'QUALITY_REPEAT_COUNT="${QUALITY_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
-    assert 'CODING_TAG="${CODING_TAG:-coding}"' in script
-    assert 'CODING_REPEAT_COUNT="${CODING_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
-    assert 'TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-both}"' in script
+    assert 'GENERATION_REPEAT_COUNT="${GENERATION_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
+    assert 'GENERATION_THINKING_MODES="${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}"' in script
+    assert 'TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-en}"' in script
     assert 'TOOLCALL15_REPEAT_COUNT="${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
-    assert '--tag "${QUALITY_TAG}"' in script
-    assert '--tag "${CODING_TAG}"' in script
+    assert '--prompt-root "${GENERATION_PROMPT_ROOT}"' in script
     assert '--scenario-set "${TOOLCALL15_SCENARIO_SET}"' in script
-    assert '--repeat-count "${QUALITY_REPEAT_COUNT}"' in script
-    assert '--repeat-count "${CODING_REPEAT_COUNT}"' in script
+    assert '--repeat-count "${GENERATION_REPEAT_COUNT}"' in script
     assert '--repeat-count "${TOOLCALL15_REPEAT_COUNT}"' in script
 
 
@@ -140,8 +136,7 @@ def test_acceptance_script_runs_all_gates_and_records_exit_codes():
     assert "failures=0" in script
     assert "run_gate pytest" in script
     assert "run_live_gate smoke_quick" in script
-    assert "run_live_gate smoke_quality" in script
-    assert "run_live_gate smoke_coding" in script
+    assert "run_live_gate generation" in script
     assert "run_live_gate toolcall15" in script
     assert "run_live_gate oracle_compare" in script
     assert 'ORACLE_TOP_N="${ORACLE_TOP_N:-20}"' in script
@@ -569,6 +564,7 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
         "  *' env-summary '*) write_arg_file --json-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
         "  *' health'*) printf '%s\\n' '{\"ok\":true}'; exit 0 ;;\n"
         "  *' chat-smoke '*) write_arg_file --jsonl-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
+        "  *' generation-matrix '*) write_arg_file --jsonl-output \"$@\"; exit 0 ;;\n"
         "  *' toolcall15 '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
         "  *' bench-matrix '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
         "  *' oracle-export '*) exit 0 ;;\n"
@@ -712,17 +708,17 @@ def test_official_subjective_baseline_script_uses_api_key_and_baseline_output():
 
     assert "load_harness_env" in script
     assert "--api-key-env DEEPSEEK_API_KEY" in script
-    assert 'OFFICIAL_QUALITY_TAG="${OFFICIAL_QUALITY_TAG:-quality}"' in script
-    assert 'OFFICIAL_CODING_TAG="${OFFICIAL_CODING_TAG:-coding}"' in script
+    assert 'OFFICIAL_PROMPT_ROOT="${OFFICIAL_PROMPT_ROOT:-${REPO_ROOT}/prompts}"' in script
+    assert 'OFFICIAL_THINKING_MODES="${OFFICIAL_THINKING_MODES:-non-thinking,think-high,think-max}"' in script
     assert 'OFFICIAL_RUN_TOOLCALL15="${OFFICIAL_RUN_TOOLCALL15:-1}"' in script
-    assert 'OFFICIAL_TOOLCALL15_SCENARIO_SET="${OFFICIAL_TOOLCALL15_SCENARIO_SET:-both}"' in script
+    assert 'OFFICIAL_TOOLCALL15_SCENARIO_SET="${OFFICIAL_TOOLCALL15_SCENARIO_SET:-en}"' in script
     assert 'OFFICIAL_TOOLCALL15_REPEAT_COUNT="${OFFICIAL_TOOLCALL15_REPEAT_COUNT:-${OFFICIAL_REPEAT_COUNT}}"' in script
+    assert "generation-matrix" in script
     assert "--repeat-count" in script
     assert "--max-case-tokens" in script
     assert "--extra-body-json" in script
-    assert "--official-toolcall-input" in script
-    assert "DEEPSEEK_THINKING_TYPE" in script
-    assert "subjective-comparison" in script
+    assert "official_generation.jsonl" in script
+    assert "official_toolcall15.json" in script
     assert "baselines/20260501_b200_main_51295793a" in script
     assert "subjective_quality" in script
 

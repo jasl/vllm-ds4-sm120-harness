@@ -58,12 +58,18 @@ tool-call turn.
 - Live chat smoke cases:
   - basic deterministic math and language checks
   - tool-call routing with the collected OpenClaw `read` case
-  - instruction-following writing check
-  - English and Chinese-user subjective writing and translation checks
-  - English and Chinese-user long HTML coding prompts
+- Directory-driven generation scenarios:
+  - Markdown prompts under `prompts/en/` and `prompts/zh/`
+  - `en` and `zh` are organizational groups; the requested output language is
+    defined by each prompt
+  - writing, translation, and long HTML coding prompts for human review
+  - default matrix of `non-thinking`, `think-high`, and `think-max`
 - ToolCall-15 multi-turn tool-call loop:
   - 15 deterministic scenarios across tool selection, parameter precision,
     multi-step chains, restraint/refusal, and error recovery
+  - follows the upstream
+    [`stevibe/ToolCall-15`](https://github.com/stevibe/ToolCall-15) English
+    scenario set and scoring model
   - mocked tool responses are returned through OpenAI-compatible `tool`
     messages
 - HTTP logprobs oracle export and comparison:
@@ -94,9 +100,9 @@ Use the harness as a layered gate, not as one monolithic command:
 
 - Correctness: deterministic quick chat, ToolCall-15, and optional logprobs
   oracle comparison catch parser, CUDA graph, and token-level regressions.
-- Production-like behavior: default quality and coding smoke cases cover both
-  English and Chinese-user writing, translation, long HTML generation, and
-  ToolCall-15 scenario sets.
+- Production-like behavior: default generation prompts cover English-group and
+  Chinese-group writing, translation, and long HTML generation. ToolCall-15 is
+  a separate authoritative agentic/tool-use suite.
 - Realistic throughput: benchmark with `--dataset-name hf --dataset-path
   philschmid/mt-bench` to avoid pure random prompts when judging user-visible
   progress.
@@ -120,6 +126,33 @@ change solely on that tier.
 `DATASET_NAME=random IGNORE_EOS=1` when intentionally running random shape
 stress tests.
 
+## Generation Prompts
+
+Human-review generation cases live as Markdown files under `prompts/en/` and
+`prompts/zh/`. Add a new file to either directory to include it in the default
+matrix. The directory name is only a grouping label; the prompt text controls
+the requested output language.
+
+Optional front matter is parsed with the stdlib-only harness parser:
+
+```markdown
+---
+tags: writing, subjective, user-report
+max_tokens: 2048
+temperature: 1.0
+min_chars: 400
+all_terms: Context:, Recommendation:
+any_terms: privacy, latency
+forbidden_terms: as an ai
+require_html_artifact: false
+---
+Write the actual user prompt here.
+```
+
+Use `tags` to classify the workload as `writing`, `translation`, or `coding`.
+The expectation fields are lightweight sanity checks; the Markdown transcript
+is still the source for subjective quality review.
+
 ## Artifact Output
 
 The shell wrappers write run output under the repo-local ignored directory
@@ -136,9 +169,17 @@ GPU count/model inventory, selected CUDA env vars, benchmark settings, and
 official API configuration state. GPU UUIDs and API key values are not written.
 
 `chat-smoke` can also write Markdown reports with `--markdown-output` and can
-repeat selected cases with `--repeat-count`. Use this for writing, translation,
-math, and other cases that need subjective review; the JSONL remains available
-for machine comparison and records the round number plus request elapsed time.
+repeat selected deterministic cases with `--repeat-count`.
+
+`generation-matrix` reads Markdown prompts from `prompts/<group>/*.md`, writes
+one transcript per prompt/round/thinking-mode/serving-variant under
+`generation/<group>/`, and writes machine-readable rows to `generation.jsonl`.
+Transcript filenames use
+`<prompt-name>.<round>.<thinking-mode>.<variant>.md`, for example
+`generation/zh/translation_zh_to_en.2.think-max.mtp.md`. Each transcript keeps
+the prompt, assistant answer, `OK`, detail, model, finish reason, full usage
+JSON, thinking mode, and thinking strength so subjective review can be tied
+back to the exact request shape.
 
 The shell wrappers also sample GPU telemetry with `nvidia-smi` when available.
 Each run writes `gpu_stats.csv`, `gpu_stats_summary.json`, and
@@ -201,7 +242,8 @@ available.
 The report generator reads `phase_exit_codes.tsv`, `bench.json`,
 `toolcall15.json`, `oracle_export_summary.json`, `gpu_stats_summary.json`,
 `runtime_stats_summary.json`, `run_environment.json`, `vllm_collect_env.txt`,
-and each variant's `serve_command.sh`. It writes stable Markdown tables for raw
+`generation.jsonl` when present, and each variant's `serve_command.sh`. It
+writes stable Markdown tables for raw
 throughput/latency, ToolCall-15, oracle export, phase-local runtime stats, MTP
 speculative decoding, structured provenance, serve-shape parameters, and
 normalized efficiency. It also places a quick performance summary near the top
@@ -211,9 +253,9 @@ overview is based on translation, writing, coding, and ToolCall-15 wall-clock
 samples, not benchmark rows. It is intended for OpenRouter/provider-style
 request costing. Benchmark rows remain useful for throughput and stress-shape
 tracking, but they are not used as the OP cost source. The default acceptance
-wrapper uses `QUALITY_TAG=quality`, `CODING_TAG=coding`, and
-`TOOLCALL15_SCENARIO_SET=both` so this OP view includes both English and
-Chinese-user traffic.
+wrapper uses `GENERATION_LANGUAGES=en,zh`,
+`GENERATION_THINKING_MODES=non-thinking,think-high,think-max`, three repeats,
+and `TOOLCALL15_SCENARIO_SET=en`.
 
 The normalized columns include `tok/s/GPU`, `tok/s/total GiB`,
 `tok/s/used GiB`, `tok/J`, and `tok/s/kW`, which are intended for comparing
@@ -247,14 +289,13 @@ SUBJECTIVE_BASELINE_DIR=baselines/20260501_b200_main_51295793a \
 scripts/run_official_subjective_baseline.sh
 ```
 
-The script captures official API quality, coding, and ToolCall-15 outputs under
-ignored `artifacts/official_api/...`, then writes a public side-by-side
-`subjective_quality/comparison.{md,json}` plus
-`subjective_quality/agentic/` directory inside the selected baseline. API keys
-are only read from the environment and are not written to the public
-comparison. By default the script sends explicit DeepSeek V4 thinking
-parameters from `.env` (`thinking.type` and `reasoning_effort`) so the official
-run is reproducible; override `OFFICIAL_EXTRA_BODY_JSON` when comparing a
+The script captures official API generation and ToolCall-15 outputs under
+ignored `artifacts/official_api/...`, then writes public Markdown transcripts
+under `subjective_quality/generation/` plus `subjective_quality/agentic/`
+inside the selected baseline. API keys are only read from the environment and
+are not written to the public comparison. By default the script runs the same
+generation thinking matrix as the local harness; override
+`OFFICIAL_THINKING_MODES` or `OFFICIAL_EXTRA_BODY_JSON` when comparing a
 different official serving mode. ToolCall-15 preserves returned
 `reasoning_content` fields when replaying tool results for official API
 compatibility.
@@ -281,34 +322,31 @@ python -m ds4_harness.cli chat-smoke \
   --jsonl-output artifacts/manual/smoke_quick.jsonl \
   --markdown-output artifacts/manual/smoke_quick.md
 
-python -m ds4_harness.cli chat-smoke \
+python -m ds4_harness.cli generation-matrix \
   --base-url http://127.0.0.1:8000 \
-  --tag quality \
-  --repeat-count 3 \
-  --timeout 600 \
-  --jsonl-output artifacts/manual/smoke_quality.jsonl \
-  --markdown-output artifacts/manual/smoke_quality.md
-
-python -m ds4_harness.cli chat-smoke \
-  --base-url http://127.0.0.1:8000 \
-  --tag coding \
+  --prompt-root prompts \
+  --language en \
+  --language zh \
+  --thinking-mode non-thinking \
+  --thinking-mode think-high \
+  --thinking-mode think-max \
+  --variant nomtp \
   --repeat-count 3 \
   --timeout 900 \
-  --jsonl-output artifacts/manual/smoke_coding.jsonl \
-  --markdown-output artifacts/manual/smoke_coding.md
+  --jsonl-output artifacts/manual/generation.jsonl \
+  --markdown-output-dir artifacts/manual/generation
 
 python -m ds4_harness.cli toolcall15 \
   --base-url http://127.0.0.1:8000 \
   --model deepseek-ai/DeepSeek-V4-Flash \
-  --scenario-set both \
+  --scenario-set en \
   --repeat-count 3 \
   --json-output artifacts/manual/toolcall15.json
 ```
 
 Use the Markdown outputs for human review of writing, translation, and coding
 quality. Use the JSON/JSONL outputs for archiving and comparison against the
-checked-in `baselines/.../smoke/{nomtp,mtp}_quality.*` and
-`baselines/.../smoke/{nomtp,mtp}_coding.*` samples.
+checked-in `baselines/.../generation/` samples.
 
 Use the B200/SM100 or H100 HTTP oracle bundle when you need stricter kernel
 correctness checks. Chat exports are covered by `chat-smoke`; `oracle-compare`
@@ -383,8 +421,10 @@ scripts/run_b200_baseline.sh
 Run this script on the reference host, not on a laptop. It defaults to
 `HOST=127.0.0.1 PORT=8080`, `B200_BASELINE_VARIANTS=nomtp,mtp`,
 `NO_MTP_CONCURRENCY=1,2,4,8,16,24`, `MTP_CONCURRENCY=1,2,4,8,16,24`,
-`NUM_PROMPTS=80`, `REAL_SCENARIO_REPEAT_COUNT=3`, `QUALITY_TAG=quality`,
-`CODING_TAG=coding`, `TOOLCALL15_SCENARIO_SET=both`, and a controlled random
+`NUM_PROMPTS=80`, `REAL_SCENARIO_REPEAT_COUNT=3`,
+`GENERATION_LANGUAGES=en,zh`,
+`GENERATION_THINKING_MODES=non-thinking,think-high,think-max`,
+`TOOLCALL15_SCENARIO_SET=en`, and a controlled random
 long-context bench with
 `RANDOM_LONG_INPUT_LEN=8192 RANDOM_LONG_OUTPUT_LEN=512
 RANDOM_LONG_CONCURRENCY=1,2`. Set `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`,
@@ -457,10 +497,9 @@ Before promoting an optimization:
 
 - `pytest -q tests` passes.
 - `chat-smoke --tag quick` passes.
-- `chat-smoke --tag quality --repeat-count 3` and
-  `chat-smoke --tag coding --repeat-count 3` have no regression versus the
-  previous branch.
-- `toolcall15 --scenario-set both --repeat-count 3` passes, or any
+- `generation-matrix --repeat-count 3` has no regression versus the previous
+  branch for the relevant no-MTP or MTP serving variant.
+- `toolcall15 --scenario-set en --repeat-count 3` passes, or any
   partial/fail scenario is explained with trace evidence.
 - `oracle-compare` has matching prompt token ids and no early token divergence
   on deterministic oracle cases, or any divergence is explained and recorded.

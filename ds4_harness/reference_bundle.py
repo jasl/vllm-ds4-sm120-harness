@@ -266,6 +266,27 @@ def _copy_smoke_and_toolcall(run_dir: Path, output_dir: Path) -> None:
         )
 
 
+def _copy_generation(run_dir: Path, output_dir: Path) -> None:
+    for variant in VARIANTS:
+        source_dir = run_dir / variant / "acceptance"
+        jsonl_path = source_dir / "generation.jsonl"
+        if jsonl_path.exists():
+            _write_json(
+                output_dir / "generation" / f"{variant}.json",
+                _read_jsonl(jsonl_path),
+            )
+
+        markdown_root = source_dir / "generation"
+        if not markdown_root.exists():
+            continue
+        for path in sorted(markdown_root.rglob("*.md")):
+            try:
+                relative = path.relative_to(markdown_root)
+            except ValueError:
+                continue
+            _copy_text(path, output_dir / "generation" / relative)
+
+
 def _sanitize_bench_rows(rows: Any) -> Any:
     if not isinstance(rows, list):
         return _sanitize_json(rows)
@@ -339,6 +360,7 @@ def _write_manifest(
         "contents": {
             "report": "Readable baseline report with correctness, performance, and cost metrics.",
             "subjective_quality": "Optional side-by-side writing, translation, and coding samples.",
+            "generation": "Directory-driven writing, translation, and coding transcripts.",
             "oracle": "Deterministic /v1/completions logprobs oracle cases. The oracle root is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp keep variant-specific copies when present.",
             "smoke": "no-MTP and MTP chat smoke request/response captures.",
             "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
@@ -404,6 +426,8 @@ paths, server logs, tokens, and private connection details.
   runtime telemetry, and synthetic real-scenario OP cost metrics.
 - `subjective_quality/`: B200 no-MTP, B200 MTP, and DeepSeek official API
   writing, translation, and coding samples for human comparison when present.
+- `generation/`: no-MTP and MTP directory-driven generation transcripts and
+  JSON rows when the source run used `generation-matrix`.
 - `oracle/`: no-MTP deterministic `/v1/completions` compatibility entrypoint;
   `oracle/nomtp/` and `oracle/mtp/` contain variant-specific copies when
   present, including prompt token ids, generated tokens, token logprobs, top
@@ -466,6 +490,7 @@ def build_reference_bundle(
     )
     _write_readme(output_dir, label, run_dir)
     _copy_oracle(run_dir, output_dir)
+    _copy_generation(run_dir, output_dir)
     _copy_smoke_and_toolcall(run_dir, output_dir)
     _write_json(output_dir / "performance" / "primary.json", _performance_source("primary", run_dir))
     if supplement_dir is not None:
