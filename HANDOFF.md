@@ -175,6 +175,11 @@ CONCURRENCY=1,2,4,8,16,24 \
 scripts/run_bench_matrix.sh
 ```
 
+For DeepSeek V4 HF/chat datasets, keep `TOKENIZER_MODE=deepseek_v4` unless a
+specific compatibility test requires otherwise. The wrapper uses that value by
+default because `vllm bench serve` needs the DeepSeek chat template when it
+formats representative HF prompts.
+
 You do not need to run the full matrix for every edit. Use `1,2` or `1,2,4`
 for quick iteration, then widen to `1,2,4,8,16,24` before promoting a change.
 For MTP, concurrency 8 and above may exceed available VRAM on endpoint-class

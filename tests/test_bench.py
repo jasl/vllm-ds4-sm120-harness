@@ -61,6 +61,8 @@ def test_bench_matrix_builds_hf_dataset_commands(monkeypatch, tmp_path):
             "hf",
             "--dataset-path",
             "philschmid/mt-bench",
+            "--tokenizer-mode",
+            "deepseek_v4",
             "--num-prompts",
             "80",
             "--temperature",
@@ -80,6 +82,8 @@ def test_bench_matrix_builds_hf_dataset_commands(monkeypatch, tmp_path):
     assert first_command[first_command.index("--dataset-name") + 1] == "hf"
     assert "--dataset-path" in first_command
     assert first_command[first_command.index("--dataset-path") + 1] == "philschmid/mt-bench"
+    assert "--tokenizer-mode" in first_command
+    assert first_command[first_command.index("--tokenizer-mode") + 1] == "deepseek_v4"
     assert "--max-concurrency" in first_command
     assert first_command[first_command.index("--max-concurrency") + 1] == "1"
     assert "--temperature" in first_command

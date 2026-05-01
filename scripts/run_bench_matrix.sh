@@ -8,6 +8,7 @@ PORT="${PORT:-8000}"
 CONCURRENCY="${CONCURRENCY:-1,2,4,8,16,24}"
 DATASET_NAME="${DATASET_NAME:-hf}"
 DATASET_PATH="${DATASET_PATH:-philschmid/mt-bench}"
+TOKENIZER_MODE="${TOKENIZER_MODE:-deepseek_v4}"
 NUM_PROMPTS="${NUM_PROMPTS:-80}"
 RANDOM_INPUT_LEN="${RANDOM_INPUT_LEN:-1024}"
 RANDOM_OUTPUT_LEN="${RANDOM_OUTPUT_LEN:-1024}"
@@ -36,6 +37,7 @@ fi
 "${PYTHON}" -m ds4_harness.cli bench-matrix \
   --vllm-bin "${VLLM_BIN}" \
   --model "${MODEL}" \
+  --tokenizer-mode "${TOKENIZER_MODE}" \
   --host "${HOST}" \
   --port "${PORT}" \
   --concurrency "${CONCURRENCY}" \
