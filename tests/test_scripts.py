@@ -87,8 +87,10 @@ def test_env_sample_and_local_env_are_configured():
     assert "OFFICIAL_TOOLCALL15_SCENARIO_SET=both" in sample
     assert "OFFICIAL_TOOLCALL15_REPEAT_COUNT=3" in sample
     assert "REAL_SCENARIO_REPEAT_COUNT=3" in sample
-    assert "B200_ARCHIVE_PREVIOUS=1" in sample
-    assert "B200_ARCHIVE_PREFIX=" in sample
+    assert "ARTIFACT_ARCHIVE_PREVIOUS=1" in sample
+    assert "ARTIFACT_ARCHIVE_PREFIX=" in sample
+    assert "B200_ARCHIVE_PREVIOUS" not in sample
+    assert "B200_ARCHIVE_PREFIX" not in sample
     assert "QUALITY_TAG=quality" in sample
     assert "QUALITY_REPEAT_COUNT=3" in sample
     assert "CODING_TAG=coding" in sample
@@ -258,8 +260,8 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'MTP_CONCURRENCY="${MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"' in script
     assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
-    assert 'B200_ARCHIVE_PREVIOUS="${B200_ARCHIVE_PREVIOUS:-1}"' in script
-    assert 'B200_ARCHIVE_PREFIX="${B200_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}"' in script
+    assert 'ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-${B200_ARCHIVE_PREVIOUS:-1}}"' in script
+    assert 'ARTIFACT_ARCHIVE_PREFIX="${ARTIFACT_ARCHIVE_PREFIX:-${B200_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}}"' in script
     assert "archive_previous_runs" in script
     assert "_archive_before_${RUN_TIMESTAMP}" in script
     assert 'ARTIFACT_PARENT="${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}"' in script

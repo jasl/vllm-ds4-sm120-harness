@@ -388,12 +388,12 @@ RANDOM_LONG_CONCURRENCY=1,2`. Set `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`,
 oracle export phase runs for each requested variant so no-MTP and MTP both
 produce logprobs reference material. Before creating a new managed run
 directory, the script moves existing sibling artifact directories matching
-`${B200_BASELINE_LABEL}*` into
+`${ARTIFACT_ARCHIVE_PREFIX:-$B200_BASELINE_LABEL}*` into
 `artifacts/<branch>/<gpu-topology>/_archive_before_<timestamp>/`; set
-`B200_ARCHIVE_PREVIOUS=0` to keep older runs in place, or set
-`B200_ARCHIVE_PREFIX` when the cleanup prefix should differ from the baseline
-label. Explicit `OUT_DIR=...` runs skip this archive step. The script clears
-inherited
+`ARTIFACT_ARCHIVE_PREVIOUS=0` to keep older runs in place, or set
+`ARTIFACT_ARCHIVE_PREFIX` when the cleanup prefix should differ from the
+baseline label. Explicit `OUT_DIR=...` runs skip this archive step. The script
+clears inherited
 `VLLM_*`, `TORCH_CUDA_ARCH_LIST`, and `CUDA_VISIBLE_DEVICES` launch defaults
 before starting vLLM, then stores phase exit codes in `phase_exit_codes.tsv`
 and a human summary in `baseline_summary.md`. It keeps running later phases

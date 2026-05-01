@@ -19,8 +19,8 @@ B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"
 B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"
 B200_BASELINE_LABEL="${B200_BASELINE_LABEL:-b200_official}"
 B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-nomtp,mtp}"
-B200_ARCHIVE_PREVIOUS="${B200_ARCHIVE_PREVIOUS:-1}"
-B200_ARCHIVE_PREFIX="${B200_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}"
+ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-${B200_ARCHIVE_PREVIOUS:-1}}"
+ARTIFACT_ARCHIVE_PREFIX="${ARTIFACT_ARCHIVE_PREFIX:-${B200_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}}"
 NO_MTP_CONCURRENCY="${NO_MTP_CONCURRENCY:-1,2,4,8,16,24}"
 MTP_CONCURRENCY="${MTP_CONCURRENCY:-1,2,4,8,16,24}"
 NUM_PROMPTS="${NUM_PROMPTS:-80}"
@@ -71,7 +71,7 @@ ACTIVE_SERVER_PID=""
 failures=0
 
 archive_previous_runs() {
-  if [[ "${B200_ARCHIVE_PREVIOUS}" != "1" && "${B200_ARCHIVE_PREVIOUS}" != "true" ]]; then
+  if [[ "${ARTIFACT_ARCHIVE_PREVIOUS}" != "1" && "${ARTIFACT_ARCHIVE_PREVIOUS}" != "true" ]]; then
     return 0
   fi
   if [[ -n "${OUT_DIR:-}" ]]; then
@@ -87,7 +87,7 @@ archive_previous_runs() {
   local candidate name target suffix
 
   shopt -s nullglob
-  for candidate in "${ARTIFACT_PARENT}/${B200_ARCHIVE_PREFIX}"*; do
+  for candidate in "${ARTIFACT_PARENT}/${ARTIFACT_ARCHIVE_PREFIX}"*; do
     if [[ ! -d "${candidate}" ]]; then
       continue
     fi
@@ -298,7 +298,7 @@ write_summary() {
   {
     printf '# B200 Baseline Summary\n\n'
     printf -- '- label: `%s`\n' "${B200_BASELINE_LABEL}"
-    printf -- '- archive_previous: `%s`, prefix `%s`\n' "${B200_ARCHIVE_PREVIOUS}" "${B200_ARCHIVE_PREFIX}"
+    printf -- '- archive_previous: `%s`, prefix `%s`\n' "${ARTIFACT_ARCHIVE_PREVIOUS}" "${ARTIFACT_ARCHIVE_PREFIX}"
     printf -- '- model: `%s`\n' "${MODEL}"
     printf -- '- base_url: `%s`\n' "${BASE_URL}"
     printf -- '- variants: `%s`\n' "${B200_BASELINE_VARIANTS}"
