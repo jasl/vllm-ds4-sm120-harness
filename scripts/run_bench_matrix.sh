@@ -25,6 +25,7 @@ PYTHON="${PYTHON:-python}"
 SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT:-1800}"
 SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS:-15}"
 SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT:-10}"
+SERVER_FAILURE_PROBE_TIMEOUT="${SERVER_FAILURE_PROBE_TIMEOUT:-30}"
 SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT:-300}"
 SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS:-10}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
@@ -38,7 +39,7 @@ export VLLM_BIN MODEL HOST PORT BASE_URL CONCURRENCY DATASET_NAME DATASET_PATH
 export TOKENIZER_MODE NUM_PROMPTS BENCH_TIMEOUT RANDOM_INPUT_LEN RANDOM_OUTPUT_LEN
 export TEMPERATURE IGNORE_EOS PYTHON ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME
 export SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS SERVER_HEALTH_TIMEOUT
-export SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
+export SERVER_FAILURE_PROBE_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
 export GPU_TOPOLOGY_SLUG OUT_DIR
 
 mkdir -p "${OUT_DIR}"
@@ -61,6 +62,7 @@ if [[ "${IGNORE_EOS}" == "1" || "${IGNORE_EOS}" == "true" ]]; then
   EXTRA_ARGS+=(--ignore-eos)
 fi
 
+set +e
 "${PYTHON}" -m ds4_harness.cli bench-matrix \
   --vllm-bin "${VLLM_BIN}" \
   --model "${MODEL}" \
@@ -78,10 +80,22 @@ fi
   --timeout "${BENCH_TIMEOUT}" \
   --stop-on-unresponsive \
   --health-timeout "${SERVER_HEALTH_TIMEOUT}" \
+  --failure-probe-timeout "${SERVER_FAILURE_PROBE_TIMEOUT}" \
   --failure-grace-timeout "${SERVER_FAILURE_GRACE_TIMEOUT}" \
   --failure-grace-interval "${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
   ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
   --json-output "${OUT_DIR}/bench.json" \
   --log-dir "${OUT_DIR}/logs"
+code="$?"
+set -e
+printf '%s\n' "${code}" > "${OUT_DIR}/bench.exit_code"
+if [[ "${code}" != "0" ]]; then
+  if [[ -f "${OUT_DIR}/bench.json" ]] && grep -q "server unresponsive after previous benchmark" "${OUT_DIR}/bench.json"; then
+    mark_server_unresponsive "bench" "server unresponsive after benchmark"
+  elif ! wait_for_server_ready "${SERVER_FAILURE_GRACE_TIMEOUT}" "${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" "server after benchmark"; then
+    mark_server_unresponsive "bench" "server unresponsive after benchmark"
+  fi
+fi
 
 echo "wrote ${OUT_DIR}"
+exit "${code}"

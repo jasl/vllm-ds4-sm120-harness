@@ -85,6 +85,7 @@ def test_env_sample_and_local_env_are_configured():
     assert "SERVER_STARTUP_TIMEOUT=1800" in sample
     assert "SERVER_STARTUP_INTERVAL_SECONDS=15" in sample
     assert "SERVER_HEALTH_TIMEOUT=10" in sample
+    assert "SERVER_FAILURE_PROBE_TIMEOUT=30" in sample
     assert "SERVER_FAILURE_GRACE_TIMEOUT=300" in sample
     assert "SERVER_RECOVERY_CMD=" in sample
     assert "GPU_TOPOLOGY_SLUG=" in sample
@@ -192,6 +193,7 @@ def test_live_scripts_guard_against_unresponsive_servers():
     assert "SERVER_STARTUP_TIMEOUT" in acceptance
     assert "--stop-on-unresponsive" in bench
     assert "--health-timeout" in bench
+    assert "--failure-probe-timeout" in bench
     assert "--failure-grace-timeout" in bench
 
 
@@ -306,3 +308,44 @@ def test_bench_wrapper_can_run_with_mocked_python(tmp_path):
     assert "ds4_harness.cli" in args
     assert "bench-matrix" in args
     assert "--json-output" in args
+
+
+def test_bench_wrapper_records_exit_code_on_bench_failure(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env sh\n"
+        "case \"$*\" in\n"
+        "  *' env-summary '*) exit 0 ;;\n"
+        "  *' health'*) printf '%s\\n' '{\"ok\":true}'; exit 0 ;;\n"
+        "  *' bench-matrix '*) printf '%s\\n' '[]' > \"$OUT_DIR/bench.json\"; exit 1 ;;\n"
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    out_dir = tmp_path / "out"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "OUT_DIR": str(out_dir),
+        "GPU_STATS": "0",
+        "RUNTIME_STATS": "0",
+        "GPU_TOPOLOGY_SLUG": "test_gpu",
+        "VLLM_BIN": "fake-vllm",
+        "CONCURRENCY": "1",
+        "NUM_PROMPTS": "1",
+        "SERVER_STARTUP_INTERVAL_SECONDS": "0",
+    }
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_bench_matrix.sh")],
+        check=False,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert (out_dir / "bench.exit_code").read_text(encoding="utf-8").strip() == "1"
+    assert f"wrote {out_dir}" in result.stdout

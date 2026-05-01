@@ -342,16 +342,36 @@ def _server_responding(base_url: str, timeout: float) -> bool:
         return False
 
 
+def _generation_responding(base_url: str, model: str, timeout: float) -> bool:
+    payload = {
+        "model": model,
+        "prompt": "Reply with OK.\n",
+        "max_tokens": 1,
+        "temperature": 0.0,
+    }
+    try:
+        response = post_json(base_url, "/v1/completions", payload, timeout)
+    except Exception:
+        return False
+    return isinstance(response.get("choices"), list)
+
+
 def _server_responding_after_grace(
     base_url: str,
     *,
+    model: str,
     health_timeout: float,
+    generation_timeout: float,
     grace_timeout: float,
     grace_interval: float,
 ) -> bool:
     deadline = time.monotonic() + max(0.0, grace_timeout)
     while True:
-        if _server_responding(base_url, health_timeout):
+        if _server_responding(base_url, health_timeout) and _generation_responding(
+            base_url,
+            model,
+            generation_timeout,
+        ):
             return True
         if time.monotonic() >= deadline:
             return False
@@ -373,10 +393,6 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
             args.model,
             "--tokenizer-mode",
             args.tokenizer_mode,
-            "--host",
-            args.host,
-            "--port",
-            str(args.port),
             "--dataset-name",
             args.dataset_name,
             "--num-prompts",
@@ -384,6 +400,10 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
             "--max-concurrency",
             str(concurrency),
         ]
+        if args.base_url:
+            command.extend(["--base-url", args.base_url])
+        else:
+            command.extend(["--host", args.host, "--port", str(args.port)])
         if args.dataset_name == "random":
             command.extend(
                 [
@@ -430,7 +450,9 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
             and args.stop_on_unresponsive
             and not _server_responding_after_grace(
                 health_base_url,
+                model=args.model,
                 health_timeout=args.health_timeout,
+                generation_timeout=args.failure_probe_timeout,
                 grace_timeout=args.failure_grace_timeout,
                 grace_interval=args.failure_grace_interval,
             )
@@ -596,6 +618,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--ignore-eos", action="store_true")
     bench.add_argument("--timeout", type=float)
     bench.add_argument("--health-timeout", type=float, default=10.0)
+    bench.add_argument("--failure-probe-timeout", type=float, default=30.0)
     bench.add_argument("--failure-grace-timeout", type=float, default=0.0)
     bench.add_argument("--failure-grace-interval", type=float, default=10.0)
     bench.add_argument("--stop-on-unresponsive", action="store_true")

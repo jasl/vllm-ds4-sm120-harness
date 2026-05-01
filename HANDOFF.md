@@ -1,6 +1,6 @@
 # DeepSeek V4 SM12x Handoff Notes
 
-Last updated: 2026-05-01
+Last updated: 2026-05-02
 
 This directory is the repo-independent validation harness for the SM12x
 DeepSeek V4 work. It is meant to survive context switches and should be copied
@@ -185,9 +185,11 @@ allow slow model loading with `SERVER_STARTUP_TIMEOUT=1800`, then run short
 health probes around the live gates. After a failed live request or benchmark,
 they wait up to `SERVER_FAILURE_GRACE_TIMEOUT=300` before writing
 `server_unresponsive.txt`, `*.server_unresponsive`, or `*.skipped` artifacts.
-This is intended to catch runtime hangs, including the known B200 MTP C>1
-benchmark failure, without misclassifying slow startup or warmup. Use
-`SERVER_HEALTH_TIMEOUT=10` as the default probe timeout. Set
+Benchmark recovery checks also run a tiny `/v1/completions` probe with
+`SERVER_FAILURE_PROBE_TIMEOUT=30`, so a live `/health` endpoint does not mask a
+wedged generation path. This is intended to catch runtime hangs, including the
+known B200 MTP C>1 benchmark failure, without misclassifying slow startup or
+warmup. Use `SERVER_HEALTH_TIMEOUT=10` as the default health probe timeout. Set
 `SERVER_RECOVERY_CMD` only for an intentional local intervention command after
 an unresponsive-server detection.
 
@@ -250,6 +252,11 @@ The benchmark wrapper treats partial prompt completion as a failed concurrency
 point even when `vllm bench` exits with status 0. It also applies
 `BENCH_TIMEOUT=1800` seconds per concurrency point by default; raise that only
 when a known-slow profile is expected to complete usefully.
+When `BASE_URL` is set, the wrapper passes it through to `vllm bench serve`
+directly instead of reconstructing the target from `HOST` and `PORT`.
+For B200 reference servers, cap MTP benchmark runs at `CONCURRENCY=1` unless
+you are intentionally reproducing the known MTP C>1 hang. Use the full matrix
+for no-MTP and for non-B200 SM12x throughput gates.
 
 You do not need to run the full matrix for every edit. Use `1,2` or `1,2,4`
 for quick iteration, then widen to `1,2,4,8,16,24` before promoting a change.

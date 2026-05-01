@@ -159,10 +159,13 @@ wait up to `SERVER_STARTUP_TIMEOUT=1800` seconds before the live gate sequence,
 then use short health probes before expensive live gates. After a failed live
 gate or benchmark, they wait up to `SERVER_FAILURE_GRACE_TIMEOUT=300` seconds
 before recording `server_unresponsive.txt`, `*.server_unresponsive`, or
-`*.skipped` artifacts. Keep `SERVER_GUARD=1` for B200/SM12x reference runs.
-Set `SERVER_HEALTH_TIMEOUT=10` to tune the probe timeout, and set
-`SERVER_RECOVERY_CMD` only when you explicitly want the wrapper to run a local
-recovery command after detecting an unresponsive server.
+`*.skipped` artifacts. Benchmark recovery checks also run a tiny
+`/v1/completions` probe with `SERVER_FAILURE_PROBE_TIMEOUT=30`, so a live
+`/health` endpoint does not mask a wedged generation path. Keep
+`SERVER_GUARD=1` for B200/SM12x reference runs. Set `SERVER_HEALTH_TIMEOUT=10`
+to tune the health probe timeout, and set `SERVER_RECOVERY_CMD` only when you
+explicitly want the wrapper to run a local recovery command after detecting an
+unresponsive server.
 
 ## Expected Workflow
 
@@ -242,6 +245,12 @@ SERVE_LOG=/path/to/serve.log \
 CONCURRENCY=1,2,4,8,16,24 \
 scripts/run_bench_matrix.sh
 ```
+
+`BASE_URL` is passed through to `vllm bench serve`; use `HOST` and `PORT` only
+when you intentionally want the wrapper to construct a local target URL.
+For B200 reference servers, cap MTP benchmark runs at `CONCURRENCY=1` unless
+you are intentionally reproducing the known MTP C>1 hang. Use the full matrix
+for no-MTP and for non-B200 SM12x throughput gates.
 
 Use random prompts when you need a controlled shape rather than a representative
 conversation dataset:

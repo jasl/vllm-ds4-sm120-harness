@@ -94,6 +94,40 @@ def test_bench_matrix_builds_hf_dataset_commands(monkeypatch, tmp_path):
     assert "--random-output-len" not in first_command
 
 
+def test_bench_matrix_passes_base_url_to_vllm_bench(monkeypatch):
+    captured = []
+
+    def fake_run(command, timeout=None):
+        captured.append(command)
+        return {
+            "returncode": 0,
+            "metrics": {"successful_requests": 1},
+            "stdout": "",
+            "command": command,
+        }
+
+    monkeypatch.setattr(cli, "run_bench_command", fake_run)
+
+    rc = cli.main(
+        [
+            "bench-matrix",
+            "--base-url",
+            "http://192.0.2.10:8000",
+            "--concurrency",
+            "1",
+            "--num-prompts",
+            "1",
+        ]
+    )
+
+    assert rc == 0
+    command = captured[0]
+    assert "--base-url" in command
+    assert command[command.index("--base-url") + 1] == "http://192.0.2.10:8000"
+    assert "--host" not in command
+    assert "--port" not in command
+
+
 def test_bench_matrix_keeps_random_dataset_length_controls(monkeypatch):
     captured = []
 
@@ -204,3 +238,55 @@ def test_bench_matrix_stops_after_unresponsive_server(monkeypatch, tmp_path):
     assert rows[1]["concurrency"] == 2
     assert rows[1]["skipped"] is True
     assert "server unresponsive" in rows[1]["detail"]
+
+
+def test_bench_matrix_stops_when_health_passes_but_generation_is_wedged(
+    monkeypatch, tmp_path
+):
+    calls = []
+
+    def fake_run(command, timeout=None):
+        calls.append(command)
+        return {
+            "returncode": -1,
+            "metrics": {},
+            "stdout": "TIMEOUT after 5 seconds",
+            "command": command,
+        }
+
+    def fake_post_json(base_url, path, payload, timeout):
+        raise TimeoutError("generation probe timed out")
+
+    monkeypatch.setattr(cli, "run_bench_command", fake_run)
+    monkeypatch.setattr(
+        cli,
+        "get_status",
+        lambda base_url, path, timeout: {"status_code": 200, "body": "ok"},
+    )
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+    output = tmp_path / "bench.json"
+
+    rc = cli.main(
+        [
+            "bench-matrix",
+            "--concurrency",
+            "1,2",
+            "--num-prompts",
+            "1",
+            "--timeout",
+            "5",
+            "--stop-on-unresponsive",
+            "--health-timeout",
+            "1",
+            "--failure-probe-timeout",
+            "1",
+            "--json-output",
+            str(output),
+        ]
+    )
+
+    rows = json.loads(output.read_text(encoding="utf-8"))
+    assert rc == 1
+    assert len(calls) == 1
+    assert rows[1]["concurrency"] == 2
+    assert rows[1]["skipped"] is True
