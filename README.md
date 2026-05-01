@@ -151,7 +151,10 @@ prefill/decode token deltas, request pressure, and KV-cache usage. Set
 `RUNTIME_STATS=0` to disable sampling, or `RUNTIME_STATS_INTERVAL_SECONDS=10`
 to reduce polling. If you have the server log path, pass
 `SERVE_LOG=/path/to/serve.log`; the summary will also include vLLM log-derived
-prompt/generation throughput and speculative decoding acceptance metrics.
+prompt/generation throughput and speculative decoding acceptance metrics. The
+wrapper records `serve_log_offset.txt` when a phase starts and parses only the
+appended lines into `serve_log_phase.log`, so log-derived MTP acceptance metrics
+remain phase-local even when multiple harness phases share one vLLM server log.
 
 Each wrapper also downloads and runs the official vLLM `collect_env.py` script
 by default. It stores `vllm_collect_env.py`, `vllm_collect_env.sha256`,
@@ -261,6 +264,43 @@ The final `--speculative_config` line enables MTP. Remove it for the no-MTP
 baseline, and keep the rest of the serve command the same when comparing MTP
 against no-MTP.
 
+The reusable B200 baseline driver starts this serve shape itself, runs no-MTP
+and MTP as separate server lifecycles, and reuses the acceptance, benchmark,
+oracle-export, GPU telemetry, runtime metrics, and official `collect_env.py`
+wrappers:
+
+```bash
+cd /path/to/ds4-sm120-harness
+
+B200_VLLM_REPO=/workspace/vllm \
+B200_VLLM_VENV=/workspace/vllm/.venv \
+HF_HOME=/workspace/.hf_home \
+BRANCH_NAME=main \
+GPU_TOPOLOGY_SLUG=4x_nvidia_b200 \
+B200_BASELINE_LABEL=b200_official_main \
+scripts/run_b200_baseline.sh
+```
+
+Run this script on the reference host, not on a laptop. It defaults to
+`HOST=127.0.0.1 PORT=8080`, `B200_BASELINE_VARIANTS=nomtp,mtp`,
+`NO_MTP_CONCURRENCY=1,2,4,8,16,24`, `MTP_CONCURRENCY=1,2,4,8,16,24`,
+`NUM_PROMPTS=80`, and a controlled random long-context bench with
+`RANDOM_LONG_INPUT_LEN=8192 RANDOM_LONG_OUTPUT_LEN=512
+RANDOM_LONG_CONCURRENCY=1,2`. Set `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`,
+`RUN_RANDOM_LONG=0`, or `RUN_ORACLE_EXPORT=0` for narrower refreshes. The
+script clears inherited
+`VLLM_*`, `TORCH_CUDA_ARCH_LIST`, and `CUDA_VISIBLE_DEVICES` launch defaults
+before starting vLLM, then stores phase exit codes in `phase_exit_codes.tsv`
+and a human summary in `baseline_summary.md`. It keeps running later phases
+after an earlier phase fails, then exits non-zero if any phase failed; the
+artifact tree is still valid for partial-baseline analysis.
+
+The reference venv must include the packages needed by `vllm bench serve` and
+the harness self-checks. At minimum, confirm `python -m pip check` is clean and
+that `pytest`, `ruff`, and the Hugging Face `datasets` package are available in
+the vLLM venv. If FlashInfer is installed, keep `flashinfer-python`,
+`flashinfer-cubin`, and `flashinfer-jit-cache` on matching versions.
+
 ```bash
 python -m ds4_harness.cli oracle-compare \
   --base-url http://127.0.0.1:8000 \
@@ -283,9 +323,10 @@ scripts/run_bench_matrix.sh
 
 `BASE_URL` is passed through to `vllm bench serve`; use `HOST` and `PORT` only
 when you intentionally want the wrapper to construct a local target URL.
-For B200 reference servers, cap MTP benchmark runs at `CONCURRENCY=1` unless
-you are intentionally reproducing the known MTP C>1 hang. Use the full matrix
-for no-MTP and for non-B200 SM12x throughput gates.
+For the older official vLLM 0.20.0 B200 path, cap MTP benchmark runs at
+`CONCURRENCY=1` unless intentionally reproducing its known MTP C>1 hang. For
+newer main-based reference builds, run the guarded MTP C>1 matrix and record
+whether the server remains generation-responsive after each concurrency tier.
 
 Use random prompts when you need a controlled shape rather than a representative
 conversation dataset:

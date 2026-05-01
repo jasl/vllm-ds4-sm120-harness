@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -147,6 +148,8 @@ def test_scripts_capture_vllm_runtime_stats_to_artifacts():
     assert "runtime-summary" in helper
     assert '"${OUT_DIR}/runtime_stats_summary.json"' in helper
     assert '"${OUT_DIR}/runtime_stats_summary.md"' in helper
+    assert '"${OUT_DIR}/serve_log_phase.log"' in helper
+    assert '"${OUT_DIR}/serve_log_offset.txt"' in helper
 
     for script_name in ("run_acceptance.sh", "run_bench_matrix.sh", "run_oracle_export.sh"):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
@@ -176,6 +179,65 @@ def test_scripts_collect_vllm_official_env_to_artifacts():
 
         assert 'source "${SCRIPT_DIR}/vllm_collect_env.sh"' in script
         assert "collect_vllm_env" in script
+
+
+def test_b200_baseline_script_uses_official_serve_shape():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
+
+    assert 'VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-3600}"' in script
+    assert "deepseek-ai/DeepSeek-V4-Flash" in script
+    assert "--trust-remote-code" in script
+    assert "--kv-cache-dtype" in script
+    assert "fp8" in script
+    assert "--block-size" in script
+    assert "256" in script
+    assert "--tensor-parallel-size" in script
+    assert "4" in script
+    assert "--no-enable-flashinfer-autotune" in script
+    assert "--attention_config.use_fp4_indexer_cache=True" in script
+    assert "--reasoning-parser" in script
+    assert "deepseek_v4" in script
+    assert "--tokenizer-mode" in script
+    assert "--tool-call-parser" in script
+    assert "--enable-auto-tool-choice" in script
+    assert "--speculative_config" in script
+    assert '"method":"mtp","num_speculative_tokens":2' in script
+
+
+def test_b200_baseline_script_clears_inherited_vllm_launch_defaults():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
+
+    assert "clear_inherited_launch_env" in script
+    for name in (
+        "VLLM_ARGS",
+        "VLLM_MODEL",
+        "VLLM_TEST_ENDPOINT",
+        "VLLM_USAGE_SOURCE",
+        "TORCH_CUDA_ARCH_LIST",
+        "CUDA_VISIBLE_DEVICES",
+    ):
+        assert f"unset {name}" in script
+
+
+def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
+
+    assert 'B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-nomtp,mtp}"' in script
+    assert 'NO_MTP_CONCURRENCY="${NO_MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
+    assert 'MTP_CONCURRENCY="${MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
+    assert 'RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"' in script
+    assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
+    assert 'RUN_ROOT="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${B200_BASELINE_LABEL}/${RUN_TIMESTAMP}}"' in script
+    assert '"${variant_dir}/acceptance"' in script
+    assert '"${variant_dir}/bench_hf_mt_bench"' in script
+    assert '"${variant_dir}/bench_random_8192x512"' in script
+    assert '"${variant_dir}/oracle_export"' in script
+    assert "run_acceptance.sh" in script
+    assert "run_bench_matrix.sh" in script
+    assert "run_oracle_export.sh" in script
+    assert 'SERVE_LOG="${serve_log}"' in script
+    assert "baseline_summary.md" in script
+    assert "phase_exit_codes.tsv" in script
 
 
 def test_vllm_collect_env_helper_downloads_and_runs_official_script(tmp_path):
@@ -332,6 +394,7 @@ def test_scripts_have_valid_bash_syntax():
         "run_acceptance.sh",
         "run_bench_matrix.sh",
         "run_oracle_export.sh",
+        "run_b200_baseline.sh",
         "gpu_stats.sh",
         "runtime_stats.sh",
         "run_context.sh",
@@ -365,6 +428,7 @@ def test_bench_wrapper_can_run_with_mocked_python(tmp_path):
         "VLLM_BIN": "fake-vllm",
         "CONCURRENCY": "1",
         "NUM_PROMPTS": "1",
+        "SERVE_LOG": "",
     }
 
     subprocess.run(
@@ -408,6 +472,7 @@ def test_bench_wrapper_records_exit_code_on_bench_failure(tmp_path):
         "CONCURRENCY": "1",
         "NUM_PROMPTS": "1",
         "SERVER_STARTUP_INTERVAL_SECONDS": "0",
+        "SERVE_LOG": "",
     }
 
     result = subprocess.run(
@@ -423,3 +488,145 @@ def test_bench_wrapper_records_exit_code_on_bench_failure(tmp_path):
     assert result.returncode == 1
     assert (out_dir / "bench.exit_code").read_text(encoding="utf-8").strip() == "1"
     assert f"wrote {out_dir}" in result.stdout
+
+
+def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env sh\n"
+        "args=\"$*\"\n"
+        "write_arg_file() {\n"
+        "  flag=\"$1\"\n"
+        "  shift\n"
+        "  while [ \"$#\" -gt 0 ]; do\n"
+        "    if [ \"$1\" = \"$flag\" ]; then\n"
+        "      shift\n"
+        "      mkdir -p \"$(dirname \"$1\")\"\n"
+        "      printf '%s\\n' '{}' > \"$1\"\n"
+        "      return 0\n"
+        "    fi\n"
+        "    shift\n"
+        "  done\n"
+        "}\n"
+        "case \"$args\" in\n"
+        "  *' env-summary '*) write_arg_file --json-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
+        "  *' health'*) printf '%s\\n' '{\"ok\":true}'; exit 0 ;;\n"
+        "  *' chat-smoke '*) write_arg_file --jsonl-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
+        "  *' toolcall15 '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
+        "  *' bench-matrix '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
+        "  *' oracle-export '*) exit 0 ;;\n"
+        "  *' pytest'*) exit 0 ;;\n"
+        "  *' ruff check'*) exit 0 ;;\n"
+        "  *' compileall '*) exit 0 ;;\n"
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    fake_vllm = tmp_path / "fake-vllm"
+    fake_vllm.write_text(
+        "#!/usr/bin/env sh\n"
+        "trap 'exit 0' TERM INT\n"
+        "while :; do sleep 1; done\n",
+        encoding="utf-8",
+    )
+    fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    out_dir = tmp_path / "baseline"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "VLLM_BIN": str(fake_vllm),
+        "OUT_DIR": str(out_dir),
+        "GPU_STATS": "0",
+        "RUNTIME_STATS": "0",
+        "VLLM_COLLECT_ENV": "0",
+        "B200_BASELINE_VARIANTS": "nomtp,mtp",
+        "NO_MTP_CONCURRENCY": "1",
+        "MTP_CONCURRENCY": "2",
+        "NUM_PROMPTS": "1",
+        "RUN_RANDOM_LONG": "1",
+        "RANDOM_LONG_CONCURRENCY": "1",
+        "RANDOM_LONG_NUM_PROMPTS": "1",
+        "RUN_ORACLE_EXPORT": "1",
+        "SERVER_STARTUP_TIMEOUT": "5",
+        "SERVER_STARTUP_INTERVAL_SECONDS": "0",
+    }
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_b200_baseline.sh")],
+        check=True,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    phase_log = (out_dir / "phase_exit_codes.tsv").read_text(encoding="utf-8")
+    assert "nomtp\tacceptance\t0" in phase_log
+    assert "nomtp\tbench_hf_mt_bench\t0" in phase_log
+    assert "nomtp\toracle_export\t0" in phase_log
+    assert "mtp\tacceptance\t0" in phase_log
+    assert "mtp\tbench_hf_mt_bench\t0" in phase_log
+    assert not any(
+        line.startswith("mtp\toracle_export\t") for line in phase_log.splitlines()
+    )
+    assert (out_dir / "baseline_summary.md").exists()
+    assert "--speculative_config" in (out_dir / "mtp" / "serve_command.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "wrote" in result.stdout
+
+
+def test_runtime_stats_helper_slices_serve_log_per_phase(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        "#!/usr/bin/env sh\n"
+        "printf '%s\\n' 'vllm:prompt_tokens_total 10'\n"
+        "printf '%s\\n' 'vllm:generation_tokens_total 3'\n",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(fake_curl.stat().st_mode | 0o111)
+    serve_log = tmp_path / "serve.log"
+    serve_log.write_text(
+        "INFO Engine 000: Avg prompt throughput: 10.0 tokens/s, "
+        "Avg generation throughput: 20.0 tokens/s, Running: 9 reqs, "
+        "Waiting: 0 reqs, GPU KV cache usage: 9.0%, Prefix cache hit rate: 0.0%\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "out"
+    script = f"""
+set -euo pipefail
+cd "{ROOT}"
+OUT_DIR="{out_dir}"
+BASE_URL=http://127.0.0.1:9
+PYTHON=python
+SERVE_LOG="{serve_log}"
+RUNTIME_STATS=1
+RUNTIME_STATS_INTERVAL_SECONDS=1
+PATH="{fake_bin}:$PATH"
+source "{ROOT / "scripts" / "runtime_stats.sh"}"
+mkdir -p "${{OUT_DIR}}"
+start_runtime_stats
+printf '%s\\n' 'INFO Engine 000: Avg prompt throughput: 100.0 tokens/s, Avg generation throughput: 200.0 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.0%, Prefix cache hit rate: 0.0%' >> "${{SERVE_LOG}}"
+sleep 0.2
+stop_runtime_stats
+"""
+
+    subprocess.run(
+        ["bash", "-c", script],
+        check=True,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    sliced = (out_dir / "serve_log_phase.log").read_text(encoding="utf-8")
+    assert "100.0 tokens/s" in sliced
+    assert "10.0 tokens/s" not in sliced
+    data = json.loads((out_dir / "runtime_stats_summary.json").read_text(encoding="utf-8"))
+    assert data["serve_log"]["prefill_throughput_tok_s_avg"] == 100.0
+    assert (out_dir / "serve_log_offset.txt").exists()
