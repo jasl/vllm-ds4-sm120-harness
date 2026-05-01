@@ -26,7 +26,7 @@ OFFICIAL_TOOLCALL15_MIN_POINTS="${OFFICIAL_TOOLCALL15_MIN_POINTS:-2}"
 OFFICIAL_TOOLCALL15_TIMEOUT="${OFFICIAL_TOOLCALL15_TIMEOUT:-120}"
 OFFICIAL_EXTRA_BODY_JSON="${OFFICIAL_EXTRA_BODY_JSON:-}"
 OFFICIAL_STRICT="${OFFICIAL_STRICT:-0}"
-OFFICIAL_BASELINE_DATE="${OFFICIAL_BASELINE_DATE:-$(date -u +%Y%m%d)}"
+OFFICIAL_BASELINE_DATE="${OFFICIAL_BASELINE_DATE:-$(date +%Y%m%d)}"
 
 model_slug="$(printf '%s' "${OFFICIAL_MODEL}" | sed -E 's#[^A-Za-z0-9]+#_#g; s#^_+##; s#_+$##' | tr '[:upper:]' '[:lower:]')"
 OFFICIAL_BASELINE_LABEL="${OFFICIAL_BASELINE_LABEL:-deepseek_official_api_${model_slug}}"
@@ -37,7 +37,7 @@ if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
   exit 2
 fi
 
-timestamp="$(date -u +%Y%m%d%H%M%S)"
+timestamp="$(date +%Y%m%d%H%M%S)"
 OFFICIAL_ARTIFACT_DIR="${OFFICIAL_ARTIFACT_DIR:-${REPO_ROOT}/artifacts/official_api/${OFFICIAL_MODEL}/${timestamp}}"
 mkdir -p "${OFFICIAL_ARTIFACT_DIR}"
 

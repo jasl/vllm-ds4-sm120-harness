@@ -862,7 +862,7 @@ def test_official_api_baseline_script_writes_separate_baseline_directory():
     )
 
     assert "load_harness_env" in script
-    assert 'OFFICIAL_BASELINE_DATE="${OFFICIAL_BASELINE_DATE:-$(date -u +%Y%m%d)}"' in script
+    assert 'OFFICIAL_BASELINE_DATE="${OFFICIAL_BASELINE_DATE:-$(date +%Y%m%d)}"' in script
     assert 'OFFICIAL_BASELINE_DIR="${OFFICIAL_BASELINE_DIR:-${REPO_ROOT}/baselines/${OFFICIAL_BASELINE_DATE}_${OFFICIAL_BASELINE_LABEL}}"' in script
     assert 'OFFICIAL_GENERATION_PROMPTS="${OFFICIAL_GENERATION_PROMPTS:-translation_en_to_zh,translation_zh_to_en,writing_follow_instructions,writing_local_llm_tradeoffs}"' in script
     assert 'OFFICIAL_SMOKE_CASES="${OFFICIAL_SMOKE_CASES:-math_7_times_8,capital_of_france,spanish_greeting}"' in script
