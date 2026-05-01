@@ -234,6 +234,33 @@ comparisons fail when tokenization diverges or token ids are unavailable.
 The wrapper uses `ORACLE_STOP_ON_ERROR=1` by default so a deadlocked reference
 server consumes only one request timeout before stopping the export.
 
+### B200 Official Serve Command
+
+For B200 reference baselines, prefer the official DeepSeek V4 Flash deployment
+shape. Clear any image-provided `VLLM_*` launch defaults before starting vLLM if
+they conflict with the explicit command.
+
+```bash
+export VLLM_ENGINE_READY_TIMEOUT_S=3600
+
+vllm serve deepseek-ai/DeepSeek-V4-Flash \
+  --trust-remote-code \
+  --kv-cache-dtype fp8 \
+  --block-size 256 \
+  --tensor-parallel-size 4 \
+  --no-enable-flashinfer-autotune \
+  --attention_config.use_fp4_indexer_cache=True \
+  --reasoning-parser deepseek_v4 \
+  --tokenizer-mode deepseek_v4 \
+  --tool-call-parser deepseek_v4 \
+  --enable-auto-tool-choice \
+  --speculative_config '{"method":"mtp","num_speculative_tokens":2}'
+```
+
+The final `--speculative_config` line enables MTP. Remove it for the no-MTP
+baseline, and keep the rest of the serve command the same when comparing MTP
+against no-MTP.
+
 ```bash
 python -m ds4_harness.cli oracle-compare \
   --base-url http://127.0.0.1:8000 \
