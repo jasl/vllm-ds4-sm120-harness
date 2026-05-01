@@ -205,9 +205,7 @@ def _phase_exit_codes(run_dir: Path) -> list[Json]:
     return rows
 
 
-def _copy_oracle(run_dir: Path, output_dir: Path) -> None:
-    source_dir = run_dir / "nomtp" / "oracle_export"
-    target_dir = output_dir / "oracle"
+def _copy_one_oracle(source_dir: Path, target_dir: Path) -> None:
     for path in sorted(source_dir.glob("completion_*.json")):
         _copy_json(path, target_dir / path.name)
     for path in sorted(source_dir.glob("tokenize_completion_*.json")):
@@ -217,6 +215,16 @@ def _copy_oracle(run_dir: Path, output_dir: Path) -> None:
         source_dir / "oracle_export_summary.md",
         target_dir / "oracle_export_summary.md",
     )
+
+
+def _copy_oracle(run_dir: Path, output_dir: Path) -> None:
+    for variant in VARIANTS:
+        source_dir = run_dir / variant / "oracle_export"
+        if not source_dir.exists():
+            continue
+        _copy_one_oracle(source_dir, output_dir / "oracle" / variant)
+        if variant == "nomtp":
+            _copy_one_oracle(source_dir, output_dir / "oracle")
 
 
 def _copy_oracle_summary(source_dir: Path, target_dir: Path) -> None:
@@ -331,7 +339,7 @@ def _write_manifest(
         "contents": {
             "report": "Readable baseline report with correctness, performance, and cost metrics.",
             "subjective_quality": "Optional side-by-side writing, translation, and coding samples.",
-            "oracle": "Deterministic no-MTP /v1/completions logprobs oracle cases.",
+            "oracle": "Deterministic /v1/completions logprobs oracle cases. The oracle root is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp keep variant-specific copies when present.",
             "smoke": "no-MTP and MTP chat smoke request/response captures.",
             "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
             "performance": "Benchmark, runtime, and GPU telemetry summaries.",
@@ -393,11 +401,13 @@ paths, server logs, tokens, and private connection details.
 - `manifest.json`: model, GPU topology, vLLM provenance, serve shape, and phase
   exit codes.
 - `report.md`: readable baseline report with throughput, latency, correctness,
-  runtime telemetry, and synthetic provider-style cost metrics.
+  runtime telemetry, and synthetic real-scenario OP cost metrics.
 - `subjective_quality/`: B200 no-MTP, B200 MTP, and DeepSeek official API
   writing, translation, and coding samples for human comparison when present.
-- `oracle/`: no-MTP deterministic `/v1/completions` cases with prompt token ids,
-  generated tokens, token logprobs, top logprobs, and usage.
+- `oracle/`: no-MTP deterministic `/v1/completions` compatibility entrypoint;
+  `oracle/nomtp/` and `oracle/mtp/` contain variant-specific copies when
+  present, including prompt token ids, generated tokens, token logprobs, top
+  logprobs, and usage.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
 - `toolcall15/`: no-MTP and MTP ToolCall-15 scores and traces.
 - `performance/`: benchmark rows plus GPU/runtime telemetry summaries.

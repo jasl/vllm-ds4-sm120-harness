@@ -1,10 +1,12 @@
 # Chat Smoke Report
 
 - Cases: 4
+- Repeat count: 3
 
 ## writing_follow_instructions
 
 - Status: PASS
+- Round: 1
 - Tags: quality, writing, user-report
 - Check: matched expectation
 
@@ -38,10 +40,15 @@ Running large language models (LLMs) locally means deploying and executing the m
 Run LLMs locally only if data privacy is critical, you have dedicated GPU hardware (at least 8GB VRAM for 7B models), and your tasks tolerate slower or less-capable responses. For high-throughput, accuracy-sensitive, or large-scale work, cloud APIs remain more efficient and cost-effective.
 ```
 
+### Timing
+
+- Elapsed seconds: 2.542
+
 ## writing_quality_user_report_zh
 
 - Status: PASS
-- Tags: quality, writing, subjective, user-report
+- Round: 1
+- Tags: quality, quality-cn, writing, subjective, user-report
 - Check: matched expectation
 
 ### Prompt
@@ -99,9 +106,14 @@ Run LLMs locally only if data privacy is critical, you have dedicated GPU hardwa
 本地部署LLM不是一件全有或全无的事。它更像一种工程权衡：在隐私、延迟、成本和人力之间选择一条当前阶段最适合你的曲线。保留API通路作为降级方案永远是一个好的保险，而不是示弱。
 ```
 
+### Timing
+
+- Elapsed seconds: 8.447
+
 ## translation_quality_en_to_zh
 
 - Status: PASS
+- Round: 1
 - Tags: quality, translation, subjective, user-report
 - Check: matched expectation
 
@@ -121,10 +133,15 @@ Running a large language model locally can improve privacy and reduce latency, b
 本地运行大型语言模型可提升隐私性并降低延迟，但也将运维责任转移到了团队自身。实际考量不在于本地推理是否惊艳，而在于组织能否承担硬件维护、质量监控以及迭代周期变缓所带来的成本。
 ```
 
+### Timing
+
+- Elapsed seconds: 0.492
+
 ## translation_quality_zh_to_en
 
 - Status: PASS
-- Tags: quality, translation, subjective, user-report
+- Round: 1
+- Tags: quality, quality-cn, translation, subjective, user-report
 - Check: matched expectation
 
 ### Prompt
@@ -142,3 +159,311 @@ Translate the following Chinese paragraph into clear, idiomatic English for an e
 ```text
 Deploying a large language model on-premises is not simply a matter of downloading the weights onto a server. It brings privacy, latency, and controllability into the team’s hands, but it also turns capacity planning, model upgrades, fault diagnosis, and quality evaluation into ongoing responsibilities. What truly needs to be assessed is whether this level of control justifies the corresponding operational cost.
 ```
+
+### Timing
+
+- Elapsed seconds: 0.660
+
+## writing_follow_instructions
+
+- Status: PASS
+- Round: 2
+- Tags: quality, writing, user-report
+- Check: matched expectation
+
+### Prompt
+
+#### user
+
+```text
+Write a short article about the tradeoffs of running large language models locally. Follow this exact structure with four labeled sections: Context:, Benefits:, Risks:, Recommendation:. Keep each section concise.
+```
+
+### Assistant
+
+```text
+**Context:**
+Running large language models (LLMs) locally means deploying and inferencing models on personal hardware (e.g., a desktop, laptop, or server) rather than relying on cloud APIs. This approach is increasingly popular as open-weight models become available, but it involves distinct tradeoffs in cost, performance, and control.
+
+**Benefits:**
+- **Privacy & Security:** All data stays on-device, eliminating external data transmission and reducing risks of third-party access or data breaches.
+- **Offline Availability:** No internet dependency; models work in air-gapped or low-connectivity environments.
+- **Customization:** Full control over model quantization, fine-tuning, and inference parameters without API usage limits or vendor lock-in.
+- **Cost Predictability:** No per-token or subscription fees; only upfront hardware and electricity costs.
+
+**Risks:**
+- **High Hardware Demands:** Running competitive LLMs (e.g., 7B+ parameters) requires high-end GPUs with substantial VRAM (e.g., 24GB+ for unquantized 13B models), raising upfront costs significantly.
+- **Performance Tradeoffs:** To fit hardware constraints, users often quantize models (e.g., 4-bit precision), which can degrade output quality, coherence, and reasoning accuracy.
+- **Latency & Throughput:** Local inference is slower than optimized cloud APIs, especially for batch processing or real-time applications, and struggles with context windows longer than 4K–8K tokens on consumer GPUs.
+- **Maintenance Burden:** Users must manage model downloads, updates, dependency conflicts, and hardware thermals/power limits regularly.
+
+**Recommendation:**
+Run LLMs locally if your priority is data privacy, offline use, or tight budget control, and you are willing to invest in a capable GPU (e.g., RTX 4090, 24GB+ VRAM). For tasks requiring high throughput, low latency, or access to the largest state-of-the-art models (200B+ parameters), prefer cloud APIs with strong security guarantees. A hybrid approach—local for sensitive or latency-insensitive tasks, cloud for scale and speed—often balances these tradeoffs optimally.
+```
+
+### Timing
+
+- Elapsed seconds: 3.488
+
+## writing_quality_user_report_zh
+
+- Status: PASS
+- Round: 2
+- Tags: quality, quality-cn, writing, subjective, user-report
+- Check: matched expectation
+
+### Prompt
+
+#### user
+
+```text
+请写一篇面向工程团队负责人的中文短文，主题是“在本地部署大语言模型的收益与代价”。
+
+要求：
+1. 不要写成清单堆砌，要像一篇完整文章。
+2. 必须包含这些小标题：背景、收益、代价、建议。
+3. 需要具体讨论隐私、延迟、运维复杂度、成本和团队能力。
+4. 语气要克制、专业、可执行，不要营销腔。
+5. 不要解释你将如何写，直接给出正文。
+```
+
+### Assistant
+
+```text
+### 背景
+
+过去一年，大语言模型（LLM）从技术极客的玩具迅速演变为企业基础设施级别的工具。对于工程团队而言，一个反复出现的问题是：是否应该在自己的服务器上部署私有模型，而非完全依赖云API？这个决策看似是技术选型，实则涉及数据策略、团队组织与长期成本结构。当一家公司的业务数据开始深度参与模型调用时，本地部署就不再是“要不要跟进潮流”，而是一场关于控制权与成本的对冲博弈。
+
+### 收益
+
+最直观的收益来自**隐私与合规**。当模型需要处理客户个人信息、内部研发文档或未公开的财务数据时，将请求发送至公网API意味着将数据主权交给了第三方。本地部署能确保推理过程完全运行在VPC或物理机内，满足GDPR、HIPAA或金融监管要求，也避免了因数据出境引发的法务风险。
+
+其次是**延迟与稳定性**。对于需要低延迟响应的场景——例如代码补全、实时客服辅助或制造业的实时质检——公网API的网络抖动和不可达问题会直接破坏用户体验。本地部署能将单次推理的P95延迟从数百毫秒降至数十毫秒，且排除了上游服务故障或限流带来的不确定性。
+
+第三是**定制化**。本地模型允许你微调或拼接自有知识库（如RAG pipeline），从而在垂直任务上超越通用API的表现。这对于拥有独特行业术语或流程的团队尤为重要。
+
+### 代价
+
+**运维复杂度**是第一个隐性成本。部署一个7B参数模型所需的推理框架（如vLLM、TGI）、GPU驱动、量化策略，以及伴随的监控、日志、负载均衡和故障恢复机制，对非基础设施专长的团队可能构成数月的学习曲线。更麻烦的是模型版本管理——当基础大模型发布新版本时，本地适配与回归测试需要持续投入人力。
+
+**硬件成本**往往被低估。以在线推理场景为例，一个8卡A100节点（约60万元人民币）仅能支撑中等规模生产流量。且GPU是物理资产，存在折旧、散热、电力及备件替换。相比之下，API付费模式是Opex（运营费用），而本地部署的前期Capex（资本支出）会形成财务压力，尤其当模型利用率不足时，闲置算力等同于沉没成本。
+
+更隐蔽的代价是**团队能力的分流**。本地部署需要至少一名专注MLOps或AI Infra的工程师，他的时间将从业务价值更高的模型训练、特征工程或系统优化中抽离。如果团队原本就缺乏GPU运维经验，这一角色很难通过临时培训快速补齐。
+
+### 建议
+
+对于工程负责人，建议按以下三维度评估必要性：**数据敏感度**、**服务可中断性**和**可复用流量规模**。
+
+- **数据敏感度高**（如医疗、金融、法律）：优先本地部署，但起步应控制模型规模（如7B~13B），并使用量化+KV Cache优化以降低硬件门槛。
+- **延迟要求极严**且请求模式平稳（如内部工具链）：可考虑本地部署，但建议预留20%算力余量以应对突发流量，并设置云端API作为降级后备。
+- **流量微小或高度波动**（如个人助手、原型验证）：坚决使用云API，即使数据非敏感。本地部署的固定成本在此场景下无法摊薄。
+
+此外，避免“自建一切”。可以先用Hugging Face、Ollama等工具快速验证，再迁移至正经推理引擎。运维层面，优先使用已有k8s集群与GPU节点池，避免另起一套硬件体系。最后，定期审计模型负载：如果GPU利用率长期低于30%，放弃幻想，回退到云端调用。
+
+本地部署不是判断题，而是风险收益的权衡题。好的决策来自于对自身团队能力的诚实评估，而非对技术概念的盲目拥抱。
+```
+
+### Timing
+
+- Elapsed seconds: 6.264
+
+## translation_quality_en_to_zh
+
+- Status: PASS
+- Round: 2
+- Tags: quality, translation, subjective, user-report
+- Check: matched expectation
+
+### Prompt
+
+#### user
+
+```text
+Translate the following paragraph into natural, polished Simplified Chinese. Preserve the meaning, tone, and paragraph structure. Do not add explanations.
+
+Running a large language model locally can improve privacy and reduce latency, but it also shifts operational responsibility to the team. The practical question is not whether local inference is impressive, but whether the organization can maintain the hardware, monitor quality, and absorb the cost of slower iteration.
+```
+
+### Assistant
+
+```text
+本地运行大型语言模型可以提升隐私性并降低延迟，但同时也将运维责任转移到了团队身上。这里的关键问题不在于本地推理能力是否强大，而在于组织能否承担硬件维护、质量监控以及迭代速度放缓所带来的成本。
+```
+
+### Timing
+
+- Elapsed seconds: 0.472
+
+## translation_quality_zh_to_en
+
+- Status: PASS
+- Round: 2
+- Tags: quality, quality-cn, translation, subjective, user-report
+- Check: matched expectation
+
+### Prompt
+
+#### user
+
+```text
+Translate the following Chinese paragraph into clear, idiomatic English for an engineering leadership audience. Preserve the cautious tone. Do not add explanations.
+
+本地部署大语言模型并不只是把权重下载到服务器上。它会把隐私、延迟和可控性带到团队手里，也会把容量规划、模型升级、故障排查和质量评估变成长期责任。真正需要判断的是，这些控制权是否值得相应的运维成本。
+```
+
+### Assistant
+
+```text
+Deploying a large language model on-premises is not simply a matter of downloading the weights onto a server. It brings privacy, latency, and controllability into the hands of the team, but it also turns capacity planning, model upgrades, troubleshooting, and quality evaluation into long-term responsibilities. The real judgment lies in whether these controls are worth the corresponding operational costs.
+```
+
+### Timing
+
+- Elapsed seconds: 0.633
+
+## writing_follow_instructions
+
+- Status: PASS
+- Round: 3
+- Tags: quality, writing, user-report
+- Check: matched expectation
+
+### Prompt
+
+#### user
+
+```text
+Write a short article about the tradeoffs of running large language models locally. Follow this exact structure with four labeled sections: Context:, Benefits:, Risks:, Recommendation:. Keep each section concise.
+```
+
+### Assistant
+
+```text
+**Context:**
+Running large language models (LLMs) locally means deploying and inferencing models on personal hardware rather than relying on cloud APIs. This approach is increasingly viable due to open-source models like Llama, Mistral, and Gemma, but it introduces distinct tradeoffs in performance, cost, and control.
+
+**Benefits:**
+- **Privacy & Security:** All data stays on-device, eliminating risks of third-party data leakage.
+- **No Recurring Costs:** Avoids per-token or subscription fees from cloud providers.
+- **Customization:** Allows fine-tuning on proprietary datasets without external oversight.
+- **Offline Use:** Operates without internet dependency, ideal for sensitive or remote environments.
+
+**Risks:**
+- **Hardware Demands:** Requires expensive GPUs with high VRAM (e.g., 24GB+ for a 7B-parameter model at 4-bit quantization).
+- **Slower Inference:** Local models often run 5–10x slower than cloud alternatives, especially without dedicated accelerators.
+- **Limited Model Size:** Consumer hardware typically caps out at ~70B parameters, missing state-of-the-art performance of 100B+ cloud models.
+- **Maintenance Burden:** User must manage updates, quantization, and compatibility issues.
+
+**Recommendation:**
+Prioritize local LLMs for use cases emphasizing data privacy, offline access, or long-term cost savings (e.g., medical records analysis, proprietary code assistants). For high-throughput, latency-sensitive, or cutting-edge tasks (e.g., real-time customer support, multilingual translation), cloud APIs remain superior. If going local, invest in at least an RTX 4090 or M2 Ultra, and use quantized models (e.g., 4-bit) to balance quality and resource usage.
+```
+
+### Timing
+
+- Elapsed seconds: 2.866
+
+## writing_quality_user_report_zh
+
+- Status: PASS
+- Round: 3
+- Tags: quality, quality-cn, writing, subjective, user-report
+- Check: matched expectation
+
+### Prompt
+
+#### user
+
+```text
+请写一篇面向工程团队负责人的中文短文，主题是“在本地部署大语言模型的收益与代价”。
+
+要求：
+1. 不要写成清单堆砌，要像一篇完整文章。
+2. 必须包含这些小标题：背景、收益、代价、建议。
+3. 需要具体讨论隐私、延迟、运维复杂度、成本和团队能力。
+4. 语气要克制、专业、可执行，不要营销腔。
+5. 不要解释你将如何写，直接给出正文。
+```
+
+### Assistant
+
+```text
+# 在本地部署大语言模型的收益与代价
+
+## 背景
+
+随着大语言模型在企业场景中的渗透率快速提升，工程团队负责人面临一个日渐清晰的分岔口：是调用云端API，还是在自有基础设施上部署模型。过去一年，我们团队先后经历了“先API后本地”的完整过程，其中既有收益，也有预想之外的代价。本文旨在以实操视角，帮助同行在做出技术决策前，建立对收益与代价的务实认知。
+
+## 收益
+
+最显著的收益是**数据隐私可控**。当业务涉及客户合同、内部财务数据或产品未公开代码时，将这些文本发送至云端推理存在潜在的合规风险。本地部署彻底切断了数据离开自有网络的可能性，这在金融、医疗和政务场景中几乎是硬性要求。第二个不易量化的收益是**延迟稳定性**。云端API的响应时间受网络抖动、负载均衡和并发配额影响，峰值时可能出现几秒级波动；本地推理的延迟曲线则相对平滑，对实时性要求较高的交互式应用（如代码补全、客服辅助）意义重大。此外，长期运行的团队会发现，本地部署带来的**可调试性**——能直接查看模型输出、中间层日志甚至修改推理代码——是API无法提供的隐性优势。
+
+## 代价
+
+代价首先体现在**运维复杂度**上。部署一个可用的大模型并不只是“docker run”那么简单。你需要处理GPU驱动兼容性、CUDA版本冲突、模型加载时的显存分配策略，以及可能的多机推理框架（如vLLM、TensorRT-LLM）配置。这些工作对团队的基础设施能力提出了明确要求：至少需要有人熟悉容器化、GPU调度和常见推理框架的调优参数。现实是，许多团队低估了从“模型能跑”到“模型好用”之间的距离。
+
+**成本**是第二个需要冷静面对的问题。以7B参数模型为例，一块A100（80GB）可以支持单并发场景，但团队若需要支持几十甚至上百个用户同时使用，意味着要投入数十万到数百万的GPU硬件成本。电费、机房空调、网络带宽和硬件折旧同样不可忽视。相比之下，云端API按token计费，在流量较低时实际支出远低于本地方案。只有当调用量达到特定阈值（通常每月数亿token），本地部署的边际成本才可能低于API。
+
+最后是**团队能力**。大模型运维需要的不再是传统后端工程师的技能栈。团队要能理解tokenization策略、量化精度对生成质量的影响、低秩适应（LoRA）的加载方式，以及不同模型架构（如LLaMA、Mistral、Qwen）之间的差异。如果团队中没有至少一位具备模型推理或MLOps经验的人，遇到显存泄漏、推理服务OOM或精度下降时，排查效率会很低，业务体验也会受到影响。
+
+## 建议
+
+综合以上观察，我建议工程团队负责人先走“混用策略”过渡。核心敏感业务（如内部知识库检索、合同摘要）用本地模型，非敏感且高频的低价值流量（如内容润色、简单问答）仍走云端API。这样既能控制隐私风险，又在初期控制了成本和运维压力。在做本地部署规划时，优先选择支持量化（如8-bit、4-bit）和动态批处理的推理框架，这能显著降低硬件门槛。更重要的是，在立项前让团队中一到两名成员花两周时间跑通一次完整的部署流程，包括模型下载、推理框架搭建、API封装和压力测试。只有亲自踩过坑，才能对“代价”二字有真实体感。投资大模型基础设施，不应基于“应该做”的热情，而应基于“扛得住”的底气。
+```
+
+### Timing
+
+- Elapsed seconds: 5.937
+
+## translation_quality_en_to_zh
+
+- Status: PASS
+- Round: 3
+- Tags: quality, translation, subjective, user-report
+- Check: matched expectation
+
+### Prompt
+
+#### user
+
+```text
+Translate the following paragraph into natural, polished Simplified Chinese. Preserve the meaning, tone, and paragraph structure. Do not add explanations.
+
+Running a large language model locally can improve privacy and reduce latency, but it also shifts operational responsibility to the team. The practical question is not whether local inference is impressive, but whether the organization can maintain the hardware, monitor quality, and absorb the cost of slower iteration.
+```
+
+### Assistant
+
+```text
+在本地运行大型语言模型可以提升隐私保护并降低延迟，但这也将运维责任转移到了团队自身。实际的关键问题不在于本地推理是否令人印象深刻，而在于组织是否有能力维护硬件、监控质量，并承担迭代速度减缓所带来的成本。
+```
+
+### Timing
+
+- Elapsed seconds: 0.483
+
+## translation_quality_zh_to_en
+
+- Status: PASS
+- Round: 3
+- Tags: quality, quality-cn, translation, subjective, user-report
+- Check: matched expectation
+
+### Prompt
+
+#### user
+
+```text
+Translate the following Chinese paragraph into clear, idiomatic English for an engineering leadership audience. Preserve the cautious tone. Do not add explanations.
+
+本地部署大语言模型并不只是把权重下载到服务器上。它会把隐私、延迟和可控性带到团队手里，也会把容量规划、模型升级、故障排查和质量评估变成长期责任。真正需要判断的是，这些控制权是否值得相应的运维成本。
+```
+
+### Assistant
+
+```text
+Deploying large language models on-premises is not simply a matter of downloading weights onto a server. It brings privacy, latency, and controllability into the hands of the team, but it also turns capacity planning, model upgrades, fault diagnosis, and quality evaluation into ongoing responsibilities. The real question to assess is whether this level of control justifies the corresponding operational costs.
+```
+
+### Timing
+
+- Elapsed seconds: 0.667

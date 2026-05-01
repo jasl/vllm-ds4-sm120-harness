@@ -6,8 +6,10 @@
       "basic",
       "deterministic"
     ],
+    "round": 1,
     "ok": true,
     "detail": "matched expectation",
+    "elapsed_seconds": 0.227606,
     "payload": {
       "model": "deepseek-ai/DeepSeek-V4-Flash",
       "messages": [
@@ -20,9 +22,9 @@
       "temperature": 0.0
     },
     "response": {
-      "id": "chatcmpl-8726615fa3e93aeb",
+      "id": "chatcmpl-8fb37e7e279fd4b5",
       "object": "chat.completion",
-      "created": 1777661008,
+      "created": 1777670911,
       "model": "deepseek-ai/DeepSeek-V4-Flash",
       "choices": [
         {
@@ -63,8 +65,10 @@
       "basic",
       "deterministic"
     ],
+    "round": 1,
     "ok": true,
     "detail": "matched expectation",
+    "elapsed_seconds": 0.14638,
     "payload": {
       "model": "deepseek-ai/DeepSeek-V4-Flash",
       "messages": [
@@ -77,9 +81,9 @@
       "temperature": 0.0
     },
     "response": {
-      "id": "chatcmpl-baa78a2d8c0828b6",
+      "id": "chatcmpl-bc0d669a1e0d8c1a",
       "object": "chat.completion",
-      "created": 1777661008,
+      "created": 1777670911,
       "model": "deepseek-ai/DeepSeek-V4-Flash",
       "choices": [
         {
@@ -120,8 +124,10 @@
       "basic",
       "deterministic"
     ],
+    "round": 1,
     "ok": true,
     "detail": "matched expectation",
+    "elapsed_seconds": 0.325226,
     "payload": {
       "model": "deepseek-ai/DeepSeek-V4-Flash",
       "messages": [
@@ -134,9 +140,9 @@
       "temperature": 0.0
     },
     "response": {
-      "id": "chatcmpl-bbd6dd81bfae3744",
+      "id": "chatcmpl-b3950d2e504ecf4d",
       "object": "chat.completion",
-      "created": 1777661008,
+      "created": 1777670911,
       "model": "deepseek-ai/DeepSeek-V4-Flash",
       "choices": [
         {
@@ -178,8 +184,10 @@
       "agent",
       "deterministic"
     ],
+    "round": 1,
     "ok": true,
     "detail": "matched expectation",
+    "elapsed_seconds": 0.849073,
     "payload": {
       "model": "deepseek-ai/DeepSeek-V4-Flash",
       "messages": [
@@ -231,9 +239,9 @@
       "tool_choice": "auto"
     },
     "response": {
-      "id": "chatcmpl-b64b8ae8d4f3ca3a",
+      "id": "chatcmpl-9dfe005c74db1479",
       "object": "chat.completion",
-      "created": 1777661008,
+      "created": 1777670911,
       "model": "deepseek-ai/DeepSeek-V4-Flash",
       "choices": [
         {
@@ -247,7 +255,7 @@
             "function_call": null,
             "tool_calls": [
               {
-                "id": "chatcmpl-tool-a8ebc1821a233136",
+                "id": "chatcmpl-tool-a40d6905af88188b",
                 "type": "function",
                 "function": {
                   "name": "read",
@@ -255,7 +263,7 @@
                 }
               },
               {
-                "id": "chatcmpl-tool-b0fbebe67994e1d1",
+                "id": "chatcmpl-tool-be1d1a662eb56028",
                 "type": "function",
                 "function": {
                   "name": "read",

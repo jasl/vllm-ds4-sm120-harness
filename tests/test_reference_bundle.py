@@ -47,6 +47,7 @@ def _minimal_completion(name):
 def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     run_dir = tmp_path / "artifacts" / "main" / "4x_nvidia_b200" / "label" / "run"
     oracle_dir = run_dir / "nomtp" / "oracle_export"
+    mtp_oracle_dir = run_dir / "mtp" / "oracle_export"
     _write_json(
         oracle_dir / "completion_short_math_logprobs20.json",
         _minimal_completion("completion_short_math_logprobs20"),
@@ -65,6 +66,22 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     )
     (oracle_dir / "oracle_export_summary.md").write_text(
         "# Oracle Export Summary\n", encoding="utf-8"
+    )
+    _write_json(
+        mtp_oracle_dir / "completion_short_math_logprobs20.json",
+        _minimal_completion("completion_short_math_logprobs20"),
+    )
+    _write_json(
+        mtp_oracle_dir / "oracle_export_summary.json",
+        {
+            "base_url": "http://127.0.0.1:8080",
+            "model": "deepseek-ai/DeepSeek-V4-Flash",
+            "results": [],
+            "files": ["completion_short_math_logprobs20.json"],
+        },
+    )
+    (mtp_oracle_dir / "oracle_export_summary.md").write_text(
+        "# MTP Oracle Export Summary\n", encoding="utf-8"
     )
 
     smoke_dir = run_dir / "nomtp" / "acceptance"
@@ -163,6 +180,12 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     assert (out_dir / "README.md").exists()
     assert (out_dir / "manifest.json").exists()
     assert (out_dir / "oracle" / "completion_short_math_logprobs20.json").exists()
+    assert (
+        out_dir / "oracle" / "nomtp" / "completion_short_math_logprobs20.json"
+    ).exists()
+    assert (
+        out_dir / "oracle" / "mtp" / "completion_short_math_logprobs20.json"
+    ).exists()
     assert (out_dir / "smoke" / "nomtp_quick.json").exists()
     assert (out_dir / "toolcall15" / "nomtp.json").exists()
     assert (out_dir / "performance" / "primary.json").exists()
@@ -198,7 +221,7 @@ def test_reference_bundle_cli_is_registered():
         [
             "reference-bundle",
             "--run-dir",
-            "artifacts/main/4x_nvidia_b200/b200_main/20260501-000000",
+            "artifacts/main/4x_nvidia_b200/b200_main/20260501000000",
             "--output-dir",
             "baselines/20260501_b200_main",
             "--label",

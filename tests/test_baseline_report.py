@@ -50,7 +50,7 @@ def _write_fixture_phase(root, variant, phase, *, output_tok_s=1600.0):
             "artifact": {
                 "branch_name": "main",
                 "gpu_topology_slug": "4x_nvidia_b200",
-                "run_timestamp": "20260501-184103",
+                "run_timestamp": "20260501184103",
             },
             "harness": {
                 "model": "deepseek-ai/DeepSeek-V4-Flash",
@@ -132,6 +132,108 @@ def _write_fixture_run(tmp_path):
     ]
     acceptance_dir = root / "nomtp" / "acceptance"
     _write_json(
+        acceptance_dir / "run_environment.json",
+        {
+            "generated_at_utc": "2026-05-01T18:45:14+00:00",
+            "artifact": {
+                "branch_name": "main",
+                "gpu_topology_slug": "4x_nvidia_b200",
+                "run_timestamp": "20260501184103",
+            },
+            "harness": {
+                "model": "deepseek-ai/DeepSeek-V4-Flash",
+                "dataset_name": "hf",
+                "dataset_path": "philschmid/mt-bench",
+            },
+            "gpu": {
+                "available": True,
+                "count": 4,
+                "topology_slug": "4x_nvidia_b200",
+                "models": [
+                    {
+                        "name": "NVIDIA B200",
+                        "count": 4,
+                        "memory_total_mib_each": 183359.0,
+                    }
+                ],
+            },
+        },
+    )
+    _write_json(
+        acceptance_dir / "gpu_stats_summary.json",
+        {
+            "available": True,
+            "overall": {"power_draw_w_avg": 320.0},
+            "gpus": {
+                str(index): {
+                    "name": "NVIDIA B200",
+                    "power_draw_w_avg": 320.0,
+                }
+                for index in range(4)
+            },
+        },
+    )
+    (acceptance_dir / "smoke_quality.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "case": "translation_quality_en_to_zh",
+                        "tags": ["quality", "translation", "subjective"],
+                        "round": 1,
+                        "ok": True,
+                        "elapsed_seconds": 1.0,
+                        "response": {
+                            "usage": {
+                                "prompt_tokens": 50,
+                                "completion_tokens": 60,
+                                "total_tokens": 110,
+                            }
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "case": "writing_local_inference_tradeoffs",
+                        "tags": ["quality", "writing", "subjective"],
+                        "round": 1,
+                        "ok": True,
+                        "elapsed_seconds": 2.0,
+                        "response": {
+                            "usage": {
+                                "prompt_tokens": 100,
+                                "completion_tokens": 200,
+                                "total_tokens": 300,
+                            }
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (acceptance_dir / "smoke_coding.jsonl").write_text(
+        json.dumps(
+            {
+                "case": "aquarium_html",
+                "tags": ["coding", "html", "subjective"],
+                "round": 1,
+                "ok": True,
+                "elapsed_seconds": 10.0,
+                "response": {
+                    "usage": {
+                        "prompt_tokens": 200,
+                        "completion_tokens": 800,
+                        "total_tokens": 1000,
+                    }
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _write_json(
         acceptance_dir / "toolcall15.json",
         {
             "summary": {
@@ -148,6 +250,12 @@ def _write_fixture_run(tmp_path):
                     "points": 0,
                     "summary": "Did not split the translation request into two valid calls.",
                     "ok": False,
+                    "elapsed_seconds": 3.0,
+                    "usage_totals": {
+                        "prompt_tokens": 300,
+                        "completion_tokens": 100,
+                        "total_tokens": 400,
+                    },
                 }
             ],
         },
@@ -182,13 +290,13 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert "| `nomtp` | `fp8` | 256 | 4 | `n/a` | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |" in report
     assert '| `mtp` | `fp8` | 256 | 4 | `{"method":"mtp","num_speculative_tokens":2}` | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |' in report
     assert "## Quick Performance Summary" in report
+    assert "### Real Scenario OP Cost Estimate" in report
+    assert (
+        "| `nomtp` | writing | 1 | 100.00 | 2.00 | 100.00 | 100 | 200 | "
+        "$0.0037 | $3.73 | $37.31 | $18.65 | $7.46 | $6.72 |"
+    ) in report
     assert "### Best Benchmark Throughput" in report
     assert "| Primary | `nomtp` | HF/MT-Bench | 1 | 1600.00 | 400.00 | 100.00 | 5.50 |" in report
-    assert "### Provider-Style Overview" in report
-    assert (
-        "| Primary | `nomtp` | HF/MT-Bench | 1 | 0.10 | 1600.00 | 450 | "
-        "200 | $0.93 | $1.17 | $0.19 | $6.72 |"
-    ) in report
     assert "B200: `$30,000/GPU`" in report
     assert "## Normalized Efficiency" in report
     assert "tok/s/GPU" in report

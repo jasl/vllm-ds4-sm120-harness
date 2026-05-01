@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_acceptance_script_runs_coding_smoke_gate():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
 
-    assert "--tag coding" in script
+    assert 'CODING_TAG="${CODING_TAG:-coding}"' in script
+    assert '--tag "${CODING_TAG}"' in script
     assert "smoke_coding.jsonl" in script
 
 
@@ -55,7 +56,7 @@ def test_scripts_default_to_branch_timestamped_artifacts_dir():
         assert "load_harness_env" in script
         assert "detect_gpu_topology_slug" in script
         assert 'ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"' in script
-        assert 'RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"' in script
+        assert 'RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d%H%M%S)}"' in script
         assert 'git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD' in script
         assert 'GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"' in script
         assert (
@@ -82,6 +83,16 @@ def test_env_sample_and_local_env_are_configured():
     assert "ORACLE_LOGPROBS=20" in sample
     assert "ORACLE_TIMEOUT=300" in sample
     assert "ORACLE_CASES=" in sample
+    assert "OFFICIAL_RUN_TOOLCALL15=1" in sample
+    assert "OFFICIAL_TOOLCALL15_SCENARIO_SET=both" in sample
+    assert "OFFICIAL_TOOLCALL15_REPEAT_COUNT=3" in sample
+    assert "REAL_SCENARIO_REPEAT_COUNT=3" in sample
+    assert "QUALITY_TAG=quality" in sample
+    assert "QUALITY_REPEAT_COUNT=3" in sample
+    assert "CODING_TAG=coding" in sample
+    assert "CODING_REPEAT_COUNT=3" in sample
+    assert "TOOLCALL15_SCENARIO_SET=both" in sample
+    assert "TOOLCALL15_REPEAT_COUNT=3" in sample
     assert "SERVER_GUARD=1" in sample
     assert "SERVER_STARTUP_TIMEOUT=1800" in sample
     assert "SERVER_STARTUP_INTERVAL_SECONDS=15" in sample
@@ -99,6 +110,24 @@ def test_acceptance_script_writes_human_markdown_smoke_reports():
     assert '--markdown-output "${OUT_DIR}/smoke_quick.md"' in script
     assert '--markdown-output "${OUT_DIR}/smoke_quality.md"' in script
     assert '--markdown-output "${OUT_DIR}/smoke_coding.md"' in script
+
+
+def test_acceptance_script_repeats_real_scenario_gates_three_times():
+    script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
+
+    assert 'REAL_SCENARIO_REPEAT_COUNT="${REAL_SCENARIO_REPEAT_COUNT:-3}"' in script
+    assert 'QUALITY_TAG="${QUALITY_TAG:-quality}"' in script
+    assert 'QUALITY_REPEAT_COUNT="${QUALITY_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
+    assert 'CODING_TAG="${CODING_TAG:-coding}"' in script
+    assert 'CODING_REPEAT_COUNT="${CODING_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
+    assert 'TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-both}"' in script
+    assert 'TOOLCALL15_REPEAT_COUNT="${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
+    assert '--tag "${QUALITY_TAG}"' in script
+    assert '--tag "${CODING_TAG}"' in script
+    assert '--scenario-set "${TOOLCALL15_SCENARIO_SET}"' in script
+    assert '--repeat-count "${QUALITY_REPEAT_COUNT}"' in script
+    assert '--repeat-count "${CODING_REPEAT_COUNT}"' in script
+    assert '--repeat-count "${TOOLCALL15_REPEAT_COUNT}"' in script
 
 
 def test_acceptance_script_runs_all_gates_and_records_exit_codes():
@@ -587,9 +616,7 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
     assert "nomtp\toracle_export\t0" in phase_log
     assert "mtp\tacceptance\t0" in phase_log
     assert "mtp\tbench_hf_mt_bench\t0" in phase_log
-    assert not any(
-        line.startswith("mtp\toracle_export\t") for line in phase_log.splitlines()
-    )
+    assert "mtp\toracle_export\t0" in phase_log
     assert (out_dir / "baseline_summary.md").exists()
     assert "--speculative_config" in (out_dir / "mtp" / "serve_command.sh").read_text(
         encoding="utf-8"
@@ -618,8 +645,15 @@ def test_official_subjective_baseline_script_uses_api_key_and_baseline_output():
 
     assert "load_harness_env" in script
     assert "--api-key-env DEEPSEEK_API_KEY" in script
+    assert 'OFFICIAL_QUALITY_TAG="${OFFICIAL_QUALITY_TAG:-quality}"' in script
+    assert 'OFFICIAL_CODING_TAG="${OFFICIAL_CODING_TAG:-coding}"' in script
+    assert 'OFFICIAL_RUN_TOOLCALL15="${OFFICIAL_RUN_TOOLCALL15:-1}"' in script
+    assert 'OFFICIAL_TOOLCALL15_SCENARIO_SET="${OFFICIAL_TOOLCALL15_SCENARIO_SET:-both}"' in script
+    assert 'OFFICIAL_TOOLCALL15_REPEAT_COUNT="${OFFICIAL_TOOLCALL15_REPEAT_COUNT:-${OFFICIAL_REPEAT_COUNT}}"' in script
+    assert "--repeat-count" in script
     assert "--max-case-tokens" in script
     assert "--extra-body-json" in script
+    assert "--official-toolcall-input" in script
     assert "DEEPSEEK_THINKING_TYPE" in script
     assert "subjective-comparison" in script
     assert "baselines/20260501_b200_main_51295793a" in script

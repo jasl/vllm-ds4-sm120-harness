@@ -20,17 +20,26 @@ SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT:-300}"
 SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS:-10}"
 SERVER_RECOVERY_CMD="${SERVER_RECOVERY_CMD:-}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
-RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
+RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d%H%M%S)}"
 BRANCH_NAME="${BRANCH_NAME:-$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown-branch)}"
 BRANCH_SLUG="$(printf '%s' "${BRANCH_NAME}" | sed -E 's#[/[:space:]]+#_#g; s#[^A-Za-z0-9_.-]#_#g')"
 BRANCH_SLUG="${BRANCH_SLUG:-unknown-branch}"
 GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"
 OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${RUN_TIMESTAMP}}"
+REAL_SCENARIO_REPEAT_COUNT="${REAL_SCENARIO_REPEAT_COUNT:-3}"
+QUALITY_TAG="${QUALITY_TAG:-quality}"
+CODING_TAG="${CODING_TAG:-coding}"
+QUALITY_REPEAT_COUNT="${QUALITY_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"
+CODING_REPEAT_COUNT="${CODING_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"
+TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-both}"
+TOOLCALL15_REPEAT_COUNT="${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"
 export BASE_URL MODEL ORACLE_DIR ORACLE_TOP_N RUN_TOOLCALL15 PYTHON
 export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
 export SERVER_RECOVERY_CMD
 export ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME GPU_TOPOLOGY_SLUG OUT_DIR
+export REAL_SCENARIO_REPEAT_COUNT QUALITY_REPEAT_COUNT CODING_REPEAT_COUNT
+export QUALITY_TAG CODING_TAG TOOLCALL15_SCENARIO_SET TOOLCALL15_REPEAT_COUNT
 
 mkdir -p "${OUT_DIR}"
 write_run_environment
@@ -138,14 +147,16 @@ run_live_gate smoke_quick "${PYTHON}" -m ds4_harness.cli chat-smoke \
 run_live_gate smoke_quality "${PYTHON}" -m ds4_harness.cli chat-smoke \
   --base-url "${BASE_URL}" \
   --model "${MODEL}" \
-  --tag quality \
+  --tag "${QUALITY_TAG}" \
+  --repeat-count "${QUALITY_REPEAT_COUNT}" \
   --jsonl-output "${OUT_DIR}/smoke_quality.jsonl" \
   --markdown-output "${OUT_DIR}/smoke_quality.md"
 
 run_live_gate smoke_coding "${PYTHON}" -m ds4_harness.cli chat-smoke \
   --base-url "${BASE_URL}" \
   --model "${MODEL}" \
-  --tag coding \
+  --tag "${CODING_TAG}" \
+  --repeat-count "${CODING_REPEAT_COUNT}" \
   --timeout "${CODING_TIMEOUT:-900}" \
   --jsonl-output "${OUT_DIR}/smoke_coding.jsonl" \
   --markdown-output "${OUT_DIR}/smoke_coding.md"
@@ -155,6 +166,8 @@ if [[ "${RUN_TOOLCALL15}" == "1" ]]; then
     --base-url "${BASE_URL}" \
     --model "${MODEL}" \
     --min-points "${TOOLCALL15_MIN_POINTS:-2}" \
+    --scenario-set "${TOOLCALL15_SCENARIO_SET}" \
+    --repeat-count "${TOOLCALL15_REPEAT_COUNT}" \
     --json-output "${OUT_DIR}/toolcall15.json"
 fi
 

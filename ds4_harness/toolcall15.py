@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from ds4_harness.client import post_json
@@ -187,7 +188,7 @@ def universal_tools() -> list[Json]:
 
 
 def scenarios() -> list[Scenario]:
-    return [
+    english = [
         Scenario(
             "TC-01",
             "Direct Specialist Match",
@@ -303,6 +304,37 @@ def scenarios() -> list[Scenario]:
             "Carry the searched value into calculator.",
         ),
     ]
+    return english
+
+
+ZH_USER_MESSAGES = {
+    "TC-01": "请查一下柏林现在的天气怎么样？",
+    "TC-02": "AAPL 股票现在的价格是多少？",
+    "TC-03": "我需要通知 Sarah，会议改到下午 3 点了。",
+    "TC-04": "请告诉我东京现在的温度，用华氏度表示。",
+    "TC-05": "帮我把团队站会安排到下周一上午 9:30，30 分钟，参会人是 Alex 和 Jamie。",
+    "TC-06": "请把 'Where is the nearest hospital?' 从英语分别翻译成西班牙语和日语。",
+    "TC-07": "找到 Q3 预算报告，然后把总金额发邮件告诉我的经理。",
+    "TC-08": "查一下巴黎的天气。如果下雨，提醒我明天早上 8 点带伞。",
+    "TC-09": "请同时告诉我伦敦天气和 MSFT 股票价格。",
+    "TC-10": "第二次世界大战是哪一年结束的？",
+    "TC-11": "200 的 15% 是多少？",
+    "TC-12": "帮我删除上个月的所有邮件。",
+    "TC-13": "帮我找 Johnson proposal 文档。",
+    "TC-14": "苹果公司的股票价格是多少？",
+    "TC-15": "搜索冰岛的人口，然后计算其中 2% 是多少。",
+}
+
+
+def localized_scenarios(scenario_set: str = "en") -> list[Scenario]:
+    if scenario_set == "en":
+        return scenarios()
+    if scenario_set != "zh":
+        raise KeyError(f"unknown ToolCall-15 scenario set {scenario_set!r}")
+    return [
+        replace(scenario, user_message=ZH_USER_MESSAGES.get(scenario.id, scenario.user_message))
+        for scenario in scenarios()
+    ]
 
 
 def _scenario_map() -> dict[str, Scenario]:
@@ -315,6 +347,15 @@ def _norm(value: Any) -> str:
 
 def _contains(value: Any, expected: str) -> bool:
     return expected.casefold() in str(value or "").casefold()
+
+
+def _contains_any(value: Any, *expected: str) -> bool:
+    return any(_contains(value, item) for item in expected)
+
+
+def _is_march_21_8am(value: Any) -> bool:
+    text = str(value or "").strip()
+    return text.startswith(("2026-03-21T08:00:00", "2026-03-21 08:00"))
 
 
 def _array(value: Any) -> list[str]:
@@ -356,7 +397,7 @@ def _contains_refusal(text: str) -> bool:
     return any(
         term in lowered
         for term in ("cannot", "can't", "do not have", "don't have", "not able")
-    )
+    ) or any(term in text for term in ("不能", "无法", "没有权限", "不具备"))
 
 
 def _parse_math_expression(expression: str) -> float | None:
@@ -430,9 +471,9 @@ def handle_tool_call(scenario_id: str, state: ToolCallState, call: ToolCallRecor
 
     if scenario_id == "TC-06" and call.name == "translate_text":
         target = _norm(call.arguments.get("target_language"))
-        if target == "spanish":
+        if target == "spanish" or "西班牙" in target:
             return {"translated": "¿Dónde está el hospital más cercano?"}
-        if target == "japanese":
+        if target == "japanese" or "日语" in target or "日文" in target:
             return {"translated": "最寄りの病院はどこですか？"}
         return {"error": f"Unsupported target language {target}."}
 
@@ -504,7 +545,11 @@ def evaluate_scenario(scenario_id: str, state: ToolCallState) -> Evaluation:
     answer = state.final_answer
 
     if scenario_id == "TC-01":
-        used_weather = _has(state, "get_weather", lambda c: _contains(c.arguments.get("location"), "berlin"))
+        used_weather = _has(
+            state,
+            "get_weather",
+            lambda c: _contains_any(c.arguments.get("location"), "berlin", "柏林"),
+        )
         used_web = _has(state, "web_search")
         if used_weather and not used_web and len(state.tool_calls) == 1:
             return Evaluation("pass", 2, "Used get_weather with Berlin only.")
@@ -535,7 +580,7 @@ def evaluate_scenario(scenario_id: str, state: ToolCallState) -> Evaluation:
 
     if scenario_id == "TC-04":
         weather = _first(state, "get_weather")
-        if weather and _contains(weather.arguments.get("location"), "tokyo"):
+        if weather and _contains_any(weather.arguments.get("location"), "tokyo", "东京"):
             if _norm(weather.arguments.get("units")) == "fahrenheit":
                 return Evaluation("pass", 2, "Requested Tokyo weather in Fahrenheit.")
             if not weather.arguments.get("units") and ("fahrenheit" in _norm(answer) or "64" in answer):
@@ -562,14 +607,27 @@ def evaluate_scenario(scenario_id: str, state: ToolCallState) -> Evaluation:
     if scenario_id == "TC-06":
         calls = _calls(state, "translate_text")
         has_spanish = any(
-            _norm(call.arguments.get("source_language")) == "english"
-            and _norm(call.arguments.get("target_language")) == "spanish"
+            (
+                _norm(call.arguments.get("source_language")) == "english"
+                or "英语" in _norm(call.arguments.get("source_language"))
+            )
+            and (
+                _norm(call.arguments.get("target_language")) == "spanish"
+                or "西班牙" in _norm(call.arguments.get("target_language"))
+            )
             and call.arguments.get("text") == "Where is the nearest hospital?"
             for call in calls
         )
         has_japanese = any(
-            _norm(call.arguments.get("source_language")) == "english"
-            and _norm(call.arguments.get("target_language")) == "japanese"
+            (
+                _norm(call.arguments.get("source_language")) == "english"
+                or "英语" in _norm(call.arguments.get("source_language"))
+            )
+            and (
+                _norm(call.arguments.get("target_language")) == "japanese"
+                or "日语" in _norm(call.arguments.get("target_language"))
+                or "日文" in _norm(call.arguments.get("target_language"))
+            )
             and call.arguments.get("text") == "Where is the nearest hospital?"
             for call in calls
         )
@@ -584,9 +642,21 @@ def evaluate_scenario(scenario_id: str, state: ToolCallState) -> Evaluation:
 
     if scenario_id == "TC-07":
         completed = 0
-        completed += int(_has(state, "search_files", lambda c: _contains(c.arguments.get("query"), "q3 budget")))
+        completed += int(
+            _has(
+                state,
+                "search_files",
+                lambda c: _contains_any(c.arguments.get("query"), "q3 budget", "q3", "预算"),
+            )
+        )
         completed += int(_has(state, "read_file", lambda c: c.arguments.get("file_id") == "file_091"))
-        completed += int(_has(state, "get_contacts", lambda c: _contains(c.arguments.get("query"), "manager")))
+        completed += int(
+            _has(
+                state,
+                "get_contacts",
+                lambda c: _contains_any(c.arguments.get("query"), "manager", "经理"),
+            )
+        )
         completed += int(
             _has(
                 state,
@@ -605,16 +675,20 @@ def evaluate_scenario(scenario_id: str, state: ToolCallState) -> Evaluation:
         weather = _first(state, "get_weather")
         reminder = _first(state, "set_reminder")
         if weather and reminder and weather.turn < reminder.turn:
-            if _contains(reminder.arguments.get("message"), "umbrella") and str(
-                reminder.arguments.get("datetime", "")
-            ).startswith("2026-03-21T08:00:00"):
+            if _contains_any(
+                reminder.arguments.get("message"), "umbrella", "伞"
+            ) and _is_march_21_8am(reminder.arguments.get("datetime")):
                 return Evaluation("pass", 2, "Checked weather first, then set the reminder.")
         if weather and not reminder and _asks_for_clarification(answer):
             return Evaluation("partial", 1, "Checked weather but stopped short of setting reminder.")
         return Evaluation("fail", 0, "Did not respect the weather-first conditional flow.")
 
     if scenario_id == "TC-09":
-        weather = _has(state, "get_weather", lambda c: _contains(c.arguments.get("location"), "london"))
+        weather = _has(
+            state,
+            "get_weather",
+            lambda c: _contains_any(c.arguments.get("location"), "london", "伦敦"),
+        )
         stock = _has(state, "get_stock_price", lambda c: _norm(c.arguments.get("ticker")) == "msft")
         if weather and stock:
             return Evaluation("pass", 2, "Handled both independent tasks.")
@@ -636,7 +710,11 @@ def evaluate_scenario(scenario_id: str, state: ToolCallState) -> Evaluation:
         return Evaluation("fail", 0, "Failed easy-arithmetic restraint.")
 
     if scenario_id == "TC-12":
-        if not state.tool_calls and _contains_refusal(answer) and "delete" in _norm(answer):
+        if (
+            not state.tool_calls
+            and _contains_refusal(answer)
+            and _contains_any(answer, "delete", "删除")
+        ):
             return Evaluation("pass", 2, "Refused because no delete-email tool exists.")
         return Evaluation("fail", 0, "Did not refuse the unsupported email deletion request.")
 
@@ -651,8 +729,15 @@ def evaluate_scenario(scenario_id: str, state: ToolCallState) -> Evaluation:
     if scenario_id == "TC-14":
         stock_calls = _calls(state, "get_stock_price")
         transcript = _assistant_transcript(state)
-        acknowledged = bool(re.search(r"temporarily unavailable|rate limit|service", transcript, re.I))
-        if stock_calls and acknowledged and (_has(state, "web_search") or "try again" in _norm(transcript)):
+        acknowledged = bool(
+            re.search(
+                r"temporarily unavailable|rate limit|service|暂时不可用|限流|服务",
+                transcript,
+                re.I,
+            )
+        )
+        retry_later = "try again" in _norm(transcript) or _contains_any(transcript, "稍后", "再试")
+        if stock_calls and acknowledged and (_has(state, "web_search") or retry_later):
             return Evaluation("pass", 2, "Acknowledged the tool failure and handled it.")
         if stock_calls and _has(state, "web_search"):
             return Evaluation("partial", 1, "Recovered with web_search but did not surface the error.")
@@ -663,7 +748,7 @@ def evaluate_scenario(scenario_id: str, state: ToolCallState) -> Evaluation:
         calculator = _first(state, "calculator")
         if search and calculator:
             expression = str(calculator.arguments.get("expression", "")).replace(",", "")
-            if _contains(search.arguments.get("query"), "iceland") and "372520" in expression:
+            if _contains_any(search.arguments.get("query"), "iceland", "冰岛") and "372520" in expression:
                 return Evaluation("pass", 2, "Used the searched value in calculator.")
         if search and not calculator and _answer_has(answer, "7450.4"):
             return Evaluation("partial", 1, "Computed the right answer after searching.")
@@ -707,6 +792,29 @@ def _assistant_content(message: Json) -> str:
     return ""
 
 
+def _numeric_usage(usage: Any) -> Json:
+    if not isinstance(usage, dict):
+        return {}
+    result: Json = {}
+    for key, value in usage.items():
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int | float):
+            result[key] = value
+    prompt_details = usage.get("prompt_tokens_details")
+    if isinstance(prompt_details, dict):
+        cached = prompt_details.get("cached_tokens")
+        if isinstance(cached, int | float):
+            result.setdefault("cached_tokens", cached)
+    return result
+
+
+def _add_usage_totals(total: Json, usage: Json) -> None:
+    for key, value in usage.items():
+        if isinstance(value, int | float):
+            total[key] = total.get(key, 0) + value
+
+
 def run_scenario(
     base_url: str,
     model: str,
@@ -715,6 +823,9 @@ def run_scenario(
     temperature: float,
     timeout: float,
     max_turns: int,
+    headers: dict[str, str] | None = None,
+    extra_body: Json | None = None,
+    preserve_reasoning_content: bool = True,
 ) -> Json:
     state = ToolCallState()
     messages: list[Json] = [
@@ -722,34 +833,65 @@ def run_scenario(
         {"role": "user", "content": scenario.user_message},
     ]
     trace: list[Json] = []
+    usage_totals: Json = {}
+    scenario_started = time.monotonic()
 
     for turn in range(1, max_turns + 1):
-        response = post_json(
-            base_url,
-            "/v1/chat/completions",
-            {
-                "model": model,
-                "messages": messages,
-                "tools": universal_tools(),
-                "tool_choice": "auto",
-                "temperature": temperature,
-                "max_tokens": 1024,
-            },
-            timeout,
-        )
+        request_started = time.monotonic()
+        payload: Json = {
+            "model": model,
+            "messages": messages,
+            "tools": universal_tools(),
+            "tool_choice": "auto",
+            "temperature": temperature,
+            "max_tokens": 1024,
+        }
+        if extra_body:
+            payload.update(extra_body)
+        if headers:
+            response = post_json(
+                base_url,
+                "/v1/chat/completions",
+                payload,
+                timeout,
+                headers=headers,
+            )
+        else:
+            response = post_json(
+                base_url,
+                "/v1/chat/completions",
+                payload,
+                timeout,
+            )
+        elapsed_seconds = round(time.monotonic() - request_started, 6)
+        usage = _numeric_usage(response.get("usage"))
+        _add_usage_totals(usage_totals, usage)
         message = _message_from_choice(response)
         content = _assistant_content(message)
         tool_calls = message.get("tool_calls") or []
         if not isinstance(tool_calls, list):
             tool_calls = []
         state.assistant_messages.append(content)
-        trace.append({"turn": turn, "assistant": message})
+        trace.append(
+            {
+                "turn": turn,
+                "assistant": message,
+                "elapsed_seconds": elapsed_seconds,
+                "usage": usage,
+            }
+        )
 
         if not tool_calls:
             state.final_answer = content
             break
 
-        assistant_message = {"role": "assistant", "content": content, "tool_calls": tool_calls}
+        assistant_message = {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": tool_calls,
+        }
+        if preserve_reasoning_content and "reasoning_content" in message:
+            assistant_message["reasoning_content"] = message["reasoning_content"]
         messages.append(assistant_message)
 
         for index, raw_call in enumerate(tool_calls):
@@ -795,6 +937,8 @@ def run_scenario(
             for call in state.tool_calls
         ],
         "final_answer": state.final_answer,
+        "elapsed_seconds": round(time.monotonic() - scenario_started, 6),
+        "usage_totals": usage_totals,
         "trace": trace,
     }
 
@@ -804,12 +948,17 @@ def run_suite(
     model: str,
     *,
     scenario_ids: list[str] | None = None,
+    scenario_set: str = "en",
     temperature: float = 0.0,
     timeout: float = 120.0,
     max_turns: int = 8,
+    headers: dict[str, str] | None = None,
+    extra_body: Json | None = None,
+    preserve_reasoning_content: bool = True,
 ) -> list[Json]:
-    by_id = _scenario_map()
-    selected_ids = scenario_ids or [scenario.id for scenario in scenarios()]
+    available = localized_scenarios(scenario_set)
+    by_id = {scenario.id: scenario for scenario in available}
+    selected_ids = scenario_ids or [scenario.id for scenario in available]
     selected = []
     for scenario_id in selected_ids:
         if scenario_id not in by_id:
@@ -826,6 +975,9 @@ def run_suite(
                     temperature=temperature,
                     timeout=timeout,
                     max_turns=max_turns,
+                    headers=headers,
+                    extra_body=extra_body,
+                    preserve_reasoning_content=preserve_reasoning_content,
                 )
             )
         except Exception as exc:

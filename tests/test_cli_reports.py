@@ -136,6 +136,50 @@ def test_chat_smoke_merges_extra_body_json(monkeypatch):
     assert captured["payload"]["reasoning_effort"] == "high"
 
 
+def test_chat_smoke_repeat_records_round_and_elapsed(monkeypatch, tmp_path):
+    def fake_post_json(base_url, path, payload, timeout):
+        return {
+            "model": payload["model"],
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "7 * 8 = 56"},
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 5,
+                "completion_tokens": 4,
+                "total_tokens": 9,
+            },
+        }
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+    jsonl_output = tmp_path / "smoke.jsonl"
+    markdown_output = tmp_path / "smoke.md"
+
+    rc = cli.main(
+        [
+            "chat-smoke",
+            "--case",
+            "math_7_times_8",
+            "--repeat-count",
+            "2",
+            "--jsonl-output",
+            str(jsonl_output),
+            "--markdown-output",
+            str(markdown_output),
+        ]
+    )
+
+    assert rc == 0
+    rows = [json.loads(line) for line in jsonl_output.read_text().splitlines()]
+    assert [row["round"] for row in rows] == [1, 2]
+    assert all(row["elapsed_seconds"] >= 0 for row in rows)
+    report = markdown_output.read_text(encoding="utf-8")
+    assert "- Repeat count: 2" in report
+    assert "- Round: 2" in report
+
+
 def test_chat_smoke_markdown_preserves_subjective_translation_output(
     monkeypatch, tmp_path
 ):

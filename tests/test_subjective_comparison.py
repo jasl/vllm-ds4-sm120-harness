@@ -56,12 +56,28 @@ def test_subjective_comparison_writes_b200_and_official_side_by_side(tmp_path):
         + "\n",
         encoding="utf-8",
     )
+    toolcall = baseline / "toolcall15"
+    toolcall.mkdir(parents=True)
+    (toolcall / "nomtp.json").write_text(
+        json.dumps({"summary": {"points": 10, "max_points": 20, "total_cases": 10}}),
+        encoding="utf-8",
+    )
+    (toolcall / "mtp.json").write_text(
+        json.dumps({"summary": {"points": 12, "max_points": 20, "total_cases": 10}}),
+        encoding="utf-8",
+    )
+    official_toolcall = tmp_path / "official_toolcall.json"
+    official_toolcall.write_text(
+        json.dumps({"summary": {"points": 14, "max_points": 20, "total_cases": 10}}),
+        encoding="utf-8",
+    )
 
     out_dir = tmp_path / "subjective"
 
     build_subjective_comparison(
         baseline_dir=baseline,
         official_paths=[official],
+        official_toolcall_paths=[official_toolcall],
         output_dir=out_dir,
         label="unit",
     )
@@ -79,3 +95,9 @@ def test_subjective_comparison_writes_b200_and_official_side_by_side(tmp_path):
     assert data["label"] == "unit"
     assert data["cases"][0]["outputs"]["official_api"]["model"] == "deepseek-v4-flash"
     assert "comparison.md" in readme
+    assert (out_dir / "agentic" / "b200_nomtp.json").exists()
+    assert (out_dir / "agentic" / "b200_mtp.json").exists()
+    assert (out_dir / "agentic" / "official_api.json").exists()
+    assert "DeepSeek official API" in (
+        out_dir / "agentic" / "summary.md"
+    ).read_text(encoding="utf-8")

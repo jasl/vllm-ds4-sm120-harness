@@ -8,19 +8,21 @@ paths, server logs, tokens, and private connection details.
 
 This bundle is a current reference baseline, not necessarily a completely green acceptance run. Treat partial ToolCall-15 traces as current behavior references unless a later branch is explicitly trying to fix ToolCall policy quality.
 
-- nomtp: `24/30`; failures `TC-06`, `TC-08`, `TC-14`.
-- mtp: `23/30`; failures `TC-06`, `TC-08`, `TC-11`, `TC-14`.
+- nomtp: `132/180`; failures `TC-06`, `TC-08`, `TC-14`, `TC-06`, `TC-08`, `TC-14`, `TC-06`, `TC-08`, `TC-14`, `TC-06`, `TC-07`, `TC-08`, `TC-12`, `TC-14`, `TC-06`, `TC-07`, `TC-08`, `TC-12`, `TC-14`, `TC-06`, `TC-07`, `TC-08`, `TC-12`, `TC-14`.
+- mtp: `135/180`; failures `TC-06`, `TC-08`, `TC-11`, `TC-14`, `TC-06`, `TC-08`, `TC-11`, `TC-14`, `TC-06`, `TC-08`, `TC-11`, `TC-14`, `TC-07`, `TC-08`, `TC-12`, `TC-14`, `TC-07`, `TC-08`, `TC-12`, `TC-14`, `TC-07`, `TC-08`, `TC-12`, `TC-14`.
 
 ## Contents
 
 - `manifest.json`: model, GPU topology, vLLM provenance, serve shape, and phase
   exit codes.
 - `report.md`: readable baseline report with throughput, latency, correctness,
-  runtime telemetry, and synthetic provider-style cost metrics.
+  runtime telemetry, and synthetic real-scenario OP cost metrics.
 - `subjective_quality/`: B200 no-MTP, B200 MTP, and DeepSeek official API
   writing, translation, and coding samples for human comparison when present.
-- `oracle/`: no-MTP deterministic `/v1/completions` cases with prompt token ids,
-  generated tokens, token logprobs, top logprobs, and usage.
+- `oracle/`: no-MTP deterministic `/v1/completions` compatibility entrypoint;
+  `oracle/nomtp/` and `oracle/mtp/` contain variant-specific copies when
+  present, including prompt token ids, generated tokens, token logprobs, top
+  logprobs, and usage.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
 - `toolcall15/`: no-MTP and MTP ToolCall-15 scores and traces.
 - `performance/`: benchmark rows plus GPU/runtime telemetry summaries.

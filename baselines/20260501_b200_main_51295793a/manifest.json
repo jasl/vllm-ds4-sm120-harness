@@ -2,10 +2,10 @@
   "schema_version": 1,
   "label": "20260501_b200_main_51295793a",
   "date": "20260501",
-  "generated_at_utc": "2026-05-01T20:54:29.472734+00:00",
+  "generated_at_utc": "2026-05-01T22:05:03.610788+00:00",
   "source": {
-    "primary_run": "20260501-184103",
-    "supplement_run": "20260501-190608",
+    "primary_run": "20260501212604",
+    "supplement_run": null,
     "raw_artifacts_are_not_required": true
   },
   "model": "deepseek-ai/DeepSeek-V4-Flash",
@@ -115,12 +115,18 @@
       "phase": "bench_random_8192x512",
       "exit_code": 0,
       "artifact": "mtp/bench_random_8192x512"
+    },
+    {
+      "variant": "mtp",
+      "phase": "oracle_export",
+      "exit_code": 0,
+      "artifact": "mtp/oracle_export"
     }
   ],
   "contents": {
     "report": "Readable baseline report with correctness, performance, and cost metrics.",
     "subjective_quality": "Optional side-by-side writing, translation, and coding samples.",
-    "oracle": "Deterministic no-MTP /v1/completions logprobs oracle cases.",
+    "oracle": "Deterministic /v1/completions logprobs oracle cases. The oracle root is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp keep variant-specific copies when present.",
     "smoke": "no-MTP and MTP chat smoke request/response captures.",
     "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
     "performance": "Benchmark, runtime, and GPU telemetry summaries."

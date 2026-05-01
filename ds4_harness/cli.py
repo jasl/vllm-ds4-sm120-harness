@@ -77,10 +77,13 @@ def _write_chat_markdown(path: Path | None, rows: list[dict[str, Any]]) -> None:
     if path is None:
         return
 
+    repeat_count = max((int(row.get("round", 1)) for row in rows), default=1)
+    case_count = len({row["case"].name for row in rows})
     lines = [
         "# Chat Smoke Report",
         "",
-        f"- Cases: {len(rows)}",
+        f"- Cases: {case_count}",
+        f"- Repeat count: {repeat_count}",
         "",
     ]
     for row in rows:
@@ -94,6 +97,7 @@ def _write_chat_markdown(path: Path | None, rows: list[dict[str, Any]]) -> None:
                 f"## {case.name}",
                 "",
                 f"- Status: {status}",
+                f"- Round: {row.get('round', 1)}",
                 f"- Tags: {', '.join(case.tags)}",
                 f"- Check: {result.detail}",
                 "",
@@ -124,6 +128,10 @@ def _write_chat_markdown(path: Path | None, rows: list[dict[str, Any]]) -> None:
 
         if "error" in response:
             lines.extend(["### Error", "", _fenced_block(str(response["error"])), ""])
+
+        elapsed = row.get("elapsed_seconds")
+        if isinstance(elapsed, int | float):
+            lines.extend(["### Timing", "", f"- Elapsed seconds: {elapsed:.3f}", ""])
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
@@ -193,6 +201,10 @@ def _cmd_health(args: argparse.Namespace) -> int:
 
 
 def _cmd_chat_smoke(args: argparse.Namespace) -> int:
+    if args.repeat_count < 1:
+        print("--repeat-count must be >= 1", file=sys.stderr)
+        return 2
+
     cases = select_cases(
         build_cases(args.model),
         names=args.case,
@@ -215,61 +227,68 @@ def _cmd_chat_smoke(args: argparse.Namespace) -> int:
 
     failures = 0
     markdown_rows: list[dict[str, Any]] = []
-    for case in cases:
-        payload = case.to_payload(
-            default_max_tokens=args.max_tokens,
-            default_temperature=args.temperature,
-        )
-        payload.update(extra_body)
-        _apply_max_case_tokens_cap(payload, args.max_case_tokens)
-        try:
-            if headers:
-                response = post_json(
-                    args.base_url,
-                    "/v1/chat/completions",
-                    payload,
-                    args.timeout,
-                    headers=headers,
-                )
-            else:
-                response = post_json(
-                    args.base_url,
-                    "/v1/chat/completions",
-                    payload,
-                    args.timeout,
-                )
-            result = check_chat_response(case.expectation, response)
-        except (
-            OSError,
-            RuntimeError,
-            TimeoutError,
-            urllib.error.URLError,
-            json.JSONDecodeError,
-            ValueError,
-        ) as exc:
-            response = {"error": repr(exc)}
-            result = CheckResult(False, f"request failed: {exc!r}")
+    for round_index in range(1, args.repeat_count + 1):
+        for case in cases:
+            payload = case.to_payload(
+                default_max_tokens=args.max_tokens,
+                default_temperature=args.temperature,
+            )
+            payload.update(extra_body)
+            _apply_max_case_tokens_cap(payload, args.max_case_tokens)
+            started = time.monotonic()
+            try:
+                if headers:
+                    response = post_json(
+                        args.base_url,
+                        "/v1/chat/completions",
+                        payload,
+                        args.timeout,
+                        headers=headers,
+                    )
+                else:
+                    response = post_json(
+                        args.base_url,
+                        "/v1/chat/completions",
+                        payload,
+                        args.timeout,
+                    )
+                result = check_chat_response(case.expectation, response)
+            except (
+                OSError,
+                RuntimeError,
+                TimeoutError,
+                urllib.error.URLError,
+                json.JSONDecodeError,
+                ValueError,
+            ) as exc:
+                response = {"error": repr(exc)}
+                result = CheckResult(False, f"request failed: {exc!r}")
+            elapsed_seconds = round(time.monotonic() - started, 6)
 
-        _print_case_result(case, result, response)
-        _write_jsonl(
-            args.jsonl_output,
-            {
-                "case": case.name,
-                "tags": case.tags,
-                "ok": result.ok,
-                "detail": result.detail,
-                "payload": payload,
-                "response": response,
-            },
-        )
-        markdown_rows.append(
-            {
-                "case": case,
-                "result": result,
-                "response": response,
-            }
-        )
-        failures += 0 if result.ok else 1
+            _print_case_result(case, result, response)
+            _write_jsonl(
+                args.jsonl_output,
+                {
+                    "case": case.name,
+                    "tags": case.tags,
+                    "round": round_index,
+                    "ok": result.ok,
+                    "detail": result.detail,
+                    "elapsed_seconds": elapsed_seconds,
+                    "payload": payload,
+                    "response": response,
+                },
+            )
+            markdown_rows.append(
+                {
+                    "case": case,
+                    "round": round_index,
+                    "result": result,
+                    "elapsed_seconds": elapsed_seconds,
+                    "response": response,
+                }
+            )
+            failures += 0 if result.ok else 1
     _write_chat_markdown(args.markdown_output, markdown_rows)
     return 1 if failures else 0
 
@@ -535,41 +554,111 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
 
 
 def _cmd_toolcall15(args: argparse.Namespace) -> int:
-    rows = run_suite(
-        args.base_url,
-        args.model,
-        scenario_ids=args.scenario,
-        temperature=args.temperature,
-        timeout=args.timeout,
-        max_turns=args.max_turns,
-    )
-    failures = 0
-    for row in rows:
-        ok = row["points"] >= args.min_points
-        row["ok"] = ok
-        failures += 0 if ok else 1
-        print(json.dumps(row, ensure_ascii=False))
+    if args.repeat_count < 1:
+        print("--repeat-count must be >= 1", file=sys.stderr)
+        return 2
 
-    total_points = sum(int(row["points"]) for row in rows)
-    max_points = len(rows) * 2
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except json.JSONDecodeError as exc:
+        print(f"invalid --extra-body-json: {exc}", file=sys.stderr)
+        return 2
+
+    scenario_sets = (
+        ["en", "zh"] if args.scenario_set == "both" else [args.scenario_set]
+    )
+    rounds: list[dict[str, Any]] = []
+    all_rows: list[dict[str, Any]] = []
+    total_failures = 0
+
+    for scenario_set in scenario_sets:
+        for round_index in range(1, args.repeat_count + 1):
+            rows = run_suite(
+                args.base_url,
+                args.model,
+                scenario_ids=args.scenario,
+                scenario_set=scenario_set,
+                temperature=args.temperature,
+                timeout=args.timeout,
+                max_turns=args.max_turns,
+                headers=headers,
+                extra_body=extra_body,
+                preserve_reasoning_content=args.preserve_reasoning_content,
+            )
+            failures = 0
+            for row in rows:
+                ok = row["points"] >= args.min_points
+                row["ok"] = ok
+                row["round"] = round_index
+                row["scenario_set"] = scenario_set
+                failures += 0 if ok else 1
+                print(json.dumps(row, ensure_ascii=False))
+
+            total_points = sum(int(row["points"]) for row in rows)
+            max_points = len(rows) * 2
+            round_summary = {
+                "scenario_set": scenario_set,
+                "round": round_index,
+                "cases": len(rows),
+                "points": total_points,
+                "max_points": max_points,
+                "score_percent": round((total_points / max_points) * 100)
+                if max_points
+                else 0,
+                "min_points": args.min_points,
+                "failures": failures,
+            }
+            rounds.append(
+                {
+                    "scenario_set": scenario_set,
+                    "round": round_index,
+                    "summary": round_summary,
+                    "results": rows,
+                }
+            )
+            all_rows.extend(rows)
+            total_failures += failures
+
+    total_points = sum(int(row["points"]) for row in all_rows)
+    max_points = len(all_rows) * 2
+    cases_per_round = sum(
+        len(round_data["results"])
+        for round_data in rounds
+        if round_data.get("round") == 1
+    )
     summary = {
-        "cases": len(rows),
+        "scenario_sets": scenario_sets,
+        "rounds": args.repeat_count,
+        "cases": cases_per_round,
+        "total_cases": len(all_rows),
         "points": total_points,
         "max_points": max_points,
         "score_percent": round((total_points / max_points) * 100) if max_points else 0,
         "min_points": args.min_points,
-        "failures": failures,
+        "failures": total_failures,
     }
     print(json.dumps({"summary": summary}, ensure_ascii=False))
 
     if args.json_output is not None:
+        payload: dict[str, Any] = {
+            "summary": summary,
+            "results": all_rows if len(scenario_sets) > 1 else rounds[-1]["results"]
+            if rounds
+            else [],
+        }
+        if args.repeat_count > 1 or len(scenario_sets) > 1:
+            payload["rounds"] = rounds
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
         args.json_output.write_text(
-            json.dumps({"summary": summary, "results": rows}, ensure_ascii=False, indent=2),
+            json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
-    return 1 if failures else 0
+    return 1 if total_failures else 0
 
 
 def _cmd_gpu_summary(args: argparse.Namespace) -> int:
@@ -638,6 +727,7 @@ def _cmd_subjective_comparison(args: argparse.Namespace) -> int:
     build_subjective_comparison(
         baseline_dir=args.baseline_dir,
         official_paths=args.official_input or [],
+        official_toolcall_paths=args.official_toolcall_input or [],
         output_dir=args.output_dir,
         label=args.label or args.baseline_dir.name,
     )
@@ -672,6 +762,7 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--max-tokens", type=int, default=256)
     smoke.add_argument("--temperature", type=float, default=0.0)
     smoke.add_argument("--timeout", type=float, default=300.0)
+    smoke.add_argument("--repeat-count", type=int, default=1)
     smoke.add_argument("--api-key-env")
     smoke.add_argument("--max-case-tokens", type=int)
     smoke.add_argument("--extra-body-json")
@@ -731,10 +822,19 @@ def build_parser() -> argparse.ArgumentParser:
     toolcall15.add_argument("--base-url", default="http://127.0.0.1:8000")
     toolcall15.add_argument("--model", default=DEFAULT_MODEL)
     toolcall15.add_argument("--scenario", action="append")
+    toolcall15.add_argument("--scenario-set", choices=("en", "zh", "both"), default="en")
     toolcall15.add_argument("--temperature", type=float, default=0.0)
     toolcall15.add_argument("--timeout", type=float, default=120.0)
     toolcall15.add_argument("--max-turns", type=int, default=8)
+    toolcall15.add_argument("--repeat-count", type=int, default=1)
     toolcall15.add_argument("--min-points", type=int, choices=(0, 1, 2), default=2)
+    toolcall15.add_argument("--api-key-env")
+    toolcall15.add_argument("--extra-body-json")
+    toolcall15.add_argument(
+        "--preserve-reasoning-content",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     toolcall15.add_argument("--json-output", type=Path)
     toolcall15.set_defaults(func=_cmd_toolcall15)
 
@@ -776,6 +876,7 @@ def build_parser() -> argparse.ArgumentParser:
     subjective = subparsers.add_parser("subjective-comparison")
     subjective.add_argument("--baseline-dir", type=Path, required=True)
     subjective.add_argument("--official-input", type=Path, action="append")
+    subjective.add_argument("--official-toolcall-input", type=Path, action="append")
     subjective.add_argument("--output-dir", type=Path, required=True)
     subjective.add_argument("--label")
     subjective.set_defaults(func=_cmd_subjective_comparison)

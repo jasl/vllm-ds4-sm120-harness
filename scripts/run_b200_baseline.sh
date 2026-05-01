@@ -45,7 +45,7 @@ SERVER_FAILURE_PROBE_TIMEOUT="${SERVER_FAILURE_PROBE_TIMEOUT:-30}"
 SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT:-300}"
 SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS:-10}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
-RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
+RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d%H%M%S)}"
 BRANCH_NAME="${BRANCH_NAME:-$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown-branch)}"
 BRANCH_SLUG="$(printf '%s' "${BRANCH_NAME}" | sed -E 's#[/[:space:]]+#_#g; s#[^A-Za-z0-9_.-]#_#g')"
 BRANCH_SLUG="${BRANCH_SLUG:-unknown-branch}"
@@ -56,6 +56,9 @@ export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_PROBE_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT
 export SERVER_FAILURE_GRACE_INTERVAL_SECONDS ARTIFACT_ROOT GPU_TOPOLOGY_SLUG
 export VLLM_ENGINE_READY_TIMEOUT_S
+export REAL_SCENARIO_REPEAT_COUNT QUALITY_TAG QUALITY_REPEAT_COUNT
+export CODING_TAG CODING_REPEAT_COUNT TOOLCALL15_SCENARIO_SET
+export TOOLCALL15_REPEAT_COUNT
 
 if [[ -z "${MTP_SPECULATIVE_CONFIG+x}" ]]; then
   MTP_SPECULATIVE_CONFIG='{"method":"mtp","num_speculative_tokens":2}'
@@ -254,6 +257,13 @@ write_summary() {
       "${RUN_RANDOM_LONG}" "${RANDOM_LONG_CONCURRENCY}" "${RANDOM_LONG_INPUT_LEN}" \
       "${RANDOM_LONG_OUTPUT_LEN}" "${RANDOM_LONG_NUM_PROMPTS}"
     printf -- '- oracle_export: `%s`\n' "${RUN_ORACLE_EXPORT}"
+    printf -- '- real_scenario_repeat_count: `%s`\n' "${REAL_SCENARIO_REPEAT_COUNT:-3}"
+    printf -- '- quality_tag: `%s`\n' "${QUALITY_TAG:-quality}"
+    printf -- '- quality_repeat_count: `%s`\n' "${QUALITY_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}"
+    printf -- '- coding_tag: `%s`\n' "${CODING_TAG:-coding}"
+    printf -- '- coding_repeat_count: `%s`\n' "${CODING_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}"
+    printf -- '- toolcall15_scenario_set: `%s`\n' "${TOOLCALL15_SCENARIO_SET:-both}"
+    printf -- '- toolcall15_repeat_count: `%s`\n' "${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}"
     printf -- '- run_root: `%s`\n\n' "${RUN_ROOT}"
     printf '## Phase Exit Codes\n\n'
     printf '| Variant | Phase | Exit | Artifact Dir |\n'
@@ -304,6 +314,13 @@ for variant in ${variant_list}; do
       env OUT_DIR="${variant_dir}/acceptance" \
         BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" \
         RUN_TOOLCALL15="${RUN_TOOLCALL15}" SERVE_LOG="${serve_log}" \
+        REAL_SCENARIO_REPEAT_COUNT="${REAL_SCENARIO_REPEAT_COUNT:-3}" \
+        QUALITY_TAG="${QUALITY_TAG:-quality}" \
+        QUALITY_REPEAT_COUNT="${QUALITY_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}" \
+        CODING_TAG="${CODING_TAG:-coding}" \
+        CODING_REPEAT_COUNT="${CODING_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}" \
+        TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-both}" \
+        TOOLCALL15_REPEAT_COUNT="${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}" \
         SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
         SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
         SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
@@ -353,7 +370,7 @@ for variant in ${variant_list}; do
         "${SCRIPT_DIR}/run_bench_matrix.sh"
   fi
 
-  if [[ "${variant}" == "nomtp" && ( "${RUN_ORACLE_EXPORT}" == "1" || "${RUN_ORACLE_EXPORT}" == "true" ) ]]; then
+  if [[ "${RUN_ORACLE_EXPORT}" == "1" || "${RUN_ORACLE_EXPORT}" == "true" ]]; then
     run_phase "${variant}" "oracle_export" "${variant_dir}/oracle_export" \
       env OUT_DIR="${variant_dir}/oracle_export" \
         BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \

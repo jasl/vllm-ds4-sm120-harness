@@ -59,8 +59,8 @@ tool-call turn.
   - basic deterministic math and language checks
   - tool-call routing with the collected OpenClaw `read` case
   - instruction-following writing check
-  - subjective writing and translation checks for prior quality reports
-  - long HTML coding prompts collected from user reports
+  - English and Chinese-user subjective writing and translation checks
+  - English and Chinese-user long HTML coding prompts
 - ToolCall-15 multi-turn tool-call loop:
   - 15 deterministic scenarios across tool selection, parameter precision,
     multi-step chains, restraint/refusal, and error recovery
@@ -94,8 +94,9 @@ Use the harness as a layered gate, not as one monolithic command:
 
 - Correctness: deterministic quick chat, ToolCall-15, and optional logprobs
   oracle comparison catch parser, CUDA graph, and token-level regressions.
-- Production-like behavior: quality and coding smoke cases cover writing,
-  translation, tool use, agent-like OpenClaw reads, and long HTML generation.
+- Production-like behavior: default quality and coding smoke cases cover both
+  English and Chinese-user writing, translation, long HTML generation, and
+  ToolCall-15 scenario sets.
 - Realistic throughput: benchmark with `--dataset-name hf --dataset-path
   philschmid/mt-bench` to avoid pure random prompts when judging user-visible
   progress.
@@ -122,8 +123,9 @@ stress tests.
 ## Artifact Output
 
 The shell wrappers write run output under the repo-local ignored directory
-`artifacts/<branch>/<gpu-topology>/<timestamp>/` by default. The GPU topology
-slug is derived from `nvidia-smi`, for example
+`artifacts/<branch>/<gpu-topology>/<timestamp>/` by default. The default
+timestamp format is `YYYYMMDDHHMMSS`. The GPU topology slug is derived from
+`nvidia-smi`, for example
 `2x_nvidia_rtx_pro_6000_blackwell_workstation_edition` or `4x_nvidia_b200`.
 Override `GPU_TOPOLOGY_SLUG` when running on a host where `nvidia-smi` is not
 available or when you need a shorter label. Override `ARTIFACT_ROOT`,
@@ -133,9 +135,10 @@ Each wrapper run writes `run_environment.json` and `run_environment.md` with
 GPU count/model inventory, selected CUDA env vars, benchmark settings, and
 official API configuration state. GPU UUIDs and API key values are not written.
 
-`chat-smoke` can also write Markdown reports with `--markdown-output`. Use this
-for writing, translation, math, and other cases that need subjective review; the
-JSONL remains available for machine comparison.
+`chat-smoke` can also write Markdown reports with `--markdown-output` and can
+repeat selected cases with `--repeat-count`. Use this for writing, translation,
+math, and other cases that need subjective review; the JSONL remains available
+for machine comparison and records the round number plus request elapsed time.
 
 The shell wrappers also sample GPU telemetry with `nvidia-smi` when available.
 Each run writes `gpu_stats.csv`, `gpu_stats_summary.json`, and
@@ -181,8 +184,7 @@ unresponsive server.
 To turn a finished artifact tree into a checked-in baseline bundle, run:
 
 ```bash
-BASELINE_RUN_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a/20260501-184103 \
-BASELINE_SUPPLEMENT_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a_logsliced_bench/20260501-190608 \
+BASELINE_RUN_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a/20260501184103 \
 BASELINE_REPORT_TITLE="B200 vLLM Main DeepSeek V4 Flash Baseline" \
 BASELINE_REPORT_LABEL=b200_main_51295793a \
 scripts/generate_baseline_bundle.sh
@@ -191,7 +193,10 @@ scripts/generate_baseline_bundle.sh
 The baseline bundle is written to
 `baselines/<YYYYMMDD>_<label>/`. It contains `report.md` plus sanitized
 reference data for fresh environments where raw `artifacts/` and prior chat
-context are not available.
+context are not available. The top-level `oracle/` directory remains the
+no-MTP compatibility entrypoint for existing compare commands; variant-specific
+copies live under `oracle/nomtp/` and `oracle/mtp/` when both exports are
+available.
 
 The report generator reads `phase_exit_codes.tsv`, `bench.json`,
 `toolcall15.json`, `oracle_export_summary.json`, `gpu_stats_summary.json`,
@@ -200,22 +205,25 @@ and each variant's `serve_command.sh`. It writes stable Markdown tables for raw
 throughput/latency, ToolCall-15, oracle export, phase-local runtime stats, MTP
 speculative decoding, structured provenance, serve-shape parameters, and
 normalized efficiency. It also places a quick performance summary near the top
-with best benchmark output throughput, an OpenRouter-style observed overview,
-and phase-local prefill/decode average `tok/s` values. The overview reports
-mean TTFT as latency, output token throughput as throughput, and benchmark
-observed context/output tokens per request. It does not claim model context
-window or model max-output limits unless those values are present in the
-benchmark artifact.
+with real-scenario operation cost estimates, best benchmark output throughput,
+and phase-local prefill/decode average `tok/s` values. The operation-cost
+overview is based on translation, writing, coding, and ToolCall-15 wall-clock
+samples, not benchmark rows. It is intended for OpenRouter/provider-style
+request costing. Benchmark rows remain useful for throughput and stress-shape
+tracking, but they are not used as the OP cost source. The default acceptance
+wrapper uses `QUALITY_TAG=quality`, `CODING_TAG=coding`, and
+`TOOLCALL15_SCENARIO_SET=both` so this OP view includes both English and
+Chinese-user traffic.
 
 The normalized columns include `tok/s/GPU`, `tok/s/total GiB`,
 `tok/s/used GiB`, `tok/J`, and `tok/s/kW`, which are intended for comparing
 different GPU counts and classes such as B200, RTX Pro 6000, RTX 5090, and
 GB10. Power efficiency uses sampled GPU-side average power for the whole phase,
-not wall-plug power. The provider-style price columns are synthetic break-even
-reference numbers for internal comparison only: the script hard-codes typical
-US datacenter assumptions, including 3-year GPU amortization at 70% useful
-utilization, `$0.12/kWh`, PUE `1.25`, and reference GPU prices for B200, RTX
-Pro 6000, RTX 5090, and DGX Spark / GB10.
+not wall-plug power. The real-scenario OP price columns are synthetic
+break-even reference numbers for internal comparison only: the script
+hard-codes typical US datacenter assumptions, including 3-year GPU amortization
+at 70% useful utilization, `$0.12/kWh`, PUE `1.25`, and reference GPU prices
+for B200, RTX Pro 6000, RTX 5090, and DGX Spark / GB10.
 
 The same script also publishes a sanitized reference bundle in that directory.
 It keeps the data needed to resume work in a fresh environment
@@ -235,14 +243,17 @@ SUBJECTIVE_BASELINE_DIR=baselines/20260501_b200_main_51295793a \
 scripts/run_official_subjective_baseline.sh
 ```
 
-The script captures official API quality and coding smoke outputs under ignored
-`artifacts/official_api/...`, then writes a public side-by-side
-`subjective_quality/comparison.{md,json}` directory inside the selected
-baseline. API keys are only read from the environment and are not written to the
-public comparison. By default the script sends explicit DeepSeek V4 thinking
+The script captures official API quality, coding, and ToolCall-15 outputs under
+ignored `artifacts/official_api/...`, then writes a public side-by-side
+`subjective_quality/comparison.{md,json}` plus
+`subjective_quality/agentic/` directory inside the selected baseline. API keys
+are only read from the environment and are not written to the public
+comparison. By default the script sends explicit DeepSeek V4 thinking
 parameters from `.env` (`thinking.type` and `reasoning_effort`) so the official
 run is reproducible; override `OFFICIAL_EXTRA_BODY_JSON` when comparing a
-different official serving mode.
+different official serving mode. ToolCall-15 preserves returned
+`reasoning_content` fields when replaying tool results for official API
+compatibility.
 
 ## Expected Workflow
 
@@ -269,6 +280,7 @@ python -m ds4_harness.cli chat-smoke \
 python -m ds4_harness.cli chat-smoke \
   --base-url http://127.0.0.1:8000 \
   --tag quality \
+  --repeat-count 3 \
   --timeout 600 \
   --jsonl-output artifacts/manual/smoke_quality.jsonl \
   --markdown-output artifacts/manual/smoke_quality.md
@@ -276,6 +288,7 @@ python -m ds4_harness.cli chat-smoke \
 python -m ds4_harness.cli chat-smoke \
   --base-url http://127.0.0.1:8000 \
   --tag coding \
+  --repeat-count 3 \
   --timeout 900 \
   --jsonl-output artifacts/manual/smoke_coding.jsonl \
   --markdown-output artifacts/manual/smoke_coding.md
@@ -283,6 +296,8 @@ python -m ds4_harness.cli chat-smoke \
 python -m ds4_harness.cli toolcall15 \
   --base-url http://127.0.0.1:8000 \
   --model deepseek-ai/DeepSeek-V4-Flash \
+  --scenario-set both \
+  --repeat-count 3 \
   --json-output artifacts/manual/toolcall15.json
 ```
 
@@ -293,7 +308,9 @@ checked-in `baselines/.../smoke/{nomtp,mtp}_quality.*` and
 
 Use the B200/SM100 or H100 HTTP oracle bundle when you need stricter kernel
 correctness checks. Chat exports are covered by `chat-smoke`; `oracle-compare`
-only consumes `/v1/completions` logprobs cases.
+only consumes `/v1/completions` logprobs cases. For no-MTP comparisons, the
+baseline `oracle/` path is the default. For MTP-specific checks, use the
+variant directory such as `oracle/mtp/`.
 
 When you have access to an expensive reference host, first export the oracle
 bundle from that host while the reference vLLM server is running:
@@ -362,11 +379,14 @@ scripts/run_b200_baseline.sh
 Run this script on the reference host, not on a laptop. It defaults to
 `HOST=127.0.0.1 PORT=8080`, `B200_BASELINE_VARIANTS=nomtp,mtp`,
 `NO_MTP_CONCURRENCY=1,2,4,8,16,24`, `MTP_CONCURRENCY=1,2,4,8,16,24`,
-`NUM_PROMPTS=80`, and a controlled random long-context bench with
+`NUM_PROMPTS=80`, `REAL_SCENARIO_REPEAT_COUNT=3`, `QUALITY_TAG=quality`,
+`CODING_TAG=coding`, `TOOLCALL15_SCENARIO_SET=both`, and a controlled random
+long-context bench with
 `RANDOM_LONG_INPUT_LEN=8192 RANDOM_LONG_OUTPUT_LEN=512
 RANDOM_LONG_CONCURRENCY=1,2`. Set `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`,
 `RUN_RANDOM_LONG=0`, or `RUN_ORACLE_EXPORT=0` for narrower refreshes. The
-script clears inherited
+oracle export phase runs for each requested variant so no-MTP and MTP both
+produce logprobs reference material. The script clears inherited
 `VLLM_*`, `TORCH_CUDA_ARCH_LIST`, and `CUDA_VISIBLE_DEVICES` launch defaults
 before starting vLLM, then stores phase exit codes in `phase_exit_codes.tsv`
 and a human summary in `baseline_summary.md`. It keeps running later phases
@@ -426,10 +446,11 @@ Before promoting an optimization:
 
 - `pytest -q tests` passes.
 - `chat-smoke --tag quick` passes.
-- `chat-smoke --tag quality` and `chat-smoke --tag coding` have no regression
-  versus the previous branch.
-- `toolcall15` passes, or any partial/fail scenario is explained with trace
-  evidence.
+- `chat-smoke --tag quality --repeat-count 3` and
+  `chat-smoke --tag coding --repeat-count 3` have no regression versus the
+  previous branch.
+- `toolcall15 --scenario-set both --repeat-count 3` passes, or any
+  partial/fail scenario is explained with trace evidence.
 - `oracle-compare` has matching prompt token ids and no early token divergence
   on deterministic oracle cases, or any divergence is explained and recorded.
 - Real-scenario benchmark on `philschmid/mt-bench` does not regress more than

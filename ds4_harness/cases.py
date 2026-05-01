@@ -120,6 +120,26 @@ CLOCK_PROMPT = """Please help me create a single-file HTML clock application. Pl
 * Use setInterval or requestAnimationFrame to start the loop.
 The code should be neat, compatible with the Edge browser, and have a visual effect that mimics a high-end and minimalist wall clock."""
 
+AQUARIUM_PROMPT_ZH = """请帮我写一个单文件 HTML 水族箱动画。
+
+要求：
+1. 画面里有多条不同颜色、不同大小的鱼，游动要尽量自然。
+2. 用户左键点击水族箱时，可以在点击位置放下一粒鱼食。
+3. 每条鱼会追逐离自己最近的鱼食并尝试吃掉它；没有鱼食时恢复自由游动。
+4. 需要有完整的 HTML、CSS 和 JavaScript，能直接保存为一个 `.html` 文件运行。
+5. 视觉效果要精致一些，不要只给伪代码或解释，直接给出完整代码。"""
+
+CLOCK_PROMPT_ZH = """请帮我创建一个单文件 HTML 时钟应用，要求直接给出完整代码。
+
+功能和视觉要求：
+1. 时钟表盘是圆形，有刻度、数字、时针、分针、秒针，并在表盘内部显示当前时间和日期。
+2. 表盘需要有简洁的高级感：白色背景、深色边框、轻微 3D 阴影。
+3. 用 JavaScript 动态生成 60 个刻度，整点刻度更粗更深。
+4. 时间必须转换为中国标准时间（北京时区，Asia/Shanghai）。
+5. 写一个 updateClock() 函数，计算时针、分针、秒针角度；秒针需要尽量平滑运动。
+6. 使用 setInterval 或 requestAnimationFrame 驱动刷新。
+7. 代码需要兼容 Edge 浏览器。"""
+
 WRITING_PROMPT = (
     "Write a short article about the tradeoffs of running large language models "
     "locally. Follow this exact structure with four labeled sections: "
@@ -215,7 +235,7 @@ def build_cases(model: str) -> list[SmokeCase]:
                 forbidden_terms=("作为AI", "我将", "下面是"),
                 min_chars=700,
             ),
-            tags=("quality", "writing", "subjective", "user-report"),
+            tags=("quality", "quality-cn", "writing", "subjective", "user-report"),
             max_tokens=2048,
             temperature=1.0,
         ),
@@ -243,8 +263,35 @@ def build_cases(model: str) -> list[SmokeCase]:
                 forbidden_terms=("as an ai", "the translation is", "here is"),
                 min_chars=220,
             ),
-            tags=("quality", "translation", "subjective", "user-report"),
+            tags=("quality", "quality-cn", "translation", "subjective", "user-report"),
             max_tokens=1024,
+            temperature=1.0,
+        ),
+        SmokeCase(
+            name="aquarium_html_zh",
+            model=model,
+            messages=[{"role": "user", "content": AQUARIUM_PROMPT_ZH}],
+            expectation=Expectation(
+                any_terms=("鱼", "fish", "aquarium"),
+                min_chars=1200,
+                require_html_artifact=True,
+            ),
+            tags=("coding", "coding-cn", "html", "long", "subjective", "user-report"),
+            max_tokens=8192,
+            temperature=1.0,
+        ),
+        SmokeCase(
+            name="clock_html_zh",
+            model=model,
+            messages=[{"role": "user", "content": CLOCK_PROMPT_ZH}],
+            expectation=Expectation(
+                all_terms=("updateClock", "Asia/Shanghai"),
+                any_terms=("setInterval", "requestAnimationFrame"),
+                min_chars=1800,
+                require_html_artifact=True,
+            ),
+            tags=("coding", "coding-cn", "html", "long", "subjective", "user-report"),
+            max_tokens=12000,
             temperature=1.0,
         ),
         SmokeCase(

@@ -13,6 +13,12 @@ BENCH_PHASE_LABELS = {
     "bench_random_8192x512": "Random 8192/512",
 }
 VARIANT_ORDER = {"nomtp": 0, "mtp": 1}
+REAL_WORKLOAD_ORDER = {
+    "translation": 0,
+    "writing": 1,
+    "coding": 2,
+    "agentic": 3,
+}
 REFERENCE_COST_MODEL = {
     "amortization_years": 3.0,
     "useful_utilization_fraction": 0.70,
@@ -306,6 +312,84 @@ def _safe_divide(numerator: float | None, denominator: float | None) -> float | 
     return numerator / denominator
 
 
+def _load_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            rows.append(item)
+    return rows
+
+
+def _usage_tokens(usage: Any) -> dict[str, float]:
+    if not isinstance(usage, dict):
+        return {}
+    tokens: dict[str, float] = {}
+    for key, value in usage.items():
+        number = _to_float(value)
+        if number is not None:
+            tokens[key] = number
+    prompt_details = usage.get("prompt_tokens_details")
+    if isinstance(prompt_details, dict):
+        cached = _to_float(prompt_details.get("cached_tokens"))
+        if cached is not None:
+            tokens.setdefault("cached_tokens", cached)
+    return tokens
+
+
+def _prompt_tokens(usage: dict[str, float]) -> float | None:
+    return usage.get("prompt_tokens") or usage.get("input_tokens")
+
+
+def _completion_tokens(usage: dict[str, float]) -> float | None:
+    return usage.get("completion_tokens") or usage.get("output_tokens")
+
+
+def _total_tokens(usage: dict[str, float]) -> float | None:
+    total = usage.get("total_tokens")
+    if total is not None:
+        return total
+    prompt = _prompt_tokens(usage)
+    completion = _completion_tokens(usage)
+    if prompt is None and completion is None:
+        return None
+    return (prompt or 0.0) + (completion or 0.0)
+
+
+def _cache_read_tokens(usage: dict[str, float]) -> float | None:
+    return (
+        usage.get("prompt_cache_hit_tokens")
+        or usage.get("cached_tokens")
+        or usage.get("cache_read_tokens")
+    )
+
+
+def _smoke_workload(row: dict[str, Any], default: str) -> str:
+    tags = {
+        str(tag).casefold()
+        for tag in row.get("tags", [])
+        if isinstance(tag, str)
+    }
+    if "translation" in tags:
+        return "translation"
+    if "writing" in tags:
+        return "writing"
+    if "coding" in tags:
+        return "coding"
+    return default
+
+
+def _workload_sort_key(value: str) -> tuple[int, str]:
+    return (REAL_WORKLOAD_ORDER.get(value, 99), value)
+
+
 def _reference_gpu_price_usd(name: Any) -> float | None:
     normalized = str(name or "").upper()
     for pattern, price in REFERENCE_GPU_PRICES_USD:
@@ -479,6 +563,231 @@ def _bench_rows(
     )
 
 
+def _acceptance_hourly_cost(
+    record: PhaseRecord,
+    fallback_env: dict[str, Any],
+) -> tuple[dict[str, Any], float | None, float | None, float | None]:
+    env = _load_json(record.artifact_dir / "run_environment.json")
+    if not isinstance(env, dict):
+        env = fallback_env
+    gpu_stats = _load_json(record.artifact_dir / "gpu_stats_summary.json")
+    if not isinstance(gpu_stats, dict):
+        gpu_stats = None
+    gpu_count = _gpu_count(env, gpu_stats)
+    total_power_w = _total_avg_power_w(gpu_stats, gpu_count)
+    capex_hourly_usd = _reference_capex_hourly_usd(env)
+    power_hourly_usd = _reference_power_hourly_usd(total_power_w)
+    total_hourly_usd = None
+    if capex_hourly_usd is not None:
+        total_hourly_usd = capex_hourly_usd + (power_hourly_usd or 0.0)
+    return env, capex_hourly_usd, power_hourly_usd, total_hourly_usd
+
+
+def _real_scenario_samples(
+    records: list[PhaseRecord],
+    fallback_env: dict[str, Any],
+) -> list[dict[str, Any]]:
+    samples: list[dict[str, Any]] = []
+    for record in records:
+        if record.phase != "acceptance":
+            continue
+        _, capex_hourly_usd, power_hourly_usd, total_hourly_usd = _acceptance_hourly_cost(
+            record,
+            fallback_env,
+        )
+
+        smoke_files = (
+            ("smoke_quality.jsonl", "writing"),
+            ("smoke_coding.jsonl", "coding"),
+        )
+        for filename, default_workload in smoke_files:
+            for row in _load_jsonl(record.artifact_dir / filename):
+                response = row.get("response")
+                usage = (
+                    _usage_tokens(response.get("usage"))
+                    if isinstance(response, dict)
+                    else {}
+                )
+                elapsed_seconds = _to_float(row.get("elapsed_seconds"))
+                samples.append(
+                    {
+                        "variant": record.variant,
+                        "workload": _smoke_workload(row, default_workload),
+                        "case": row.get("case"),
+                        "ok": bool(row.get("ok")),
+                        "elapsed_seconds": elapsed_seconds,
+                        "prompt_tokens": _prompt_tokens(usage),
+                        "completion_tokens": _completion_tokens(usage),
+                        "total_tokens": _total_tokens(usage),
+                        "cache_read_tokens": _cache_read_tokens(usage),
+                        "reference_capex_hourly_usd": capex_hourly_usd,
+                        "reference_power_hourly_usd": power_hourly_usd,
+                        "reference_total_hourly_usd": total_hourly_usd,
+                    }
+                )
+
+        toolcall_data = _load_json(record.artifact_dir / "toolcall15.json")
+        if isinstance(toolcall_data, dict):
+            toolcall_rounds = toolcall_data.get("rounds")
+            if isinstance(toolcall_rounds, list):
+                result_sets = [
+                    round_data.get("results", [])
+                    for round_data in toolcall_rounds
+                    if isinstance(round_data, dict)
+                ]
+            else:
+                result_sets = [toolcall_data.get("results", [])]
+            for result_set in result_sets:
+                if not isinstance(result_set, list):
+                    continue
+                for row in result_set:
+                    if not isinstance(row, dict):
+                        continue
+                    usage = _usage_tokens(row.get("usage_totals"))
+                    elapsed_seconds = _to_float(row.get("elapsed_seconds"))
+                    samples.append(
+                        {
+                            "variant": record.variant,
+                            "workload": "agentic",
+                            "case": row.get("id"),
+                            "ok": bool(row.get("ok", row.get("status") == "pass")),
+                            "elapsed_seconds": elapsed_seconds,
+                            "prompt_tokens": _prompt_tokens(usage),
+                            "completion_tokens": _completion_tokens(usage),
+                            "total_tokens": _total_tokens(usage),
+                            "cache_read_tokens": _cache_read_tokens(usage),
+                            "reference_capex_hourly_usd": capex_hourly_usd,
+                            "reference_power_hourly_usd": power_hourly_usd,
+                            "reference_total_hourly_usd": total_hourly_usd,
+                        }
+                    )
+    return samples
+
+
+def _real_scenario_cost_rows(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for sample in samples:
+        grouped.setdefault((sample["variant"], sample["workload"]), []).append(sample)
+
+    rows: list[dict[str, Any]] = []
+    for (variant, workload), group in grouped.items():
+        sample_count = len(group)
+        pass_count = sum(1 for sample in group if sample.get("ok"))
+        elapsed_values = [
+            value
+            for value in (_to_float(sample.get("elapsed_seconds")) for sample in group)
+            if value is not None
+        ]
+        elapsed_total = sum(elapsed_values) if elapsed_values else None
+        prompt_total = sum(
+            value
+            for value in (_to_float(sample.get("prompt_tokens")) for sample in group)
+            if value is not None
+        )
+        completion_total = sum(
+            value
+            for value in (_to_float(sample.get("completion_tokens")) for sample in group)
+            if value is not None
+        )
+        total_token_total = sum(
+            value
+            for value in (_to_float(sample.get("total_tokens")) for sample in group)
+            if value is not None
+        )
+        cache_read_total = sum(
+            value
+            for value in (_to_float(sample.get("cache_read_tokens")) for sample in group)
+            if value is not None
+        )
+        hourly_cost = next(
+            (
+                _to_float(sample.get("reference_total_hourly_usd"))
+                for sample in group
+                if _to_float(sample.get("reference_total_hourly_usd")) is not None
+            ),
+            None,
+        )
+        capex_hourly = next(
+            (
+                _to_float(sample.get("reference_capex_hourly_usd"))
+                for sample in group
+                if _to_float(sample.get("reference_capex_hourly_usd")) is not None
+            ),
+            None,
+        )
+        power_hourly = next(
+            (
+                _to_float(sample.get("reference_power_hourly_usd"))
+                for sample in group
+                if _to_float(sample.get("reference_power_hourly_usd")) is not None
+            ),
+            None,
+        )
+        cost_total = (
+            hourly_cost * elapsed_total / 3600.0
+            if hourly_cost is not None and elapsed_total is not None
+            else None
+        )
+        input_price = (
+            _safe_divide(cost_total * 1_000_000.0, prompt_total)
+            if cost_total is not None
+            else None
+        )
+        output_price = (
+            _safe_divide(cost_total * 1_000_000.0, completion_total)
+            if cost_total is not None
+            else None
+        )
+        cache_read_price = (
+            _safe_divide(cost_total * 1_000_000.0, cache_read_total)
+            if cost_total is not None and cache_read_total > 0
+            else (
+                input_price
+                * REFERENCE_COST_MODEL["cache_read_fraction_of_input_price"]
+                if input_price is not None
+                else None
+            )
+        )
+        rows.append(
+            {
+                "variant": variant,
+                "workload": workload,
+                "samples": sample_count,
+                "pass_percent": _safe_divide(pass_count * 100.0, sample_count),
+                "avg_latency_s": _safe_divide(elapsed_total, len(elapsed_values))
+                if elapsed_total is not None
+                else None,
+                "output_tokens_per_second": _safe_divide(
+                    completion_total,
+                    elapsed_total,
+                ),
+                "prompt_tokens_per_op": _safe_divide(prompt_total, sample_count),
+                "completion_tokens_per_op": _safe_divide(
+                    completion_total,
+                    sample_count,
+                ),
+                "total_tokens_per_op": _safe_divide(total_token_total, sample_count),
+                "cost_per_op_usd": _safe_divide(cost_total, sample_count)
+                if cost_total is not None
+                else None,
+                "cost_per_1k_ops_usd": _safe_divide(cost_total * 1000.0, sample_count)
+                if cost_total is not None
+                else None,
+                "input_price_usd_per_mtok": input_price,
+                "output_price_usd_per_mtok": output_price,
+                "cache_read_price_usd_per_mtok": cache_read_price,
+                "reference_capex_hourly_usd": capex_hourly,
+                "reference_power_hourly_usd": power_hourly,
+                "reference_total_hourly_usd": hourly_cost,
+            }
+        )
+
+    return sorted(
+        rows,
+        key=lambda row: (_variant_sort_key(row["variant"]), _workload_sort_key(row["workload"])),
+    )
+
+
 def _acceptance_gate_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for record in records:
@@ -504,10 +813,21 @@ def _toolcall_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
         if not isinstance(data, dict):
             continue
         summary = data.get("summary", {})
+        if isinstance(data.get("rounds"), list):
+            result_sets = [
+                round_data.get("results", [])
+                for round_data in data["rounds"]
+                if isinstance(round_data, dict)
+            ]
+        else:
+            result_sets = [data.get("results", [])]
         failures = [
             result
-            for result in data.get("results", [])
-            if result.get("status") != "pass" or not result.get("ok", True)
+            for result_set in result_sets
+            if isinstance(result_set, list)
+            for result in result_set
+            if isinstance(result, dict)
+            and (result.get("status") != "pass" or not result.get("ok", True))
         ]
         rows.append({"variant": record.variant, "summary": summary, "failures": failures})
     return sorted(rows, key=lambda row: _variant_sort_key(row["variant"]))
@@ -604,6 +924,7 @@ def _best_benchmark_rows(
 
 def _append_quick_performance_summary(
     lines: list[str],
+    real_scenario_cost_rows: list[dict[str, Any]],
     primary_bench_rows: list[dict[str, Any]],
     supplement_bench_rows: list[dict[str, Any]],
     runtime_rows: list[dict[str, Any]],
@@ -614,10 +935,42 @@ def _append_quick_performance_summary(
     if supplement_bench_rows:
         best_rows.extend(_best_benchmark_rows("Supplement", supplement_bench_rows))
 
-    if not best_rows and not runtime_rows:
+    if not real_scenario_cost_rows and not best_rows and not runtime_rows:
         return
 
     lines.extend(["## Quick Performance Summary", ""])
+    if real_scenario_cost_rows:
+        lines.extend(
+            [
+                "### Real Scenario OP Cost Estimate",
+                "",
+                (
+                    "These rows use translation, writing, coding, and ToolCall-15 "
+                    "wall-clock samples. They are request-style operation estimates, "
+                    "not benchmark throughput prices."
+                ),
+                "",
+                "| Variant | Workload | Samples | Pass % | Avg latency s | Output tok/s | Prompt tok/op | Output tok/op | Cost/op | Cost/1k ops | Input $/M | Output $/M | Cache read $/M | Cost/h |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for row in real_scenario_cost_rows:
+            lines.append(
+                f"| `{row['variant']}` | {row['workload']} | "
+                f"{row['samples']} | {_fmt(row.get('pass_percent'))} | "
+                f"{_fmt(row.get('avg_latency_s'))} | "
+                f"{_fmt(row.get('output_tokens_per_second'))} | "
+                f"{_fmt_int(row.get('prompt_tokens_per_op'))} | "
+                f"{_fmt_int(row.get('completion_tokens_per_op'))} | "
+                f"{_fmt_usd(row.get('cost_per_op_usd'), 4)} | "
+                f"{_fmt_usd(row.get('cost_per_1k_ops_usd'))} | "
+                f"{_fmt_usd(row.get('input_price_usd_per_mtok'))} | "
+                f"{_fmt_usd(row.get('output_price_usd_per_mtok'))} | "
+                f"{_fmt_usd(row.get('cache_read_price_usd_per_mtok'))} | "
+                f"{_fmt_usd(row.get('reference_total_hourly_usd'))} |"
+            )
+        lines.extend(["", *_reference_cost_model_lines(), ""])
+
     if best_rows:
         lines.extend(
             [
@@ -635,43 +988,6 @@ def _append_quick_performance_summary(
                 f"{_fmt(row['mean_tpot_ms'])} |"
             )
         lines.append("")
-
-        provider_rows = [
-            row
-            for row in best_rows
-            if row.get("reference_total_hourly_usd") is not None
-        ]
-        if provider_rows:
-            lines.extend(
-                [
-                    "### Provider-Style Overview",
-                    "",
-                    (
-                        "Latency is mean TTFT. Throughput is output token throughput. "
-                        "Context and output are benchmark-observed per request, not model limits."
-                    ),
-                    "",
-                    "| Source | Variant | Phase | C | Latency s | Throughput tok/s | Context/req | Output/req | Input $/M | Output $/M | Cache read $/M | Cost/h |",
-                    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
-                ]
-            )
-            for row in provider_rows:
-                latency_s = None
-                ttft_ms = _to_float(row.get("mean_ttft_ms"))
-                if ttft_ms is not None:
-                    latency_s = ttft_ms / 1000.0
-                lines.append(
-                    f"| {row['source']} | `{row['variant']}` | {row['phase_label']} | "
-                    f"{row['concurrency']} | {_fmt(latency_s)} | "
-                    f"{_fmt(row['output_token_throughput_tok_s'])} | "
-                    f"{_fmt_int(row.get('avg_context_tokens_per_request'))} | "
-                    f"{_fmt_int(row.get('avg_output_tokens_per_request'))} | "
-                    f"{_fmt_usd(row.get('reference_input_price_usd_per_mtok'))} | "
-                    f"{_fmt_usd(row.get('reference_output_price_usd_per_mtok'))} | "
-                    f"{_fmt_usd(row.get('reference_cache_read_price_usd_per_mtok'))} | "
-                    f"{_fmt_usd(row.get('reference_total_hourly_usd'))} |"
-                )
-            lines.extend(["", *_reference_cost_model_lines(), ""])
 
     if runtime_rows:
         lines.extend(
@@ -959,16 +1275,17 @@ def _append_toolcall(lines: list[str], rows: list[dict[str, Any]]) -> None:
         [
             "## ToolCall-15",
             "",
-            "| Variant | Score | Cases | Failures |",
-            "| --- | ---: | ---: | ---: |",
+            "| Variant | Score | Total runs | Unique cases | Failures |",
+            "| --- | ---: | ---: | ---: | ---: |",
         ]
     )
     for row in rows:
         summary = row["summary"]
         score = f"{summary.get('points', 'n/a')}/{summary.get('max_points', 'n/a')}"
+        total_runs = summary.get("total_cases", summary.get("cases", "n/a"))
         lines.append(
             f"| `{row['variant']}` | {score} ({summary.get('score_percent', 'n/a')}%) | "
-            f"{summary.get('cases', 'n/a')} | {summary.get('failures', 'n/a')} |"
+            f"{total_runs} | {summary.get('cases', 'n/a')} | {summary.get('failures', 'n/a')} |"
         )
     lines.append("")
     for row in rows:
@@ -1069,6 +1386,8 @@ def build_baseline_report(
     collect_env_summary = _collect_env_summary(records)
     serve_shape_rows = _serve_shape_rows(run_dir, records)
     bench_rows = _bench_rows(records, env)
+    real_scenario_samples = _real_scenario_samples(records, env)
+    real_scenario_cost_rows = _real_scenario_cost_rows(real_scenario_samples)
     runtime_rows = _runtime_rows(records)
     acceptance_gate_rows = _acceptance_gate_rows(records)
     toolcall_rows = _toolcall_rows(records)
@@ -1128,6 +1447,7 @@ def build_baseline_report(
     summary_runtime_rows = supplement_runtime_rows or runtime_rows
     _append_quick_performance_summary(
         lines,
+        real_scenario_cost_rows,
         bench_rows,
         supplement_bench_rows,
         summary_runtime_rows,

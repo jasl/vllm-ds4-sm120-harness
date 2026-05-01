@@ -12,6 +12,8 @@ SUBJECTIVE_CASE_ORDER = (
     "writing_quality_user_report_zh",
     "translation_quality_en_to_zh",
     "translation_quality_zh_to_en",
+    "aquarium_html_zh",
+    "clock_html_zh",
     "aquarium_html",
     "clock_html",
 )
@@ -21,6 +23,20 @@ SOURCE_LABELS = {
     "b200_mtp": "B200 MTP",
     "official_api": "DeepSeek official API",
 }
+
+AGENTIC_SOURCE_LABELS = {
+    "b200_nomtp": "B200 no-MTP",
+    "b200_mtp": "B200 MTP",
+    "official_api": "DeepSeek official API",
+}
+
+
+def _write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _load_rows(path: Path) -> list[dict[str, Any]]:
@@ -214,10 +230,12 @@ def _write_readme(path: Path) -> None:
 
 This directory contains side-by-side subjective samples for B200 no-MTP, B200
 MTP, and the DeepSeek official API. It is intended for human review of
-translation, writing, and coding behavior.
+English and Chinese-user translation, writing, coding, and agentic behavior.
 
 - `comparison.md`: human-readable prompts and outputs.
 - `comparison.json`: structured version of the same data.
+- `agentic/`: ToolCall-15 traces and score summary when official API agentic
+  samples were captured.
 
 These samples are quality references, not deterministic correctness or
 performance measurements.
@@ -226,10 +244,75 @@ performance measurements.
     )
 
 
+def _copy_agentic_samples(
+    *,
+    baseline_dir: Path,
+    official_toolcall_paths: list[Path],
+    output_dir: Path,
+) -> None:
+    sources: dict[str, dict[str, Any]] = {}
+    for source_key, path in {
+        "b200_nomtp": baseline_dir / "toolcall15" / "nomtp.json",
+        "b200_mtp": baseline_dir / "toolcall15" / "mtp.json",
+    }.items():
+        if not path.exists():
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            sources[source_key] = data
+
+    for index, path in enumerate(official_toolcall_paths, start=1):
+        if not path.exists():
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            key = (
+                "official_api"
+                if len(official_toolcall_paths) == 1
+                else f"official_api_{index}"
+            )
+            sources[key] = data
+
+    if not sources:
+        return
+
+    agentic_dir = output_dir / "agentic"
+    for source_key, data in sources.items():
+        _write_json(agentic_dir / f"{source_key}.json", data)
+
+    lines = [
+        "# Agentic ToolCall-15 Samples",
+        "",
+        "| Source | Score | Total cases | Failures | Scenario sets | Rounds |",
+        "| --- | ---: | ---: | ---: | --- | ---: |",
+    ]
+    for source_key, data in sources.items():
+        summary = data.get("summary")
+        summary = summary if isinstance(summary, dict) else {}
+        scenario_sets = summary.get("scenario_sets", [])
+        if isinstance(scenario_sets, list):
+            scenario_sets_text = ", ".join(str(item) for item in scenario_sets)
+        else:
+            scenario_sets_text = str(scenario_sets)
+        lines.append(
+            f"| {AGENTIC_SOURCE_LABELS.get(source_key, source_key)} | "
+            f"{summary.get('points', 'n/a')}/{summary.get('max_points', 'n/a')} | "
+            f"{summary.get('total_cases', summary.get('cases', 'n/a'))} | "
+            f"{summary.get('failures', 'n/a')} | {scenario_sets_text} | "
+            f"{summary.get('rounds', 'n/a')} |"
+        )
+
+    (agentic_dir / "summary.md").write_text(
+        "\n".join(lines).rstrip() + "\n",
+        encoding="utf-8",
+    )
+
+
 def build_subjective_comparison(
     *,
     baseline_dir: Path,
     official_paths: list[Path],
+    official_toolcall_paths: list[Path] | None = None,
     output_dir: Path,
     label: str,
 ) -> dict[str, Any]:
@@ -288,4 +371,9 @@ def build_subjective_comparison(
     )
     _write_markdown(output_dir / "comparison.md", data)
     _write_readme(output_dir / "README.md")
+    _copy_agentic_samples(
+        baseline_dir=baseline_dir,
+        official_toolcall_paths=official_toolcall_paths or [],
+        output_dir=output_dir,
+    )
     return data

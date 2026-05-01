@@ -1,10 +1,12 @@
 # Chat Smoke Report
 
 - Cases: 4
+- Repeat count: 1
 
 ## math_7_times_8
 
 - Status: PASS
+- Round: 1
 - Tags: quick, basic, deterministic
 - Check: matched expectation
 
@@ -22,9 +24,14 @@ What is 7*8?
 The product of 7 and 8 is 56.
 ```
 
+### Timing
+
+- Elapsed seconds: 0.463
+
 ## capital_of_france
 
 - Status: PASS
+- Round: 1
 - Tags: quick, basic, deterministic
 - Check: matched expectation
 
@@ -42,9 +49,14 @@ Capital of France?
 The capital of France is **Paris**.
 ```
 
+### Timing
+
+- Elapsed seconds: 0.110
+
 ## spanish_greeting
 
 - Status: PASS
+- Round: 1
 - Tags: quick, basic, deterministic
 - Check: matched expectation
 
@@ -66,9 +78,14 @@ The most common way to say "hello" in Spanish is:
 It's pronounced *OH-lah* (with a silent 'h').
 ```
 
+### Timing
+
+- Elapsed seconds: 0.196
+
 ## openclaw_read_tool
 
 - Status: PASS
+- Round: 1
 - Tags: quick, tool, agent, deterministic
 - Check: matched expectation
 
@@ -123,3 +140,7 @@ I'll check the state and compile a summary of yesterday's activities. Let me loo
 
 - `read`
 - `read`
+
+### Timing
+
+- Elapsed seconds: 0.455

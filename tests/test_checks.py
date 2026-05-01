@@ -97,6 +97,22 @@ def test_subjective_writing_and_translation_cases_are_available():
         assert names[name].temperature == 1.0
 
 
+def test_chinese_real_scenario_suite_is_available_by_default_tags():
+    cases = build_cases("deepseek-ai/DeepSeek-V4-Flash")
+    quality_cn = select_cases(cases, names=None, tags=["quality-cn"], exclude_tags=None)
+    coding_cn = select_cases(cases, names=None, tags=["coding-cn"], exclude_tags=None)
+
+    assert [case.name for case in quality_cn] == [
+        "writing_quality_user_report_zh",
+        "translation_quality_zh_to_en",
+    ]
+    assert [case.name for case in coding_cn] == [
+        "aquarium_html_zh",
+        "clock_html_zh",
+    ]
+    assert all("subjective" in case.tags for case in quality_cn + coding_cn)
+
+
 def test_basic_quick_cases_allow_reasoning_token_budget():
     cases = build_cases("deepseek-ai/DeepSeek-V4-Flash")
     names = {case.name: case for case in cases}
