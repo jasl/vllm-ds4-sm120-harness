@@ -40,6 +40,8 @@
 
 These rows use translation, writing, coding, and ToolCall-15 wall-clock samples. They are request-style operation estimates, not benchmark throughput prices.
 
+#### Purchase / Amortized
+
 | Variant | Workload | Samples | Pass % | Avg latency s | Output tok/s | Prompt tok/op | Output tok/op | Cost/op | Cost/1k ops | Input $/M | Output $/M | Cache read $/M | Cost/h |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `nomtp` | translation | 6 | 100.00 | 0.57 | 112.17 | 86 | 64 | $0.0011 | $1.06 | $12.25 | $16.65 | $2.45 | $6.72 |
@@ -51,11 +53,26 @@ These rows use translation, writing, coding, and ToolCall-15 wall-clock samples.
 | `mtp` | coding | 12 | 100.00 | 16.05 | 286.18 | 190 | 4593 | $0.0300 | $30.01 | $157.95 | $6.53 | $31.59 | $6.73 |
 | `mtp` | agentic | 90 | 80.00 | 0.81 | 227.69 | 3233 | 185 | $0.0015 | $1.52 | $0.47 | $8.21 | $0.09 | $6.73 |
 
+#### Rental / Cloud GPU-Hour
+
+| Variant | Workload | Samples | Pass % | Avg latency s | Output tok/s | Prompt tok/op | Output tok/op | Cost/op | Cost/1k ops | Input $/M | Output $/M | Cache read $/M | Cost/h |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `nomtp` | translation | 6 | 100.00 | 0.57 | 112.17 | 86 | 64 | $0.0024 | $2.40 | $27.70 | $37.64 | $5.54 | $15.20 |
+| `nomtp` | writing | 6 | 100.00 | 4.92 | 130.82 | 74 | 644 | $0.0208 | $20.79 | $280.94 | $32.27 | $56.19 | $15.20 |
+| `nomtp` | coding | 12 | 100.00 | 32.64 | 135.77 | 190 | 4432 | $0.1378 | $137.83 | $725.40 | $31.10 | $145.08 | $15.20 |
+| `nomtp` | agentic | 90 | 81.11 | 1.39 | 126.08 | 3132 | 175 | $0.0059 | $5.87 | $1.87 | $33.49 | $0.37 | $15.20 |
+| `mtp` | translation | 6 | 100.00 | 0.31 | 206.33 | 86 | 63 | $0.0013 | $1.30 | $14.98 | $20.46 | $3.00 | $15.20 |
+| `mtp` | writing | 6 | 100.00 | 3.25 | 204.86 | 74 | 665 | $0.0137 | $13.71 | $185.26 | $20.61 | $37.05 | $15.20 |
+| `mtp` | coding | 12 | 100.00 | 16.05 | 286.18 | 190 | 4593 | $0.0678 | $67.77 | $356.67 | $14.75 | $71.33 | $15.20 |
+| `mtp` | agentic | 90 | 80.00 | 0.81 | 227.69 | 3233 | 185 | $0.0034 | $3.44 | $1.06 | $18.54 | $0.21 | $15.20 |
+
 ### Reference Cost Model
 
 - Hardware prices: B200: `$30,000/GPU`; RTX PRO 6000: `$8,565/GPU`; RTX 5090: `$1,999/GPU`; DGX Spark / GB10: `$3,999/GPU`.
+- Rental prices: B200: `$3.80/GPU-hour`; RTX PRO 6000 WS: `$0.96/GPU-hour`; DGX Spark / GB10: `$0.48/unit-hour`.
 - Amortization: 3 years at 70% useful utilization.
 - Power: sampled average GPU power multiplied by PUE 1.25 and $0.12/kWh.
+- Purchase cost/h adds amortized hardware and power; rental cost/h uses the quoted rental rate without adding separate power.
 - Cache read price is a synthetic 20% of the input break-even price.
 - Input and output prices each allocate the full hourly cost to that token class; do not add them together.
 

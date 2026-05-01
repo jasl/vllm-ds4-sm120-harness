@@ -1,7 +1,10 @@
 import json
 
 from ds4_harness import cli
-from ds4_harness.baseline_report import build_baseline_report
+from ds4_harness.baseline_report import (
+    _reference_gpu_rental_hourly_usd,
+    build_baseline_report,
+)
 
 
 def _write_json(path, data):
@@ -270,6 +273,39 @@ def _write_fixture_run(tmp_path):
     return root
 
 
+def test_reference_rental_hourly_costs_cover_sm12x_dev_hosts():
+    assert (
+        _reference_gpu_rental_hourly_usd(
+            {
+                "gpu": {
+                    "models": [
+                        {
+                            "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+                            "count": 2,
+                        }
+                    ]
+                }
+            }
+        )
+        == 1.92
+    )
+    assert (
+        _reference_gpu_rental_hourly_usd(
+            {
+                "gpu": {
+                    "models": [
+                        {
+                            "name": "NVIDIA DGX Spark",
+                            "count": 2,
+                        }
+                    ]
+                }
+            }
+        )
+        == 0.96
+    )
+
+
 def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_path):
     run_dir = _write_fixture_run(tmp_path)
 
@@ -295,9 +331,15 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
         "| `nomtp` | writing | 1 | 100.00 | 2.00 | 100.00 | 100 | 200 | "
         "$0.0037 | $3.73 | $37.31 | $18.65 | $7.46 | $6.72 |"
     ) in report
+    assert "#### Rental / Cloud GPU-Hour" in report
+    assert (
+        "| `nomtp` | writing | 1 | 100.00 | 2.00 | 100.00 | 100 | 200 | "
+        "$0.0084 | $8.44 | $84.44 | $42.22 | $16.89 | $15.20 |"
+    ) in report
     assert "### Best Benchmark Throughput" in report
     assert "| Primary | `nomtp` | HF/MT-Bench | 1 | 1600.00 | 400.00 | 100.00 | 5.50 |" in report
     assert "B200: `$30,000/GPU`" in report
+    assert "B200: `$3.80/GPU-hour`" in report
     assert "## Normalized Efficiency" in report
     assert "tok/s/GPU" in report
     assert "tok/J" in report

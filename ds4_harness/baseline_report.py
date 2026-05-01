@@ -33,6 +33,12 @@ REFERENCE_GPU_PRICES_USD = (
     ("GB10", 3999.0),
     ("DGX SPARK", 3999.0),
 )
+REFERENCE_GPU_RENTAL_USD_PER_HOUR = (
+    ("B200", 3.80),
+    ("RTX PRO 6000", 0.96),
+    ("GB10", 0.48),
+    ("DGX SPARK", 0.48),
+)
 
 
 @dataclass(frozen=True)
@@ -398,12 +404,33 @@ def _reference_gpu_price_usd(name: Any) -> float | None:
     return None
 
 
+def _reference_gpu_rental_usd_per_hour(name: Any) -> float | None:
+    normalized = str(name or "").upper()
+    for pattern, price in REFERENCE_GPU_RENTAL_USD_PER_HOUR:
+        if pattern in normalized:
+            return price
+    return None
+
+
 def _reference_gpu_purchase_cost_usd(env: dict[str, Any]) -> float | None:
     total = 0.0
     matched = False
     for model in env.get("gpu", {}).get("models", []):
         count = _to_float(model.get("count"))
         price = _reference_gpu_price_usd(model.get("name"))
+        if count is None or price is None:
+            continue
+        total += count * price
+        matched = True
+    return total if matched else None
+
+
+def _reference_gpu_rental_hourly_usd(env: dict[str, Any]) -> float | None:
+    total = 0.0
+    matched = False
+    for model in env.get("gpu", {}).get("models", []):
+        count = _to_float(model.get("count"))
+        price = _reference_gpu_rental_usd_per_hour(model.get("name"))
         if count is None or price is None:
             continue
         total += count * price
@@ -449,6 +476,53 @@ def _reference_break_even_price_usd_per_mtok(
     return _safe_divide(hourly_cost_usd * 1_000_000.0, tokens_per_hour)
 
 
+def _operation_cost_metrics(
+    hourly_cost: float | None,
+    *,
+    elapsed_total: float | None,
+    prompt_total: float,
+    completion_total: float,
+    cache_read_total: float,
+    sample_count: int,
+) -> dict[str, float | None]:
+    cost_total = (
+        hourly_cost * elapsed_total / 3600.0
+        if hourly_cost is not None and elapsed_total is not None
+        else None
+    )
+    input_price = (
+        _safe_divide(cost_total * 1_000_000.0, prompt_total)
+        if cost_total is not None
+        else None
+    )
+    output_price = (
+        _safe_divide(cost_total * 1_000_000.0, completion_total)
+        if cost_total is not None
+        else None
+    )
+    cache_read_price = (
+        _safe_divide(cost_total * 1_000_000.0, cache_read_total)
+        if cost_total is not None and cache_read_total > 0
+        else (
+            input_price
+            * REFERENCE_COST_MODEL["cache_read_fraction_of_input_price"]
+            if input_price is not None
+            else None
+        )
+    )
+    return {
+        "cost_per_op_usd": _safe_divide(cost_total, sample_count)
+        if cost_total is not None
+        else None,
+        "cost_per_1k_ops_usd": _safe_divide(cost_total * 1000.0, sample_count)
+        if cost_total is not None
+        else None,
+        "input_price_usd_per_mtok": input_price,
+        "output_price_usd_per_mtok": output_price,
+        "cache_read_price_usd_per_mtok": cache_read_price,
+    }
+
+
 def _bench_rows(
     records: list[PhaseRecord],
     fallback_env: dict[str, Any],
@@ -471,6 +545,7 @@ def _bench_rows(
         gpu_overall = gpu_stats.get("overall", {}) if isinstance(gpu_stats, dict) else {}
         capex_hourly_usd = _reference_capex_hourly_usd(env)
         power_hourly_usd = _reference_power_hourly_usd(total_power_w)
+        rental_hourly_usd = _reference_gpu_rental_hourly_usd(env)
         total_hourly_usd = None
         if capex_hourly_usd is not None:
             total_hourly_usd = capex_hourly_usd + (power_hourly_usd or 0.0)
@@ -548,6 +623,7 @@ def _bench_rows(
                     "reference_capex_hourly_usd": capex_hourly_usd,
                     "reference_power_hourly_usd": power_hourly_usd,
                     "reference_total_hourly_usd": total_hourly_usd,
+                    "reference_rental_hourly_usd": rental_hourly_usd,
                     "reference_input_price_usd_per_mtok": input_price,
                     "reference_output_price_usd_per_mtok": output_price,
                     "reference_cache_read_price_usd_per_mtok": cache_read_price,
@@ -566,7 +642,7 @@ def _bench_rows(
 def _acceptance_hourly_cost(
     record: PhaseRecord,
     fallback_env: dict[str, Any],
-) -> tuple[dict[str, Any], float | None, float | None, float | None]:
+) -> tuple[dict[str, Any], float | None, float | None, float | None, float | None]:
     env = _load_json(record.artifact_dir / "run_environment.json")
     if not isinstance(env, dict):
         env = fallback_env
@@ -577,10 +653,11 @@ def _acceptance_hourly_cost(
     total_power_w = _total_avg_power_w(gpu_stats, gpu_count)
     capex_hourly_usd = _reference_capex_hourly_usd(env)
     power_hourly_usd = _reference_power_hourly_usd(total_power_w)
+    rental_hourly_usd = _reference_gpu_rental_hourly_usd(env)
     total_hourly_usd = None
     if capex_hourly_usd is not None:
         total_hourly_usd = capex_hourly_usd + (power_hourly_usd or 0.0)
-    return env, capex_hourly_usd, power_hourly_usd, total_hourly_usd
+    return env, capex_hourly_usd, power_hourly_usd, total_hourly_usd, rental_hourly_usd
 
 
 def _real_scenario_samples(
@@ -591,10 +668,13 @@ def _real_scenario_samples(
     for record in records:
         if record.phase != "acceptance":
             continue
-        _, capex_hourly_usd, power_hourly_usd, total_hourly_usd = _acceptance_hourly_cost(
-            record,
-            fallback_env,
-        )
+        (
+            _,
+            capex_hourly_usd,
+            power_hourly_usd,
+            total_hourly_usd,
+            rental_hourly_usd,
+        ) = _acceptance_hourly_cost(record, fallback_env)
 
         smoke_files = (
             ("smoke_quality.jsonl", "writing"),
@@ -623,6 +703,7 @@ def _real_scenario_samples(
                         "reference_capex_hourly_usd": capex_hourly_usd,
                         "reference_power_hourly_usd": power_hourly_usd,
                         "reference_total_hourly_usd": total_hourly_usd,
+                        "reference_rental_hourly_usd": rental_hourly_usd,
                     }
                 )
 
@@ -659,6 +740,7 @@ def _real_scenario_samples(
                             "reference_capex_hourly_usd": capex_hourly_usd,
                             "reference_power_hourly_usd": power_hourly_usd,
                             "reference_total_hourly_usd": total_hourly_usd,
+                            "reference_rental_hourly_usd": rental_hourly_usd,
                         }
                     )
     return samples
@@ -723,30 +805,29 @@ def _real_scenario_cost_rows(samples: list[dict[str, Any]]) -> list[dict[str, An
             ),
             None,
         )
-        cost_total = (
-            hourly_cost * elapsed_total / 3600.0
-            if hourly_cost is not None and elapsed_total is not None
-            else None
+        rental_hourly = next(
+            (
+                _to_float(sample.get("reference_rental_hourly_usd"))
+                for sample in group
+                if _to_float(sample.get("reference_rental_hourly_usd")) is not None
+            ),
+            None,
         )
-        input_price = (
-            _safe_divide(cost_total * 1_000_000.0, prompt_total)
-            if cost_total is not None
-            else None
+        purchase_metrics = _operation_cost_metrics(
+            hourly_cost,
+            elapsed_total=elapsed_total,
+            prompt_total=prompt_total,
+            completion_total=completion_total,
+            cache_read_total=cache_read_total,
+            sample_count=sample_count,
         )
-        output_price = (
-            _safe_divide(cost_total * 1_000_000.0, completion_total)
-            if cost_total is not None
-            else None
-        )
-        cache_read_price = (
-            _safe_divide(cost_total * 1_000_000.0, cache_read_total)
-            if cost_total is not None and cache_read_total > 0
-            else (
-                input_price
-                * REFERENCE_COST_MODEL["cache_read_fraction_of_input_price"]
-                if input_price is not None
-                else None
-            )
+        rental_metrics = _operation_cost_metrics(
+            rental_hourly,
+            elapsed_total=elapsed_total,
+            prompt_total=prompt_total,
+            completion_total=completion_total,
+            cache_read_total=cache_read_total,
+            sample_count=sample_count,
         )
         rows.append(
             {
@@ -767,18 +848,22 @@ def _real_scenario_cost_rows(samples: list[dict[str, Any]]) -> list[dict[str, An
                     sample_count,
                 ),
                 "total_tokens_per_op": _safe_divide(total_token_total, sample_count),
-                "cost_per_op_usd": _safe_divide(cost_total, sample_count)
-                if cost_total is not None
-                else None,
-                "cost_per_1k_ops_usd": _safe_divide(cost_total * 1000.0, sample_count)
-                if cost_total is not None
-                else None,
-                "input_price_usd_per_mtok": input_price,
-                "output_price_usd_per_mtok": output_price,
-                "cache_read_price_usd_per_mtok": cache_read_price,
+                **purchase_metrics,
+                "rental_cost_per_op_usd": rental_metrics["cost_per_op_usd"],
+                "rental_cost_per_1k_ops_usd": rental_metrics["cost_per_1k_ops_usd"],
+                "rental_input_price_usd_per_mtok": rental_metrics[
+                    "input_price_usd_per_mtok"
+                ],
+                "rental_output_price_usd_per_mtok": rental_metrics[
+                    "output_price_usd_per_mtok"
+                ],
+                "rental_cache_read_price_usd_per_mtok": rental_metrics[
+                    "cache_read_price_usd_per_mtok"
+                ],
                 "reference_capex_hourly_usd": capex_hourly,
                 "reference_power_hourly_usd": power_hourly,
                 "reference_total_hourly_usd": hourly_cost,
+                "reference_rental_hourly_usd": rental_hourly,
             }
         )
 
@@ -950,25 +1035,33 @@ def _append_quick_performance_summary(
                     "not benchmark throughput prices."
                 ),
                 "",
+                "#### Purchase / Amortized",
+                "",
                 "| Variant | Workload | Samples | Pass % | Avg latency s | Output tok/s | Prompt tok/op | Output tok/op | Cost/op | Cost/1k ops | Input $/M | Output $/M | Cache read $/M | Cost/h |",
                 "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
-        for row in real_scenario_cost_rows:
-            lines.append(
-                f"| `{row['variant']}` | {row['workload']} | "
-                f"{row['samples']} | {_fmt(row.get('pass_percent'))} | "
-                f"{_fmt(row.get('avg_latency_s'))} | "
-                f"{_fmt(row.get('output_tokens_per_second'))} | "
-                f"{_fmt_int(row.get('prompt_tokens_per_op'))} | "
-                f"{_fmt_int(row.get('completion_tokens_per_op'))} | "
-                f"{_fmt_usd(row.get('cost_per_op_usd'), 4)} | "
-                f"{_fmt_usd(row.get('cost_per_1k_ops_usd'))} | "
-                f"{_fmt_usd(row.get('input_price_usd_per_mtok'))} | "
-                f"{_fmt_usd(row.get('output_price_usd_per_mtok'))} | "
-                f"{_fmt_usd(row.get('cache_read_price_usd_per_mtok'))} | "
-                f"{_fmt_usd(row.get('reference_total_hourly_usd'))} |"
-            )
+        _append_cost_rows(
+            lines,
+            real_scenario_cost_rows,
+            cost_prefix="",
+            hourly_key="reference_total_hourly_usd",
+        )
+        lines.extend(
+            [
+                "",
+                "#### Rental / Cloud GPU-Hour",
+                "",
+                "| Variant | Workload | Samples | Pass % | Avg latency s | Output tok/s | Prompt tok/op | Output tok/op | Cost/op | Cost/1k ops | Input $/M | Output $/M | Cache read $/M | Cost/h |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        _append_cost_rows(
+            lines,
+            real_scenario_cost_rows,
+            cost_prefix="rental_",
+            hourly_key="reference_rental_hourly_usd",
+        )
         lines.extend(["", *_reference_cost_model_lines(), ""])
 
     if best_rows:
@@ -1014,6 +1107,30 @@ def _append_quick_performance_summary(
         lines.append("")
 
 
+def _append_cost_rows(
+    lines: list[str],
+    rows: list[dict[str, Any]],
+    *,
+    cost_prefix: str,
+    hourly_key: str,
+) -> None:
+    for row in rows:
+        lines.append(
+            f"| `{row['variant']}` | {row['workload']} | "
+            f"{row['samples']} | {_fmt(row.get('pass_percent'))} | "
+            f"{_fmt(row.get('avg_latency_s'))} | "
+            f"{_fmt(row.get('output_tokens_per_second'))} | "
+            f"{_fmt_int(row.get('prompt_tokens_per_op'))} | "
+            f"{_fmt_int(row.get('completion_tokens_per_op'))} | "
+            f"{_fmt_usd(row.get(f'{cost_prefix}cost_per_op_usd'), 4)} | "
+            f"{_fmt_usd(row.get(f'{cost_prefix}cost_per_1k_ops_usd'))} | "
+            f"{_fmt_usd(row.get(f'{cost_prefix}input_price_usd_per_mtok'))} | "
+            f"{_fmt_usd(row.get(f'{cost_prefix}output_price_usd_per_mtok'))} | "
+            f"{_fmt_usd(row.get(f'{cost_prefix}cache_read_price_usd_per_mtok'))} | "
+            f"{_fmt_usd(row.get(hourly_key))} |"
+        )
+
+
 def _reference_cost_model_lines() -> list[str]:
     model = REFERENCE_COST_MODEL
     return [
@@ -1025,6 +1142,11 @@ def _reference_cost_model_lines() -> list[str]:
             "DGX Spark / GB10: `$3,999/GPU`."
         ),
         (
+            "- Rental prices: B200: `$3.80/GPU-hour`; "
+            "RTX PRO 6000 WS: `$0.96/GPU-hour`; "
+            "DGX Spark / GB10: `$0.48/unit-hour`."
+        ),
+        (
             "- Amortization: "
             f"{_fmt(model['amortization_years'], 0)} years at "
             f"{_fmt(model['useful_utilization_fraction'] * 100, 0)}% useful utilization."
@@ -1034,6 +1156,7 @@ def _reference_cost_model_lines() -> list[str]:
             f"PUE {_fmt(model['datacenter_pue'])} and "
             f"{_fmt_usd(model['electricity_usd_per_kwh'])}/kWh."
         ),
+        "- Purchase cost/h adds amortized hardware and power; rental cost/h uses the quoted rental rate without adding separate power.",
         (
             "- Cache read price is a synthetic "
             f"{_fmt(model['cache_read_fraction_of_input_price'] * 100, 0)}% "

@@ -220,10 +220,14 @@ The normalized columns include `tok/s/GPU`, `tok/s/total GiB`,
 different GPU counts and classes such as B200, RTX Pro 6000, RTX 5090, and
 GB10. Power efficiency uses sampled GPU-side average power for the whole phase,
 not wall-plug power. The real-scenario OP price columns are synthetic
-break-even reference numbers for internal comparison only: the script
-hard-codes typical US datacenter assumptions, including 3-year GPU amortization
-at 70% useful utilization, `$0.12/kWh`, PUE `1.25`, and reference GPU prices
-for B200, RTX Pro 6000, RTX 5090, and DGX Spark / GB10.
+break-even reference numbers for internal comparison only. The report writes
+two cost views: a purchase/amortized view that combines 3-year GPU amortization
+at 70% useful utilization with `$0.12/kWh` and PUE `1.25`, and a rental view
+that uses fixed GPU-hour reference rates without adding separate power. The
+current rental reference rates are B200 `$3.80/GPU-hour`, RTX Pro 6000 WS
+`$0.96/GPU-hour`, and DGX Spark / GB10 `$0.48/unit-hour`. The purchase view
+still uses reference hardware prices for B200, RTX Pro 6000, RTX 5090, and DGX
+Spark / GB10.
 
 The same script also publishes a sanitized reference bundle in that directory.
 It keeps the data needed to resume work in a fresh environment
