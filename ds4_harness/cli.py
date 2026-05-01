@@ -12,7 +12,13 @@ from ds4_harness.cases import SmokeCase, build_cases, select_cases
 from ds4_harness.checks import CheckResult, assistant_text, check_chat_response, tool_call_names
 from ds4_harness.client import get_json, get_status, post_json
 from ds4_harness.gpu_stats import summarize_gpu_csv, write_gpu_json, write_gpu_markdown
-from ds4_harness.oracle import compare_response, load_oracle_cases
+from ds4_harness.oracle import (
+    attach_prompt_token_ids,
+    compare_response,
+    load_oracle_cases,
+    token_ids_from_tokenize_response,
+)
+from ds4_harness.oracle_export import export_completion_oracles
 from ds4_harness.runtime_stats import (
     summarize_runtime_stats,
     write_runtime_json,
@@ -232,6 +238,21 @@ def _cmd_oracle_compare(args: argparse.Namespace) -> int:
                 request_payload,
                 args.timeout,
             )
+            if args.require_prompt_ids:
+                tokenize_payload = {
+                    "model": request_payload.get("model"),
+                    "prompt": request_payload.get("prompt"),
+                }
+                tokenize_response = post_json(
+                    args.base_url,
+                    "/tokenize",
+                    tokenize_payload,
+                    args.timeout,
+                )
+                response = attach_prompt_token_ids(
+                    response,
+                    token_ids_from_tokenize_response(tokenize_response),
+                )
             report = compare_response(
                 case.name,
                 case.response,
@@ -239,7 +260,7 @@ def _cmd_oracle_compare(args: argparse.Namespace) -> int:
                 top_n=args.top_n,
             )
             ok = True
-            if args.require_prompt_ids and report["prompt_token_ids_match"] is False:
+            if args.require_prompt_ids and report["prompt_token_ids_match"] is not True:
                 ok = False
             if args.require_token_match and not report["tokens_match"]:
                 ok = False
@@ -274,6 +295,22 @@ def _cmd_oracle_compare(args: argparse.Namespace) -> int:
             json.dumps(rows, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    return 1 if failures else 0
+
+
+def _cmd_oracle_export(args: argparse.Namespace) -> int:
+    rows = export_completion_oracles(
+        base_url=args.base_url,
+        model=args.model,
+        output_dir=args.output_dir,
+        case_names=args.case,
+        timeout=args.timeout,
+        logprobs=args.logprobs,
+    )
+    failures = 0
+    for row in rows:
+        print(json.dumps(row, ensure_ascii=False))
+        failures += 0 if row.get("ok") else 1
     return 1 if failures else 0
 
 
@@ -477,6 +514,15 @@ def build_parser() -> argparse.ArgumentParser:
     oracle.add_argument("--require-token-match", action="store_true")
     oracle.add_argument("--min-top1-match-rate", type=float)
     oracle.set_defaults(func=_cmd_oracle_compare)
+
+    oracle_export = subparsers.add_parser("oracle-export")
+    oracle_export.add_argument("--base-url", default="http://127.0.0.1:8000")
+    oracle_export.add_argument("--model", default=DEFAULT_MODEL)
+    oracle_export.add_argument("--output-dir", type=Path, required=True)
+    oracle_export.add_argument("--case", action="append")
+    oracle_export.add_argument("--logprobs", type=int)
+    oracle_export.add_argument("--timeout", type=float, default=300.0)
+    oracle_export.set_defaults(func=_cmd_oracle_export)
 
     bench = subparsers.add_parser("bench-matrix")
     bench.add_argument("--vllm-bin", default="vllm")

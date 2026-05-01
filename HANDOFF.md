@@ -184,6 +184,22 @@ For stricter kernel correctness, compare against a B200/SM100 or H100 HTTP
 oracle bundle:
 
 ```bash
+BASELINE_LABEL=b200_oracle \
+ORACLE_LOGPROBS=20 \
+scripts/run_oracle_export.sh
+```
+
+Run this on the reference host while the B200/H100 vLLM server is already
+running. The wrapper records `run_environment.*`, GPU telemetry, vLLM runtime
+metrics, and wrapped `/v1/completions` files that can be fed directly into
+`oracle-compare`. Use `ORACLE_LOGPROBS=50` only when the reference server was
+started with a compatible `--max-logprobs`; otherwise keep the default 20.
+The export also captures `/tokenize` for each prompt and injects prompt token
+ids into the wrapped completion response. With `--require-prompt-ids`,
+`oracle-compare` tokenizes the actual prompt too and fails when ids are missing
+or different.
+
+```bash
 python -m ds4_harness.cli oracle-compare \
   --base-url http://127.0.0.1:8000 \
   --oracle-dir /path/to/b200_or_h100_oracle_bundle \
@@ -254,6 +270,7 @@ The harness currently includes:
 - English-to-Chinese and Chinese-to-English translation quality smoke
 - long HTML coding prompts: aquarium animation and wall clock
 - ToolCall-15 multi-turn tool-call loop with mocked tool responses
+- deterministic B200/H100 `/v1/completions` oracle export
 - logprobs oracle comparison for completion-style B200/H100 bundles
 - vLLM `bench serve` matrix wrapper for both HF datasets and random shapes
 - GPU and vLLM runtime telemetry summaries, including prefill/decode and MTP

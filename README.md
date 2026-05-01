@@ -66,7 +66,8 @@ tool-call turn.
     multi-step chains, restraint/refusal, and error recovery
   - mocked tool responses are returned through OpenAI-compatible `tool`
     messages
-- HTTP logprobs oracle comparison:
+- HTTP logprobs oracle export and comparison:
+  - deterministic `/v1/completions` oracle export for B200/H100 reference runs
   - token sequence divergence
   - prompt token id mismatch
   - top-1 match rate
@@ -190,6 +191,24 @@ python -m ds4_harness.cli toolcall15 \
 Use the B200/SM100 or H100 HTTP oracle bundle when you need stricter kernel
 correctness checks. Chat exports are covered by `chat-smoke`; `oracle-compare`
 only consumes `/v1/completions` logprobs cases.
+
+When you have access to an expensive reference host, first export the oracle
+bundle from that host while the reference vLLM server is running:
+
+```bash
+BASELINE_LABEL=b200_oracle \
+ORACLE_LOGPROBS=20 \
+scripts/run_oracle_export.sh
+```
+
+This writes wrapped `/v1/completions` JSON files, `oracle_export_summary.*`,
+`run_environment.*`, GPU telemetry, and runtime telemetry under
+`artifacts/<branch>/<gpu-topology>/b200_oracle/<timestamp>/`. If the reference
+server was started with a higher `--max-logprobs`, set `ORACLE_LOGPROBS=50`.
+Use `ORACLE_CASES=case_a,case_b` only for a deliberately narrow re-run.
+The exporter also calls `/tokenize` for each prompt and injects those prompt
+token ids into the wrapped completion response, so later `--require-prompt-ids`
+comparisons fail when tokenization diverges or token ids are unavailable.
 
 ```bash
 python -m ds4_harness.cli oracle-compare \

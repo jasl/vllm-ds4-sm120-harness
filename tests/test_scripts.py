@@ -77,6 +77,10 @@ def test_env_sample_and_local_env_are_configured():
     assert "DEEPSEEK_THINKING_TYPE=enabled" in sample
     assert "DEEPSEEK_REASONING_EFFORT=high" in sample
     assert "DEEPSEEK_PRESERVE_REASONING_CONTENT=1" in sample
+    assert "BASELINE_LABEL=b200_oracle" in sample
+    assert "ORACLE_LOGPROBS=20" in sample
+    assert "ORACLE_TIMEOUT=300" in sample
+    assert "ORACLE_CASES=" in sample
     assert "GPU_TOPOLOGY_SLUG=" in sample
     assert ".env" in gitignore
 
@@ -145,6 +149,20 @@ def test_scripts_capture_vllm_runtime_stats_to_artifacts():
         assert "stop_runtime_stats" in script
 
 
+def test_oracle_export_script_is_b200_ready():
+    script = (ROOT / "scripts" / "run_oracle_export.sh").read_text(encoding="utf-8")
+
+    assert "load_harness_env" in script
+    assert "detect_gpu_topology_slug" in script
+    assert "write_run_environment" in script
+    assert "start_gpu_stats" in script
+    assert "start_runtime_stats" in script
+    assert "oracle-export" in script
+    assert 'ORACLE_LOGPROBS="${ORACLE_LOGPROBS:-20}"' in script
+    assert 'BASELINE_LABEL="${BASELINE_LABEL:-b200_oracle}"' in script
+    assert '--output-dir "${OUT_DIR}"' in script
+
+
 def test_scripts_write_run_environment_artifacts():
     helper = (ROOT / "scripts" / "run_context.sh").read_text(encoding="utf-8")
 
@@ -176,6 +194,7 @@ def test_scripts_have_valid_bash_syntax():
     for script_name in (
         "run_acceptance.sh",
         "run_bench_matrix.sh",
+        "run_oracle_export.sh",
         "gpu_stats.sh",
         "runtime_stats.sh",
         "run_context.sh",

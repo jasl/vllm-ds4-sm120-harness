@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,31 @@ class OracleCase:
     path: str
     request: Json
     response: Json
+
+
+def token_ids_from_tokenize_response(response: Json | None) -> list[int] | None:
+    if not isinstance(response, dict):
+        return None
+    raw_tokens = response.get("tokens")
+    if raw_tokens is None:
+        raw_tokens = response.get("token_ids")
+    if not isinstance(raw_tokens, list):
+        return None
+    try:
+        return [int(token) for token in raw_tokens]
+    except (TypeError, ValueError):
+        return None
+
+
+def attach_prompt_token_ids(response: Json, token_ids: list[int] | None) -> Json:
+    if not token_ids:
+        return response
+    output = copy.deepcopy(response)
+    choices = output.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return output
+    choices[0]["prompt_token_ids"] = token_ids
+    return output
 
 
 def _choice(response: Json) -> Json:
@@ -206,12 +232,19 @@ def _load_request_response_pairs(oracle_dir: Path) -> list[OracleCase]:
         response_path = oracle_dir / f"response_{suffix}.json"
         if not response_path.exists():
             raise ValueError(f"missing {response_path.name} for {request_path.name}")
+        response = load_json(response_path)
+        tokenize_path = oracle_dir / f"tokenize_{suffix}.json"
+        if tokenize_path.exists():
+            response = attach_prompt_token_ids(
+                response,
+                token_ids_from_tokenize_response(load_json(tokenize_path)),
+            )
         cases.append(
             OracleCase(
                 name=suffix,
                 path="/v1/completions",
                 request=load_json(request_path),
-                response=load_json(response_path),
+                response=response,
             )
         )
     return cases
@@ -233,6 +266,10 @@ def _load_wrapped_completion_cases(oracle_dir: Path) -> list[OracleCase]:
             continue
         if endpoint != "/v1/completions":
             continue
+        response = attach_prompt_token_ids(
+            response,
+            token_ids_from_tokenize_response(data.get("tokenize_response")),
+        )
         cases.append(
             OracleCase(
                 name=str(data.get("name") or path.stem),

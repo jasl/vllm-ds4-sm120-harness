@@ -83,8 +83,10 @@ def test_compare_response_marks_prompt_token_mismatch():
 def test_load_oracle_cases_supports_request_response_pairs(tmp_path):
     request = {"model": "m", "prompt": "p", "logprobs": 50}
     response = _response(["token_id:10"], [{"token_id:10": -0.1}])
+    response["choices"][0]["prompt_token_ids"] = None
     (tmp_path / "request_short.json").write_text(json.dumps(request))
     (tmp_path / "response_short.json").write_text(json.dumps(response))
+    (tmp_path / "tokenize_short.json").write_text(json.dumps({"tokens": [8, 9, 10]}))
 
     cases = load_oracle_cases(tmp_path)
 
@@ -92,7 +94,7 @@ def test_load_oracle_cases_supports_request_response_pairs(tmp_path):
     assert cases[0].name == "short"
     assert cases[0].path == "/v1/completions"
     assert cases[0].request == request
-    assert cases[0].response == response
+    assert cases[0].response["choices"][0]["prompt_token_ids"] == [8, 9, 10]
 
 
 def test_load_oracle_cases_supports_wrapped_completion_exports(tmp_path):
@@ -104,6 +106,7 @@ def test_load_oracle_cases_supports_wrapped_completion_exports(tmp_path):
         "status": 200,
         "request": request,
         "response": response,
+        "tokenize_response": {"tokens": [4, 5, 6]},
     }
     chat_wrapped = {
         "name": "chat_probe",
@@ -119,3 +122,4 @@ def test_load_oracle_cases_supports_wrapped_completion_exports(tmp_path):
     assert len(cases) == 1
     assert cases[0].name == "completion_probe"
     assert cases[0].path == "/v1/completions"
+    assert cases[0].response["choices"][0]["prompt_token_ids"] == [4, 5, 6]

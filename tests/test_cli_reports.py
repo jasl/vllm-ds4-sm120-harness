@@ -171,3 +171,89 @@ def test_oracle_compare_clamps_request_logprobs_to_top_n(monkeypatch, tmp_path):
 
     assert rc == 0
     assert captured_payloads[0]["logprobs"] == 20
+
+
+def test_oracle_compare_requires_prompt_ids_by_tokenizing_actual_prompt(
+    monkeypatch, tmp_path
+):
+    response = {
+        "choices": [
+            {
+                "text": "",
+                "logprobs": {
+                    "tokens": ["token_id:10"],
+                    "token_logprobs": [-0.1],
+                    "top_logprobs": [{"token_id:10": -0.1}],
+                },
+                "token_ids": [10],
+                "prompt_token_ids": [1, 2, 3],
+            }
+        ]
+    }
+    case = OracleCase(
+        name="prompt_ids",
+        path="/v1/completions",
+        request={"model": "m", "prompt": "x", "logprobs": 20},
+        response=response,
+    )
+    paths = []
+
+    monkeypatch.setattr(cli, "load_oracle_cases", lambda oracle_dir: [case])
+
+    def fake_post_json(base_url, path, payload, timeout):
+        paths.append(path)
+        if path == "/tokenize":
+            return {"tokens": [1, 2, 3]}
+        actual = json.loads(json.dumps(response))
+        actual["choices"][0]["prompt_token_ids"] = None
+        return actual
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+
+    rc = cli.main(
+        [
+            "oracle-compare",
+            "--oracle-dir",
+            str(tmp_path),
+            "--require-prompt-ids",
+        ]
+    )
+
+    assert rc == 0
+    assert paths == ["/v1/completions", "/tokenize"]
+
+
+def test_oracle_export_cli_writes_bundle(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_export_completion_oracles(**kwargs):
+        captured.update(kwargs)
+        return [{"name": "completion_short_math_logprobs20", "ok": True}]
+
+    monkeypatch.setattr(cli, "export_completion_oracles", fake_export_completion_oracles)
+
+    rc = cli.main(
+        [
+            "oracle-export",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--model",
+            "deepseek-ai/DeepSeek-V4-Flash",
+            "--output-dir",
+            str(tmp_path),
+            "--case",
+            "completion_short_math_logprobs20",
+            "--logprobs",
+            "10",
+            "--timeout",
+            "12",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["base_url"] == "http://127.0.0.1:8000"
+    assert captured["model"] == "deepseek-ai/DeepSeek-V4-Flash"
+    assert captured["output_dir"] == tmp_path
+    assert captured["case_names"] == ["completion_short_math_logprobs20"]
+    assert captured["logprobs"] == 10
+    assert captured["timeout"] == 12
