@@ -80,13 +80,28 @@ def test_env_sample_and_local_env_are_configured():
     assert "DEEPSEEK_THINKING_TYPE=enabled" in sample
     assert "DEEPSEEK_REASONING_EFFORT=high" in sample
     assert "DEEPSEEK_PRESERVE_REASONING_CONTENT=1" in sample
+    assert "OFFICIAL_BASELINE_DATE=" in sample
+    assert "OFFICIAL_BASELINE_LABEL=" in sample
+    assert "OFFICIAL_BASELINE_DIR=" in sample
+    assert "OFFICIAL_REPEAT_COUNT=1" in sample
+    assert (
+        "OFFICIAL_GENERATION_PROMPTS=translation_en_to_zh,translation_zh_to_en,"
+        "writing_follow_instructions,writing_local_llm_tradeoffs"
+    ) in sample
+    assert "OFFICIAL_THINKING_MODES=non-thinking,think-high,think-max" in sample
+    assert (
+        "OFFICIAL_SMOKE_CASES=math_7_times_8,capital_of_france,spanish_greeting"
+        in sample
+    )
+    assert "OFFICIAL_SMOKE_REPEAT_COUNT=1" in sample
     assert "BASELINE_LABEL=b200_oracle" in sample
     assert "ORACLE_LOGPROBS=20" in sample
     assert "ORACLE_TIMEOUT=300" in sample
     assert "ORACLE_CASES=" in sample
     assert "OFFICIAL_RUN_TOOLCALL15=1" in sample
     assert "OFFICIAL_TOOLCALL15_SCENARIO_SET=en" in sample
-    assert "OFFICIAL_TOOLCALL15_REPEAT_COUNT=3" in sample
+    assert "OFFICIAL_TOOLCALL15_REPEAT_COUNT=1" in sample
+    assert "OFFICIAL_STRICT=0" in sample
     assert "REAL_SCENARIO_REPEAT_COUNT=3" in sample
     assert "ARTIFACT_ARCHIVE_PREVIOUS=1" in sample
     assert "ARTIFACT_ARCHIVE_PREFIX=" in sample
@@ -448,6 +463,7 @@ def test_scripts_have_valid_bash_syntax():
         "run_acceptance.sh",
         "run_bench_matrix.sh",
         "run_oracle_export.sh",
+        "run_official_api_baseline.sh",
         "run_b200_baseline.sh",
         "generate_baseline_bundle.sh",
         "gpu_stats.sh",
@@ -838,6 +854,27 @@ def test_official_subjective_baseline_script_uses_api_key_and_baseline_output():
     assert "official_toolcall15.json" in script
     assert "baselines/20260501_b200_main_51295793a" in script
     assert "subjective_quality" in script
+
+
+def test_official_api_baseline_script_writes_separate_baseline_directory():
+    script = (ROOT / "scripts" / "run_official_api_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "load_harness_env" in script
+    assert 'OFFICIAL_BASELINE_DATE="${OFFICIAL_BASELINE_DATE:-$(date -u +%Y%m%d)}"' in script
+    assert 'OFFICIAL_BASELINE_DIR="${OFFICIAL_BASELINE_DIR:-${REPO_ROOT}/baselines/${OFFICIAL_BASELINE_DATE}_${OFFICIAL_BASELINE_LABEL}}"' in script
+    assert 'OFFICIAL_GENERATION_PROMPTS="${OFFICIAL_GENERATION_PROMPTS:-translation_en_to_zh,translation_zh_to_en,writing_follow_instructions,writing_local_llm_tradeoffs}"' in script
+    assert 'OFFICIAL_SMOKE_CASES="${OFFICIAL_SMOKE_CASES:-math_7_times_8,capital_of_france,spanish_greeting}"' in script
+    assert "chat-smoke" in script
+    assert "generation-matrix" in script
+    assert "toolcall15" in script
+    assert "official-baseline" in script
+    assert "official_smoke.jsonl" in script
+    assert "official_generation.jsonl" in script
+    assert "official_toolcall15.json" in script
+    assert "report.md" in script
+    assert "subjective_quality" not in script
 
 
 def test_runtime_stats_helper_slices_serve_log_per_phase(tmp_path):

@@ -287,6 +287,34 @@ The script generates into a temporary directory, verifies that the bundle has
 loadable oracle cases and no non-public data, then replaces the final
 `baselines/...` directory only after validation passes.
 
+To capture a separate DeepSeek official API reference directory, put
+`DEEPSEEK_API_KEY` in ignored `.env`, then run:
+
+```bash
+scripts/run_official_api_baseline.sh
+```
+
+The script writes raw run artifacts under ignored `artifacts/official_api/...`
+and publishes a sanitized checked-in directory at
+`baselines/<YYYYMMDD>_deepseek_official_api_<model>/`. This official API
+baseline is not a hardware benchmark; it contains only the comparison material
+that is useful across platforms:
+
+- `report.md`: readable summary of smoke, generation, and ToolCall-15 results.
+- `generation/`: selected Markdown prompt transcripts plus
+  `official_api.json`.
+- `smoke/`: a few small runnable chat checks for API-shape comparison.
+- `toolcall15/`: official API ToolCall-15 trace and score.
+
+By default it runs one round, selected translation/writing generation prompts,
+`non-thinking`, `think-high`, and `think-max`, three basic smoke checks, and the
+English ToolCall-15 set. Override `OFFICIAL_GENERATION_PROMPTS`,
+`OFFICIAL_SMOKE_CASES`, `OFFICIAL_REPEAT_COUNT`, or
+`OFFICIAL_TOOLCALL15_REPEAT_COUNT` for broader or narrower reference captures.
+Set `OFFICIAL_STRICT=1` only when non-green generation or ToolCall-15 checks
+should make the script exit non-zero; by default the report is still generated
+for subjective and policy comparison.
+
 To refresh the human subjective comparison against the DeepSeek official API,
 put `DEEPSEEK_API_KEY` in ignored `.env`, then run:
 

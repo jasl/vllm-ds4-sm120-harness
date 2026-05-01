@@ -31,6 +31,7 @@ from ds4_harness.oracle import (
     token_ids_from_tokenize_response,
 )
 from ds4_harness.oracle_export import export_completion_oracles
+from ds4_harness.official_baseline import build_official_api_baseline
 from ds4_harness.reference_bundle import build_reference_bundle
 from ds4_harness.runtime_stats import (
     summarize_runtime_stats,
@@ -855,6 +856,22 @@ def _cmd_subjective_comparison(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_official_baseline(args: argparse.Namespace) -> int:
+    findings = build_official_api_baseline(
+        artifact_dir=args.artifact_dir,
+        output_dir=args.output_dir,
+        label=args.label,
+        date=args.date,
+        fail_on_sensitive=False,
+    )
+    if findings:
+        for finding in findings:
+            print(finding, file=sys.stderr)
+        return 1
+    print(str(args.output_dir))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="DeepSeek V4 SM12x correctness and benchmark harness."
@@ -1020,6 +1037,13 @@ def build_parser() -> argparse.ArgumentParser:
     subjective.add_argument("--output-dir", type=Path, required=True)
     subjective.add_argument("--label")
     subjective.set_defaults(func=_cmd_subjective_comparison)
+
+    official_baseline = subparsers.add_parser("official-baseline")
+    official_baseline.add_argument("--artifact-dir", type=Path, required=True)
+    official_baseline.add_argument("--output-dir", type=Path, required=True)
+    official_baseline.add_argument("--label", required=True)
+    official_baseline.add_argument("--date")
+    official_baseline.set_defaults(func=_cmd_official_baseline)
 
     return parser
 
