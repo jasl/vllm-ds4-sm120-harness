@@ -34,13 +34,13 @@ def _row(case, text, *, model="model"):
 
 def test_subjective_comparison_writes_b200_and_official_side_by_side(tmp_path):
     baseline = tmp_path / "baseline"
-    smoke = baseline / "smoke"
-    smoke.mkdir(parents=True)
-    (smoke / "nomtp_quality.json").write_text(
+    generation = baseline / "generation"
+    generation.mkdir(parents=True)
+    (generation / "nomtp.json").write_text(
         json.dumps([_row("translation_quality_en_to_zh", "B200 no-MTP answer")]),
         encoding="utf-8",
     )
-    (smoke / "mtp_quality.json").write_text(
+    (generation / "mtp.json").write_text(
         json.dumps([_row("translation_quality_en_to_zh", "B200 MTP answer")]),
         encoding="utf-8",
     )

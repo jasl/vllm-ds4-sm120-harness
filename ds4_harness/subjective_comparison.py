@@ -59,13 +59,11 @@ def _load_rows(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _load_smoke_rows(baseline_dir: Path) -> dict[str, list[dict[str, Any]]]:
-    smoke_dir = baseline_dir / "smoke"
+def _load_generation_rows(baseline_dir: Path) -> dict[str, list[dict[str, Any]]]:
+    generation_dir = baseline_dir / "generation"
     return {
-        "b200_nomtp": _load_rows(smoke_dir / "nomtp_quality.json")
-        + _load_rows(smoke_dir / "nomtp_coding.json"),
-        "b200_mtp": _load_rows(smoke_dir / "mtp_quality.json")
-        + _load_rows(smoke_dir / "mtp_coding.json"),
+        "b200_nomtp": _load_rows(generation_dir / "nomtp.json"),
+        "b200_mtp": _load_rows(generation_dir / "mtp.json"),
     }
 
 
@@ -316,7 +314,7 @@ def build_subjective_comparison(
     output_dir: Path,
     label: str,
 ) -> dict[str, Any]:
-    source_rows = _load_smoke_rows(baseline_dir)
+    source_rows = _load_generation_rows(baseline_dir)
     source_rows["official_api"] = []
     for path in official_paths:
         source_rows["official_api"].extend(_load_rows(path))

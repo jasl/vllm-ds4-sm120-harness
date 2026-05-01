@@ -143,12 +143,17 @@ python -m ds4_harness.cli health --base-url http://127.0.0.1:8000
 python -m ds4_harness.cli chat-smoke --tag quick \
   --jsonl-output artifacts/manual/smoke_quick.jsonl \
   --markdown-output artifacts/manual/smoke_quick.md
-python -m ds4_harness.cli chat-smoke --tag quality \
-  --jsonl-output artifacts/manual/smoke_quality.jsonl \
-  --markdown-output artifacts/manual/smoke_quality.md
-python -m ds4_harness.cli chat-smoke --tag coding --timeout 900 \
-  --jsonl-output artifacts/manual/smoke_coding.jsonl \
-  --markdown-output artifacts/manual/smoke_coding.md
+python -m ds4_harness.cli generation-matrix \
+  --prompt-root prompts \
+  --language en \
+  --language zh \
+  --thinking-mode non-thinking \
+  --thinking-mode think-high \
+  --thinking-mode think-max \
+  --repeat-count 3 \
+  --variant nomtp \
+  --jsonl-output artifacts/manual/generation.jsonl \
+  --markdown-output-dir artifacts/manual/generation
 python -m ds4_harness.cli toolcall15 \
   --json-output artifacts/manual/toolcall15.json
 ```
@@ -158,9 +163,10 @@ under this repo. The GPU topology segment is derived from `nvidia-smi`, for
 example `2x_nvidia_rtx_pro_6000_blackwell_workstation_edition`,
 `8x_nvidia_geforce_rtx_5090`, or `4x_nvidia_b200`. Override
 `GPU_TOPOLOGY_SLUG` for custom labels or hosts without `nvidia-smi`.
-`chat-smoke` writes Markdown when `--markdown-output` is provided, so writing,
-translation, math, and coding outputs remain readable for subjective inspection
-in addition to JSON/JSONL machine artifacts.
+`chat-smoke` writes the quick deterministic smoke report. Subjective writing,
+translation, and coding samples come from `generation-matrix`; it writes one
+Markdown transcript per prompt, round, thinking mode, and serving variant under
+`generation/` in addition to `generation.jsonl`.
 
 Each wrapper run also writes `run_environment.json` and `run_environment.md`
 with GPU count/model inventory, selected CUDA env vars, benchmark settings, and

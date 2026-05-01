@@ -19,6 +19,7 @@ B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"
 B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"
 B200_BASELINE_LABEL="${B200_BASELINE_LABEL:-b200_official}"
 B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-nomtp,mtp}"
+B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-all}"
 ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-${B200_ARCHIVE_PREVIOUS:-1}}"
 ARTIFACT_ARCHIVE_PREFIX="${ARTIFACT_ARCHIVE_PREFIX:-${B200_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}}"
 NO_MTP_CONCURRENCY="${NO_MTP_CONCURRENCY:-1,2,4,8,16,24}"
@@ -70,6 +71,40 @@ fi
 
 ACTIVE_SERVER_PID=""
 failures=0
+VALID_BASELINE_PHASES=(
+  acceptance
+  bench_hf_mt_bench
+  bench_random_8192x512
+  oracle_export
+)
+
+validate_requested_phases() {
+  local item
+  local known
+  local matched
+  local -a requested_phases
+
+  if [[ "${B200_BASELINE_PHASES}" == "all" ]]; then
+    return 0
+  fi
+
+  IFS=',' read -r -a requested_phases <<< "${B200_BASELINE_PHASES}"
+  for item in "${requested_phases[@]}"; do
+    matched=0
+    for known in "${VALID_BASELINE_PHASES[@]}"; do
+      if [[ "${item}" == "${known}" ]]; then
+        matched=1
+        break
+      fi
+    done
+    if [[ "${matched}" != "1" ]]; then
+      printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
+      printf '%s\n' \
+        'valid phases: all,acceptance,bench_hf_mt_bench,bench_random_8192x512,oracle_export' >&2
+      return 2
+    fi
+  done
+}
 
 archive_previous_runs() {
   if [[ "${ARTIFACT_ARCHIVE_PREVIOUS}" != "1" && "${ARTIFACT_ARCHIVE_PREVIOUS}" != "true" ]]; then
@@ -120,6 +155,7 @@ archive_previous_runs() {
   fi
 }
 
+validate_requested_phases
 archive_previous_runs
 mkdir -p "${RUN_ROOT}"
 PHASE_LOG="${RUN_ROOT}/phase_exit_codes.tsv"
@@ -295,6 +331,24 @@ run_phase() {
   record_phase "${variant}" "${phase}" "${code}" "${artifact_dir}"
 }
 
+phase_enabled() {
+  local phase="$1"
+  local item
+  local -a requested_phases
+
+  if [[ "${B200_BASELINE_PHASES}" == "all" ]]; then
+    return 0
+  fi
+
+  IFS=',' read -r -a requested_phases <<< "${B200_BASELINE_PHASES}"
+  for item in "${requested_phases[@]}"; do
+    if [[ "${item}" == "${phase}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 write_summary() {
   {
     printf '# B200 Baseline Summary\n\n'
@@ -303,6 +357,7 @@ write_summary() {
     printf -- '- model: `%s`\n' "${MODEL}"
     printf -- '- base_url: `%s`\n' "${BASE_URL}"
     printf -- '- variants: `%s`\n' "${B200_BASELINE_VARIANTS}"
+    printf -- '- phases: `%s`\n' "${B200_BASELINE_PHASES}"
     printf -- '- no_mtp_concurrency: `%s`\n' "${NO_MTP_CONCURRENCY}"
     printf -- '- mtp_concurrency: `%s`\n' "${MTP_CONCURRENCY}"
     printf -- '- num_prompts: `%s`\n' "${NUM_PROMPTS}"
@@ -364,7 +419,7 @@ for variant in ${variant_list}; do
     continue
   fi
 
-  if [[ "${RUN_ACCEPTANCE}" == "1" || "${RUN_ACCEPTANCE}" == "true" ]]; then
+  if phase_enabled "acceptance" && { [[ "${RUN_ACCEPTANCE}" == "1" ]] || [[ "${RUN_ACCEPTANCE}" == "true" ]]; }; then
     run_phase "${variant}" "acceptance" "${variant_dir}/acceptance" \
       env OUT_DIR="${variant_dir}/acceptance" \
         BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" \
@@ -393,7 +448,7 @@ for variant in ${variant_list}; do
     bench_concurrency="${NO_MTP_CONCURRENCY}"
   fi
 
-  if [[ "${RUN_BENCH_HF}" == "1" || "${RUN_BENCH_HF}" == "true" ]]; then
+  if phase_enabled "bench_hf_mt_bench" && { [[ "${RUN_BENCH_HF}" == "1" ]] || [[ "${RUN_BENCH_HF}" == "true" ]]; }; then
     run_phase "${variant}" "bench_hf_mt_bench" "${variant_dir}/bench_hf_mt_bench" \
       env OUT_DIR="${variant_dir}/bench_hf_mt_bench" \
         BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
@@ -409,7 +464,7 @@ for variant in ${variant_list}; do
         "${SCRIPT_DIR}/run_bench_matrix.sh"
   fi
 
-  if [[ "${RUN_RANDOM_LONG}" == "1" || "${RUN_RANDOM_LONG}" == "true" ]]; then
+  if phase_enabled "bench_random_8192x512" && { [[ "${RUN_RANDOM_LONG}" == "1" ]] || [[ "${RUN_RANDOM_LONG}" == "true" ]]; }; then
     run_phase "${variant}" "bench_random_8192x512" "${variant_dir}/bench_random_8192x512" \
       env OUT_DIR="${variant_dir}/bench_random_8192x512" \
         BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
@@ -428,7 +483,7 @@ for variant in ${variant_list}; do
         "${SCRIPT_DIR}/run_bench_matrix.sh"
   fi
 
-  if [[ "${RUN_ORACLE_EXPORT}" == "1" || "${RUN_ORACLE_EXPORT}" == "true" ]]; then
+  if phase_enabled "oracle_export" && { [[ "${RUN_ORACLE_EXPORT}" == "1" ]] || [[ "${RUN_ORACLE_EXPORT}" == "true" ]]; }; then
     run_phase "${variant}" "oracle_export" "${variant_dir}/oracle_export" \
       env OUT_DIR="${variant_dir}/oracle_export" \
         BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \

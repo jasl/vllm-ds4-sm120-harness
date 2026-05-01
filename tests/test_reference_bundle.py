@@ -117,6 +117,14 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     (smoke_dir / "smoke_quick.md").write_text(
         "assistant used /home/user/state.md  \nsecond line\n", encoding="utf-8"
     )
+    (smoke_dir / "smoke_quality.jsonl").write_text(
+        json.dumps({"case": "legacy_quality", "ok": True}) + "\n",
+        encoding="utf-8",
+    )
+    (smoke_dir / "smoke_coding.jsonl").write_text(
+        json.dumps({"case": "legacy_coding", "ok": True}) + "\n",
+        encoding="utf-8",
+    )
     (smoke_dir / "generation.jsonl").write_text(
         json.dumps(
             {
@@ -207,6 +215,8 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         out_dir / "oracle" / "mtp" / "completion_short_math_logprobs20.json"
     ).exists()
     assert (out_dir / "smoke" / "nomtp_quick.json").exists()
+    assert not (out_dir / "smoke" / "nomtp_quality.json").exists()
+    assert not (out_dir / "smoke" / "nomtp_coding.json").exists()
     assert (out_dir / "generation" / "nomtp.json").exists()
     assert (
         out_dir

@@ -90,6 +90,7 @@ def test_env_sample_and_local_env_are_configured():
     assert "REAL_SCENARIO_REPEAT_COUNT=3" in sample
     assert "ARTIFACT_ARCHIVE_PREVIOUS=1" in sample
     assert "ARTIFACT_ARCHIVE_PREFIX=" in sample
+    assert "B200_BASELINE_PHASES=all" in sample
     assert "B200_ARCHIVE_PREVIOUS" not in sample
     assert "B200_ARCHIVE_PREFIX" not in sample
     assert "GENERATION_PROMPT_ROOT=" in sample
@@ -251,6 +252,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
 
     assert 'B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-nomtp,mtp}"' in script
+    assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-all}"' in script
     assert 'NO_MTP_CONCURRENCY="${NO_MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'MTP_CONCURRENCY="${MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"' in script
@@ -261,6 +263,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert "_archive_before_${RUN_TIMESTAMP}" in script
     assert 'ARTIFACT_PARENT="${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}"' in script
     assert 'RUN_ROOT="${OUT_DIR:-${ARTIFACT_PARENT}/${B200_BASELINE_LABEL}/${RUN_TIMESTAMP}}"' in script
+    assert "phase_enabled" in script
     assert '"${variant_dir}/acceptance"' in script
     assert '"${variant_dir}/bench_hf_mt_bench"' in script
     assert '"${variant_dir}/bench_random_8192x512"' in script
@@ -627,6 +630,120 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
         encoding="utf-8"
     )
     assert "wrote" in result.stdout
+
+
+def test_b200_baseline_driver_can_run_single_phase_with_mocked_tools(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env sh\n"
+        "args=\"$*\"\n"
+        "write_arg_file() {\n"
+        "  flag=\"$1\"\n"
+        "  shift\n"
+        "  while [ \"$#\" -gt 0 ]; do\n"
+        "    if [ \"$1\" = \"$flag\" ]; then\n"
+        "      shift\n"
+        "      mkdir -p \"$(dirname \"$1\")\"\n"
+        "      printf '%s\\n' '{}' > \"$1\"\n"
+        "      return 0\n"
+        "    fi\n"
+        "    shift\n"
+        "  done\n"
+        "}\n"
+        "case \"$args\" in\n"
+        "  *' env-summary '*) write_arg_file --json-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
+        "  *' health'*) printf '%s\\n' '{\"ok\":true}'; exit 0 ;;\n"
+        "  *' chat-smoke '*) write_arg_file --jsonl-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
+        "  *' generation-matrix '*) write_arg_file --jsonl-output \"$@\"; exit 0 ;;\n"
+        "  *' toolcall15 '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
+        "  *' bench-matrix '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
+        "  *' oracle-export '*) exit 0 ;;\n"
+        "  *' pytest'*) exit 0 ;;\n"
+        "  *' ruff check'*) exit 0 ;;\n"
+        "  *' compileall '*) exit 0 ;;\n"
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    fake_vllm = tmp_path / "fake-vllm"
+    fake_vllm.write_text(
+        "#!/usr/bin/env sh\n"
+        "trap 'exit 0' TERM INT\n"
+        "while :; do sleep 1; done\n",
+        encoding="utf-8",
+    )
+    fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    out_dir = tmp_path / "baseline"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "VLLM_BIN": str(fake_vllm),
+        "OUT_DIR": str(out_dir),
+        "GPU_STATS": "0",
+        "RUNTIME_STATS": "0",
+        "VLLM_COLLECT_ENV": "0",
+        "B200_BASELINE_VARIANTS": "mtp",
+        "B200_BASELINE_PHASES": "acceptance",
+        "SERVER_STARTUP_TIMEOUT": "5",
+        "SERVER_STARTUP_INTERVAL_SECONDS": "0",
+    }
+
+    subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_b200_baseline.sh")],
+        check=True,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    phase_log = (out_dir / "phase_exit_codes.tsv").read_text(encoding="utf-8")
+    assert "mtp\tserver_startup\t0" in phase_log
+    assert "mtp\tacceptance\t0" in phase_log
+    assert "bench_hf_mt_bench" not in phase_log
+    assert "bench_random_8192x512" not in phase_log
+    assert "oracle_export" not in phase_log
+    assert (out_dir / "mtp" / "acceptance").exists()
+    assert not (out_dir / "mtp" / "bench_hf_mt_bench").exists()
+
+
+def test_b200_baseline_driver_rejects_unknown_phase_before_launch(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    fake_vllm = tmp_path / "fake-vllm"
+    launched = tmp_path / "launched"
+    fake_vllm.write_text(
+        "#!/usr/bin/env sh\n"
+        f"printf launched > {launched}\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    out_dir = tmp_path / "baseline"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "VLLM_BIN": str(fake_vllm),
+        "OUT_DIR": str(out_dir),
+        "B200_BASELINE_PHASES": "acceptnace",
+    }
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_b200_baseline.sh")],
+        check=False,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 2
+    assert "unsupported B200 baseline phase" in result.stderr
+    assert not launched.exists()
 
 
 def test_b200_baseline_driver_archives_previous_managed_artifacts(tmp_path):

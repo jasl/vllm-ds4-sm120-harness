@@ -10,7 +10,7 @@ from typing import Any
 Json = dict[str, Any]
 
 VARIANTS = ("nomtp", "mtp")
-SMOKE_CASES = ("quick", "quality", "coding")
+SMOKE_CASES = ("quick",)
 BENCH_PHASE_LABELS = {
     "bench_hf_mt_bench": "HF/MT-Bench",
     "bench_random_8192x512": "Random 8192/512",

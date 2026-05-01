@@ -176,62 +176,64 @@ def _write_fixture_run(tmp_path):
             },
         },
     )
-    (acceptance_dir / "smoke_quality.jsonl").write_text(
+    (acceptance_dir / "generation.jsonl").write_text(
         "\n".join(
             [
                 json.dumps(
                     {
-                        "case": "translation_quality_en_to_zh",
-                        "tags": ["quality", "translation", "subjective"],
+                        "case": "translation_en_to_zh",
+                        "language": "en",
+                        "workload": "translation",
+                        "tags": ["translation", "subjective"],
                         "round": 1,
+                        "thinking_mode": "think-high",
+                        "variant": "nomtp",
                         "ok": True,
                         "elapsed_seconds": 1.0,
-                        "response": {
-                            "usage": {
-                                "prompt_tokens": 50,
-                                "completion_tokens": 60,
-                                "total_tokens": 110,
-                            }
+                        "usage": {
+                            "prompt_tokens": 50,
+                            "completion_tokens": 60,
+                            "total_tokens": 110,
                         },
                     }
                 ),
                 json.dumps(
                     {
                         "case": "writing_local_inference_tradeoffs",
-                        "tags": ["quality", "writing", "subjective"],
+                        "language": "en",
+                        "workload": "writing",
+                        "tags": ["writing", "subjective"],
                         "round": 1,
+                        "thinking_mode": "think-high",
+                        "variant": "nomtp",
                         "ok": True,
                         "elapsed_seconds": 2.0,
-                        "response": {
-                            "usage": {
-                                "prompt_tokens": 100,
-                                "completion_tokens": 200,
-                                "total_tokens": 300,
-                            }
+                        "usage": {
+                            "prompt_tokens": 100,
+                            "completion_tokens": 200,
+                            "total_tokens": 300,
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "case": "aquarium_html",
+                        "language": "en",
+                        "workload": "coding",
+                        "tags": ["coding", "html", "subjective"],
+                        "round": 1,
+                        "thinking_mode": "think-high",
+                        "variant": "nomtp",
+                        "ok": True,
+                        "elapsed_seconds": 10.0,
+                        "usage": {
+                            "prompt_tokens": 200,
+                            "completion_tokens": 800,
+                            "total_tokens": 1000,
                         },
                     }
                 ),
             ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (acceptance_dir / "smoke_coding.jsonl").write_text(
-        json.dumps(
-            {
-                "case": "aquarium_html",
-                "tags": ["coding", "html", "subjective"],
-                "round": 1,
-                "ok": True,
-                "elapsed_seconds": 10.0,
-                "response": {
-                    "usage": {
-                        "prompt_tokens": 200,
-                        "completion_tokens": 800,
-                        "total_tokens": 1000,
-                    }
-                },
-            }
         )
         + "\n",
         encoding="utf-8",

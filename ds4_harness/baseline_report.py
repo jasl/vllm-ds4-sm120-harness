@@ -377,7 +377,7 @@ def _cache_read_tokens(usage: dict[str, float]) -> float | None:
     )
 
 
-def _smoke_workload(row: dict[str, Any], default: str) -> str:
+def _tagged_workload(row: dict[str, Any], default: str) -> str:
     tags = {
         str(tag).casefold()
         for tag in row.get("tags", [])
@@ -396,7 +396,7 @@ def _generation_workload(row: dict[str, Any]) -> str:
     workload = row.get("workload")
     if isinstance(workload, str) and workload:
         return workload
-    return _smoke_workload(row, "generation")
+    return _tagged_workload(row, "generation")
 
 
 def _workload_sort_key(value: str) -> tuple[int, str]:
@@ -706,38 +706,6 @@ def _real_scenario_samples(
                     "reference_rental_hourly_usd": rental_hourly_usd,
                 }
             )
-
-        if not generation_rows:
-            smoke_files = (
-                ("smoke_quality.jsonl", "writing"),
-                ("smoke_coding.jsonl", "coding"),
-            )
-            for filename, default_workload in smoke_files:
-                for row in _load_jsonl(record.artifact_dir / filename):
-                    response = row.get("response")
-                    usage = (
-                        _usage_tokens(response.get("usage"))
-                        if isinstance(response, dict)
-                        else {}
-                    )
-                    elapsed_seconds = _to_float(row.get("elapsed_seconds"))
-                    samples.append(
-                        {
-                            "variant": record.variant,
-                            "workload": _smoke_workload(row, default_workload),
-                            "case": row.get("case"),
-                            "ok": bool(row.get("ok")),
-                            "elapsed_seconds": elapsed_seconds,
-                            "prompt_tokens": _prompt_tokens(usage),
-                            "completion_tokens": _completion_tokens(usage),
-                            "total_tokens": _total_tokens(usage),
-                            "cache_read_tokens": _cache_read_tokens(usage),
-                            "reference_capex_hourly_usd": capex_hourly_usd,
-                            "reference_power_hourly_usd": power_hourly_usd,
-                            "reference_total_hourly_usd": total_hourly_usd,
-                            "reference_rental_hourly_usd": rental_hourly_usd,
-                        }
-                    )
 
         toolcall_data = _load_json(record.artifact_dir / "toolcall15.json")
         if isinstance(toolcall_data, dict):

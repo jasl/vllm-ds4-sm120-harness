@@ -47,6 +47,12 @@ The V4 model IDs used by the official API are `deepseek-v4-flash` and
 `deepseek-v4-pro`. Prefix-completion probes should use
 `DEEPSEEK_BETA_BASE_URL`.
 
+Thinking controls follow the official OpenAI-compatible request shape:
+`thinking` is a top-level object such as `{"type":"enabled"}` or
+`{"type":"disabled"}`, and `reasoning_effort` is a top-level string such as
+`high` or `max`. Do not send tokenizer-internal aliases such as
+`enable_thinking` from this harness.
+
 When replaying or capturing official API tool-call conversations in thinking
 mode, preserve the assistant message `reasoning_content` field in later
 requests after a tool call. Preserve it even when the value is an empty string;
@@ -427,11 +433,25 @@ Run this script on the reference host, not on a laptop. It defaults to
 `TOOLCALL15_SCENARIO_SET=en`, and a controlled random
 long-context bench with
 `RANDOM_LONG_INPUT_LEN=8192 RANDOM_LONG_OUTPUT_LEN=512
-RANDOM_LONG_CONCURRENCY=1,2`. Set `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`,
-`RUN_RANDOM_LONG=0`, or `RUN_ORACLE_EXPORT=0` for narrower refreshes. The
-oracle export phase runs for each requested variant so no-MTP and MTP both
-produce logprobs reference material. Before creating a new managed run
-directory, the script moves existing sibling artifact directories matching
+RANDOM_LONG_CONCURRENCY=1,2`.
+
+Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
+the requested server variant. Valid phase names are `acceptance`,
+`bench_hf_mt_bench`, `bench_random_8192x512`, and `oracle_export`; the default
+is `all`. For example:
+
+```bash
+B200_BASELINE_VARIANTS=mtp \
+B200_BASELINE_PHASES=acceptance \
+scripts/run_b200_baseline.sh
+```
+
+The older `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`, `RUN_RANDOM_LONG=0`, and
+`RUN_ORACLE_EXPORT=0` toggles remain available for disabling phases inside the
+selected phase set. The oracle export phase runs for each requested variant so
+no-MTP and MTP both produce logprobs reference material. Before creating a new
+managed run directory, the script moves existing sibling artifact directories
+matching
 `${ARTIFACT_ARCHIVE_PREFIX:-$B200_BASELINE_LABEL}*` into
 `artifacts/<branch>/<gpu-topology>/_archive_before_<timestamp>/`; set
 `ARTIFACT_ARCHIVE_PREVIOUS=0` to keep older runs in place, or set
