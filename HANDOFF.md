@@ -139,6 +139,12 @@ repo. That directory is ignored by git. `chat-smoke` writes Markdown when
 outputs remain readable for subjective inspection in addition to JSON/JSONL
 machine artifacts.
 
+The wrappers also sample GPU telemetry with `nvidia-smi` by default. Preserve
+`gpu_stats.csv`, `gpu_stats_summary.json`, and `gpu_stats_summary.md` with each
+run; they capture per-GPU memory usage, power draw, and utilization during the
+test window. Set `GPU_STATS=0` only when a run is intentionally CPU/local, and
+set `GPU_STATS_INTERVAL_SECONDS` if one-second sampling is too noisy.
+
 For stricter kernel correctness, compare against a B200/SM100 or H100 HTTP
 oracle bundle:
 
@@ -161,18 +167,9 @@ profile for both. Prefer a representative HF dataset when judging user-visible
 progress:
 
 ```bash
-python -m ds4_harness.cli bench-matrix \
-  --vllm-bin /path/to/vllm/.venv/bin/vllm \
-  --model deepseek-ai/DeepSeek-V4-Flash \
-  --host localhost \
-  --port 8000 \
-  --concurrency 1,2,4,8,16,24 \
-  --dataset-name hf \
-  --dataset-path philschmid/mt-bench \
-  --num-prompts 80 \
-  --temperature 1.0 \
-  --json-output artifacts/manual/mt_bench.json \
-  --log-dir artifacts/manual/mt_bench_logs
+VLLM_BIN=/path/to/vllm/.venv/bin/vllm \
+CONCURRENCY=1,2,4,8,16,24 \
+scripts/run_bench_matrix.sh
 ```
 
 You do not need to run the full matrix for every edit. Use `1,2` or `1,2,4`
@@ -187,19 +184,14 @@ Use random prompts for controlled shape tests rather than final user-visible
 throughput claims. For long-prefill stability, use smaller concurrency first:
 
 ```bash
-python -m ds4_harness.cli bench-matrix \
-  --vllm-bin /path/to/vllm/.venv/bin/vllm \
-  --model deepseek-ai/DeepSeek-V4-Flash \
-  --host localhost \
-  --port 8000 \
-  --concurrency 1,2 \
-  --dataset-name random \
-  --random-input-len 8192 \
-  --random-output-len 512 \
-  --num-prompts 8 \
-  --ignore-eos \
-  --json-output artifacts/manual/longprefill_bench.json \
-  --log-dir artifacts/manual/longprefill_logs
+VLLM_BIN=/path/to/vllm/.venv/bin/vllm \
+CONCURRENCY=1,2 \
+DATASET_NAME=random \
+RANDOM_INPUT_LEN=8192 \
+RANDOM_OUTPUT_LEN=512 \
+NUM_PROMPTS=8 \
+IGNORE_EOS=1 \
+scripts/run_bench_matrix.sh
 ```
 
 ## Current Smoke Coverage

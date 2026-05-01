@@ -57,3 +57,23 @@ def test_acceptance_script_writes_human_markdown_smoke_reports():
     assert '--markdown-output "${OUT_DIR}/smoke_quick.md"' in script
     assert '--markdown-output "${OUT_DIR}/smoke_quality.md"' in script
     assert '--markdown-output "${OUT_DIR}/smoke_coding.md"' in script
+
+
+def test_scripts_capture_gpu_stats_to_artifacts():
+    helper = (ROOT / "scripts" / "gpu_stats.sh").read_text(encoding="utf-8")
+
+    assert 'GPU_STATS="${GPU_STATS:-1}"' in helper
+    assert "nvidia-smi" in helper
+    assert "memory.used" in helper
+    assert "power.draw" in helper
+    assert '"${OUT_DIR}/gpu_stats.csv"' in helper
+    assert "gpu-summary" in helper
+    assert '"${OUT_DIR}/gpu_stats_summary.json"' in helper
+    assert '"${OUT_DIR}/gpu_stats_summary.md"' in helper
+
+    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh"):
+        script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
+
+        assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+        assert "start_gpu_stats" in script
+        assert "trap stop_gpu_stats EXIT" in script

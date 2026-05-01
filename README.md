@@ -74,6 +74,13 @@ The shell wrappers write run output under the repo-local ignored directory
 for writing, translation, math, and other cases that need subjective review; the
 JSONL remains available for machine comparison.
 
+The shell wrappers also sample GPU telemetry with `nvidia-smi` when available.
+Each run writes `gpu_stats.csv`, `gpu_stats_summary.json`, and
+`gpu_stats_summary.md` next to the other artifacts. The summary includes per-GPU
+peak/average memory usage, power draw, and utilization. Set `GPU_STATS=0` to
+disable sampling, or `GPU_STATS_INTERVAL_SECONDS=2` to change the sample
+interval.
+
 ## Expected Workflow
 
 Run these after every SM12x kernel optimization before pushing to
@@ -126,37 +133,23 @@ For realistic throughput checks, run no-MTP and MTP as separate server
 configurations, then run the same HF dataset matrix against each:
 
 ```bash
-python -m ds4_harness.cli bench-matrix \
-  --vllm-bin /path/to/vllm/.venv/bin/vllm \
-  --model deepseek-ai/DeepSeek-V4-Flash \
-  --host localhost \
-  --port 8000 \
-  --concurrency 1,2,4,8,16,24 \
-  --dataset-name hf \
-  --dataset-path philschmid/mt-bench \
-  --num-prompts 80 \
-  --temperature 1.0 \
-  --json-output artifacts/manual/mt_bench.json \
-  --log-dir artifacts/manual/mt_bench_logs
+VLLM_BIN=/path/to/vllm/.venv/bin/vllm \
+CONCURRENCY=1,2,4,8,16,24 \
+scripts/run_bench_matrix.sh
 ```
 
 Use random prompts when you need a controlled shape rather than a representative
 conversation dataset:
 
 ```bash
-python -m ds4_harness.cli bench-matrix \
-  --vllm-bin /path/to/vllm/.venv/bin/vllm \
-  --model deepseek-ai/DeepSeek-V4-Flash \
-  --host localhost \
-  --port 8000 \
-  --concurrency 1,2 \
-  --dataset-name random \
-  --random-input-len 1024 \
-  --random-output-len 1024 \
-  --num-prompts 16 \
-  --ignore-eos \
-  --json-output artifacts/manual/random_1024x1024.json \
-  --log-dir artifacts/manual/random_1024x1024_logs
+VLLM_BIN=/path/to/vllm/.venv/bin/vllm \
+CONCURRENCY=1,2 \
+DATASET_NAME=random \
+RANDOM_INPUT_LEN=1024 \
+RANDOM_OUTPUT_LEN=1024 \
+NUM_PROMPTS=16 \
+IGNORE_EOS=1 \
+scripts/run_bench_matrix.sh
 ```
 
 ## Recommended Gates

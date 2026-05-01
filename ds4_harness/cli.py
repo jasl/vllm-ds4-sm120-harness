@@ -11,6 +11,7 @@ from ds4_harness.bench import run_bench_command
 from ds4_harness.cases import SmokeCase, build_cases, select_cases
 from ds4_harness.checks import CheckResult, assistant_text, check_chat_response, tool_call_names
 from ds4_harness.client import get_json, get_status, post_json
+from ds4_harness.gpu_stats import summarize_gpu_csv, write_gpu_json, write_gpu_markdown
 from ds4_harness.oracle import compare_response, load_oracle_cases
 from ds4_harness.toolcall15 import run_suite
 
@@ -356,6 +357,16 @@ def _cmd_toolcall15(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def _cmd_gpu_summary(args: argparse.Namespace) -> int:
+    summary = summarize_gpu_csv(args.csv_input)
+    print(json.dumps(summary, ensure_ascii=False))
+    if args.json_output is not None:
+        write_gpu_json(args.json_output, summary)
+    if args.markdown_output is not None:
+        write_gpu_markdown(args.markdown_output, summary)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="DeepSeek V4 SM12x correctness and benchmark harness."
@@ -428,6 +439,12 @@ def build_parser() -> argparse.ArgumentParser:
     toolcall15.add_argument("--min-points", type=int, choices=(0, 1, 2), default=2)
     toolcall15.add_argument("--json-output", type=Path)
     toolcall15.set_defaults(func=_cmd_toolcall15)
+
+    gpu_summary = subparsers.add_parser("gpu-summary")
+    gpu_summary.add_argument("--csv-input", type=Path, required=True)
+    gpu_summary.add_argument("--json-output", type=Path)
+    gpu_summary.add_argument("--markdown-output", type=Path)
+    gpu_summary.set_defaults(func=_cmd_gpu_summary)
 
     return parser
 

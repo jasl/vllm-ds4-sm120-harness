@@ -16,6 +16,9 @@ BRANCH_SLUG="${BRANCH_SLUG:-unknown-branch}"
 OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${RUN_TIMESTAMP}}"
 
 mkdir -p "${OUT_DIR}"
+source "${SCRIPT_DIR}/gpu_stats.sh"
+start_gpu_stats
+trap stop_gpu_stats EXIT
 
 "${PYTHON}" -m pytest -q tests
 "${PYTHON}" -m ruff check ds4_harness tests
