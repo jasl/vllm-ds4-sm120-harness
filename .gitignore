@@ -32,6 +32,7 @@ id_ed25519
 tmp/
 artifacts/
 results/
+oracles/
 
 # Private local handoff notes
 *.local.md
