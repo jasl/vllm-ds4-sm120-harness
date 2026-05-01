@@ -11,7 +11,11 @@ MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
 PYTHON="${PYTHON:-python}"
 ORACLE_LOGPROBS="${ORACLE_LOGPROBS:-20}"
 ORACLE_TIMEOUT="${ORACLE_TIMEOUT:-300}"
+ORACLE_STOP_ON_ERROR="${ORACLE_STOP_ON_ERROR:-1}"
 BASELINE_LABEL="${BASELINE_LABEL:-b200_oracle}"
+SERVER_GUARD="${SERVER_GUARD:-1}"
+SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT:-10}"
+SERVER_RECOVERY_CMD="${SERVER_RECOVERY_CMD:-}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
 RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
 BRANCH_NAME="${BRANCH_NAME:-$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown-branch)}"
@@ -19,7 +23,8 @@ BRANCH_SLUG="$(printf '%s' "${BRANCH_NAME}" | sed -E 's#[/[:space:]]+#_#g; s#[^A
 BRANCH_SLUG="${BRANCH_SLUG:-unknown-branch}"
 GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"
 OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${BASELINE_LABEL}/${RUN_TIMESTAMP}}"
-export BASE_URL MODEL PYTHON ORACLE_LOGPROBS ORACLE_TIMEOUT BASELINE_LABEL
+export BASE_URL MODEL PYTHON ORACLE_LOGPROBS ORACLE_TIMEOUT ORACLE_STOP_ON_ERROR
+export BASELINE_LABEL SERVER_GUARD SERVER_HEALTH_TIMEOUT SERVER_RECOVERY_CMD
 export ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME GPU_TOPOLOGY_SLUG OUT_DIR
 
 mkdir -p "${OUT_DIR}"
@@ -30,7 +35,17 @@ start_gpu_stats
 start_runtime_stats
 trap 'stop_runtime_stats; stop_gpu_stats' EXIT
 
+if ! server_ready; then
+  printf '%s\n' "124" > "${OUT_DIR}/oracle_export.exit_code"
+  mark_server_unresponsive "oracle_export" "server unresponsive before oracle export"
+  echo "wrote ${OUT_DIR}"
+  exit 1
+fi
+
 ARGS=()
+if [[ "${ORACLE_STOP_ON_ERROR}" == "1" || "${ORACLE_STOP_ON_ERROR}" == "true" ]]; then
+  ARGS+=(--stop-on-error)
+fi
 if [[ -n "${ORACLE_CASES:-}" ]]; then
   IFS=',' read -r -a CASES <<< "${ORACLE_CASES}"
   for case_name in "${CASES[@]}"; do
@@ -38,6 +53,7 @@ if [[ -n "${ORACLE_CASES:-}" ]]; then
   done
 fi
 
+set +e
 "${PYTHON}" -m ds4_harness.cli oracle-export \
   --base-url "${BASE_URL}" \
   --model "${MODEL}" \
@@ -45,5 +61,12 @@ fi
   --logprobs "${ORACLE_LOGPROBS}" \
   --timeout "${ORACLE_TIMEOUT}" \
   ${ARGS[@]+"${ARGS[@]}"}
+code="$?"
+set -e
+printf '%s\n' "${code}" > "${OUT_DIR}/oracle_export.exit_code"
+if [[ "${code}" != "0" ]] && ! server_ready; then
+  mark_server_unresponsive "oracle_export" "server unresponsive after oracle export"
+fi
 
 echo "wrote ${OUT_DIR}"
+exit "${code}"

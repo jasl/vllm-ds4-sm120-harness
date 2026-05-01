@@ -64,3 +64,38 @@ write_run_environment() {
     --markdown-output "${OUT_DIR}/run_environment.md" \
     >/dev/null || true
 }
+
+server_ready() {
+  if [[ "${SERVER_GUARD:-1}" == "0" ]]; then
+    return 0
+  fi
+
+  "${PYTHON}" -m ds4_harness.cli health \
+    --base-url "${BASE_URL}" \
+    --timeout "${SERVER_HEALTH_TIMEOUT:-10}" \
+    > "${OUT_DIR}/server_health_last.jsonl" \
+    2> "${OUT_DIR}/server_health_last.err"
+}
+
+run_server_recovery() {
+  if [[ -z "${SERVER_RECOVERY_CMD:-}" ]]; then
+    return 0
+  fi
+
+  {
+    printf '[%s] running SERVER_RECOVERY_CMD\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    bash -lc "${SERVER_RECOVERY_CMD}"
+    printf '[%s] SERVER_RECOVERY_CMD finished\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } >> "${OUT_DIR}/server_recovery.log" 2>&1 || true
+}
+
+mark_server_unresponsive() {
+  local gate_name="${1:-unknown_gate}"
+  local detail="${2:-server unresponsive}"
+
+  {
+    printf '[%s] %s: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${gate_name}" "${detail}"
+  } >> "${OUT_DIR}/server_unresponsive.txt"
+  printf '%s\n' "${detail}" > "${OUT_DIR}/${gate_name}.server_unresponsive"
+  run_server_recovery
+}

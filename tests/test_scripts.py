@@ -81,6 +81,9 @@ def test_env_sample_and_local_env_are_configured():
     assert "ORACLE_LOGPROBS=20" in sample
     assert "ORACLE_TIMEOUT=300" in sample
     assert "ORACLE_CASES=" in sample
+    assert "SERVER_GUARD=1" in sample
+    assert "SERVER_HEALTH_TIMEOUT=10" in sample
+    assert "SERVER_RECOVERY_CMD=" in sample
     assert "GPU_TOPOLOGY_SLUG=" in sample
     assert ".env" in gitignore
 
@@ -98,11 +101,11 @@ def test_acceptance_script_runs_all_gates_and_records_exit_codes():
 
     assert "failures=0" in script
     assert "run_gate pytest" in script
-    assert "run_gate smoke_quick" in script
-    assert "run_gate smoke_quality" in script
-    assert "run_gate smoke_coding" in script
-    assert "run_gate toolcall15" in script
-    assert "run_gate oracle_compare" in script
+    assert "run_live_gate smoke_quick" in script
+    assert "run_live_gate smoke_quality" in script
+    assert "run_live_gate smoke_coding" in script
+    assert "run_live_gate toolcall15" in script
+    assert "run_live_gate oracle_compare" in script
     assert 'ORACLE_TOP_N="${ORACLE_TOP_N:-20}"' in script
     assert '--top-n "${ORACLE_TOP_N}"' in script
     assert '"${OUT_DIR}/${name}.exit_code"' in script
@@ -157,10 +160,32 @@ def test_oracle_export_script_is_b200_ready():
     assert "write_run_environment" in script
     assert "start_gpu_stats" in script
     assert "start_runtime_stats" in script
+    assert "server_ready" in script
+    assert "mark_server_unresponsive" in script
     assert "oracle-export" in script
     assert 'ORACLE_LOGPROBS="${ORACLE_LOGPROBS:-20}"' in script
     assert 'BASELINE_LABEL="${BASELINE_LABEL:-b200_oracle}"' in script
     assert '--output-dir "${OUT_DIR}"' in script
+    assert "--stop-on-error" in script
+
+
+def test_live_scripts_guard_against_unresponsive_servers():
+    helper = (ROOT / "scripts" / "run_context.sh").read_text(encoding="utf-8")
+
+    assert "server_ready()" in helper
+    assert "mark_server_unresponsive()" in helper
+    assert "SERVER_RECOVERY_CMD" in helper
+    assert "server_unresponsive.txt" in helper
+
+    acceptance = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
+    bench = (ROOT / "scripts" / "run_bench_matrix.sh").read_text(encoding="utf-8")
+
+    assert "run_live_gate" in acceptance
+    assert "run_live_gate_capture" in acceptance
+    assert "mark_gate_skipped" in acceptance
+    assert "SERVER_HEALTH_TIMEOUT" in acceptance
+    assert "--stop-on-unresponsive" in bench
+    assert "--health-timeout" in bench
 
 
 def test_scripts_write_run_environment_artifacts():

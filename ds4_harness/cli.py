@@ -306,6 +306,7 @@ def _cmd_oracle_export(args: argparse.Namespace) -> int:
         case_names=args.case,
         timeout=args.timeout,
         logprobs=args.logprobs,
+        stop_on_error=args.stop_on_error,
     )
     failures = 0
     for row in rows:
@@ -329,8 +330,20 @@ def _check_bench_result(result: dict[str, Any], expected_requests: int) -> tuple
     return True, f"successful_requests {successful}/{expected_requests}"
 
 
+def _server_responding(base_url: str, timeout: float) -> bool:
+    try:
+        response = get_status(base_url, "/health", timeout)
+    except Exception:
+        return False
+    try:
+        return int(response.get("status_code", 599)) < 400
+    except (TypeError, ValueError):
+        return False
+
+
 def _cmd_bench_matrix(args: argparse.Namespace) -> int:
     concurrencies = [int(value) for value in args.concurrency.split(",") if value]
+    health_base_url = args.base_url or f"http://{args.host}:{args.port}"
     rows: list[dict[str, Any]] = []
     failures = 0
     for concurrency in concurrencies:
@@ -394,6 +407,24 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
                 result["stdout"],
                 encoding="utf-8",
             )
+        if (
+            not ok
+            and args.stop_on_unresponsive
+            and not _server_responding(health_base_url, args.health_timeout)
+        ):
+            for skipped_concurrency in concurrencies[len(rows) :]:
+                skipped = {
+                    "concurrency": skipped_concurrency,
+                    "ok": False,
+                    "skipped": True,
+                    "detail": "server unresponsive after previous benchmark; skipped",
+                    "metrics": {},
+                    "command": None,
+                }
+                rows.append(skipped)
+                print(json.dumps(skipped, ensure_ascii=False))
+            failures = 1
+            break
 
     if args.json_output is not None:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
@@ -522,6 +553,7 @@ def build_parser() -> argparse.ArgumentParser:
     oracle_export.add_argument("--case", action="append")
     oracle_export.add_argument("--logprobs", type=int)
     oracle_export.add_argument("--timeout", type=float, default=300.0)
+    oracle_export.add_argument("--stop-on-error", action="store_true")
     oracle_export.set_defaults(func=_cmd_oracle_export)
 
     bench = subparsers.add_parser("bench-matrix")
@@ -530,6 +562,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--tokenizer-mode", default="deepseek_v4")
     bench.add_argument("--host", default="localhost")
     bench.add_argument("--port", type=int, default=8000)
+    bench.add_argument("--base-url")
     bench.add_argument("--concurrency", default="1,2,4,8,16,24")
     bench.add_argument("--dataset-name", default=DEFAULT_BENCH_DATASET)
     bench.add_argument("--dataset-path", default=DEFAULT_BENCH_DATASET_PATH)
@@ -539,6 +572,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--temperature", type=float)
     bench.add_argument("--ignore-eos", action="store_true")
     bench.add_argument("--timeout", type=float)
+    bench.add_argument("--health-timeout", type=float, default=10.0)
+    bench.add_argument("--stop-on-unresponsive", action="store_true")
     bench.add_argument("--json-output", type=Path)
     bench.add_argument("--log-dir", type=Path)
     bench.add_argument("--extra-bench-arg", action="append")

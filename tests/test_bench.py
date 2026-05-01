@@ -1,6 +1,8 @@
+import json
+
+from ds4_harness import cli
 from ds4_harness.bench import parse_bench_output
 from ds4_harness.bench import run_bench_command
-from ds4_harness import cli
 
 
 def test_parse_bench_output_extracts_common_vllm_metrics():
@@ -155,3 +157,50 @@ def test_bench_matrix_marks_partial_successful_requests_as_failed(monkeypatch):
     )
 
     assert rc == 1
+
+
+def test_bench_matrix_stops_after_unresponsive_server(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(command, timeout=None):
+        calls.append(command)
+        return {
+            "returncode": -1,
+            "metrics": {},
+            "stdout": "TIMEOUT after 5 seconds",
+            "command": command,
+        }
+
+    monkeypatch.setattr(cli, "run_bench_command", fake_run)
+    monkeypatch.setattr(
+        cli,
+        "get_status",
+        lambda base_url, path, timeout: {"status_code": 599, "body": "timeout"},
+    )
+    output = tmp_path / "bench.json"
+
+    rc = cli.main(
+        [
+            "bench-matrix",
+            "--concurrency",
+            "1,2",
+            "--num-prompts",
+            "1",
+            "--timeout",
+            "5",
+            "--stop-on-unresponsive",
+            "--health-timeout",
+            "1",
+            "--json-output",
+            str(output),
+        ]
+    )
+
+    rows = json.loads(output.read_text(encoding="utf-8"))
+    assert rc == 1
+    assert len(calls) == 1
+    assert rows[0]["concurrency"] == 1
+    assert rows[0]["ok"] is False
+    assert rows[1]["concurrency"] == 2
+    assert rows[1]["skipped"] is True
+    assert "server unresponsive" in rows[1]["detail"]

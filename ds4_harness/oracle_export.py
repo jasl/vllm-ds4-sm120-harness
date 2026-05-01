@@ -172,6 +172,7 @@ def export_completion_oracles(
     case_names: list[str] | None = None,
     timeout: float = 300.0,
     logprobs: int | None = None,
+    stop_on_error: bool = False,
     post_json_func: PostJson = post_json,
 ) -> list[Json]:
     cases = _selected_cases(case_names)
@@ -242,6 +243,8 @@ def export_completion_oracles(
             )
         _write_json(output_dir / f"{case.name}.json", wrapped)
         rows.append(row)
+        if stop_on_error and not row.get("ok"):
+            break
 
     summary = {
         "generated_at_utc": datetime.now(UTC).isoformat(),

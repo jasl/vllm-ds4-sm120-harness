@@ -153,6 +153,14 @@ to reduce polling. If you have the server log path, pass
 `SERVE_LOG=/path/to/serve.log`; the summary will also include vLLM log-derived
 prompt/generation throughput and speculative decoding acceptance metrics.
 
+The live wrappers guard against server deadlocks or unresponsive vLLM workers.
+They run short health probes before expensive live gates and record
+`server_unresponsive.txt`, `*.server_unresponsive`, or `*.skipped` artifacts
+instead of continuing through every remaining test. Keep `SERVER_GUARD=1` for
+B200/SM12x reference runs. Set `SERVER_HEALTH_TIMEOUT=10` to tune the probe
+timeout, and set `SERVER_RECOVERY_CMD` only when you explicitly want the
+wrapper to run a local recovery command after detecting an unresponsive server.
+
 ## Expected Workflow
 
 Run these after every SM12x kernel optimization before pushing to
@@ -209,6 +217,8 @@ Use `ORACLE_CASES=case_a,case_b` only for a deliberately narrow re-run.
 The exporter also calls `/tokenize` for each prompt and injects those prompt
 token ids into the wrapped completion response, so later `--require-prompt-ids`
 comparisons fail when tokenization diverges or token ids are unavailable.
+The wrapper uses `ORACLE_STOP_ON_ERROR=1` by default so a deadlocked reference
+server consumes only one request timeout before stopping the export.
 
 ```bash
 python -m ds4_harness.cli oracle-compare \

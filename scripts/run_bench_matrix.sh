@@ -22,6 +22,7 @@ RANDOM_OUTPUT_LEN="${RANDOM_OUTPUT_LEN:-1024}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
 IGNORE_EOS="${IGNORE_EOS:-0}"
 PYTHON="${PYTHON:-python}"
+SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT:-10}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
 RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
 BRANCH_NAME="${BRANCH_NAME:-$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown-branch)}"
@@ -32,7 +33,7 @@ OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${RUN_T
 export VLLM_BIN MODEL HOST PORT BASE_URL CONCURRENCY DATASET_NAME DATASET_PATH
 export TOKENIZER_MODE NUM_PROMPTS BENCH_TIMEOUT RANDOM_INPUT_LEN RANDOM_OUTPUT_LEN
 export TEMPERATURE IGNORE_EOS PYTHON ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME
-export GPU_TOPOLOGY_SLUG OUT_DIR
+export SERVER_HEALTH_TIMEOUT GPU_TOPOLOGY_SLUG OUT_DIR
 
 mkdir -p "${OUT_DIR}"
 write_run_environment
@@ -53,6 +54,7 @@ fi
   --tokenizer-mode "${TOKENIZER_MODE}" \
   --host "${HOST}" \
   --port "${PORT}" \
+  --base-url "${BASE_URL}" \
   --concurrency "${CONCURRENCY}" \
   --dataset-name "${DATASET_NAME}" \
   --dataset-path "${DATASET_PATH}" \
@@ -61,6 +63,8 @@ fi
   --num-prompts "${NUM_PROMPTS}" \
   --temperature "${TEMPERATURE}" \
   --timeout "${BENCH_TIMEOUT}" \
+  --stop-on-unresponsive \
+  --health-timeout "${SERVER_HEALTH_TIMEOUT}" \
   ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
   --json-output "${OUT_DIR}/bench.json" \
   --log-dir "${OUT_DIR}/logs"

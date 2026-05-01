@@ -180,6 +180,13 @@ run intentionally has no live server metrics. If a serve log exists, pass
 `SERVE_LOG=/path/to/serve.log` so the runtime summary can also include
 vLLM-reported prompt/generation throughput and MTP acceptance metrics.
 
+Keep `SERVER_GUARD=1` for expensive reference runs. The live wrappers run short
+health probes and write `server_unresponsive.txt`, `*.server_unresponsive`, or
+`*.skipped` artifacts when the server stops responding, instead of serially
+waiting through every remaining heavy gate. Use `SERVER_HEALTH_TIMEOUT=10` as
+the default probe timeout. Set `SERVER_RECOVERY_CMD` only for an intentional
+local intervention command after an unresponsive-server detection.
+
 For stricter kernel correctness, compare against a B200/SM100 or H100 HTTP
 oracle bundle:
 
@@ -198,6 +205,8 @@ The export also captures `/tokenize` for each prompt and injects prompt token
 ids into the wrapped completion response. With `--require-prompt-ids`,
 `oracle-compare` tokenizes the actual prompt too and fails when ids are missing
 or different.
+`ORACLE_STOP_ON_ERROR=1` is the default for the wrapper, so a deadlocked
+reference server consumes only one request timeout before stopping the export.
 
 ```bash
 python -m ds4_harness.cli oracle-compare \

@@ -109,3 +109,23 @@ def test_export_completion_oracles_keeps_going_after_case_error(tmp_path):
     )
     assert failed["status"] == "error"
     assert "HTTP 500" in failed["error"]
+
+
+def test_export_completion_oracles_can_stop_after_first_error(tmp_path):
+    calls = []
+
+    def fake_post_json(base_url, path, payload, timeout):
+        calls.append(path)
+        raise TimeoutError("server did not respond")
+
+    rows = export_completion_oracles(
+        "http://127.0.0.1:8000",
+        "deepseek-ai/DeepSeek-V4-Flash",
+        tmp_path,
+        post_json_func=fake_post_json,
+        stop_on_error=True,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["ok"] is False
+    assert calls == ["/tokenize"]
