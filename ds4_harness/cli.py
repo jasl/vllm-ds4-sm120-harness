@@ -28,6 +28,85 @@ def _write_jsonl(path: Path | None, row: dict[str, Any]) -> None:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def _content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+            else:
+                parts.append(json.dumps(item, ensure_ascii=False, indent=2))
+        return "\n\n".join(part for part in parts if part)
+    if content is None:
+        return ""
+    return json.dumps(content, ensure_ascii=False, indent=2)
+
+
+def _fenced_block(text: str, language: str = "text") -> str:
+    fence = "```"
+    while fence in text:
+        fence += "`"
+    return f"{fence}{language}\n{text.rstrip()}\n{fence}"
+
+
+def _write_chat_markdown(path: Path | None, rows: list[dict[str, Any]]) -> None:
+    if path is None:
+        return
+
+    lines = [
+        "# Chat Smoke Report",
+        "",
+        f"- Cases: {len(rows)}",
+        "",
+    ]
+    for row in rows:
+        case = row["case"]
+        result = row["result"]
+        response = row["response"]
+        status = "PASS" if result.ok else "FAIL"
+
+        lines.extend(
+            [
+                f"## {case.name}",
+                "",
+                f"- Status: {status}",
+                f"- Tags: {', '.join(case.tags)}",
+                f"- Check: {result.detail}",
+                "",
+                "### Prompt",
+                "",
+            ]
+        )
+        for message in case.messages:
+            role = message.get("role", "unknown")
+            lines.extend(
+                [
+                    f"#### {role}",
+                    "",
+                    _fenced_block(_content_text(message.get("content"))),
+                    "",
+                ]
+            )
+
+        text = assistant_text(response)
+        if text:
+            lines.extend(["### Assistant", "", _fenced_block(text), ""])
+
+        names = tool_call_names(response)
+        if names:
+            lines.extend(["### Tool Calls", ""])
+            lines.extend(f"- `{name}`" for name in names)
+            lines.append("")
+
+        if "error" in response:
+            lines.extend(["### Error", "", _fenced_block(str(response["error"])), ""])
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
 def _print_case_result(case: SmokeCase, result: CheckResult, response: dict[str, Any]):
     status = "PASS" if result.ok else "FAIL"
     print(f"{status} {case.name}: {result.detail}")
@@ -74,6 +153,7 @@ def _cmd_chat_smoke(args: argparse.Namespace) -> int:
         return 2
 
     failures = 0
+    markdown_rows: list[dict[str, Any]] = []
     for case in cases:
         payload = case.to_payload(
             default_max_tokens=args.max_tokens,
@@ -110,7 +190,15 @@ def _cmd_chat_smoke(args: argparse.Namespace) -> int:
                 "response": response,
             },
         )
+        markdown_rows.append(
+            {
+                "case": case,
+                "result": result,
+                "response": response,
+            }
+        )
         failures += 0 if result.ok else 1
+    _write_chat_markdown(args.markdown_output, markdown_rows)
     return 1 if failures else 0
 
 
@@ -296,6 +384,7 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--temperature", type=float, default=0.0)
     smoke.add_argument("--timeout", type=float, default=300.0)
     smoke.add_argument("--jsonl-output", type=Path)
+    smoke.add_argument("--markdown-output", type=Path)
     smoke.set_defaults(func=_cmd_chat_smoke)
 
     oracle = subparsers.add_parser("oracle-compare")

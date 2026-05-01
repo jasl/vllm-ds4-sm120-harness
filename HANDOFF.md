@@ -121,14 +121,23 @@ python -m compileall -q ds4_harness
 
 python -m ds4_harness.cli health --base-url http://127.0.0.1:8000
 python -m ds4_harness.cli chat-smoke --tag quick \
-  --jsonl-output /tmp/ds4-sm120-smoke-quick.jsonl
+  --jsonl-output artifacts/manual/smoke_quick.jsonl \
+  --markdown-output artifacts/manual/smoke_quick.md
 python -m ds4_harness.cli chat-smoke --tag quality \
-  --jsonl-output /tmp/ds4-sm120-smoke-quality.jsonl
+  --jsonl-output artifacts/manual/smoke_quality.jsonl \
+  --markdown-output artifacts/manual/smoke_quality.md
 python -m ds4_harness.cli chat-smoke --tag coding --timeout 900 \
-  --jsonl-output /tmp/ds4-sm120-smoke-coding.jsonl
+  --jsonl-output artifacts/manual/smoke_coding.jsonl \
+  --markdown-output artifacts/manual/smoke_coding.md
 python -m ds4_harness.cli toolcall15 \
-  --json-output /tmp/ds4-sm120-toolcall15.json
+  --json-output artifacts/manual/toolcall15.json
 ```
+
+The wrapper scripts default to `artifacts/<branch>/<timestamp>/` under this
+repo. That directory is ignored by git. `chat-smoke` writes Markdown when
+`--markdown-output` is provided, so writing, translation, math, and coding
+outputs remain readable for subjective inspection in addition to JSON/JSONL
+machine artifacts.
 
 For stricter kernel correctness, compare against a B200/SM100 or H100 HTTP
 oracle bundle:
@@ -139,7 +148,7 @@ python -m ds4_harness.cli oracle-compare \
   --oracle-dir /path/to/b200_or_h100_oracle_bundle \
   --require-prompt-ids \
   --min-top1-match-rate 0.80 \
-  --json-output /tmp/ds4-sm120-oracle.json
+  --json-output artifacts/manual/oracle_compare.json
 ```
 
 Keep machine-local oracle bundle paths in ignored local notes, not in the public
@@ -162,8 +171,8 @@ python -m ds4_harness.cli bench-matrix \
   --dataset-path philschmid/mt-bench \
   --num-prompts 80 \
   --temperature 1.0 \
-  --json-output /tmp/ds4-sm120-mt-bench.json \
-  --log-dir /tmp/ds4-sm120-mt-bench-logs
+  --json-output artifacts/manual/mt_bench.json \
+  --log-dir artifacts/manual/mt_bench_logs
 ```
 
 You do not need to run the full matrix for every edit. Use `1,2` or `1,2,4`
@@ -189,8 +198,8 @@ python -m ds4_harness.cli bench-matrix \
   --random-output-len 512 \
   --num-prompts 8 \
   --ignore-eos \
-  --json-output /tmp/ds4-sm120-longprefill-bench.json \
-  --log-dir /tmp/ds4-sm120-longprefill-logs
+  --json-output artifacts/manual/longprefill_bench.json \
+  --log-dir artifacts/manual/longprefill_logs
 ```
 
 ## Current Smoke Coverage

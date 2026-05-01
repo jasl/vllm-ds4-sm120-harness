@@ -64,6 +64,16 @@ change solely on that tier.
 `DATASET_NAME=random IGNORE_EOS=1` when intentionally running random shape
 stress tests.
 
+## Artifact Output
+
+The shell wrappers write run output under the repo-local ignored directory
+`artifacts/<branch>/<timestamp>/` by default. Override `ARTIFACT_ROOT`,
+`BRANCH_NAME`, `RUN_TIMESTAMP`, or `OUT_DIR` when you need an explicit location.
+
+`chat-smoke` can also write Markdown reports with `--markdown-output`. Use this
+for writing, translation, math, and other cases that need subjective review; the
+JSONL remains available for machine comparison.
+
 ## Expected Workflow
 
 Run these after every SM12x kernel optimization before pushing to
@@ -83,18 +93,20 @@ python -m ds4_harness.cli health --base-url http://127.0.0.1:8000
 python -m ds4_harness.cli chat-smoke \
   --base-url http://127.0.0.1:8000 \
   --tag quick \
-  --jsonl-output /tmp/ds4-sm120-smoke-quick.jsonl
+  --jsonl-output artifacts/manual/smoke_quick.jsonl \
+  --markdown-output artifacts/manual/smoke_quick.md
 
 python -m ds4_harness.cli chat-smoke \
   --base-url http://127.0.0.1:8000 \
   --tag coding \
   --timeout 900 \
-  --jsonl-output /tmp/ds4-sm120-smoke-coding.jsonl
+  --jsonl-output artifacts/manual/smoke_coding.jsonl \
+  --markdown-output artifacts/manual/smoke_coding.md
 
 python -m ds4_harness.cli toolcall15 \
   --base-url http://127.0.0.1:8000 \
   --model deepseek-ai/DeepSeek-V4-Flash \
-  --json-output /tmp/ds4-sm120-toolcall15.json
+  --json-output artifacts/manual/toolcall15.json
 ```
 
 Use the B200/SM100 or H100 HTTP oracle bundle when you need stricter kernel
@@ -107,7 +119,7 @@ python -m ds4_harness.cli oracle-compare \
   --oracle-dir /path/to/b200_or_h100_oracle_bundle \
   --require-prompt-ids \
   --min-top1-match-rate 0.80 \
-  --json-output /tmp/ds4-sm120-oracle.json
+  --json-output artifacts/manual/oracle_compare.json
 ```
 
 For realistic throughput checks, run no-MTP and MTP as separate server
@@ -124,8 +136,8 @@ python -m ds4_harness.cli bench-matrix \
   --dataset-path philschmid/mt-bench \
   --num-prompts 80 \
   --temperature 1.0 \
-  --json-output /tmp/ds4-sm120-mt-bench.json \
-  --log-dir /tmp/ds4-sm120-mt-bench-logs
+  --json-output artifacts/manual/mt_bench.json \
+  --log-dir artifacts/manual/mt_bench_logs
 ```
 
 Use random prompts when you need a controlled shape rather than a representative
@@ -143,8 +155,8 @@ python -m ds4_harness.cli bench-matrix \
   --random-output-len 1024 \
   --num-prompts 16 \
   --ignore-eos \
-  --json-output /tmp/ds4-sm120-random-1024x1024.json \
-  --log-dir /tmp/ds4-sm120-random-1024x1024-logs
+  --json-output artifacts/manual/random_1024x1024.json \
+  --log-dir artifacts/manual/random_1024x1024_logs
 ```
 
 ## Recommended Gates
