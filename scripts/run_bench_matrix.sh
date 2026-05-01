@@ -44,6 +44,8 @@ export GPU_TOPOLOGY_SLUG OUT_DIR
 
 mkdir -p "${OUT_DIR}"
 write_run_environment
+source "${SCRIPT_DIR}/vllm_collect_env.sh"
+collect_vllm_env
 source "${SCRIPT_DIR}/gpu_stats.sh"
 source "${SCRIPT_DIR}/runtime_stats.sh"
 start_gpu_stats

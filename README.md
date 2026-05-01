@@ -153,6 +153,14 @@ to reduce polling. If you have the server log path, pass
 `SERVE_LOG=/path/to/serve.log`; the summary will also include vLLM log-derived
 prompt/generation throughput and speculative decoding acceptance metrics.
 
+Each wrapper also downloads and runs the official vLLM `collect_env.py` script
+by default. It stores `vllm_collect_env.py`, `vllm_collect_env.sha256`,
+`vllm_collect_env.txt`, `vllm_collect_env.err`, and
+`vllm_collect_env.exit_code` in the run artifact directory. Set
+`VLLM_COLLECT_ENV=0` when running offline or when you want to inspect the
+downloaded script manually before execution. Override `VLLM_COLLECT_ENV_URL`
+only for a pinned or locally mirrored copy.
+
 The live wrappers guard against server deadlocks or unresponsive vLLM workers,
 without treating slow model load or first-request warmup as a deadlock. They
 wait up to `SERVER_STARTUP_TIMEOUT=1800` seconds before the live gate sequence,

@@ -129,7 +129,7 @@ def test_scripts_capture_gpu_stats_to_artifacts():
     assert '"${OUT_DIR}/gpu_stats_summary.json"' in helper
     assert '"${OUT_DIR}/gpu_stats_summary.md"' in helper
 
-    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh"):
+    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh", "run_oracle_export.sh"):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
         assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
@@ -148,12 +148,83 @@ def test_scripts_capture_vllm_runtime_stats_to_artifacts():
     assert '"${OUT_DIR}/runtime_stats_summary.json"' in helper
     assert '"${OUT_DIR}/runtime_stats_summary.md"' in helper
 
-    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh"):
+    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh", "run_oracle_export.sh"):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
         assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
         assert "start_runtime_stats" in script
         assert "stop_runtime_stats" in script
+
+
+def test_scripts_collect_vllm_official_env_to_artifacts():
+    sample = (ROOT / "env.sample").read_text(encoding="utf-8")
+    helper = (ROOT / "scripts" / "vllm_collect_env.sh").read_text(encoding="utf-8")
+
+    assert "VLLM_COLLECT_ENV=1" in sample
+    assert "raw.githubusercontent.com/vllm-project/vllm/main/vllm/collect_env.py" in sample
+    assert "vllm_collect_env.py" in helper
+    assert "vllm_collect_env.txt" in helper
+    assert "vllm_collect_env.sha256" in helper
+    assert "vllm_collect_env.exit_code" in helper
+
+    for script_name in (
+        "run_acceptance.sh",
+        "run_bench_matrix.sh",
+        "run_oracle_export.sh",
+    ):
+        script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
+
+        assert 'source "${SCRIPT_DIR}/vllm_collect_env.sh"' in script
+        assert "collect_vllm_env" in script
+
+
+def test_vllm_collect_env_helper_downloads_and_runs_official_script(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        "#!/usr/bin/env sh\n"
+        "out=''\n"
+        "while [ \"$#\" -gt 0 ]; do\n"
+        "  if [ \"$1\" = '-o' ]; then shift; out=\"$1\"; fi\n"
+        "  shift\n"
+        "done\n"
+        "cat > \"$out\" <<'PY'\n"
+        "print('vLLM official collect env output')\n"
+        "PY\n",
+        encoding="utf-8",
+    )
+    fake_curl.chmod(fake_curl.stat().st_mode | 0o111)
+    out_dir = tmp_path / "out"
+    script = f"""
+set -euo pipefail
+OUT_DIR="{out_dir}"
+PYTHON=python
+VLLM_COLLECT_ENV=1
+VLLM_COLLECT_ENV_URL=https://example.invalid/collect_env.py
+PATH="{fake_bin}:$PATH"
+source "{ROOT / "scripts" / "vllm_collect_env.sh"}"
+mkdir -p "${{OUT_DIR}}"
+collect_vllm_env
+"""
+
+    subprocess.run(
+        ["bash", "-c", script],
+        check=True,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert (out_dir / "vllm_collect_env.py").exists()
+    assert "official collect env output" in (
+        out_dir / "vllm_collect_env.txt"
+    ).read_text(encoding="utf-8")
+    assert (out_dir / "vllm_collect_env.sha256").exists()
+    assert (out_dir / "vllm_collect_env.exit_code").read_text(
+        encoding="utf-8"
+    ).strip() == "0"
 
 
 def test_oracle_export_script_is_b200_ready():
@@ -264,6 +335,7 @@ def test_scripts_have_valid_bash_syntax():
         "gpu_stats.sh",
         "runtime_stats.sh",
         "run_context.sh",
+        "vllm_collect_env.sh",
     ):
         subprocess.run(
             ["bash", "-n", str(ROOT / "scripts" / script_name)],
@@ -288,6 +360,7 @@ def test_bench_wrapper_can_run_with_mocked_python(tmp_path):
         "OUT_DIR": str(out_dir),
         "GPU_STATS": "0",
         "RUNTIME_STATS": "0",
+        "VLLM_COLLECT_ENV": "0",
         "GPU_TOPOLOGY_SLUG": "test_gpu",
         "VLLM_BIN": "fake-vllm",
         "CONCURRENCY": "1",
@@ -329,6 +402,7 @@ def test_bench_wrapper_records_exit_code_on_bench_failure(tmp_path):
         "OUT_DIR": str(out_dir),
         "GPU_STATS": "0",
         "RUNTIME_STATS": "0",
+        "VLLM_COLLECT_ENV": "0",
         "GPU_TOPOLOGY_SLUG": "test_gpu",
         "VLLM_BIN": "fake-vllm",
         "CONCURRENCY": "1",

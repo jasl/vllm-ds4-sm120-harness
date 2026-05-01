@@ -180,6 +180,14 @@ run intentionally has no live server metrics. If a serve log exists, pass
 `SERVE_LOG=/path/to/serve.log` so the runtime summary can also include
 vLLM-reported prompt/generation throughput and MTP acceptance metrics.
 
+The wrappers also download and run the official vLLM `collect_env.py` script by
+default. Preserve `vllm_collect_env.py`, `vllm_collect_env.sha256`,
+`vllm_collect_env.txt`, `vllm_collect_env.err`, and
+`vllm_collect_env.exit_code`; these are reusable bug-report inputs. Set
+`VLLM_COLLECT_ENV=0` only when offline or when you want to inspect the downloaded
+script before execution. Override `VLLM_COLLECT_ENV_URL` only for a pinned or
+locally mirrored copy.
+
 Keep `SERVER_GUARD=1` for expensive reference runs. The live wrappers first
 allow slow model loading with `SERVER_STARTUP_TIMEOUT=1800`, then run short
 health probes around the live gates. After a failed live request or benchmark,
