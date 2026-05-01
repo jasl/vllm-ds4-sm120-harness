@@ -8,6 +8,7 @@ import urllib.error
 from pathlib import Path
 from typing import Any
 
+from ds4_harness.baseline_report import build_baseline_report, write_baseline_report
 from ds4_harness.bench import run_bench_command
 from ds4_harness.cases import SmokeCase, build_cases, select_cases
 from ds4_harness.checks import CheckResult, assistant_text, check_chat_response, tool_call_names
@@ -548,6 +549,21 @@ def _cmd_env_summary(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_baseline_report(args: argparse.Namespace) -> int:
+    report = build_baseline_report(
+        args.run_dir,
+        supplement_dir=args.supplement_dir,
+        title=args.title,
+        label=args.label,
+    )
+    if args.output is None:
+        print(report, end="")
+    else:
+        write_baseline_report(args.output, report)
+        print(str(args.output))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="DeepSeek V4 SM12x correctness and benchmark harness."
@@ -655,6 +671,14 @@ def build_parser() -> argparse.ArgumentParser:
     env_summary.add_argument("--json-output", type=Path)
     env_summary.add_argument("--markdown-output", type=Path)
     env_summary.set_defaults(func=_cmd_env_summary)
+
+    baseline_report = subparsers.add_parser("baseline-report")
+    baseline_report.add_argument("--run-dir", type=Path, required=True)
+    baseline_report.add_argument("--supplement-dir", type=Path)
+    baseline_report.add_argument("--title", default="DeepSeek V4 Baseline Report")
+    baseline_report.add_argument("--label")
+    baseline_report.add_argument("--output", type=Path)
+    baseline_report.set_defaults(func=_cmd_baseline_report)
 
     return parser
 

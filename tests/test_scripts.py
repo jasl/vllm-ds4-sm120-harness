@@ -578,6 +578,18 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
     assert "wrote" in result.stdout
 
 
+def test_generate_baseline_report_wrapper_uses_report_cli():
+    script = (ROOT / "scripts" / "generate_baseline_report.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "load_harness_env" in script
+    assert "baseline-report" in script
+    assert "BASELINE_RUN_DIR" in script
+    assert "BASELINE_SUPPLEMENT_DIR" in script
+    assert "BASELINE_REPORT_OUTPUT" in script
+
+
 def test_runtime_stats_helper_slices_serve_log_per_phase(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()

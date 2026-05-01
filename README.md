@@ -178,6 +178,29 @@ to tune the health probe timeout, and set `SERVER_RECOVERY_CMD` only when you
 explicitly want the wrapper to run a local recovery command after detecting an
 unresponsive server.
 
+To turn a finished artifact tree into a checked-in baseline report, run:
+
+```bash
+BASELINE_RUN_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a/20260501-184103 \
+BASELINE_SUPPLEMENT_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a_logsliced_bench/20260501-190608 \
+BASELINE_REPORT_OUTPUT=reports/baselines/b200_main_51295793a.md \
+BASELINE_REPORT_TITLE="B200 vLLM Main DeepSeek V4 Flash Baseline" \
+BASELINE_REPORT_LABEL=b200_main_51295793a \
+scripts/generate_baseline_report.sh
+```
+
+The report generator reads `phase_exit_codes.tsv`, `bench.json`,
+`toolcall15.json`, `oracle_export_summary.json`, `gpu_stats_summary.json`,
+`runtime_stats_summary.json`, and `run_environment.json`. It writes stable
+Markdown tables for raw throughput/latency, ToolCall-15, oracle export,
+phase-local runtime stats, MTP speculative decoding, structured provenance,
+serve-shape parameters, and normalized efficiency. The normalized columns include
+`tok/s/GPU`, `tok/s/total GiB`,
+`tok/s/used GiB`, `tok/J`, and `tok/s/kW`, which are intended for comparing
+different GPU counts and classes such as B200, RTX Pro 6000, RTX 5090, and
+GB10. Power efficiency uses sampled GPU-side average power for the whole phase,
+not wall-plug power.
+
 ## Expected Workflow
 
 Run these after every SM12x kernel optimization before pushing to
