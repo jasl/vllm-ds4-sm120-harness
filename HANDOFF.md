@@ -75,6 +75,23 @@ export TORCH_CUDA_ARCH_LIST="12.0a"
 unset PYTORCH_CUDA_ALLOC_CONF
 ```
 
+Copy `env.sample` to `.env` for machine-local values such as the optional
+DeepSeek official API key, vLLM paths, benchmark defaults, or artifact labels.
+The wrapper scripts load `.env` without overriding variables already set in the
+shell. `.env` is ignored by git and must not be committed.
+
+```bash
+cp env.sample .env
+```
+
+Official API reference settings should use the V4 model IDs
+`deepseek-v4-flash` and `deepseek-v4-pro`. Keep
+`DEEPSEEK_BETA_BASE_URL=https://api.deepseek.com/beta` available for
+prefix-completion probes. For thinking-mode tool-call probes, preserve
+assistant `reasoning_content` in all later requests after a tool call, including
+empty-string values, because clients that filter that field can trigger
+official API errors on the next tool-call turn.
+
 Do not set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for TP=2 CUDA
 graph runs. It has caused custom all-reduce graph registration failures.
 
@@ -136,11 +153,18 @@ python -m ds4_harness.cli toolcall15 \
   --json-output artifacts/manual/toolcall15.json
 ```
 
-The wrapper scripts default to `artifacts/<branch>/<timestamp>/` under this
-repo. That directory is ignored by git. `chat-smoke` writes Markdown when
-`--markdown-output` is provided, so writing, translation, math, and coding
-outputs remain readable for subjective inspection in addition to JSON/JSONL
-machine artifacts.
+The wrapper scripts default to `artifacts/<branch>/<gpu-topology>/<timestamp>/`
+under this repo. The GPU topology segment is derived from `nvidia-smi`, for
+example `2x_nvidia_rtx_pro_6000_blackwell_workstation_edition`,
+`8x_nvidia_geforce_rtx_5090`, or `4x_nvidia_b200`. Override
+`GPU_TOPOLOGY_SLUG` for custom labels or hosts without `nvidia-smi`.
+`chat-smoke` writes Markdown when `--markdown-output` is provided, so writing,
+translation, math, and coding outputs remain readable for subjective inspection
+in addition to JSON/JSONL machine artifacts.
+
+Each wrapper run also writes `run_environment.json` and `run_environment.md`
+with GPU count/model inventory, selected CUDA env vars, benchmark settings, and
+official API configuration state. GPU UUIDs and API key values are not written.
 
 The wrappers also sample GPU telemetry with `nvidia-smi` by default. Preserve
 `gpu_stats.csv`, `gpu_stats_summary.json`, and `gpu_stats_summary.md` with each

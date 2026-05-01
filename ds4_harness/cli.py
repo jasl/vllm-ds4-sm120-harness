@@ -18,6 +18,11 @@ from ds4_harness.runtime_stats import (
     write_runtime_json,
     write_runtime_markdown,
 )
+from ds4_harness.run_environment import (
+    summarize_run_environment,
+    write_run_environment_json,
+    write_run_environment_markdown,
+)
 from ds4_harness.toolcall15 import run_suite
 
 
@@ -420,6 +425,16 @@ def _cmd_runtime_summary(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_env_summary(args: argparse.Namespace) -> int:
+    summary = summarize_run_environment()
+    print(json.dumps(summary, ensure_ascii=False))
+    if args.json_output is not None:
+        write_run_environment_json(args.json_output, summary)
+    if args.markdown_output is not None:
+        write_run_environment_markdown(args.markdown_output, summary)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="DeepSeek V4 SM12x correctness and benchmark harness."
@@ -506,6 +521,11 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_summary.add_argument("--json-output", type=Path)
     runtime_summary.add_argument("--markdown-output", type=Path)
     runtime_summary.set_defaults(func=_cmd_runtime_summary)
+
+    env_summary = subparsers.add_parser("env-summary")
+    env_summary.add_argument("--json-output", type=Path)
+    env_summary.add_argument("--markdown-output", type=Path)
+    env_summary.set_defaults(func=_cmd_env_summary)
 
     return parser
 

@@ -5,6 +5,54 @@ intended to run against an already-started vLLM OpenAI-compatible server.
 
 The harness is deliberately stdlib-only at runtime. Unit tests use `pytest`.
 
+## Local Environment
+
+Copy `env.sample` to `.env` for machine-local settings. `.env` is ignored by
+git and is loaded by the wrapper scripts without overriding variables already
+set in the shell.
+
+```bash
+cp env.sample .env
+```
+
+Use `.env` for local paths, benchmark defaults, and the optional DeepSeek
+official API reference key:
+
+```bash
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_BETA_BASE_URL=https://api.deepseek.com/beta
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_FLASH_MODEL=deepseek-v4-flash
+DEEPSEEK_PRO_MODEL=deepseek-v4-pro
+DEEPSEEK_THINKING_TYPE=enabled
+DEEPSEEK_REASONING_EFFORT=high
+DEEPSEEK_PRESERVE_REASONING_CONTENT=1
+```
+
+Never commit `.env`. The harness records only whether `DEEPSEEK_API_KEY` is
+present; it does not write the key value into run artifacts.
+
+## DeepSeek Official API Notes
+
+Use these docs as the reference behavior when comparing local vLLM output with
+the hosted API:
+
+- [Thinking mode](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode)
+- [Chat prefix completion](https://api-docs.deepseek.com/zh-cn/guides/chat_prefix_completion)
+- [Tool calls](https://api-docs.deepseek.com/zh-cn/guides/tool_calls)
+- [Create chat completion](https://api-docs.deepseek.com/zh-cn/api/create-chat-completion)
+
+The V4 model IDs used by the official API are `deepseek-v4-flash` and
+`deepseek-v4-pro`. Prefix-completion probes should use
+`DEEPSEEK_BETA_BASE_URL`.
+
+When replaying or capturing official API tool-call conversations in thinking
+mode, preserve the assistant message `reasoning_content` field in later
+requests after a tool call. Preserve it even when the value is an empty string;
+some clients drop empty fields, which can make the official API reject the next
+tool-call turn.
+
 ## What It Covers
 
 - Live chat smoke cases:
@@ -73,8 +121,16 @@ stress tests.
 ## Artifact Output
 
 The shell wrappers write run output under the repo-local ignored directory
-`artifacts/<branch>/<timestamp>/` by default. Override `ARTIFACT_ROOT`,
+`artifacts/<branch>/<gpu-topology>/<timestamp>/` by default. The GPU topology
+slug is derived from `nvidia-smi`, for example
+`2x_nvidia_rtx_pro_6000_blackwell_workstation_edition` or `4x_nvidia_b200`.
+Override `GPU_TOPOLOGY_SLUG` when running on a host where `nvidia-smi` is not
+available or when you need a shorter label. Override `ARTIFACT_ROOT`,
 `BRANCH_NAME`, `RUN_TIMESTAMP`, or `OUT_DIR` when you need an explicit location.
+
+Each wrapper run writes `run_environment.json` and `run_environment.md` with
+GPU count/model inventory, selected CUDA env vars, benchmark settings, and
+official API configuration state. GPU UUIDs and API key values are not written.
 
 `chat-smoke` can also write Markdown reports with `--markdown-output`. Use this
 for writing, translation, math, and other cases that need subjective review; the

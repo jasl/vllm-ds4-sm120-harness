@@ -50,11 +50,35 @@ def test_scripts_default_to_branch_timestamped_artifacts_dir():
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
         assert 'REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"' in script
+        assert 'source "${SCRIPT_DIR}/run_context.sh"' in script
+        assert "load_harness_env" in script
+        assert "detect_gpu_topology_slug" in script
         assert 'ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"' in script
         assert 'RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"' in script
         assert 'git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD' in script
-        assert 'OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${RUN_TIMESTAMP}}"' in script
+        assert 'GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"' in script
+        assert (
+            'OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${RUN_TIMESTAMP}}"'
+            in script
+        )
         assert "/tmp/ds4-sm120" not in script
+
+
+def test_env_sample_and_local_env_are_configured():
+    sample = (ROOT / "env.sample").read_text(encoding="utf-8")
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    assert "DEEPSEEK_API_KEY=" in sample
+    assert "DEEPSEEK_BASE_URL=https://api.deepseek.com" in sample
+    assert "DEEPSEEK_BETA_BASE_URL=https://api.deepseek.com/beta" in sample
+    assert "DEEPSEEK_MODEL=deepseek-v4-flash" in sample
+    assert "DEEPSEEK_FLASH_MODEL=deepseek-v4-flash" in sample
+    assert "DEEPSEEK_PRO_MODEL=deepseek-v4-pro" in sample
+    assert "DEEPSEEK_THINKING_TYPE=enabled" in sample
+    assert "DEEPSEEK_REASONING_EFFORT=high" in sample
+    assert "DEEPSEEK_PRESERVE_REASONING_CONTENT=1" in sample
+    assert "GPU_TOPOLOGY_SLUG=" in sample
+    assert ".env" in gitignore
 
 
 def test_acceptance_script_writes_human_markdown_smoke_reports():
@@ -121,6 +145,17 @@ def test_scripts_capture_vllm_runtime_stats_to_artifacts():
         assert "stop_runtime_stats" in script
 
 
+def test_scripts_write_run_environment_artifacts():
+    helper = (ROOT / "scripts" / "run_context.sh").read_text(encoding="utf-8")
+
+    assert '"${OUT_DIR}/run_environment.json"' in helper
+    assert '"${OUT_DIR}/run_environment.md"' in helper
+    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh"):
+        script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
+
+        assert "write_run_environment" in script
+
+
 def test_sm12x_env_examples_use_requested_cuda_arch_family():
     handoff = (ROOT / "HANDOFF.md").read_text(encoding="utf-8")
     env_example = (ROOT / "configs" / "sm120_tp2_serve.env.example").read_text(
@@ -143,6 +178,7 @@ def test_scripts_have_valid_bash_syntax():
         "run_bench_matrix.sh",
         "gpu_stats.sh",
         "runtime_stats.sh",
+        "run_context.sh",
     ):
         subprocess.run(
             ["bash", "-n", str(ROOT / "scripts" / script_name)],
@@ -167,6 +203,7 @@ def test_bench_wrapper_can_run_with_mocked_python(tmp_path):
         "OUT_DIR": str(out_dir),
         "GPU_STATS": "0",
         "RUNTIME_STATS": "0",
+        "GPU_TOPOLOGY_SLUG": "test_gpu",
         "VLLM_BIN": "fake-vllm",
         "CONCURRENCY": "1",
         "NUM_PROMPTS": "1",

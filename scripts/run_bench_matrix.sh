@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/run_context.sh"
+load_harness_env
+
 VLLM_BIN="${VLLM_BIN:-vllm}"
 MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
 HOST="${HOST:-localhost}"
 PORT="${PORT:-8000}"
+BASE_URL="${BASE_URL:-http://${HOST}:${PORT}}"
 CONCURRENCY="${CONCURRENCY:-1,2,4,8,16,24}"
 DATASET_NAME="${DATASET_NAME:-hf}"
 DATASET_PATH="${DATASET_PATH:-philschmid/mt-bench}"
@@ -16,16 +22,20 @@ RANDOM_OUTPUT_LEN="${RANDOM_OUTPUT_LEN:-1024}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
 IGNORE_EOS="${IGNORE_EOS:-0}"
 PYTHON="${PYTHON:-python}"
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
 RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
 BRANCH_NAME="${BRANCH_NAME:-$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown-branch)}"
 BRANCH_SLUG="$(printf '%s' "${BRANCH_NAME}" | sed -E 's#[/[:space:]]+#_#g; s#[^A-Za-z0-9_.-]#_#g')"
 BRANCH_SLUG="${BRANCH_SLUG:-unknown-branch}"
-OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${RUN_TIMESTAMP}}"
+GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"
+OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${RUN_TIMESTAMP}}"
+export VLLM_BIN MODEL HOST PORT BASE_URL CONCURRENCY DATASET_NAME DATASET_PATH
+export TOKENIZER_MODE NUM_PROMPTS BENCH_TIMEOUT RANDOM_INPUT_LEN RANDOM_OUTPUT_LEN
+export TEMPERATURE IGNORE_EOS PYTHON ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME
+export GPU_TOPOLOGY_SLUG OUT_DIR
 
 mkdir -p "${OUT_DIR}"
+write_run_environment
 source "${SCRIPT_DIR}/gpu_stats.sh"
 source "${SCRIPT_DIR}/runtime_stats.sh"
 start_gpu_stats
