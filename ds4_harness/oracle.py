@@ -1,0 +1,255 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+Json = dict[str, Any]
+
+
+@dataclass(frozen=True)
+class OracleCase:
+    name: str
+    path: str
+    request: Json
+    response: Json
+
+
+def _choice(response: Json) -> Json:
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ValueError("response has no choices[0]")
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        raise ValueError("response choices[0] is not an object")
+    return choice
+
+
+def _token_key(token: Any) -> str:
+    if isinstance(token, str):
+        return token
+    if isinstance(token, int):
+        return f"token_id:{token}"
+    return str(token)
+
+
+def _generated_tokens(response: Json) -> list[str]:
+    choice = _choice(response)
+    logprobs = choice.get("logprobs") or {}
+    tokens = logprobs.get("tokens")
+    if isinstance(tokens, list) and tokens:
+        return [_token_key(token) for token in tokens]
+    token_ids = choice.get("token_ids")
+    if isinstance(token_ids, list):
+        return [_token_key(token) for token in token_ids]
+    return []
+
+
+def _prompt_token_ids(response: Json) -> list[int] | None:
+    token_ids = _choice(response).get("prompt_token_ids")
+    if not isinstance(token_ids, list):
+        return None
+    return [int(token) for token in token_ids]
+
+
+def _token_logprobs(response: Json) -> list[float | None]:
+    logprobs = _choice(response).get("logprobs") or {}
+    values = logprobs.get("token_logprobs")
+    if not isinstance(values, list):
+        return []
+    return [float(value) if value is not None else None for value in values]
+
+
+def _top_logprobs(response: Json) -> list[dict[str, float]]:
+    logprobs = _choice(response).get("logprobs") or {}
+    values = logprobs.get("top_logprobs")
+    if not isinstance(values, list):
+        return []
+    out: list[dict[str, float]] = []
+    for step in values:
+        if not isinstance(step, dict):
+            out.append({})
+            continue
+        out.append({_token_key(token): float(logprob) for token, logprob in step.items()})
+    return out
+
+
+def _first_mismatch(oracle_tokens: list[str], actual_tokens: list[str]) -> Json | None:
+    for step, (oracle_token, actual_token) in enumerate(
+        zip(oracle_tokens, actual_tokens)
+    ):
+        if oracle_token != actual_token:
+            return {"step": step, "oracle": oracle_token, "actual": actual_token}
+    if len(oracle_tokens) != len(actual_tokens):
+        step = min(len(oracle_tokens), len(actual_tokens))
+        return {
+            "step": step,
+            "oracle": oracle_tokens[step] if step < len(oracle_tokens) else None,
+            "actual": actual_tokens[step] if step < len(actual_tokens) else None,
+        }
+    return None
+
+
+def _matching_prefix(oracle_tokens: list[str], actual_tokens: list[str]) -> int:
+    count = 0
+    for oracle_token, actual_token in zip(oracle_tokens, actual_tokens):
+        if oracle_token != actual_token:
+            break
+        count += 1
+    return count
+
+
+def _top_keys(top_logprobs: dict[str, float], top_n: int) -> list[str]:
+    return list(top_logprobs.keys())[:top_n]
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def compare_response(
+    case_name: str,
+    oracle_response: Json,
+    actual_response: Json,
+    *,
+    top_n: int = 50,
+) -> Json:
+    oracle_tokens = _generated_tokens(oracle_response)
+    actual_tokens = _generated_tokens(actual_response)
+    oracle_top = _top_logprobs(oracle_response)
+    actual_top = _top_logprobs(actual_response)
+    oracle_token_logprobs = _token_logprobs(oracle_response)
+    actual_token_logprobs = _token_logprobs(actual_response)
+
+    steps = min(
+        len(oracle_tokens), len(actual_tokens), len(oracle_top), len(actual_top)
+    )
+    top1_matches = 0
+    topk_overlaps: list[float] = []
+    common_logprob_errors: list[float] = []
+    chosen_token_logprob_errors: list[float] = []
+
+    for step in range(steps):
+        oracle_keys = _top_keys(oracle_top[step], top_n)
+        actual_keys = _top_keys(actual_top[step], top_n)
+        if oracle_keys and actual_keys and oracle_keys[0] == actual_keys[0]:
+            top1_matches += 1
+
+        oracle_set = set(oracle_keys)
+        actual_set = set(actual_keys)
+        if oracle_set:
+            topk_overlaps.append(len(oracle_set & actual_set) / len(oracle_set))
+        for token in oracle_set & actual_set:
+            common_logprob_errors.append(
+                abs(oracle_top[step][token] - actual_top[step][token])
+            )
+
+        if (
+            oracle_tokens[step] == actual_tokens[step]
+            and step < len(oracle_token_logprobs)
+            and step < len(actual_token_logprobs)
+            and oracle_token_logprobs[step] is not None
+            and actual_token_logprobs[step] is not None
+        ):
+            chosen_token_logprob_errors.append(
+                abs(oracle_token_logprobs[step] - actual_token_logprobs[step])
+            )
+
+    oracle_prompt_ids = _prompt_token_ids(oracle_response)
+    actual_prompt_ids = _prompt_token_ids(actual_response)
+    prompt_ids_match = (
+        None
+        if oracle_prompt_ids is None or actual_prompt_ids is None
+        else oracle_prompt_ids == actual_prompt_ids
+    )
+
+    first_mismatch = _first_mismatch(oracle_tokens, actual_tokens)
+    return {
+        "case": case_name,
+        "tokens_match": first_mismatch is None,
+        "prompt_token_ids_match": prompt_ids_match,
+        "first_token_mismatch": first_mismatch,
+        "matching_prefix_tokens": _matching_prefix(oracle_tokens, actual_tokens),
+        "oracle_token_count": len(oracle_tokens),
+        "actual_token_count": len(actual_tokens),
+        "compared_steps": steps,
+        "top1_matches": top1_matches,
+        "top1_match_rate": top1_matches / steps if steps else None,
+        "topk_overlap_mean": _mean(topk_overlaps),
+        "topk_overlap_min": min(topk_overlaps) if topk_overlaps else None,
+        "max_common_logprob_abs_error": (
+            max(common_logprob_errors) if common_logprob_errors else None
+        ),
+        "mean_common_logprob_abs_error": _mean(common_logprob_errors),
+        "max_chosen_token_logprob_abs_error": (
+            max(chosen_token_logprob_errors) if chosen_token_logprob_errors else None
+        ),
+        "mean_chosen_token_logprob_abs_error": _mean(chosen_token_logprob_errors),
+    }
+
+
+def load_json(path: Path) -> Json:
+    with path.open(encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} is not a JSON object")
+    return data
+
+
+def _load_request_response_pairs(oracle_dir: Path) -> list[OracleCase]:
+    cases: list[OracleCase] = []
+    request_paths = sorted(oracle_dir.glob("request_*.json"))
+    for request_path in request_paths:
+        suffix = request_path.stem.removeprefix("request_")
+        response_path = oracle_dir / f"response_{suffix}.json"
+        if not response_path.exists():
+            raise ValueError(f"missing {response_path.name} for {request_path.name}")
+        cases.append(
+            OracleCase(
+                name=suffix,
+                path="/v1/completions",
+                request=load_json(request_path),
+                response=load_json(response_path),
+            )
+        )
+    return cases
+
+
+def _load_wrapped_completion_cases(oracle_dir: Path) -> list[OracleCase]:
+    cases: list[OracleCase] = []
+    for path in sorted(oracle_dir.glob("*.json")):
+        if path.name.startswith(("request_", "response_", "tokenize_")):
+            continue
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            continue
+        request = data.get("request")
+        response = data.get("response")
+        endpoint = data.get("path")
+        if not isinstance(request, dict) or not isinstance(response, dict):
+            continue
+        if endpoint != "/v1/completions":
+            continue
+        cases.append(
+            OracleCase(
+                name=str(data.get("name") or path.stem),
+                path=endpoint,
+                request=request,
+                response=response,
+            )
+        )
+    return cases
+
+
+def load_oracle_cases(oracle_dir: Path) -> list[OracleCase]:
+    cases = _load_request_response_pairs(oracle_dir)
+    cases.extend(_load_wrapped_completion_cases(oracle_dir))
+    if not cases:
+        raise ValueError(
+            f"{oracle_dir} has no completion oracle cases; expected "
+            "request_*.json/response_*.json pairs or wrapped completion_*.json files"
+        )
+    return cases

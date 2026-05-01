@@ -1,0 +1,37 @@
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments and local packaging output
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+id_rsa
+id_ed25519
+
+# Harness run artifacts
+*.jsonl
+*.log
+*.out
+*.err
+tmp/
+artifacts/
+results/
+
+# Private local handoff notes
+*.local.md
