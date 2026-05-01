@@ -178,16 +178,20 @@ to tune the health probe timeout, and set `SERVER_RECOVERY_CMD` only when you
 explicitly want the wrapper to run a local recovery command after detecting an
 unresponsive server.
 
-To turn a finished artifact tree into a checked-in baseline report, run:
+To turn a finished artifact tree into a checked-in baseline bundle, run:
 
 ```bash
 BASELINE_RUN_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a/20260501-184103 \
 BASELINE_SUPPLEMENT_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a_logsliced_bench/20260501-190608 \
-BASELINE_REPORT_OUTPUT=reports/baselines/20260501_b200_main_51295793a.md \
 BASELINE_REPORT_TITLE="B200 vLLM Main DeepSeek V4 Flash Baseline" \
 BASELINE_REPORT_LABEL=b200_main_51295793a \
-scripts/generate_baseline_report.sh
+scripts/generate_baseline_bundle.sh
 ```
+
+The baseline bundle is written to
+`baselines/<YYYYMMDD>_<label>/`. It contains `report.md` plus sanitized
+reference data for fresh environments where raw `artifacts/` and prior chat
+context are not available.
 
 The report generator reads `phase_exit_codes.tsv`, `bench.json`,
 `toolcall15.json`, `oracle_export_summary.json`, `gpu_stats_summary.json`,
@@ -203,23 +207,15 @@ different GPU counts and classes such as B200, RTX Pro 6000, RTX 5090, and
 GB10. Power efficiency uses sampled GPU-side average power for the whole phase,
 not wall-plug power.
 
-To publish the reusable, sanitized comparison data from the same raw artifact
-tree, generate a reference bundle:
-
-```bash
-REFERENCE_RUN_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a/20260501-184103 \
-REFERENCE_SUPPLEMENT_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a_logsliced_bench/20260501-190608 \
-REFERENCE_LABEL=20260501_b200_main_51295793a \
-REFERENCE_DATE=20260501 \
-scripts/generate_reference_bundle.sh
-```
-
-Reference bundles live under `reference/baselines/` and are intended to be
-checked in. They keep the data needed to resume work in a fresh environment
+The same script also publishes a sanitized reference bundle in that directory.
+It keeps the data needed to resume work in a fresh environment
 without raw `artifacts/`: deterministic no-MTP logprobs oracle cases,
 no-MTP/MTP smoke captures, ToolCall-15 traces, benchmark summaries,
 GPU/runtime telemetry summaries, and public provenance. Raw server logs,
 machine-local paths, private addresses, and secrets are deliberately excluded.
+The script generates into a temporary directory, verifies that the bundle has
+loadable oracle cases and no non-public data, then replaces the final
+`baselines/...` directory only after validation passes.
 
 ## Expected Workflow
 
@@ -347,7 +343,7 @@ the vLLM venv. If FlashInfer is installed, keep `flashinfer-python`,
 ```bash
 python -m ds4_harness.cli oracle-compare \
   --base-url http://127.0.0.1:8000 \
-  --oracle-dir reference/baselines/20260501_b200_main_51295793a/oracle \
+  --oracle-dir baselines/20260501_b200_main_51295793a/oracle \
   --top-n 20 \
   --require-prompt-ids \
   --min-top1-match-rate 0.80 \

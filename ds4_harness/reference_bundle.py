@@ -348,7 +348,7 @@ Run token-level comparison against a new local server:
 ```bash
 python -m ds4_harness.cli oracle-compare \\
   --base-url http://127.0.0.1:8000 \\
-  --oracle-dir reference/baselines/{label}/oracle \\
+  --oracle-dir baselines/{label}/oracle \\
   --top-n 20 \\
   --require-prompt-ids \\
   --json-output artifacts/manual/oracle_compare.json

@@ -32,7 +32,7 @@ fi
 if [[ -z "${BASELINE_REPORT_OUTPUT}" ]]; then
   output_label="${BASELINE_REPORT_LABEL:-baseline}"
   output_label="$(slugify_context_value "${output_label}")"
-  BASELINE_REPORT_OUTPUT="reports/baselines/${BASELINE_REPORT_DATE}_${output_label}.md"
+  BASELINE_REPORT_OUTPUT="baselines/${BASELINE_REPORT_DATE}_${output_label}/report.md"
 fi
 
 args=(

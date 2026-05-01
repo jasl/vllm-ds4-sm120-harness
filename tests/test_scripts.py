@@ -306,17 +306,22 @@ def test_oracle_export_script_is_b200_ready():
     assert "--stop-on-error" in script
 
 
-def test_reference_bundle_script_generates_public_baseline_bundle():
-    script = (ROOT / "scripts" / "generate_reference_bundle.sh").read_text(
+def test_baseline_bundle_script_generates_report_and_public_data():
+    script = (ROOT / "scripts" / "generate_baseline_bundle.sh").read_text(
         encoding="utf-8"
     )
 
+    assert 'BASELINE_RUN_DIR="${BASELINE_RUN_DIR:?set BASELINE_RUN_DIR}"' in script
+    assert 'BASELINE_OUTPUT_DIR="${BASELINE_OUTPUT_DIR:-${REPO_ROOT}/baselines/${BASELINE_DATE}_${BASELINE_BUNDLE_LABEL}}"' in script
     assert "reference-bundle" in script
-    assert 'REFERENCE_RUN_DIR="${REFERENCE_RUN_DIR:?set REFERENCE_RUN_DIR}"' in script
-    assert 'REFERENCE_OUTPUT_DIR="${REFERENCE_OUTPUT_DIR:-${REPO_ROOT}/reference/baselines/${REFERENCE_LABEL}}"' in script
-    assert '--run-dir "${REFERENCE_RUN_DIR}"' in script
-    assert '--output-dir "${REFERENCE_OUTPUT_DIR}"' in script
+    assert "baseline-report" in script
+    assert '--run-dir "${BASELINE_RUN_DIR}"' in script
+    assert '--output-dir "${tmp_dir}"' in script
+    assert '--output "${tmp_dir}/report.md"' in script
     assert "--fail-on-sensitive" in script
+    assert "scan_public_bundle" in script
+    assert "load_oracle_cases" in script
+    assert 'mv "${tmp_dir}" "${BASELINE_OUTPUT_DIR}"' in script
 
 
 def test_live_scripts_guard_against_unresponsive_servers():
@@ -408,6 +413,7 @@ def test_scripts_have_valid_bash_syntax():
         "run_bench_matrix.sh",
         "run_oracle_export.sh",
         "run_b200_baseline.sh",
+        "generate_baseline_bundle.sh",
         "gpu_stats.sh",
         "runtime_stats.sh",
         "run_context.sh",
@@ -602,7 +608,7 @@ def test_generate_baseline_report_wrapper_uses_report_cli():
     assert "BASELINE_SUPPLEMENT_DIR" in script
     assert "BASELINE_REPORT_OUTPUT" in script
     assert "BASELINE_REPORT_DATE" in script
-    assert 'reports/baselines/${BASELINE_REPORT_DATE}_${output_label}.md' in script
+    assert 'baselines/${BASELINE_REPORT_DATE}_${output_label}/report.md' in script
 
 
 def test_runtime_stats_helper_slices_serve_log_per_phase(tmp_path):

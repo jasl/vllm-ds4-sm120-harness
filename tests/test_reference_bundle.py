@@ -189,11 +189,11 @@ def test_reference_bundle_cli_is_registered():
             "--run-dir",
             "artifacts/main/4x_nvidia_b200/b200_main/20260501-000000",
             "--output-dir",
-            "reference/baselines/20260501_b200_main",
+            "baselines/20260501_b200_main",
             "--label",
             "b200_main",
         ]
     )
 
     assert args.command == "reference-bundle"
-    assert str(args.output_dir).endswith("reference/baselines/20260501_b200_main")
+    assert str(args.output_dir).endswith("baselines/20260501_b200_main")
