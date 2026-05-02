@@ -1,0 +1,80 @@
+{
+  "case": "kv_indexer_long_context",
+  "variant": "mtp",
+  "model": "deepseek-ai/DeepSeek-V4-Flash",
+  "ok": true,
+  "detail": "matched long-context sentinel terms",
+  "missing_terms": [],
+  "required_terms": [
+    "alpha-cobalt-17",
+    "beta-quartz-29",
+    "gamma-onyx-43"
+  ],
+  "elapsed_seconds": 2.7585769939469174,
+  "usage": {
+    "prompt_tokens": 74457,
+    "total_tokens": 74509,
+    "completion_tokens": 52,
+    "prompt_tokens_details": null
+  },
+  "assistant_text": "Based solely on the provided context, the first indexer validation code is **alpha-cobalt-17**, the middle indexer validation code is **beta-quartz-29**, and the final indexer validation code is **gamma-onyx-43**.",
+  "finish_reason": "stop",
+  "thinking_mode": "non-thinking",
+  "thinking_strength": "disabled",
+  "temperature": 0.0,
+  "top_p": 1.0,
+  "prompt": {
+    "generator": "ds4_harness.long_context_probe.build_long_context_prompt",
+    "line_count": 2400,
+    "sha256": "6efb240c41fc863683dc01a836696e65ca77ec4ad09277a600cf30ed70b7167d",
+    "excerpt": {
+      "head": "You are validating long-context retrieval for DeepSeek V4.\nRead the full context. The final answer must use only facts found in it.\nDo not claim that the source article or context is missing.\n\nLine 0001: subsystem=01; shard=01; checksum=0037; stable filler for long-context cache-layout validation.\nLine 0002: subsystem=02; shard=02; checksum=0074; stable filler for long-context cache-layout validation.\nLine 0003: subsystem=03; shard=03; checksum=0111; stable filler for long-context cache-layout validation.\nLine 0004: subsystem=04; shard=04; checksum=0148; stable filler for long-context cache-layout validation.",
+      "tail": "Line 2396: subsystem=16; shard=18; checksum=0869; stable filler for long-context cache-layout validation.\nLine 2397: subsystem=00; shard=19; checksum=0906; stable filler for long-context cache-layout validation.\nLine 2398: subsystem=01; shard=20; checksum=0943; stable filler for long-context cache-layout validation.\nLine 2399: subsystem=02; shard=21; checksum=0980; stable filler for long-context cache-layout validation.\nLine 2400: subsystem=03; shard=22; checksum=0008; stable filler for long-context cache-layout validation.\n\nFinal task:\nIn one concise paragraph, list the first, middle, and final indexer validation codes from the context. Use the exact code strings."
+    }
+  },
+  "request_shape": {
+    "model": "deepseek-ai/DeepSeek-V4-Flash",
+    "max_tokens": 128,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "thinking": {
+      "type": "disabled"
+    }
+  },
+  "response": {
+    "id": "chatcmpl-9e65ab44d47bf07b",
+    "object": "chat.completion",
+    "created": 1777719034,
+    "model": "deepseek-ai/DeepSeek-V4-Flash",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Based solely on the provided context, the first indexer validation code is **alpha-cobalt-17**, the middle indexer validation code is **beta-quartz-29**, and the final indexer validation code is **gamma-onyx-43**.",
+          "refusal": null,
+          "annotations": null,
+          "audio": null,
+          "function_call": null,
+          "tool_calls": [],
+          "reasoning": null
+        },
+        "logprobs": null,
+        "finish_reason": "stop",
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.20.1rc1.dev144+g5737770c6-tp4-a2afd31c",
+    "usage": {
+      "prompt_tokens": 74457,
+      "total_tokens": 74509,
+      "completion_tokens": 52,
+      "prompt_tokens_details": null
+    },
+    "prompt_logprobs": null,
+    "prompt_token_ids": null,
+    "kv_transfer_params": null
+  }
+}

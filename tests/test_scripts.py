@@ -338,6 +338,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'NO_MTP_CONCURRENCY="${NO_MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'MTP_CONCURRENCY="${MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"' in script
+    assert 'RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"' in script
     assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
     assert 'ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-${B200_ARCHIVE_PREVIOUS:-1}}"' in script
     assert 'ARTIFACT_ARCHIVE_PREFIX="${ARTIFACT_ARCHIVE_PREFIX:-${B200_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}}"' in script
@@ -347,11 +348,13 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'RUN_ROOT="${OUT_DIR:-${ARTIFACT_PARENT}/${B200_BASELINE_LABEL}/${RUN_TIMESTAMP}}"' in script
     assert "phase_enabled" in script
     assert '"${variant_dir}/acceptance"' in script
+    assert '"${variant_dir}/long_context_probe"' in script
     assert '"${variant_dir}/bench_hf_mt_bench"' in script
     assert '"${variant_dir}/bench_random_8192x512"' in script
     assert '"${variant_dir}/eval_gsm8k"' in script
     assert '"${variant_dir}/oracle_export"' in script
     assert "run_acceptance.sh" in script
+    assert "run_long_context_probe.sh" in script
     assert "run_bench_matrix.sh" in script
     assert "run_lm_eval.sh" in script
     assert "run_oracle_export.sh" in script
@@ -671,6 +674,7 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
         "  *' chat-smoke '*) write_arg_file --jsonl-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
         "  *' generation-matrix '*) write_arg_file --jsonl-output \"$@\"; exit 0 ;;\n"
         "  *' toolcall15 '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
+        "  *' long-context-probe '*) write_arg_file --json-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
         "  *' bench-matrix '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
         "  *' lm-eval '*) write_arg_file --json-output \"$@\"; printf '%s\\n' \"$@\" > \"$OUT_DIR/lm_eval_args.txt\"; exit 0 ;;\n"
         "  *' oracle-export '*) exit 0 ;;\n"
@@ -728,10 +732,12 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
 
     phase_log = (out_dir / "phase_exit_codes.tsv").read_text(encoding="utf-8")
     assert "nomtp\tacceptance\t0" in phase_log
+    assert "nomtp\tlong_context_probe\t0" in phase_log
     assert "nomtp\tbench_hf_mt_bench\t0" in phase_log
     assert "nomtp\teval_gsm8k\t0" in phase_log
     assert "nomtp\toracle_export\t0" in phase_log
     assert "mtp\tacceptance\t0" in phase_log
+    assert "mtp\tlong_context_probe\t0" in phase_log
     assert "mtp\tbench_hf_mt_bench\t0" in phase_log
     assert "mtp\teval_gsm8k\t0" in phase_log
     assert "mtp\toracle_export\t0" in phase_log

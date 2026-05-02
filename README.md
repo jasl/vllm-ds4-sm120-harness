@@ -105,6 +105,13 @@ tool-call turn.
     usage
   - can parse serve logs for prompt/generation throughput and MTP acceptance
     metrics
+- Long-context KV/indexer probe:
+  - sends a deterministic long prompt with early, middle, and late sentinel
+    codes
+  - records prompt shape, prompt hash, excerpts, usage, assistant output,
+    runtime stats, and GPU stats
+  - is diagnostic evidence for cache-layout regressions; it does not change
+    accuracy scores
 
 ## Coverage Model
 
@@ -120,6 +127,9 @@ Use the harness as a layered gate, not as one monolithic command:
   progress.
 - Synthetic pressure: benchmark with `--dataset-name random` for controlled
   short/long context shapes such as 1024/1024 decode or 8192/512 prefill.
+- Long-context retrieval: run `long-context-probe` when a change may affect
+  KV cache, indexer cache, chunking, or long-prefill behavior. It validates
+  end-to-end sentinel retrieval rather than dumping raw KV tensors.
 - Public accuracy: run the optional `lm_eval` GSM8K phase on reference hosts
   and promotion candidates. This provides a public scalar correctness signal
   similar to the ROCm DeepSeek V4 support PRs, while oracle comparison remains
@@ -265,11 +275,13 @@ The report generator reads `phase_exit_codes.tsv`, `bench.json`,
 `toolcall15.json`, `lm_eval_summary.json`, `oracle_export_summary.json`,
 `gpu_stats_summary.json`, `runtime_stats_summary.json`,
 `run_environment.json`, `vllm_collect_env.txt`, `generation.jsonl` when
-present, and each variant's `serve_command.sh`. It
+present, `long_context_probe.json` when present, and each variant's
+`serve_command.sh`. It
 writes stable Markdown tables for raw
 throughput/latency, ToolCall-15, optional accuracy evals, oracle export,
-phase-local runtime stats, MTP speculative decoding, structured provenance,
-serve-shape parameters, and normalized efficiency. It also places a quick
+long-context probe results, phase-local runtime stats, MTP speculative
+decoding, structured provenance, serve-shape parameters, and normalized
+efficiency. It also places a quick
 performance summary near the top with real-scenario operation cost estimates,
 best benchmark output throughput, and phase-local prefill/decode average
 `tok/s` values. The operation-cost overview is based on translation, writing,
@@ -551,11 +563,15 @@ Run this script on the reference host, not on a laptop. It defaults to
 long-context bench with
 `RANDOM_LONG_INPUT_LEN=8192 RANDOM_LONG_OUTPUT_LEN=512
 RANDOM_LONG_CONCURRENCY=1,2`.
+The default long-context probe uses `LONG_CONTEXT_LINE_COUNT=2400`,
+`LONG_CONTEXT_MAX_TOKENS=128`, `LONG_CONTEXT_TEMPERATURE=0.0`,
+`LONG_CONTEXT_TOP_P=1.0`, and `LONG_CONTEXT_THINKING_MODE=non-thinking`.
 
 Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
 the requested server variant. Valid phase names are `acceptance`,
-`bench_hf_mt_bench`, `eval_gsm8k`, `bench_random_8192x512`, and
-`oracle_export`; the default is `all`. For example:
+`long_context_probe`, `bench_hf_mt_bench`, `eval_gsm8k`,
+`bench_random_8192x512`, and `oracle_export`; the default is `all`. For
+example:
 
 ```bash
 B200_BASELINE_VARIANTS=mtp \
@@ -667,6 +683,8 @@ Before promoting an optimization:
   partial/fail scenario is explained with trace evidence.
 - `lm-eval --task gsm8k --num-fewshot 8` is captured for expensive reference
   baselines and before promoting a branch whose correctness could have changed.
+- `long-context-probe` passes when touching KV cache, FP4 indexer cache,
+  chunked prefill, scheduler, or long-context serving behavior.
 - `oracle-compare` has matching prompt token ids and no early token divergence
   on deterministic oracle cases, or any divergence is explained and recorded.
 - Real-scenario benchmark on `philschmid/mt-bench` does not regress more than

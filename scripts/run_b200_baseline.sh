@@ -34,6 +34,7 @@ NUM_PROMPTS="${NUM_PROMPTS:-80}"
 BENCH_TIMEOUT="${BENCH_TIMEOUT:-1800}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
 RUN_RANDOM_LONG="${RUN_RANDOM_LONG:-1}"
+RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"
 RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"
 RUN_BENCH_HF="${RUN_BENCH_HF:-1}"
 RUN_LM_EVAL="${RUN_LM_EVAL:-1}"
@@ -89,6 +90,9 @@ export RUN_LM_EVAL LM_EVAL_BIN LM_EVAL_TASKS LM_EVAL_NUM_FEWSHOT
 export LM_EVAL_NUM_CONCURRENT MTP_LM_EVAL_NUM_CONCURRENT LM_EVAL_MAX_RETRIES
 export LM_EVAL_MAX_GEN_TOKS LM_EVAL_TIMEOUT_MS LM_EVAL_TOKENIZER_BACKEND LM_EVAL_BATCH_SIZE
 export LM_EVAL_COMMAND_TIMEOUT LM_EVAL_EXTRA_ARGS
+export RUN_LONG_CONTEXT_PROBE LONG_CONTEXT_CASE_NAME LONG_CONTEXT_LINE_COUNT
+export LONG_CONTEXT_MAX_TOKENS LONG_CONTEXT_TEMPERATURE LONG_CONTEXT_TOP_P
+export LONG_CONTEXT_THINKING_MODE LONG_CONTEXT_TIMEOUT LONG_CONTEXT_REQUEST_RETRIES
 
 if [[ -z "${MTP_SPECULATIVE_CONFIG+x}" ]]; then
   MTP_SPECULATIVE_CONFIG='{"method":"mtp","num_speculative_tokens":2}'
@@ -98,6 +102,7 @@ ACTIVE_SERVER_PID=""
 failures=0
 VALID_BASELINE_PHASES=(
   acceptance
+  long_context_probe
   bench_hf_mt_bench
   eval_gsm8k
   bench_random_8192x512
@@ -126,7 +131,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,acceptance,bench_hf_mt_bench,eval_gsm8k,bench_random_8192x512,oracle_export' >&2
+        'valid phases: all,acceptance,long_context_probe,bench_hf_mt_bench,eval_gsm8k,bench_random_8192x512,oracle_export' >&2
       return 2
     fi
   done
@@ -411,6 +416,9 @@ write_summary() {
     printf -- '- mtp_concurrency: `%s`\n' "${MTP_CONCURRENCY}"
     printf -- '- num_prompts: `%s`\n' "${NUM_PROMPTS}"
     printf -- '- acceptance: `%s`\n' "${RUN_ACCEPTANCE}"
+    printf -- '- long_context_probe: `%s`, lines `%s`, max tokens `%s`, thinking `%s`\n' \
+      "${RUN_LONG_CONTEXT_PROBE}" "${LONG_CONTEXT_LINE_COUNT:-2400}" \
+      "${LONG_CONTEXT_MAX_TOKENS:-128}" "${LONG_CONTEXT_THINKING_MODE:-non-thinking}"
     printf -- '- hf_benchmark: `%s`\n' "${RUN_BENCH_HF}"
     printf -- '- lm_eval: `%s`, tasks `%s`, fewshot `%s`, no-MTP concurrency `%s`, MTP concurrency `%s`\n' \
       "${RUN_LM_EVAL}" "${LM_EVAL_TASKS}" "${LM_EVAL_NUM_FEWSHOT}" \
@@ -689,6 +697,27 @@ for variant in ${variant_list}; do
   else
     bench_concurrency="${NO_MTP_CONCURRENCY}"
     lm_eval_concurrency="${LM_EVAL_NUM_CONCURRENT}"
+  fi
+
+  if phase_enabled "long_context_probe" && { [[ "${RUN_LONG_CONTEXT_PROBE}" == "1" ]] || [[ "${RUN_LONG_CONTEXT_PROBE}" == "true" ]]; }; then
+    run_phase "${variant}" "long_context_probe" "${variant_dir}/long_context_probe" \
+      env OUT_DIR="${variant_dir}/long_context_probe" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
+        LONG_CONTEXT_VARIANT="${variant}" \
+        LONG_CONTEXT_CASE_NAME="${LONG_CONTEXT_CASE_NAME:-kv_indexer_long_context}" \
+        LONG_CONTEXT_LINE_COUNT="${LONG_CONTEXT_LINE_COUNT:-2400}" \
+        LONG_CONTEXT_MAX_TOKENS="${LONG_CONTEXT_MAX_TOKENS:-128}" \
+        LONG_CONTEXT_TEMPERATURE="${LONG_CONTEXT_TEMPERATURE:-0.0}" \
+        LONG_CONTEXT_TOP_P="${LONG_CONTEXT_TOP_P:-1.0}" \
+        LONG_CONTEXT_THINKING_MODE="${LONG_CONTEXT_THINKING_MODE:-non-thinking}" \
+        LONG_CONTEXT_TIMEOUT="${LONG_CONTEXT_TIMEOUT:-1800}" \
+        LONG_CONTEXT_REQUEST_RETRIES="${LONG_CONTEXT_REQUEST_RETRIES:-${API_REQUEST_RETRIES:-1}}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_long_context_probe.sh"
   fi
 
   if phase_enabled "bench_hf_mt_bench" && { [[ "${RUN_BENCH_HF}" == "1" ]] || [[ "${RUN_BENCH_HF}" == "true" ]]; }; then

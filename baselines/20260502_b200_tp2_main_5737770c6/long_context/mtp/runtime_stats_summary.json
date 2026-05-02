@@ -1,0 +1,17 @@
+{
+  "metrics": {
+    "available": true,
+    "sample_count": 1,
+    "prefill_tokens_delta": 0.0,
+    "decode_tokens_delta": 0.0,
+    "successful_requests_delta": 0.0,
+    "running_requests_max": 0.0,
+    "running_requests_avg": 0.0,
+    "waiting_requests_max": 0.0,
+    "waiting_requests_avg": 0.0
+  },
+  "serve_log": {
+    "available": false,
+    "reason": "no vLLM runtime log lines parsed from: <harness-root>/artifacts/main/4x_nvidia_b200/b200_tp2_main_5737770c6/20260502104241/_parallel_mtp/mtp/long_context_probe/serve_log_phase.log"
+  }
+}

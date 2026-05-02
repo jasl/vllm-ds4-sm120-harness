@@ -929,6 +929,34 @@ def _oracle_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: _variant_sort_key(row["variant"]))
 
 
+def _long_context_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
+    rows = []
+    for record in records:
+        if record.phase != "long_context_probe":
+            continue
+        data = _load_json(record.artifact_dir / "long_context_probe.json")
+        if not isinstance(data, dict):
+            continue
+        usage = _usage_tokens(data.get("usage"))
+        prompt = data.get("prompt") if isinstance(data.get("prompt"), dict) else {}
+        rows.append(
+            {
+                "variant": record.variant,
+                "case": data.get("case"),
+                "ok": data.get("ok"),
+                "detail": data.get("detail"),
+                "prompt_lines": prompt.get("line_count"),
+                "prompt_sha256": prompt.get("sha256"),
+                "prompt_tokens": _prompt_tokens(usage),
+                "completion_tokens": _completion_tokens(usage),
+                "total_tokens": _total_tokens(usage),
+                "elapsed_seconds": _to_float(data.get("elapsed_seconds")),
+                "missing_terms": data.get("missing_terms"),
+            }
+        )
+    return sorted(rows, key=lambda row: _variant_sort_key(row["variant"]))
+
+
 def _task_label(task: Any) -> str:
     value = str(task or "n/a")
     if value.casefold() == "gsm8k":
@@ -1535,6 +1563,38 @@ def _append_oracle(lines: list[str], rows: list[dict[str, Any]]) -> None:
     lines.append("")
 
 
+def _append_long_context(lines: list[str], rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    lines.extend(
+        [
+            "## Long Context Probes",
+            "",
+            (
+                "These rows are diagnostic sentinel-retrieval checks for "
+                "cache-layout regressions. They do not change accuracy scores."
+            ),
+            "",
+            "| Variant | Case | OK | Prompt lines | Prompt tokens | Completion tokens | Elapsed s | Detail |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in rows:
+        detail = row.get("detail")
+        missing = row.get("missing_terms")
+        if isinstance(missing, list) and missing:
+            detail = f"{detail}; missing {', '.join(str(item) for item in missing)}"
+        lines.append(
+            f"| `{row['variant']}` | `{row.get('case', 'n/a')}` | "
+            f"{_yes_no(row.get('ok'))} | "
+            f"{_fmt_int(row.get('prompt_lines'))} | "
+            f"{_fmt_int(row.get('prompt_tokens'))} | "
+            f"{_fmt_int(row.get('completion_tokens'))} | "
+            f"{_fmt(row.get('elapsed_seconds'))} | {detail or 'n/a'} |"
+        )
+    lines.append("")
+
+
 def _append_evals(lines: list[str], rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
@@ -1637,6 +1697,7 @@ def build_baseline_report(
     runtime_rows = _runtime_rows(records)
     acceptance_gate_rows = _acceptance_gate_rows(records)
     toolcall_rows = _toolcall_rows(records)
+    long_context_rows = _long_context_rows(records)
     oracle_rows = _oracle_rows(records)
     eval_rows = _eval_rows(records)
     collect_env_total, collect_env_ok, collect_env_failed = _collect_env_status(records)
@@ -1704,6 +1765,7 @@ def build_baseline_report(
     _append_acceptance_gates(lines, acceptance_gate_rows)
     _append_benchmark_tables(lines, bench_rows)
     _append_toolcall(lines, toolcall_rows)
+    _append_long_context(lines, long_context_rows)
     _append_oracle(lines, oracle_rows)
     _append_evals(lines, eval_rows)
     if supplement_bench_rows:

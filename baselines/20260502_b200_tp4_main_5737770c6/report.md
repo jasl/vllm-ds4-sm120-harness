@@ -10,7 +10,7 @@
 
 ## Run Health
 
-- vLLM collect_env: 10/10 phase captures exited 0
+- vLLM collect_env: 12/12 phase captures exited 0
 - Server unresponsive markers: none
 
 ## Provenance
@@ -116,6 +116,8 @@ These are phase-local averages parsed from vLLM server logs.
 | `mtp` | `eval_gsm8k` | 0 | `mtp/eval_gsm8k` |
 | `mtp` | `bench_random_8192x512` | 0 | `mtp/bench_random_8192x512` |
 | `mtp` | `oracle_export` | 0 | `mtp/oracle_export` |
+| `nomtp` | `long_context_probe` | 0 | `nomtp/long_context_probe` |
+| `mtp` | `long_context_probe` | 0 | `mtp/long_context_probe` |
 
 ## Acceptance Gates
 
@@ -260,6 +262,15 @@ Power efficiency uses sampled average GPU power for the whole phase. It is GPU-s
 - `TC-06` fail (0 points): Did not split the translation request into two valid calls.
 - `TC-11` partial (1 points): Used calculator correctly but unnecessarily.
 - `TC-14` fail (0 points): Did not handle the stock tool error with integrity.
+
+## Long Context Probes
+
+These rows are diagnostic sentinel-retrieval checks for cache-layout regressions. They do not change accuracy scores.
+
+| Variant | Case | OK | Prompt lines | Prompt tokens | Completion tokens | Elapsed s | Detail |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| `nomtp` | `kv_indexer_long_context` | yes | 2400 | 74457 | 70 | 5.20 | matched long-context sentinel terms |
+| `mtp` | `kv_indexer_long_context` | yes | 2400 | 74457 | 52 | 2.76 | matched long-context sentinel terms |
 
 ## Oracle Export
 

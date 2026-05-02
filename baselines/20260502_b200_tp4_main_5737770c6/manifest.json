@@ -2,7 +2,7 @@
   "schema_version": 1,
   "label": "20260502_b200_tp4_main_5737770c6",
   "date": "20260502",
-  "generated_at_utc": "2026-05-02T09:23:40.580934+00:00",
+  "generated_at_utc": "2026-05-02T10:53:14.504788+00:00",
   "source": {
     "primary_run": "20260502064850",
     "supplement_run": null,
@@ -134,6 +134,18 @@
       "phase": "oracle_export",
       "exit_code": 0,
       "artifact": "mtp/oracle_export"
+    },
+    {
+      "variant": "nomtp",
+      "phase": "long_context_probe",
+      "exit_code": 0,
+      "artifact": "nomtp/long_context_probe"
+    },
+    {
+      "variant": "mtp",
+      "phase": "long_context_probe",
+      "exit_code": 0,
+      "artifact": "mtp/long_context_probe"
     }
   ],
   "contents": {
@@ -142,6 +154,7 @@
     "oracle": "Deterministic /v1/completions logprobs oracle cases. The oracle root is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp keep variant-specific copies when present.",
     "smoke": "no-MTP and MTP chat smoke request/response captures.",
     "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
+    "long_context": "Long-context sentinel retrieval probes for cache-layout regressions.",
     "evals": "Optional lm_eval accuracy summaries such as GSM8K exact match.",
     "performance": "Benchmark, runtime, and GPU telemetry summaries."
   }

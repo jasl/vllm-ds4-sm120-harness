@@ -30,6 +30,10 @@ from ds4_harness.lm_eval import (
     run_lm_eval_command,
     summarize_lm_eval_results,
 )
+from ds4_harness.long_context_probe import (
+    run_long_context_probe,
+    write_long_context_markdown,
+)
 from ds4_harness.oracle import (
     attach_prompt_token_ids,
     compare_response,
@@ -553,6 +557,47 @@ def _cmd_oracle_export(args: argparse.Namespace) -> int:
         print(json.dumps(row, ensure_ascii=False))
         failures += 0 if row.get("ok") else 1
     return 1 if failures else 0
+
+
+def _cmd_long_context_probe(args: argparse.Namespace) -> int:
+    if not _validate_request_retries(args.request_retries):
+        print("--request-retries must be >= 0", file=sys.stderr)
+        return 2
+
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+        row = run_long_context_probe(
+            base_url=args.base_url,
+            model=args.model,
+            variant=args.variant,
+            case_name=args.case_name,
+            line_count=args.line_count,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            thinking_mode=args.thinking_mode,
+            timeout=args.timeout,
+            request_retries=args.request_retries,
+            headers=headers,
+            extra_body=extra_body,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_long_context_markdown(args.markdown_output, row)
+
+    status = "PASS" if row.get("ok") else "FAIL"
+    print(f"{status} {row.get('case')} variant={args.variant}: {row.get('detail')}")
+    return 0 if row.get("ok") else 1
 
 
 def _check_bench_result(result: dict[str, Any], expected_requests: int) -> tuple[bool, str]:
@@ -1085,6 +1130,24 @@ def build_parser() -> argparse.ArgumentParser:
     oracle_export.add_argument("--request-retries", type=int, default=1)
     oracle_export.add_argument("--stop-on-error", action="store_true")
     oracle_export.set_defaults(func=_cmd_oracle_export)
+
+    long_context = subparsers.add_parser("long-context-probe")
+    long_context.add_argument("--base-url", default="http://127.0.0.1:8000")
+    long_context.add_argument("--model", default=DEFAULT_MODEL)
+    long_context.add_argument("--variant", default="manual")
+    long_context.add_argument("--case-name", default="kv_indexer_long_context")
+    long_context.add_argument("--line-count", type=int, default=2400)
+    long_context.add_argument("--max-tokens", type=int, default=128)
+    long_context.add_argument("--temperature", type=float, default=0.0)
+    long_context.add_argument("--top-p", type=float, default=1.0)
+    long_context.add_argument("--thinking-mode", default="non-thinking")
+    long_context.add_argument("--timeout", type=float, default=1800.0)
+    long_context.add_argument("--request-retries", type=int, default=1)
+    long_context.add_argument("--api-key-env")
+    long_context.add_argument("--extra-body-json")
+    long_context.add_argument("--json-output", type=Path)
+    long_context.add_argument("--markdown-output", type=Path)
+    long_context.set_defaults(func=_cmd_long_context_probe)
 
     bench = subparsers.add_parser("bench-matrix")
     bench.add_argument("--vllm-bin", default="vllm")

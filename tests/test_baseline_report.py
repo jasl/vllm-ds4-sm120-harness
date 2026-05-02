@@ -131,6 +131,7 @@ def _write_fixture_phase(root, variant, phase, *, output_tok_s=1600.0):
 def _write_fixture_run(tmp_path):
     root = tmp_path / "baseline"
     eval_dir = root / "nomtp" / "eval_gsm8k"
+    long_context_dir = root / "nomtp" / "long_context_probe"
     _write_json(
         eval_dir / "lm_eval_summary.json",
         {
@@ -154,6 +155,7 @@ def _write_fixture_run(tmp_path):
     phase_rows = [
         ("nomtp", "server_startup", 0, root / "nomtp" / "server_startup"),
         ("nomtp", "acceptance", 1, root / "nomtp" / "acceptance"),
+        ("nomtp", "long_context_probe", 0, long_context_dir),
         ("nomtp", "bench_hf_mt_bench", 0, _write_fixture_phase(root, "nomtp", "bench_hf_mt_bench")),
         ("nomtp", "eval_gsm8k", 0, eval_dir),
         ("mtp", "server_startup", 0, root / "mtp" / "server_startup"),
@@ -201,6 +203,26 @@ def _write_fixture_run(tmp_path):
                 }
                 for index in range(4)
             },
+        },
+    )
+    _write_json(
+        long_context_dir / "long_context_probe.json",
+        {
+            "case": "kv_indexer_long_context",
+            "variant": "nomtp",
+            "ok": True,
+            "detail": "matched long-context sentinel terms",
+            "elapsed_seconds": 3.5,
+            "usage": {
+                "prompt_tokens": 47000,
+                "completion_tokens": 20,
+                "total_tokens": 47020,
+            },
+            "prompt": {
+                "line_count": 2400,
+                "sha256": "abc123",
+            },
+            "missing_terms": [],
         },
     )
     (acceptance_dir / "generation.jsonl").write_text(
@@ -414,6 +436,11 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert "## ToolCall-15" in report
     assert "`TC-06`" in report
     assert "Did not split the translation request" in report
+    assert "## Long Context Probes" in report
+    assert (
+        "| `nomtp` | `kv_indexer_long_context` | yes | 2400 | 47000 | "
+        "20 | 3.50 | matched long-context sentinel terms |"
+    ) in report
     assert "## Accuracy Evals" in report
     assert "| `nomtp` | GSM8K | 3 | yes | 8 | 4 | 2048 | 94.39 | 94.31 | 0.0063 |" in report
 

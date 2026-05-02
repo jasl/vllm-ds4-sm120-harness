@@ -1,0 +1,52 @@
+{
+  "available": true,
+  "sample_count": 8,
+  "overall": {
+    "memory_used_mib_max": 172212.0,
+    "memory_used_mib_avg": 171340.0,
+    "memory_used_percent_max": 93.92,
+    "memory_used_percent_avg": 93.44,
+    "power_draw_w_max": 916.61,
+    "power_draw_w_avg": 553.23,
+    "gpu_utilization_percent_max": 100.0,
+    "gpu_utilization_percent_avg": 66.62
+  },
+  "gpus": {
+    "0": {
+      "index": "0",
+      "name": "NVIDIA B200",
+      "uuid": "",
+      "samples": 4,
+      "timestamp_start": "2026/05/02 10:45:03.088",
+      "timestamp_end": "2026/05/02 10:45:06.107",
+      "memory_used_mib_max": 172212.0,
+      "memory_used_mib_avg": 171340.0,
+      "memory_total_mib_max": 183359.0,
+      "memory_used_percent_max": 93.92,
+      "memory_used_percent_avg": 93.44,
+      "power_draw_w_max": 916.61,
+      "power_draw_w_avg": 555.45,
+      "power_limit_w_max": 1000.0,
+      "gpu_utilization_percent_max": 100.0,
+      "gpu_utilization_percent_avg": 74.0
+    },
+    "1": {
+      "index": "1",
+      "name": "NVIDIA B200",
+      "uuid": "",
+      "samples": 4,
+      "timestamp_start": "2026/05/02 10:45:03.098",
+      "timestamp_end": "2026/05/02 10:45:06.108",
+      "memory_used_mib_max": 172212.0,
+      "memory_used_mib_avg": 171340.0,
+      "memory_total_mib_max": 183359.0,
+      "memory_used_percent_max": 93.92,
+      "memory_used_percent_avg": 93.44,
+      "power_draw_w_max": 905.56,
+      "power_draw_w_avg": 551.01,
+      "power_limit_w_max": 1000.0,
+      "gpu_utilization_percent_max": 100.0,
+      "gpu_utilization_percent_avg": 59.25
+    }
+  }
+}

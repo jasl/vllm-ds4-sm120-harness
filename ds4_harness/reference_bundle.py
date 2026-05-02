@@ -297,6 +297,24 @@ def _copy_generation(run_dir: Path, output_dir: Path) -> None:
             _copy_text(path, output_dir / "generation" / relative)
 
 
+def _copy_long_context_probes(run_dir: Path, output_dir: Path) -> None:
+    for variant in VARIANTS:
+        source_dir = run_dir / variant / "long_context_probe"
+        if not source_dir.exists():
+            continue
+        target_dir = output_dir / "long_context" / variant
+        _copy_json(source_dir / "long_context_probe.json", target_dir / "probe.json")
+        _copy_text(source_dir / "long_context_probe.md", target_dir / "probe.md")
+        _copy_json(
+            source_dir / "gpu_stats_summary.json",
+            target_dir / "gpu_stats_summary.json",
+        )
+        _copy_json(
+            source_dir / "runtime_stats_summary.json",
+            target_dir / "runtime_stats_summary.json",
+        )
+
+
 def _sanitize_command_paths(data: Any) -> Any:
     sanitized = _sanitize_json(data)
     if isinstance(sanitized, dict):
@@ -402,6 +420,7 @@ def _write_manifest(
             "oracle": "Deterministic /v1/completions logprobs oracle cases. The oracle root is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp keep variant-specific copies when present.",
             "smoke": "no-MTP and MTP chat smoke request/response captures.",
             "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
+            "long_context": "Long-context sentinel retrieval probes for cache-layout regressions.",
             "evals": "Optional lm_eval accuracy summaries such as GSM8K exact match.",
             "performance": "Benchmark, runtime, and GPU telemetry summaries.",
         },
@@ -471,6 +490,8 @@ paths, server logs, tokens, and private connection details.
   logprobs, and usage.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
 - `toolcall15/`: no-MTP and MTP ToolCall-15 scores and traces.
+- `long_context/`: long-context sentinel retrieval probes for cache-layout
+  regressions. These diagnostic references do not change accuracy scores.
 - `evals/`: optional `lm_eval` accuracy summaries such as GSM8K exact match
   when the source run included an eval phase.
 - `performance/`: benchmark rows plus GPU/runtime telemetry summaries.
@@ -530,6 +551,7 @@ def build_reference_bundle(
     _write_readme(output_dir, label, run_dir)
     _copy_oracle(run_dir, output_dir)
     _copy_generation(run_dir, output_dir)
+    _copy_long_context_probes(run_dir, output_dir)
     _copy_smoke_and_toolcall(run_dir, output_dir)
     _copy_evals(run_dir, output_dir)
     _write_json(output_dir / "performance" / "primary.json", _performance_source("primary", run_dir))

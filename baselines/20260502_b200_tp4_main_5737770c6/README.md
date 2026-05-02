@@ -25,6 +25,8 @@ This bundle is a current reference baseline, not necessarily a completely green 
   logprobs, and usage.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
 - `toolcall15/`: no-MTP and MTP ToolCall-15 scores and traces.
+- `long_context/`: long-context sentinel retrieval probes for cache-layout
+  regressions. These diagnostic references do not change accuracy scores.
 - `evals/`: optional `lm_eval` accuracy summaries such as GSM8K exact match
   when the source run included an eval phase.
 - `performance/`: benchmark rows plus GPU/runtime telemetry summaries.

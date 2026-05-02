@@ -149,6 +149,20 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         smoke_dir / "toolcall15.json",
         {"summary": {"cases": 1}, "results": [{"final_answer": "/workspace/leak"}]},
     )
+    long_context_dir = run_dir / "nomtp" / "long_context_probe"
+    _write_json(
+        long_context_dir / "long_context_probe.json",
+        {
+            "case": "kv_indexer_long_context",
+            "variant": "nomtp",
+            "ok": True,
+            "prompt": {"sha256": "abc", "excerpt": {"head": "/workspace/leak"}},
+        },
+    )
+    (long_context_dir / "long_context_probe.md").write_text(
+        "Long context from /workspace/leak\n",
+        encoding="utf-8",
+    )
     private_ip = ".".join(["10", "0", "0", "110"])
     _write_json(
         run_dir / "nomtp" / "eval_gsm8k" / "lm_eval_summary.json",
@@ -241,6 +255,8 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         / "translation_en_to_zh.1.think-high.nomtp.md"
     ).exists()
     assert (out_dir / "toolcall15" / "nomtp.json").exists()
+    assert (out_dir / "long_context" / "nomtp" / "probe.json").exists()
+    assert (out_dir / "long_context" / "nomtp" / "probe.md").exists()
     assert (out_dir / "evals" / "nomtp_gsm8k.json").exists()
     assert (out_dir / "performance" / "primary.json").exists()
 
@@ -266,6 +282,13 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     ).read_text()
     toolcall = json.loads((out_dir / "toolcall15" / "nomtp.json").read_text())
     assert toolcall["results"][0]["final_answer"] == "<workspace>/leak"
+    probe = json.loads(
+        (out_dir / "long_context" / "nomtp" / "probe.json").read_text()
+    )
+    assert probe["prompt"]["excerpt"]["head"] == "<workspace>/leak"
+    assert "<workspace>/leak" in (
+        out_dir / "long_context" / "nomtp" / "probe.md"
+    ).read_text()
     evals = json.loads((out_dir / "evals" / "nomtp_gsm8k.json").read_text())
     assert evals["command"][0] == "lm_eval"
     assert evals["model_args"] == "base_url=http://<private-ip>:8000/v1/completions"
