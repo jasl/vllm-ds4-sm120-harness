@@ -401,6 +401,26 @@ Future RTX Pro 6000, RTX 5090, GB10, or other reference captures should follow
 the same topology-in-label convention and publish sanitized bundles under
 `baselines/<YYYYMMDD>_<topology>_<source>_<short-sha-or-label>/`.
 
+### Correctness Reference Selection
+
+The current alignment reference choice is recorded in
+`baselines/20260502_correctness_reference_selection.json`. It intentionally
+stores the full baseline directory names, not shorthand labels, because future
+baseline refreshes may add or remove checked-in bundles.
+
+For token-level correctness, use
+`baselines/20260502_b200_tp4_main_5737770c6/oracle/nomtp` as the primary
+no-MTP oracle and
+`baselines/20260502_b200_tp4_main_5737770c6/oracle/mtp` only for MTP runs. The
+top-level `baselines/20260502_b200_tp4_main_5737770c6/oracle` path remains a
+no-MTP compatibility entrypoint for existing commands.
+
+Do not treat the archived B200 topologies as interchangeable token oracles:
+the 2026-05-02 alignment found matching prompt token ids for TP2 vs TP4
+no-MTP, but only 1 of 5 generated token sequences matched exactly. The hosted
+`baselines/20260502_deepseek_official_api_deepseek_v4_flash` bundle is
+behavior-level evidence only; it has no archived logprobs oracle.
+
 ## Expected Workflow
 
 Run these after every SM12x kernel optimization before pushing to

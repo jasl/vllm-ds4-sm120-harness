@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "selection_name": "20260502_correctness_alignment_reference",
+  "updated_at_utc": "2026-05-02T14:33:05.772413+00:00",
+  "source_alignment_artifact": "artifacts/correctness_alignment/20260502_baseline_alignment/alignment.json",
+  "complete_baseline_dirs": [
+    "baselines/20260502_b200_tp2_main_5737770c6",
+    "baselines/20260502_b200_tp4_main_5737770c6",
+    "baselines/20260502_deepseek_official_api_deepseek_v4_flash"
+  ],
+  "primary_token_oracle": {
+    "label": "b200_tp4_main_5737770c6_nomtp",
+    "baseline_dir": "baselines/20260502_b200_tp4_main_5737770c6",
+    "oracle_dir": "baselines/20260502_b200_tp4_main_5737770c6/oracle/nomtp",
+    "compatibility_oracle_dir": "baselines/20260502_b200_tp4_main_5737770c6/oracle",
+    "variant": "nomtp",
+    "topology": "B200 full topology, TP=4",
+    "vllm_main_commit": "5737770c6",
+    "token_level_reference": true,
+    "use_for": [
+      "deterministic no-MTP /v1/completions logprobs comparisons",
+      "prompt token id alignment checks",
+      "primary SM120 development branch token-level correctness gate"
+    ],
+    "rationale": [
+      "TP=4 matches the full B200 reference topology used for the official serve shape.",
+      "TP2 and TP4 no-MTP prompt token ids matched in the alignment pass, but generated token sequences matched in only 1 of 5 oracle cases.",
+      "The explicit oracle/nomtp path avoids ambiguity when both no-MTP and MTP exports are present."
+    ]
+  },
+  "variant_token_oracles": [
+    {
+      "label": "b200_tp4_main_5737770c6_mtp",
+      "baseline_dir": "baselines/20260502_b200_tp4_main_5737770c6",
+      "oracle_dir": "baselines/20260502_b200_tp4_main_5737770c6/oracle/mtp",
+      "variant": "mtp",
+      "topology": "B200 full topology, TP=4",
+      "vllm_main_commit": "5737770c6",
+      "token_level_reference": true,
+      "compare_only_with": "mtp",
+      "use_for": [
+        "MTP-specific deterministic /v1/completions logprobs comparisons",
+        "MTP branch promotion checks"
+      ]
+    }
+  ],
+  "supplemental_token_oracles": [
+    {
+      "label": "b200_tp2_main_5737770c6_nomtp",
+      "baseline_dir": "baselines/20260502_b200_tp2_main_5737770c6",
+      "oracle_dir": "baselines/20260502_b200_tp2_main_5737770c6/oracle/nomtp",
+      "compatibility_oracle_dir": "baselines/20260502_b200_tp2_main_5737770c6/oracle",
+      "variant": "nomtp",
+      "topology": "B200 split topology, TP=2",
+      "vllm_main_commit": "5737770c6",
+      "token_level_reference": true,
+      "use_for": [
+        "split-topology diagnostic comparison",
+        "evidence that topology-specific oracle exports are not token-interchangeable"
+      ]
+    },
+    {
+      "label": "b200_tp2_main_5737770c6_mtp",
+      "baseline_dir": "baselines/20260502_b200_tp2_main_5737770c6",
+      "oracle_dir": "baselines/20260502_b200_tp2_main_5737770c6/oracle/mtp",
+      "variant": "mtp",
+      "topology": "B200 split topology, TP=2",
+      "vllm_main_commit": "5737770c6",
+      "token_level_reference": true,
+      "compare_only_with": "mtp",
+      "use_for": [
+        "split-topology MTP diagnostic comparison"
+      ]
+    }
+  ],
+  "behavior_references": [
+    {
+      "label": "b200_tp4_main_5737770c6_nomtp",
+      "baseline_dir": "baselines/20260502_b200_tp4_main_5737770c6",
+      "variant": "nomtp",
+      "token_level_reference": true,
+      "use_for": [
+        "generation matrix behavior",
+        "ToolCall-15 behavior",
+        "GSM8K eval signal",
+        "long-context sentinel retrieval diagnostics"
+      ]
+    },
+    {
+      "label": "b200_tp4_main_5737770c6_mtp",
+      "baseline_dir": "baselines/20260502_b200_tp4_main_5737770c6",
+      "variant": "mtp",
+      "token_level_reference": true,
+      "use_for": [
+        "MTP generation matrix behavior",
+        "MTP ToolCall-15 behavior",
+        "MTP GSM8K eval signal",
+        "MTP long-context sentinel retrieval diagnostics"
+      ]
+    },
+    {
+      "label": "deepseek_official_api_deepseek_v4_flash",
+      "baseline_dir": "baselines/20260502_deepseek_official_api_deepseek_v4_flash",
+      "variant": "official-api",
+      "token_level_reference": false,
+      "use_for": [
+        "hosted API smoke behavior",
+        "hosted API generation behavior",
+        "hosted API ToolCall-15 behavior"
+      ],
+      "rationale": "No hosted API logprobs oracle is archived in this bundle."
+    }
+  ],
+  "non_interchangeable_references": {
+    "b200_tp2_vs_b200_tp4_nomtp": {
+      "comparison_label": "b200_tp2_nomtp_root_vs_b200_tp4_nomtp_root",
+      "baseline_dirs": [
+        "baselines/20260502_b200_tp2_main_5737770c6",
+        "baselines/20260502_b200_tp4_main_5737770c6"
+      ],
+      "common_cases": 5,
+      "prompt_token_id_matches": 5,
+      "generated_token_sequence_matches": 1,
+      "mean_top1_match_rate": 0.510417,
+      "mean_top20_overlap": 0.524911,
+      "max_common_logprob_abs_error": 16.375145,
+      "token_oracles_are_interchangeable": false
+    },
+    "mtp_vs_nomtp": {
+      "baseline_dirs": [
+        "baselines/20260502_b200_tp2_main_5737770c6",
+        "baselines/20260502_b200_tp4_main_5737770c6"
+      ],
+      "comparisons": [
+        {
+          "comparison_label": "b200_tp2_nomtp_vs_b200_tp2_mtp",
+          "common_cases": 5,
+          "generated_token_sequence_matches": 2
+        },
+        {
+          "comparison_label": "b200_tp4_nomtp_vs_b200_tp4_mtp",
+          "common_cases": 5,
+          "generated_token_sequence_matches": 3
+        }
+      ],
+      "token_oracles_are_interchangeable": false,
+      "guidance": "Compare no-MTP runs to no-MTP oracles and MTP runs to MTP oracles."
+    }
+  },
+  "required_dev_branch_alignment": [
+    {
+      "variant": "nomtp",
+      "oracle_dir": "baselines/20260502_b200_tp4_main_5737770c6/oracle/nomtp",
+      "minimum_gate": "Run oracle-compare with prompt token id validation before treating token-level correctness as aligned."
+    },
+    {
+      "variant": "mtp",
+      "oracle_dir": "baselines/20260502_b200_tp4_main_5737770c6/oracle/mtp",
+      "minimum_gate": "Use the MTP oracle only for MTP runs; do not compare MTP trajectories against the no-MTP oracle."
+    },
+    {
+      "variant": "all",
+      "baseline_dir": "baselines/20260502_b200_tp4_main_5737770c6",
+      "minimum_gate": "Run smoke, generation, ToolCall-15, and long-context probes for behavior-level alignment."
+    }
+  ],
+  "notes": [
+    "Directory names are recorded in full because later baseline refreshes may add or remove checked-in baseline bundles.",
+    "The archived long-context probes in these baselines use 74457 prompt tokens; they are not the requested 47K/48K smoke shape.",
+    "The official API bundle is a hosted behavior reference only and must not be used as a token-level correctness oracle."
+  ]
+}
