@@ -315,6 +315,16 @@ def _copy_long_context_probes(run_dir: Path, output_dir: Path) -> None:
         )
 
 
+def _copy_kv_layout_probes(run_dir: Path, output_dir: Path) -> None:
+    for variant in VARIANTS:
+        source_dir = run_dir / variant / "kv_layout_probe"
+        if not source_dir.exists():
+            continue
+        target_dir = output_dir / "kv_layout" / variant
+        _copy_json(source_dir / "kv_layout_probe.json", target_dir / "probe.json")
+        _copy_text(source_dir / "kv_layout_probe.md", target_dir / "probe.md")
+
+
 def _sanitize_command_paths(data: Any) -> Any:
     sanitized = _sanitize_json(data)
     if isinstance(sanitized, dict):
@@ -418,6 +428,7 @@ def _write_manifest(
             "oracle": "Deterministic /v1/completions logprobs oracle cases. The oracle root is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp keep variant-specific copies when present.",
             "smoke": "no-MTP and MTP chat smoke request/response captures.",
             "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
+            "kv_layout": "Synthetic packed KV byte-layout snapshots for indexer-cache regressions.",
             "long_context": "Long-context sentinel retrieval probes for cache-layout regressions.",
             "evals": "Optional lm_eval accuracy summaries such as GSM8K exact match.",
             "performance": "Benchmark, runtime, and GPU telemetry summaries.",
@@ -488,6 +499,8 @@ paths, server logs, tokens, and private connection details.
   logprobs, and usage.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
 - `toolcall15/`: no-MTP and MTP ToolCall-15 scores and traces.
+- `kv_layout/`: synthetic packed KV byte-layout snapshots for indexer-cache
+  regressions. Raw binary captures stay in the run artifact tree.
 - `long_context/`: long-context sentinel retrieval probes for cache-layout
   regressions. These diagnostic references do not change accuracy scores.
 - `evals/`: optional `lm_eval` accuracy summaries such as GSM8K exact match
@@ -547,6 +560,7 @@ def build_reference_bundle(
     _write_readme(output_dir, label, run_dir)
     _copy_oracle(run_dir, output_dir)
     _copy_generation(run_dir, output_dir)
+    _copy_kv_layout_probes(run_dir, output_dir)
     _copy_long_context_probes(run_dir, output_dir)
     _copy_smoke_and_toolcall(run_dir, output_dir)
     _copy_evals(run_dir, output_dir)

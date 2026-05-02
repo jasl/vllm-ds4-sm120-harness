@@ -155,6 +155,24 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         "Long context from /workspace/leak\n",
         encoding="utf-8",
     )
+    kv_layout_dir = run_dir / "nomtp" / "kv_layout_probe"
+    _write_json(
+        kv_layout_dir / "kv_layout_probe.json",
+        {
+            "case": "packed_fp8_indexer_cache_layout",
+            "variant": "nomtp",
+            "ok": True,
+            "target": {"python_executable": "/workspace/vllm/.venv/bin/python"},
+            "raw_cache": {
+                "filename": "kv_layout_probe_packed_cache.bin",
+                "sha256": "abc",
+            },
+        },
+    )
+    (kv_layout_dir / "kv_layout_probe.md").write_text(
+        "KV layout generated with /workspace/vllm/.venv/bin/python\n",
+        encoding="utf-8",
+    )
     private_ip = ".".join(["10", "0", "0", "110"])
     _write_json(
         run_dir / "nomtp" / "eval_gsm8k" / "lm_eval_summary.json",
@@ -245,6 +263,8 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         / "translation_en_to_zh.1.think-high.nomtp.md"
     ).exists()
     assert (out_dir / "toolcall15" / "nomtp.json").exists()
+    assert (out_dir / "kv_layout" / "nomtp" / "probe.json").exists()
+    assert (out_dir / "kv_layout" / "nomtp" / "probe.md").exists()
     assert (out_dir / "long_context" / "nomtp" / "probe.json").exists()
     assert (out_dir / "long_context" / "nomtp" / "probe.md").exists()
     assert (out_dir / "evals" / "nomtp_gsm8k.json").exists()
@@ -279,6 +299,11 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     assert "<workspace>/leak" in (
         out_dir / "long_context" / "nomtp" / "probe.md"
     ).read_text()
+    kv_probe = json.loads(
+        (out_dir / "kv_layout" / "nomtp" / "probe.json").read_text()
+    )
+    assert kv_probe["target"]["python_executable"] == "python"
+    assert "python" in (out_dir / "kv_layout" / "nomtp" / "probe.md").read_text()
     evals = json.loads((out_dir / "evals" / "nomtp_gsm8k.json").read_text())
     assert evals["command"][0] == "lm_eval"
     assert evals["model_args"] == "base_url=http://<private-ip>:8000/v1/completions"

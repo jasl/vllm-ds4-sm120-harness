@@ -24,6 +24,15 @@ from ds4_harness.generation import (
     write_generation_transcript,
 )
 from ds4_harness.gpu_stats import summarize_gpu_csv, write_gpu_json, write_gpu_markdown
+from ds4_harness.kv_layout_probe import (
+    DEFAULT_BLOCK_SIZE as DEFAULT_KV_LAYOUT_BLOCK_SIZE,
+    DEFAULT_CASE_NAME as DEFAULT_KV_LAYOUT_CASE_NAME,
+    DEFAULT_HEAD_DIM as DEFAULT_KV_LAYOUT_HEAD_DIM,
+    DEFAULT_NUM_BLOCKS as DEFAULT_KV_LAYOUT_NUM_BLOCKS,
+    DEFAULT_SCALE_BYTES as DEFAULT_KV_LAYOUT_SCALE_BYTES,
+    run_kv_layout_probe,
+    write_kv_layout_markdown,
+)
 from ds4_harness.lm_eval import (
     build_lm_eval_command,
     load_lm_eval_results,
@@ -600,6 +609,38 @@ def _cmd_long_context_probe(args: argparse.Namespace) -> int:
     return 0 if row.get("ok") else 1
 
 
+def _cmd_kv_layout_probe(args: argparse.Namespace) -> int:
+    try:
+        row = run_kv_layout_probe(
+            target_python=args.target_python,
+            variant=args.variant,
+            case_name=args.case_name,
+            num_blocks=args.num_blocks,
+            block_size=args.block_size,
+            head_dim=args.head_dim,
+            scale_bytes=args.scale_bytes,
+            raw_output=args.raw_output,
+            require_helper_match=args.require_helper_match,
+            timeout=args.timeout,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_kv_layout_markdown(args.markdown_output, row)
+
+    status = "PASS" if row.get("ok") else "FAIL"
+    print(f"{status} {row.get('case')} variant={args.variant}: {row.get('detail')}")
+    return 0 if row.get("ok") else 1
+
+
 def _check_bench_result(result: dict[str, Any], expected_requests: int) -> tuple[bool, str]:
     if result["returncode"] != 0:
         return False, f"vllm bench exited {result['returncode']}"
@@ -1146,6 +1187,25 @@ def build_parser() -> argparse.ArgumentParser:
     long_context.add_argument("--json-output", type=Path)
     long_context.add_argument("--markdown-output", type=Path)
     long_context.set_defaults(func=_cmd_long_context_probe)
+
+    kv_layout = subparsers.add_parser("kv-layout-probe")
+    kv_layout.add_argument("--target-python", default=sys.executable)
+    kv_layout.add_argument("--variant", default="manual")
+    kv_layout.add_argument("--case-name", default=DEFAULT_KV_LAYOUT_CASE_NAME)
+    kv_layout.add_argument("--num-blocks", type=int, default=DEFAULT_KV_LAYOUT_NUM_BLOCKS)
+    kv_layout.add_argument("--block-size", type=int, default=DEFAULT_KV_LAYOUT_BLOCK_SIZE)
+    kv_layout.add_argument("--head-dim", type=int, default=DEFAULT_KV_LAYOUT_HEAD_DIM)
+    kv_layout.add_argument("--scale-bytes", type=int, default=DEFAULT_KV_LAYOUT_SCALE_BYTES)
+    kv_layout.add_argument(
+        "--require-helper-match",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    kv_layout.add_argument("--timeout", type=float, default=120.0)
+    kv_layout.add_argument("--json-output", type=Path)
+    kv_layout.add_argument("--markdown-output", type=Path)
+    kv_layout.add_argument("--raw-output", type=Path)
+    kv_layout.set_defaults(func=_cmd_kv_layout_probe)
 
     bench = subparsers.add_parser("bench-matrix")
     bench.add_argument("--vllm-bin", default="vllm")

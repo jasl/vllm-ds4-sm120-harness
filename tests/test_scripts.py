@@ -39,7 +39,12 @@ def test_acceptance_static_gates_do_not_inherit_live_artifact_context():
 
 
 def test_scripts_allow_explicit_python_interpreter():
-    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh", "run_lm_eval.sh"):
+    for script_name in (
+        "run_acceptance.sh",
+        "run_bench_matrix.sh",
+        "run_lm_eval.sh",
+        "run_kv_layout_probe.sh",
+    ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
         assert 'PYTHON="${PYTHON:-python}"' in script
@@ -272,6 +277,7 @@ def test_scripts_collect_vllm_official_env_to_artifacts():
         "run_bench_matrix.sh",
         "run_oracle_export.sh",
         "run_lm_eval.sh",
+        "run_kv_layout_probe.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
@@ -306,6 +312,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'NO_MTP_CONCURRENCY="${NO_MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'MTP_CONCURRENCY="${MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"' in script
+    assert 'RUN_KV_LAYOUT_PROBE="${RUN_KV_LAYOUT_PROBE:-1}"' in script
     assert 'RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"' in script
     assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
     assert 'ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-1}"' in script
@@ -316,12 +323,14 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'RUN_ROOT="${OUT_DIR:-${ARTIFACT_PARENT}/${B200_BASELINE_LABEL}/${RUN_TIMESTAMP}}"' in script
     assert "phase_enabled" in script
     assert '"${variant_dir}/acceptance"' in script
+    assert '"${variant_dir}/kv_layout_probe"' in script
     assert '"${variant_dir}/long_context_probe"' in script
     assert '"${variant_dir}/bench_hf_mt_bench"' in script
     assert '"${variant_dir}/bench_random_8192x512"' in script
     assert '"${variant_dir}/eval_gsm8k"' in script
     assert '"${variant_dir}/oracle_export"' in script
     assert "run_acceptance.sh" in script
+    assert "run_kv_layout_probe.sh" in script
     assert "run_long_context_probe.sh" in script
     assert "run_bench_matrix.sh" in script
     assert "run_lm_eval.sh" in script
@@ -397,6 +406,73 @@ def test_oracle_export_script_is_b200_ready():
     assert 'BASELINE_LABEL="${BASELINE_LABEL:-b200_oracle}"' in script
     assert '--output-dir "${OUT_DIR}"' in script
     assert "--stop-on-error" in script
+
+
+def test_kv_layout_probe_script_exports_structured_and_raw_artifacts(tmp_path):
+    script = (ROOT / "scripts" / "run_kv_layout_probe.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "kv-layout-probe" in script
+    assert '--target-python "${PYTHON}"' in script
+    assert '--raw-output "${OUT_DIR}/kv_layout_probe_packed_cache.bin"' in script
+    assert "server_ready" not in script
+
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env sh\n"
+        "write_arg_file() {\n"
+        "  flag=\"$1\"\n"
+        "  content=\"$2\"\n"
+        "  shift 2\n"
+        "  while [ \"$#\" -gt 0 ]; do\n"
+        "    if [ \"$1\" = \"$flag\" ]; then\n"
+        "      shift\n"
+        "      mkdir -p \"$(dirname \"$1\")\"\n"
+        "      printf '%s\\n' \"$content\" > \"$1\"\n"
+        "      return 0\n"
+        "    fi\n"
+        "    shift\n"
+        "  done\n"
+        "}\n"
+        "case \"$*\" in\n"
+        "  *' env-summary '*) exit 0 ;;\n"
+        "  *' kv-layout-probe '*)\n"
+        "    write_arg_file --json-output '{\"ok\": true}' \"$@\"\n"
+        "    write_arg_file --markdown-output '# KV Layout Probe' \"$@\"\n"
+        "    while [ \"$#\" -gt 0 ]; do\n"
+        "      if [ \"$1\" = '--raw-output' ]; then shift; mkdir -p \"$(dirname \"$1\")\"; printf '\\000\\001' > \"$1\"; fi\n"
+        "      shift\n"
+        "    done\n"
+        "    exit 0 ;;\n"
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    out_dir = tmp_path / "kv-layout"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "OUT_DIR": str(out_dir),
+        "VLLM_COLLECT_ENV": "0",
+        "GPU_TOPOLOGY_SLUG": "test_gpu",
+    }
+
+    subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_kv_layout_probe.sh")],
+        check=True,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert (out_dir / "kv_layout_probe.exit_code").read_text(
+        encoding="utf-8"
+    ).strip() == "0"
+    assert (out_dir / "kv_layout_probe.json").exists()
+    assert (out_dir / "kv_layout_probe.md").exists()
+    assert (out_dir / "kv_layout_probe_packed_cache.bin").read_bytes() == b"\x00\x01"
 
 
 def test_baseline_bundle_script_generates_report_and_public_data():
@@ -641,6 +717,7 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
         "  *' chat-smoke '*) write_arg_file --jsonl-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
         "  *' generation-matrix '*) write_arg_file --jsonl-output \"$@\"; exit 0 ;;\n"
         "  *' toolcall15 '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
+        "  *' kv-layout-probe '*) write_arg_file --json-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
         "  *' long-context-probe '*) write_arg_file --json-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
         "  *' bench-matrix '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
         "  *' lm-eval '*) write_arg_file --json-output \"$@\"; printf '%s\\n' \"$@\" > \"$OUT_DIR/lm_eval_args.txt\"; exit 0 ;;\n"
@@ -698,11 +775,13 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
     )
 
     phase_log = (out_dir / "phase_exit_codes.tsv").read_text(encoding="utf-8")
+    assert "nomtp\tkv_layout_probe\t0" in phase_log
     assert "nomtp\tacceptance\t0" in phase_log
     assert "nomtp\tlong_context_probe\t0" in phase_log
     assert "nomtp\tbench_hf_mt_bench\t0" in phase_log
     assert "nomtp\teval_gsm8k\t0" in phase_log
     assert "nomtp\toracle_export\t0" in phase_log
+    assert "mtp\tkv_layout_probe\t0" in phase_log
     assert "mtp\tacceptance\t0" in phase_log
     assert "mtp\tlong_context_probe\t0" in phase_log
     assert "mtp\tbench_hf_mt_bench\t0" in phase_log
@@ -743,6 +822,7 @@ def run_minimal_b200_baseline(tmp_path, gpu_topology_slug):
         "GPU_TOPOLOGY_SLUG": gpu_topology_slug,
         "B200_BASELINE_VARIANTS": "nomtp",
         "RUN_ACCEPTANCE": "0",
+        "RUN_KV_LAYOUT_PROBE": "0",
         "RUN_LONG_CONTEXT_PROBE": "0",
         "RUN_BENCH_HF": "0",
         "RUN_RANDOM_LONG": "0",

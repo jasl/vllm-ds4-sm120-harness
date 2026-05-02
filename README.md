@@ -311,8 +311,10 @@ The same script also publishes a sanitized reference bundle in that directory.
 It keeps the data needed to resume work in a fresh environment
 without raw `artifacts/`: deterministic no-MTP logprobs oracle cases,
 no-MTP/MTP smoke captures, ToolCall-15 traces, benchmark summaries,
-GPU/runtime telemetry summaries, and public provenance. Raw server logs,
-machine-local paths, private addresses, and secrets are deliberately excluded.
+synthetic KV layout probes, GPU/runtime telemetry summaries, and public
+provenance. Raw KV layout `.bin` captures remain in ignored run artifacts; raw
+server logs, machine-local paths, private addresses, and secrets are
+deliberately excluded.
 The script generates into a temporary directory, verifies that the bundle has
 loadable oracle cases, a complete generation matrix by
 variant/language/thinking mode/round, matching transcript Markdown files, and no
@@ -569,10 +571,16 @@ RANDOM_LONG_CONCURRENCY=1,2`.
 The default long-context probe uses `LONG_CONTEXT_LINE_COUNT=2400`,
 `LONG_CONTEXT_MAX_TOKENS=128`, `LONG_CONTEXT_TEMPERATURE=0.0`,
 `LONG_CONTEXT_TOP_P=1.0`, and `LONG_CONTEXT_THINKING_MODE=non-thinking`.
+The default KV layout probe uses a synthetic packed FP8 indexer cache with
+`KV_LAYOUT_NUM_BLOCKS=2`, `KV_LAYOUT_BLOCK_SIZE=256`,
+`KV_LAYOUT_HEAD_DIM=448`, `KV_LAYOUT_SCALE_BYTES=8`, and
+`KV_LAYOUT_REQUIRE_HELPER_MATCH=1`. It writes JSON, Markdown, and a raw
+`kv_layout_probe_packed_cache.bin` under the run artifact tree before the live
+server starts.
 
 Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
-the requested server variant. Valid phase names are `acceptance`,
-`long_context_probe`, `bench_hf_mt_bench`, `eval_gsm8k`,
+the requested server variant. Valid phase names are `kv_layout_probe`,
+`acceptance`, `long_context_probe`, `bench_hf_mt_bench`, `eval_gsm8k`,
 `bench_random_8192x512`, and `oracle_export`; the default is `all`. For
 example:
 
