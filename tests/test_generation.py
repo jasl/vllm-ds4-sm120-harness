@@ -177,3 +177,92 @@ Write one sentence about local inference.
     assert rc == 0
     assert captured["payload"]["thinking"] == {"type": "enabled"}
     assert captured["payload"]["reasoning_effort"] == "max"
+
+
+def test_generation_matrix_can_skip_prompt_expectation_checks(monkeypatch, tmp_path):
+    prompt_root = tmp_path / "prompts"
+    _write_prompt(
+        prompt_root / "zh" / "html_probe.md",
+        """---
+tags: coding
+min_chars: 1000
+require_html_artifact: true
+---
+Write a complete HTML file.
+""",
+    )
+
+    def fake_post_json(base_url, path, payload, timeout):
+        return {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "reasoning_content": "Long reasoning consumed the budget.",
+                    },
+                }
+            ],
+            "usage": {"completion_tokens": 4096},
+        }
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+    jsonl_output = tmp_path / "generation.jsonl"
+
+    rc = cli.main(
+        [
+            "generation-matrix",
+            "--prompt-root",
+            str(prompt_root),
+            "--prompt",
+            "html_probe",
+            "--thinking-mode",
+            "think-max",
+            "--repeat-count",
+            "1",
+            "--skip-expectation-checks",
+            "--jsonl-output",
+            str(jsonl_output),
+        ]
+    )
+
+    assert rc == 0
+    row = json.loads(jsonl_output.read_text(encoding="utf-8"))
+    assert row["ok"] is True
+    assert row["detail"] == "expectation checks skipped"
+    assert row["finish_reason"] == "length"
+
+
+def test_generation_matrix_skipping_expectations_still_requires_choices(
+    monkeypatch,
+    tmp_path,
+):
+    prompt_root = tmp_path / "prompts"
+    _write_prompt(
+        prompt_root / "en" / "writing_probe.md",
+        """---
+tags: writing
+min_chars: 500
+---
+Write an article.
+""",
+    )
+
+    def fake_post_json(base_url, path, payload, timeout):
+        return {"id": "no-choices"}
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+
+    rc = cli.main(
+        [
+            "generation-matrix",
+            "--prompt-root",
+            str(prompt_root),
+            "--prompt",
+            "writing_probe",
+            "--skip-expectation-checks",
+        ]
+    )
+
+    assert rc == 1

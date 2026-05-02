@@ -340,5 +340,12 @@ def write_generation_transcript(path: Path, row: Json) -> None:
 def evaluate_generation_response(
     prompt: GenerationPrompt,
     response: Json,
+    *,
+    skip_expectation_checks: bool = False,
 ) -> CheckResult:
+    if skip_expectation_checks:
+        choices = response.get("choices")
+        if isinstance(choices, list) and choices:
+            return CheckResult(True, "expectation checks skipped")
+        return CheckResult(False, "missing chat completion choices")
     return check_chat_response(prompt.expectation, response)

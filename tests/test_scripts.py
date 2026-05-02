@@ -1296,6 +1296,7 @@ def test_official_api_baseline_script_writes_separate_baseline_directory():
     assert 'OFFICIAL_SMOKE_CASES="${OFFICIAL_SMOKE_CASES:-math_7_times_8,capital_of_france,spanish_greeting}"' in script
     assert 'OFFICIAL_REQUEST_RETRIES="${OFFICIAL_REQUEST_RETRIES:-1}"' in script
     assert 'OFFICIAL_TOOLCALL15_THINKING_MODES="${OFFICIAL_TOOLCALL15_THINKING_MODES:-${OFFICIAL_THINKING_MODES}}"' in script
+    assert 'OFFICIAL_GENERATION_EXPECTATION_CHECKS="${OFFICIAL_GENERATION_EXPECTATION_CHECKS:-0}"' in script
     assert "chat-smoke" in script
     assert "generation-matrix" in script
     assert "toolcall15" in script
@@ -1308,6 +1309,7 @@ def test_official_api_baseline_script_writes_separate_baseline_directory():
     assert '--request-retries "${OFFICIAL_REQUEST_RETRIES}"' in script
     assert '--temperature "${OFFICIAL_TEMPERATURE}"' in script
     assert '--top-p "${OFFICIAL_TOP_P}"' in script
+    assert '--skip-expectation-checks' in script
     assert '--thinking-mode "${thinking_mode}"' in script
 
 

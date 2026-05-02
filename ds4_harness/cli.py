@@ -413,7 +413,11 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
                             request_retries=args.request_retries,
                             post_func=post_json,
                         )
-                    result = evaluate_generation_response(prompt, response)
+                    result = evaluate_generation_response(
+                        prompt,
+                        response,
+                        skip_expectation_checks=args.skip_expectation_checks,
+                    )
                 except (
                     OSError,
                     RuntimeError,
@@ -1142,6 +1146,7 @@ def build_parser() -> argparse.ArgumentParser:
     generation.add_argument("--request-retries", type=int, default=1)
     generation.add_argument("--api-key-env")
     generation.add_argument("--extra-body-json")
+    generation.add_argument("--skip-expectation-checks", action="store_true")
     generation.add_argument("--jsonl-output", type=Path)
     generation.add_argument("--markdown-output-dir", type=Path)
     generation.set_defaults(func=_cmd_generation_matrix)

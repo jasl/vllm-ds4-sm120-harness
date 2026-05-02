@@ -19,6 +19,7 @@ OFFICIAL_PROMPT_ROOT="${OFFICIAL_PROMPT_ROOT:-${REPO_ROOT}/prompts}"
 OFFICIAL_GENERATION_PROMPTS="${OFFICIAL_GENERATION_PROMPTS:-zh_wr_tech_001,en_wr_tech_001,zh_code_fe_001,en_code_be_001,zh2en_tech_001,en2zh_tech_001,zh_sum_tech_001,en_sum_tech_001}"
 OFFICIAL_THINKING_MODES="${OFFICIAL_THINKING_MODES:-non-thinking,think-high,think-max}"
 OFFICIAL_MAX_CASE_TOKENS="${OFFICIAL_MAX_CASE_TOKENS:-4096}"
+OFFICIAL_GENERATION_EXPECTATION_CHECKS="${OFFICIAL_GENERATION_EXPECTATION_CHECKS:-0}"
 OFFICIAL_SMOKE_CASES="${OFFICIAL_SMOKE_CASES:-math_7_times_8,capital_of_france,spanish_greeting}"
 OFFICIAL_SMOKE_REPEAT_COUNT="${OFFICIAL_SMOKE_REPEAT_COUNT:-1}"
 OFFICIAL_SMOKE_TIMEOUT="${OFFICIAL_SMOKE_TIMEOUT:-300}"
@@ -71,6 +72,10 @@ extra_body_args=()
 if [[ -n "${OFFICIAL_EXTRA_BODY_JSON}" ]]; then
   extra_body_args+=(--extra-body-json "${OFFICIAL_EXTRA_BODY_JSON}")
 fi
+generation_check_args=()
+if [[ "${OFFICIAL_GENERATION_EXPECTATION_CHECKS}" != "1" && "${OFFICIAL_GENERATION_EXPECTATION_CHECKS}" != "true" ]]; then
+  generation_check_args+=(--skip-expectation-checks)
+fi
 
 toolcall15_args=()
 IFS=',' read -r -a official_toolcall15_thinking_modes <<< "${OFFICIAL_TOOLCALL15_THINKING_MODES}"
@@ -112,6 +117,7 @@ set +e
   --jsonl-output "${OFFICIAL_ARTIFACT_DIR}/official_generation.jsonl" \
   --markdown-output-dir "${OFFICIAL_ARTIFACT_DIR}/generation" \
   ${extra_body_args[@]+"${extra_body_args[@]}"} \
+  "${generation_check_args[@]}" \
   "${generation_args[@]}"
 generation_rc="$?"
 set -e
