@@ -32,8 +32,8 @@ scripts/run_lm_eval.sh
 ```
 
 For MTP accuracy captures, prefer correctness over speed. Lower
-`MTP_LM_EVAL_NUM_CONCURRENT` or `LM_EVAL_NUM_CONCURRENT` when the server shows
-known C>1 MTP instability. The report keeps the concurrency and generation
+`MTP_LM_EVAL_NUM_CONCURRENT` or `LM_EVAL_NUM_CONCURRENT` if a pinned runtime
+shows C>1 MTP instability. The report keeps the concurrency and generation
 settings beside the exact-match result. `LM_EVAL_TOKENIZER_BACKEND=none` avoids
 lm-evaluation-harness trying to load a Hugging Face tokenizer that may not yet
 recognize `deepseek_v4`; requests are sent as strings with

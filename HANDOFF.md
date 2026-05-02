@@ -201,11 +201,10 @@ they wait up to `SERVER_FAILURE_GRACE_TIMEOUT=300` before writing
 `server_unresponsive.txt`, `*.server_unresponsive`, or `*.skipped` artifacts.
 Benchmark recovery checks also run a tiny `/v1/completions` probe with
 `SERVER_FAILURE_PROBE_TIMEOUT=30`, so a live `/health` endpoint does not mask a
-wedged generation path. This is intended to catch runtime hangs, including the
-known B200 MTP C>1 benchmark failure, without misclassifying slow startup or
-warmup. Use `SERVER_HEALTH_TIMEOUT=10` as the default health probe timeout. Set
-`SERVER_RECOVERY_CMD` only for an intentional local intervention command after
-an unresponsive-server detection.
+wedged generation path. This is intended to catch runtime unresponsiveness
+without misclassifying slow startup or warmup. Use `SERVER_HEALTH_TIMEOUT=10`
+as the default health probe timeout. Set `SERVER_RECOVERY_CMD` only for an
+intentional local intervention command after an unresponsive-server detection.
 
 For stricter kernel correctness, compare against a B200/SM100 or H100 HTTP
 oracle bundle:
@@ -225,7 +224,7 @@ The export also captures `/tokenize` for each prompt and injects prompt token
 ids into the wrapped completion response. With `--require-prompt-ids`,
 `oracle-compare` tokenizes the actual prompt too and fails when ids are missing
 or different.
-`ORACLE_STOP_ON_ERROR=1` is the default for the wrapper, so a deadlocked
+`ORACLE_STOP_ON_ERROR=1` is the default for the wrapper, so an unresponsive
 reference server consumes only one request timeout before stopping the export.
 
 ```bash
@@ -267,10 +266,9 @@ point even when `vllm bench` exits with status 0. It also applies
 `BENCH_TIMEOUT=1800` seconds per concurrency point by default; raise that only
 when a known-slow profile is expected to complete usefully.
 When `BASE_URL` is set, the wrapper passes it through to `vllm bench serve`
-directly instead of reconstructing the target from `HOST` and `PORT`.
-For B200 reference servers, cap MTP benchmark runs at `CONCURRENCY=1` unless
-you are intentionally reproducing the known MTP C>1 hang. Use the full matrix
-for no-MTP and for non-B200 SM12x throughput gates.
+directly instead of reconstructing the target from `HOST` and `PORT`. Run the
+guarded MTP C>1 matrix for reference builds and keep the responsiveness marker
+artifacts if a pinned runtime fails to recover after a concurrency tier.
 
 You do not need to run the full matrix for every edit. Use `1,2` or `1,2,4`
 for quick iteration, then widen to `1,2,4,8,16,24` before promoting a change.
@@ -323,9 +321,10 @@ they catch obvious degradation, not subtle quality differences.
   high-concurrency failures can also be capacity limits, especially when C >= 8;
   do not block promotion solely on those tiers if lower-concurrency real
   workload gates pass and the failure is clearly memory-bound.
-- B200 official/reference vLLM is known to hang under MTP with benchmark
-  concurrency greater than 1. Treat that as a runtime unresponsive-server case;
-  do not infer the same problem from slow model load or first-request warmup.
+- Keep the server responsiveness guard enabled for MTP C>1 benchmark and eval
+  shapes. If a serving process becomes unresponsive, preserve the marker
+  artifacts and record the observed tier instead of special-casing the platform
+  in the report narrative.
 - Long-prompt prefill is a separate stability axis from 1024/1024 decode
   benchmarks. Always test it before recommending a branch to agent users.
 - DGX Spark dual-node failures during safetensors loading are likely load-time

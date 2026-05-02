@@ -240,15 +240,15 @@ by default. It stores `vllm_collect_env.py`, `vllm_collect_env.sha256`,
 downloaded script manually before execution. Override `VLLM_COLLECT_ENV_URL`
 only for a pinned or locally mirrored copy.
 
-The live wrappers guard against server deadlocks or unresponsive vLLM workers,
-without treating slow model load or first-request warmup as a deadlock. They
-wait up to `SERVER_STARTUP_TIMEOUT=1800` seconds before the live gate sequence,
-then use short health probes before expensive live gates. After a failed live
-gate or benchmark, they wait up to `SERVER_FAILURE_GRACE_TIMEOUT=300` seconds
-before recording `server_unresponsive.txt`, `*.server_unresponsive`, or
-`*.skipped` artifacts. Benchmark recovery checks also run a tiny
-`/v1/completions` probe with `SERVER_FAILURE_PROBE_TIMEOUT=30`, so a live
-`/health` endpoint does not mask a wedged generation path. Keep
+The live wrappers guard against unresponsive vLLM workers, without treating
+slow model load or first-request warmup as a runtime failure. They wait up to
+`SERVER_STARTUP_TIMEOUT=1800` seconds before the live gate sequence, then use
+short health probes before expensive live gates. After a failed live gate or
+benchmark, they wait up to `SERVER_FAILURE_GRACE_TIMEOUT=300` seconds before
+recording `server_unresponsive.txt`, `*.server_unresponsive`, or `*.skipped`
+artifacts. Benchmark recovery checks also run a tiny `/v1/completions` probe
+with `SERVER_FAILURE_PROBE_TIMEOUT=30`, so a live `/health` endpoint does not
+mask a wedged generation path. Keep
 `SERVER_GUARD=1` for B200/SM12x reference runs. Set `SERVER_HEALTH_TIMEOUT=10`
 to tune the health probe timeout, and set `SERVER_RECOVERY_CMD` only when you
 explicitly want the wrapper to run a local recovery command after detecting an
@@ -470,8 +470,8 @@ The `lm-eval` command is optional and requires the target vLLM venv to have the
 API-capable lm-evaluation-harness extra installed, for example
 `python -m pip install "lm-eval[api]"`. The shell wrapper
 `scripts/run_lm_eval.sh` adds the same artifact layout, GPU/runtime telemetry,
-`collect_env.py`, server guard, and deadlock marker behavior used by the
-benchmark wrapper.
+`collect_env.py`, server responsiveness guard, and unresponsive-server marker
+behavior used by the benchmark wrapper.
 
 Use the B200/SM100 or H100 HTTP oracle bundle when you need stricter kernel
 correctness checks. Chat exports are covered by `chat-smoke`; `oracle-compare`
@@ -496,8 +496,8 @@ Use `ORACLE_CASES=case_a,case_b` only for a deliberately narrow re-run.
 The exporter also calls `/tokenize` for each prompt and injects those prompt
 token ids into the wrapped completion response, so later `--require-prompt-ids`
 comparisons fail when tokenization diverges or token ids are unavailable.
-The wrapper uses `ORACLE_STOP_ON_ERROR=1` by default so a deadlocked reference
-server consumes only one request timeout before stopping the export.
+The wrapper uses `ORACLE_STOP_ON_ERROR=1` by default so an unresponsive
+reference server consumes only one request timeout before stopping the export.
 
 ### B200 Official Serve Command
 
@@ -650,11 +650,11 @@ scripts/run_bench_matrix.sh
 ```
 
 `BASE_URL` is passed through to `vllm bench serve`; use `HOST` and `PORT` only
-when you intentionally want the wrapper to construct a local target URL.
-For the older official vLLM 0.20.0 B200 path, cap MTP benchmark runs at
-`CONCURRENCY=1` unless intentionally reproducing its known MTP C>1 hang. For
-newer main-based reference builds, run the guarded MTP C>1 matrix and record
-whether the server remains generation-responsive after each concurrency tier.
+when you intentionally want the wrapper to construct a local target URL. Run
+the guarded MTP C>1 matrix for reference builds and record whether the server
+remains generation-responsive after each concurrency tier. If a pinned runtime
+does become unresponsive, keep the marker artifacts and treat that tier as a
+runtime stability failure rather than a completed throughput point.
 
 Use random prompts when you need a controlled shape rather than a representative
 conversation dataset:
@@ -704,10 +704,10 @@ Before promoting an optimization:
   decode path. High-concurrency MTP failures can also be plain capacity limits;
   distinguish OOM/KV-cache/CUDA-graph reservation failures from correctness or
   scheduler bugs before treating them as regressions.
-- On the older official vLLM 0.20.0 B200 path, the known stable hang is MTP
-  with benchmark concurrency greater than 1. Treat that as a runtime
-  unresponsive-server case. For newer main-based reference builds, keep running
-  the guarded MTP C>1 matrix and record the observed result.
+- Keep the server responsiveness guard enabled for MTP C>1 benchmark and eval
+  shapes. If a serving process becomes unresponsive, preserve the marker
+  artifacts and record the observed tier instead of special-casing the platform
+  in the report narrative.
 - For vLLM-side micro correctness checks inspired by the ROCm DeepSeek V4
   support PRs, see `docs/vllm_correctness_gates.md`. Keep those tests in the
   vLLM checkout; this repo records and orchestrates the gate commands.
