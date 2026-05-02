@@ -23,6 +23,11 @@ from ds4_harness.generation import (
     transcript_filename,
     write_generation_transcript,
 )
+from ds4_harness.generation_alignment import (
+    compare_generation_rows,
+    load_generation_rows,
+    write_generation_alignment_markdown,
+)
 from ds4_harness.gpu_stats import summarize_gpu_csv, write_gpu_json, write_gpu_markdown
 from ds4_harness.kv_layout_probe import (
     DEFAULT_BLOCK_SIZE as DEFAULT_KV_LAYOUT_BLOCK_SIZE,
@@ -461,6 +466,27 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
                 failures += 0 if result.ok else 1
 
     return 1 if failures else 0
+
+
+def _cmd_generation_compare(args: argparse.Namespace) -> int:
+    try:
+        reference_rows = load_generation_rows(args.reference)
+        actual_rows = load_generation_rows(args.actual)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"failed to load generation rows: {exc}", file=sys.stderr)
+        return 2
+
+    report = compare_generation_rows(reference_rows, actual_rows)
+    print(json.dumps(report["summary"], ensure_ascii=False))
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_generation_alignment_markdown(args.markdown_output, report)
+    return 0 if report["ok"] else 1
 
 
 def _cmd_oracle_compare(args: argparse.Namespace) -> int:
@@ -1150,6 +1176,13 @@ def build_parser() -> argparse.ArgumentParser:
     generation.add_argument("--jsonl-output", type=Path)
     generation.add_argument("--markdown-output-dir", type=Path)
     generation.set_defaults(func=_cmd_generation_matrix)
+
+    generation_compare = subparsers.add_parser("generation-compare")
+    generation_compare.add_argument("--reference", type=Path, required=True)
+    generation_compare.add_argument("--actual", type=Path, required=True)
+    generation_compare.add_argument("--json-output", type=Path)
+    generation_compare.add_argument("--markdown-output", type=Path)
+    generation_compare.set_defaults(func=_cmd_generation_compare)
 
     oracle = subparsers.add_parser("oracle-compare")
     oracle.add_argument("--base-url", default="http://127.0.0.1:8000")

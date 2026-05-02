@@ -495,6 +495,17 @@ Use the Markdown outputs for human review of writing, translation, and coding
 quality. Use the JSON/JSONL outputs for archiving and comparison against the
 checked-in `baselines/.../generation/` samples.
 
+Compare a development run against the selected behavior reference after each
+generation-matrix capture:
+
+```bash
+python -m ds4_harness.cli generation-compare \
+  --reference baselines/20260502_b200_tp4_main_5737770c6/generation/nomtp.json \
+  --actual artifacts/manual/generation.jsonl \
+  --json-output artifacts/manual/generation_compare.json \
+  --markdown-output artifacts/manual/generation_compare.md
+```
+
 The `lm-eval` command is optional and requires the target vLLM venv to have the
 API-capable lm-evaluation-harness extra installed, for example
 `python -m pip install "lm-eval[api]"`. The shell wrapper
@@ -715,7 +726,9 @@ Before promoting an optimization:
 - `pytest -q tests` passes.
 - `chat-smoke --tag quick` passes.
 - `generation-matrix --repeat-count 3` has no regression versus the previous
-  branch for the relevant no-MTP or MTP serving variant.
+  branch for the relevant no-MTP or MTP serving variant, and
+  `generation-compare` has no missing rows or behavior regressions versus the
+  selected full-directory baseline reference.
 - `toolcall15 --scenario-set en --thinking-mode non-thinking --thinking-mode
   think-high --thinking-mode think-max --repeat-count 3` passes, or any
   partial/fail scenario is explained with trace evidence.
