@@ -13,8 +13,10 @@ OFFICIAL_MODEL="${DEEPSEEK_MODEL:-deepseek-v4-flash}"
 OFFICIAL_TIMEOUT="${OFFICIAL_TIMEOUT:-900}"
 OFFICIAL_REQUEST_RETRIES="${OFFICIAL_REQUEST_RETRIES:-1}"
 OFFICIAL_REPEAT_COUNT="${OFFICIAL_REPEAT_COUNT:-3}"
+OFFICIAL_TEMPERATURE="${OFFICIAL_TEMPERATURE:-1.0}"
+OFFICIAL_TOP_P="${OFFICIAL_TOP_P:-1.0}"
 OFFICIAL_PROMPT_ROOT="${OFFICIAL_PROMPT_ROOT:-${REPO_ROOT}/prompts}"
-OFFICIAL_GENERATION_PROMPTS="${OFFICIAL_GENERATION_PROMPTS:-translation_en_to_zh,translation_zh_to_en,writing_follow_instructions,writing_local_llm_tradeoffs}"
+OFFICIAL_GENERATION_PROMPTS="${OFFICIAL_GENERATION_PROMPTS:-zh_wr_tech_001,en_wr_tech_001,zh_code_fe_001,en_code_be_001,zh2en_tech_001,en2zh_tech_001,zh_sum_tech_001,en_sum_tech_001}"
 OFFICIAL_THINKING_MODES="${OFFICIAL_THINKING_MODES:-non-thinking,think-high,think-max}"
 OFFICIAL_MAX_CASE_TOKENS="${OFFICIAL_MAX_CASE_TOKENS:-4096}"
 OFFICIAL_SMOKE_CASES="${OFFICIAL_SMOKE_CASES:-math_7_times_8,capital_of_france,spanish_greeting}"
@@ -101,6 +103,8 @@ set +e
   --prompt-root "${OFFICIAL_PROMPT_ROOT}" \
   --variant official-api \
   --repeat-count "${OFFICIAL_REPEAT_COUNT}" \
+  --temperature "${OFFICIAL_TEMPERATURE}" \
+  --top-p "${OFFICIAL_TOP_P}" \
   --api-key-env DEEPSEEK_API_KEY \
   --max-case-tokens "${OFFICIAL_MAX_CASE_TOKENS}" \
   --request-retries "${OFFICIAL_REQUEST_RETRIES}" \

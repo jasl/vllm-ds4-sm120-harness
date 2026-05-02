@@ -368,6 +368,7 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
                     model=args.model,
                     default_max_tokens=args.max_tokens,
                     default_temperature=args.temperature,
+                    default_top_p=args.top_p,
                     max_case_tokens=args.max_case_tokens,
                 )
                 payload.update(mode_extra_body)
@@ -975,6 +976,7 @@ def build_parser() -> argparse.ArgumentParser:
     generation.add_argument("--max-tokens", type=int, default=2048)
     generation.add_argument("--max-case-tokens", type=int)
     generation.add_argument("--temperature", type=float, default=1.0)
+    generation.add_argument("--top-p", type=float, default=1.0)
     generation.add_argument("--timeout", type=float, default=900.0)
     generation.add_argument("--repeat-count", type=int, default=3)
     generation.add_argument("--request-retries", type=int, default=1)

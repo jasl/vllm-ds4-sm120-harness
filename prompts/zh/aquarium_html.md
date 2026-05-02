@@ -2,6 +2,7 @@
 tags: coding, html, long, subjective, user-report
 max_tokens: 8192
 temperature: 1.0
+top_p: 1.0
 min_chars: 1200
 any_terms: 鱼, fish, aquarium
 require_html_artifact: true

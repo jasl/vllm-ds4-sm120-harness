@@ -146,6 +146,7 @@ Optional front matter is parsed with the stdlib-only harness parser:
 tags: writing, subjective, user-report
 max_tokens: 2048
 temperature: 1.0
+top_p: 1.0
 min_chars: 400
 all_terms: Context:, Recommendation:
 any_terms: privacy, latency
@@ -155,9 +156,12 @@ require_html_artifact: false
 Write the actual user prompt here.
 ```
 
-Use `tags` to classify the workload as `writing`, `translation`, or `coding`.
-The expectation fields are lightweight sanity checks; the Markdown transcript
-is still the source for subjective quality review.
+Use `tags` to classify the workload as `writing`, `translation`, `coding`, or
+`reading_summary`. The checked-in benchmark suite uses prompts converted from
+`tmp/llm_benchmark_prompt_suite/llm_benchmark_prompt_suite_api.jsonl`; the
+HTML animation/clock prompts are retained as user-reported cases. The
+expectation fields are lightweight sanity checks; the Markdown transcript is
+still the source for subjective quality review.
 
 ## Artifact Output
 
@@ -182,10 +186,12 @@ one transcript per prompt/round/thinking-mode/serving-variant under
 `generation/<group>/`, and writes machine-readable rows to `generation.jsonl`.
 Transcript filenames use
 `<prompt-name>.<round>.<thinking-mode>.<variant>.md`, for example
-`generation/zh/translation_zh_to_en.2.think-max.mtp.md`. Each transcript keeps
+`generation/zh/zh2en_tech_001.2.think-max.mtp.md`. Each transcript keeps
 the prompt, assistant answer, `OK`, detail, model, finish reason, full usage
-JSON, thinking mode, and thinking strength so subjective review can be tied
-back to the exact request shape.
+JSON, thinking mode, thinking strength, `temperature`, and `top_p` so
+subjective review can be tied back to the exact request shape. Generation
+defaults use `temperature=1.0` and `top_p=1.0`, matching the DeepSeek V4
+sampling recommendation used for quality-oriented comparisons.
 
 The shell wrappers also sample GPU telemetry with `nvidia-smi` when available.
 Each run writes `gpu_stats.csv`, `gpu_stats_summary.json`, and
@@ -307,14 +313,16 @@ that is useful across platforms:
 - `smoke/`: a few small runnable chat checks for API-shape comparison.
 - `toolcall15/`: official API ToolCall-15 trace and score.
 
-By default it runs three generation rounds, selected translation/writing
-generation prompts, `non-thinking`, `think-high`, and `think-max`, one round of
-three basic smoke checks, and the English ToolCall-15 set under the same
-thinking-mode matrix. Each OpenAI-compatible API request gets one retry for
-transient call failures; HTTP/API failures that remain after retry are recorded
-as failed rows. Override
+By default it runs three generation rounds over a compact slice of the
+checked-in writing, coding, translation, and reading-summary benchmark suite,
+`non-thinking`, `think-high`, and `think-max`, one round of three basic smoke
+checks, and the English ToolCall-15 set under the same thinking-mode matrix.
+Generation requests use `OFFICIAL_TEMPERATURE=1.0` and `OFFICIAL_TOP_P=1.0`.
+Each OpenAI-compatible API request gets one retry for transient call failures;
+HTTP/API failures that remain after retry are recorded as failed rows. Override
 `OFFICIAL_GENERATION_PROMPTS`,
-`OFFICIAL_SMOKE_CASES`, `OFFICIAL_REPEAT_COUNT`,
+`OFFICIAL_SMOKE_CASES`, `OFFICIAL_REPEAT_COUNT`, `OFFICIAL_TEMPERATURE`,
+`OFFICIAL_TOP_P`,
 `OFFICIAL_TOOLCALL15_THINKING_MODES`, `OFFICIAL_TOOLCALL15_REPEAT_COUNT`, or
 `OFFICIAL_REQUEST_RETRIES` for broader or narrower reference captures.
 Set `OFFICIAL_STRICT=1` only when non-green generation or ToolCall-15 checks
@@ -353,6 +361,8 @@ python -m ds4_harness.cli generation-matrix \
   --thinking-mode think-max \
   --variant nomtp \
   --repeat-count 3 \
+  --temperature 1.0 \
+  --top-p 1.0 \
   --timeout 900 \
   --jsonl-output artifacts/manual/generation.jsonl \
   --markdown-output-dir artifacts/manual/generation
@@ -412,6 +422,7 @@ vllm serve deepseek-ai/DeepSeek-V4-Flash \
   --trust-remote-code \
   --kv-cache-dtype fp8 \
   --block-size 256 \
+  --max-model-len 393216 \
   --tensor-parallel-size 4 \
   --no-enable-flashinfer-autotune \
   --attention_config.use_fp4_indexer_cache=True \
@@ -424,7 +435,8 @@ vllm serve deepseek-ai/DeepSeek-V4-Flash \
 
 The final `--speculative_config` line enables MTP. Remove it for the no-MTP
 baseline, and keep the rest of the serve command the same when comparing MTP
-against no-MTP.
+against no-MTP. `--max-model-len 393216` follows the DeepSeek recommendation
+to keep Think Max quality tests on a context window of at least 384K tokens.
 
 The reusable B200 baseline driver starts this serve shape itself, runs no-MTP
 and MTP as separate server lifecycles, and reuses the acceptance, benchmark,
@@ -446,10 +458,11 @@ scripts/run_b200_baseline.sh
 Run this script on the reference host, not on a laptop. It defaults to
 `HOST=127.0.0.1 PORT=8080`, `B200_BASELINE_VARIANTS=nomtp,mtp`,
 `NO_MTP_CONCURRENCY=1,2,4,8,16,24`, `MTP_CONCURRENCY=1,2,4,8,16,24`,
-`NUM_PROMPTS=80`, `REAL_SCENARIO_REPEAT_COUNT=3`,
+`SERVE_MAX_MODEL_LEN=393216`, `NUM_PROMPTS=80`, `REAL_SCENARIO_REPEAT_COUNT=3`,
 `API_REQUEST_RETRIES=1`,
 `GENERATION_LANGUAGES=en,zh`,
 `GENERATION_THINKING_MODES=non-thinking,think-high,think-max`,
+`GENERATION_TEMPERATURE=1.0`, `GENERATION_TOP_P=1.0`,
 `TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max`,
 `TOOLCALL15_SCENARIO_SET=en`, and a controlled random
 long-context bench with

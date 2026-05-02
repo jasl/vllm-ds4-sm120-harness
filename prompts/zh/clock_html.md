@@ -2,6 +2,7 @@
 tags: coding, html, long, subjective, user-report
 max_tokens: 12000
 temperature: 1.0
+top_p: 1.0
 min_chars: 1800
 all_terms: updateClock, Asia/Shanghai
 any_terms: setInterval, requestAnimationFrame

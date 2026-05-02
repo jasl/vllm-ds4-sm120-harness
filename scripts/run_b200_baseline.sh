@@ -17,6 +17,7 @@ VLLM_BIN="${VLLM_BIN:-${B200_VLLM_VENV}/bin/vllm}"
 B200_TENSOR_PARALLEL_SIZE="${B200_TENSOR_PARALLEL_SIZE:-4}"
 B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"
 B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"
+SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-393216}"
 B200_BASELINE_LABEL="${B200_BASELINE_LABEL:-b200_official}"
 B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-nomtp,mtp}"
 B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-all}"
@@ -59,7 +60,7 @@ export MODEL HOST PORT BASE_URL PYTHON VLLM_BIN RUN_TIMESTAMP BRANCH_NAME
 export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_PROBE_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT
 export SERVER_FAILURE_GRACE_INTERVAL_SECONDS ARTIFACT_ROOT GPU_TOPOLOGY_SLUG
-export VLLM_ENGINE_READY_TIMEOUT_S
+export VLLM_ENGINE_READY_TIMEOUT_S SERVE_MAX_MODEL_LEN
 export REAL_SCENARIO_REPEAT_COUNT GENERATION_PROMPT_ROOT GENERATION_LANGUAGES
 export GENERATION_THINKING_MODES GENERATION_REPEAT_COUNT GENERATION_TIMEOUT
 export GENERATION_MAX_CASE_TOKENS TOOLCALL15_SCENARIO_SET
@@ -180,6 +181,7 @@ official_serve_args() {
     --trust-remote-code
     --kv-cache-dtype "${B200_KV_CACHE_DTYPE}"
     --block-size "${B200_BLOCK_SIZE}"
+    --max-model-len "${SERVE_MAX_MODEL_LEN}"
     --tensor-parallel-size "${B200_TENSOR_PARALLEL_SIZE}"
     --host "${HOST}"
     --port "${PORT}"
@@ -358,6 +360,7 @@ write_summary() {
     printf -- '- base_url: `%s`\n' "${BASE_URL}"
     printf -- '- variants: `%s`\n' "${B200_BASELINE_VARIANTS}"
     printf -- '- phases: `%s`\n' "${B200_BASELINE_PHASES}"
+    printf -- '- serve_max_model_len: `%s`\n' "${SERVE_MAX_MODEL_LEN}"
     printf -- '- no_mtp_concurrency: `%s`\n' "${NO_MTP_CONCURRENCY}"
     printf -- '- mtp_concurrency: `%s`\n' "${MTP_CONCURRENCY}"
     printf -- '- num_prompts: `%s`\n' "${NUM_PROMPTS}"
@@ -373,6 +376,8 @@ write_summary() {
     printf -- '- generation_languages: `%s`\n' "${GENERATION_LANGUAGES:-en,zh}"
     printf -- '- generation_thinking_modes: `%s`\n' "${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}"
     printf -- '- generation_repeat_count: `%s`\n' "${GENERATION_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}"
+    printf -- '- generation_temperature: `%s`\n' "${GENERATION_TEMPERATURE:-1.0}"
+    printf -- '- generation_top_p: `%s`\n' "${GENERATION_TOP_P:-1.0}"
     printf -- '- toolcall15_scenario_set: `%s`\n' "${TOOLCALL15_SCENARIO_SET:-en}"
     printf -- '- toolcall15_thinking_modes: `%s`\n' "${TOOLCALL15_THINKING_MODES:-${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}}"
     printf -- '- toolcall15_repeat_count: `%s`\n' "${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}"
@@ -433,6 +438,8 @@ for variant in ${variant_list}; do
         GENERATION_THINKING_MODES="${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}" \
         GENERATION_VARIANT="${variant}" \
         GENERATION_REPEAT_COUNT="${GENERATION_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}" \
+        GENERATION_TEMPERATURE="${GENERATION_TEMPERATURE:-1.0}" \
+        GENERATION_TOP_P="${GENERATION_TOP_P:-1.0}" \
         GENERATION_TIMEOUT="${GENERATION_TIMEOUT:-900}" \
         GENERATION_MAX_CASE_TOKENS="${GENERATION_MAX_CASE_TOKENS:-12000}" \
         TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-en}" \

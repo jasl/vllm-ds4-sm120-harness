@@ -2,6 +2,7 @@
 tags: coding, html, long, subjective, user-report
 max_tokens: 8192
 temperature: 1.0
+top_p: 1.0
 min_chars: 1200
 all_terms: aquarium, fish, food
 any_terms: click, mouse, pointer

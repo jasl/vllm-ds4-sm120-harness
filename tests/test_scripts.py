@@ -85,9 +85,12 @@ def test_env_sample_and_local_env_are_configured():
     assert "OFFICIAL_BASELINE_DIR=" in sample
     assert "OFFICIAL_REQUEST_RETRIES=1" in sample
     assert "OFFICIAL_REPEAT_COUNT=3" in sample
+    assert "OFFICIAL_TEMPERATURE=1.0" in sample
+    assert "OFFICIAL_TOP_P=1.0" in sample
     assert (
-        "OFFICIAL_GENERATION_PROMPTS=translation_en_to_zh,translation_zh_to_en,"
-        "writing_follow_instructions,writing_local_llm_tradeoffs"
+        "OFFICIAL_GENERATION_PROMPTS=zh_wr_tech_001,en_wr_tech_001,"
+        "zh_code_fe_001,en_code_be_001,zh2en_tech_001,en2zh_tech_001,"
+        "zh_sum_tech_001,en_sum_tech_001"
     ) in sample
     assert "OFFICIAL_THINKING_MODES=non-thinking,think-high,think-max" in sample
     assert (
@@ -116,6 +119,8 @@ def test_env_sample_and_local_env_are_configured():
     assert "GENERATION_LANGUAGES=en,zh" in sample
     assert "GENERATION_THINKING_MODES=non-thinking,think-high,think-max" in sample
     assert "GENERATION_REPEAT_COUNT=3" in sample
+    assert "GENERATION_TEMPERATURE=1.0" in sample
+    assert "GENERATION_TOP_P=1.0" in sample
     assert "TOOLCALL15_SCENARIO_SET=en" in sample
     assert "TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max" in sample
     assert "TOOLCALL15_REPEAT_COUNT=3" in sample
@@ -126,6 +131,7 @@ def test_env_sample_and_local_env_are_configured():
     assert "SERVER_FAILURE_PROBE_TIMEOUT=30" in sample
     assert "SERVER_FAILURE_GRACE_TIMEOUT=300" in sample
     assert "SERVER_RECOVERY_CMD=" in sample
+    assert "SERVE_MAX_MODEL_LEN=393216" in sample
     assert "GPU_TOPOLOGY_SLUG=" in sample
     assert ".env" in gitignore
 
@@ -148,6 +154,8 @@ def test_acceptance_script_repeats_real_scenario_gates_three_times():
     assert 'TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-en}"' in script
     assert 'TOOLCALL15_REPEAT_COUNT="${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
     assert '--prompt-root "${GENERATION_PROMPT_ROOT}"' in script
+    assert '--temperature "${GENERATION_TEMPERATURE}"' in script
+    assert '--top-p "${GENERATION_TOP_P}"' in script
     assert '--scenario-set "${TOOLCALL15_SCENARIO_SET}"' in script
     assert '--request-retries "${API_REQUEST_RETRIES}"' in script
     assert '--thinking-mode "${thinking_mode}"' in script
@@ -253,6 +261,9 @@ def test_b200_baseline_script_uses_official_serve_shape():
     assert "--tokenizer-mode" in script
     assert "--tool-call-parser" in script
     assert "--enable-auto-tool-choice" in script
+    assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-393216}"' in script
+    assert "--max-model-len" in script
+    assert '"${SERVE_MAX_MODEL_LEN}"' in script
     assert "--speculative_config" in script
     assert '"method":"mtp","num_speculative_tokens":2' in script
 
@@ -656,6 +667,9 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
     assert "--speculative_config" in (out_dir / "mtp" / "serve_command.sh").read_text(
         encoding="utf-8"
     )
+    assert "--max-model-len 393216" in (
+        out_dir / "nomtp" / "serve_command.sh"
+    ).read_text(encoding="utf-8")
     assert "wrote" in result.stdout
 
 
@@ -853,7 +867,7 @@ def test_official_api_baseline_script_writes_separate_baseline_directory():
     assert "load_harness_env" in script
     assert 'OFFICIAL_BASELINE_DATE="${OFFICIAL_BASELINE_DATE:-$(date +%Y%m%d)}"' in script
     assert 'OFFICIAL_BASELINE_DIR="${OFFICIAL_BASELINE_DIR:-${REPO_ROOT}/baselines/${OFFICIAL_BASELINE_DATE}_${OFFICIAL_BASELINE_LABEL}}"' in script
-    assert 'OFFICIAL_GENERATION_PROMPTS="${OFFICIAL_GENERATION_PROMPTS:-translation_en_to_zh,translation_zh_to_en,writing_follow_instructions,writing_local_llm_tradeoffs}"' in script
+    assert 'OFFICIAL_GENERATION_PROMPTS="${OFFICIAL_GENERATION_PROMPTS:-zh_wr_tech_001,en_wr_tech_001,zh_code_fe_001,en_code_be_001,zh2en_tech_001,en2zh_tech_001,zh_sum_tech_001,en_sum_tech_001}"' in script
     assert 'OFFICIAL_SMOKE_CASES="${OFFICIAL_SMOKE_CASES:-math_7_times_8,capital_of_france,spanish_greeting}"' in script
     assert 'OFFICIAL_REQUEST_RETRIES="${OFFICIAL_REQUEST_RETRIES:-1}"' in script
     assert 'OFFICIAL_TOOLCALL15_THINKING_MODES="${OFFICIAL_TOOLCALL15_THINKING_MODES:-${OFFICIAL_THINKING_MODES}}"' in script
@@ -867,6 +881,8 @@ def test_official_api_baseline_script_writes_separate_baseline_directory():
     assert "report.md" in script
     assert 'OFFICIAL_REPEAT_COUNT="${OFFICIAL_REPEAT_COUNT:-3}"' in script
     assert '--request-retries "${OFFICIAL_REQUEST_RETRIES}"' in script
+    assert '--temperature "${OFFICIAL_TEMPERATURE}"' in script
+    assert '--top-p "${OFFICIAL_TOP_P}"' in script
     assert '--thinking-mode "${thinking_mode}"' in script
 
 

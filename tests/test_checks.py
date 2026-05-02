@@ -88,50 +88,64 @@ def test_case_payload_round_trips_as_json():
     assert payload["tool_choice"] == "auto"
 
 
-def test_subjective_writing_and_translation_prompts_are_available():
+def test_benchmark_prompt_suite_replaces_seed_writing_and_translation_prompts():
     prompts = load_generation_prompts(ROOT / "prompts")
     names = {prompt.name: prompt for prompt in prompts}
 
-    for name in (
+    for name in ("zh_wr_news_001", "en_wr_tech_001", "zh2en_bus_001", "en2zh_child_001"):
+        assert name in names
+        assert "subjective" in names[name].tags
+        assert "benchmark-suite" in names[name].tags
+        assert names[name].temperature == 1.0
+        assert names[name].top_p == 1.0
+
+    for replaced in (
         "writing_local_llm_tradeoffs",
+        "writing_follow_instructions",
         "translation_en_to_zh",
         "translation_zh_to_en",
     ):
-        assert name in names
-        assert "subjective" in names[name].tags
-        assert names[name].temperature == 1.0
+        assert replaced not in names
+
+    for preserved in ("aquarium_html", "clock_html"):
+        assert preserved in names
+        assert "user-report" in names[preserved].tags
 
 
 def test_chinese_real_scenario_prompts_are_available_by_default_group():
     prompts = load_generation_prompts(ROOT / "prompts", languages=["zh"])
-    quality_cn = [prompt for prompt in prompts if "translation" in prompt.tags or "writing" in prompt.tags]
+    benchmark_cn = [prompt for prompt in prompts if "benchmark-suite" in prompt.tags]
     coding_cn = [prompt for prompt in prompts if "coding" in prompt.tags]
 
-    assert [prompt.name for prompt in quality_cn] == [
-        "translation_zh_to_en",
-        "writing_local_llm_tradeoffs",
-    ]
-    assert [prompt.name for prompt in coding_cn] == [
+    assert len(benchmark_cn) == 15
+    assert {prompt.workload for prompt in benchmark_cn} == {
+        "coding",
+        "reading_summary",
+        "translation",
+        "writing",
+    }
+    assert [prompt.name for prompt in coding_cn if "user-report" in prompt.tags] == [
         "aquarium_html",
         "clock_html",
     ]
-    assert all("subjective" in prompt.tags for prompt in quality_cn + coding_cn)
+    assert all("subjective" in prompt.tags for prompt in benchmark_cn + coding_cn)
 
 
 def test_english_real_scenario_prompts_include_coding_writing_translation():
     prompts = load_generation_prompts(ROOT / "prompts", languages=["en"])
 
-    assert [prompt.name for prompt in prompts] == [
-        "aquarium_html",
-        "clock_html",
-        "translation_en_to_zh",
-        "writing_follow_instructions",
-    ]
-    assert {prompt.workload for prompt in prompts} == {
+    benchmark_en = [prompt for prompt in prompts if "benchmark-suite" in prompt.tags]
+    assert len(benchmark_en) == 16
+    assert {prompt.workload for prompt in benchmark_en} == {
         "coding",
+        "reading_summary",
         "translation",
         "writing",
     }
+    assert [prompt.name for prompt in prompts if "user-report" in prompt.tags] == [
+        "aquarium_html",
+        "clock_html",
+    ]
 
 
 def test_basic_quick_cases_allow_reasoning_token_budget():
@@ -146,12 +160,15 @@ def test_english_to_chinese_translation_accepts_concise_complete_translation():
     prompt = next(
         prompt
         for prompt in load_generation_prompts(ROOT / "prompts")
-        if prompt.name == "translation_en_to_zh"
+        if prompt.name == "en2zh_tech_001"
     )
     response = _chat_response(
-        "本地运行大语言模型可以提升隐私性并降低延迟，但也将运维责任转移到了团队身上。"
-        "实际的问题不在于本地推理是否令人惊叹，而在于该组织能否维护硬件、监控质量，"
-        "并承担迭代速度放缓带来的成本。"
+        "本地运行大语言模型可以提升隐私性并降低延迟，但也会把运维责任转移到团队身上。"
+        "真正需要评估的不是本地推理本身是否令人印象深刻，而是组织能否长期维护硬件、"
+        "监控质量、处理升级风险，并承受迭代速度放缓带来的成本。对于工程管理者而言，"
+        "这是一项关于控制权、可靠性和团队能力边界的综合判断，而不是一次简单的模型部署。"
+        "如果缺少明确的容量规划、故障响应机制和质量评估流程，本地化带来的优势很容易被"
+        "持续投入和复杂性抵消。"
     )
 
     result = check_chat_response(prompt.expectation, response)

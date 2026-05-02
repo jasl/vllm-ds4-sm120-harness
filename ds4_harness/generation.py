@@ -37,6 +37,7 @@ class GenerationPrompt:
     expectation: Expectation
     max_tokens: int | None = None
     temperature: float | None = None
+    top_p: float | None = None
 
     @property
     def workload(self) -> str:
@@ -47,6 +48,8 @@ class GenerationPrompt:
             return "writing"
         if "coding" in normalized:
             return "coding"
+        if "reading_summary" in normalized:
+            return "reading_summary"
         return "generation"
 
     def to_payload(
@@ -55,6 +58,7 @@ class GenerationPrompt:
         model: str,
         default_max_tokens: int,
         default_temperature: float,
+        default_top_p: float,
         max_case_tokens: int | None = None,
     ) -> Json:
         max_tokens = self.max_tokens or default_max_tokens
@@ -69,6 +73,7 @@ class GenerationPrompt:
                 if self.temperature is not None
                 else default_temperature
             ),
+            "top_p": self.top_p if self.top_p is not None else default_top_p,
         }
 
 
@@ -180,6 +185,7 @@ def load_generation_prompts(
                     expectation=expectation,
                     max_tokens=_int_value(metadata.get("max_tokens")),
                     temperature=_float_value(metadata.get("temperature")),
+                    top_p=_float_value(metadata.get("top_p")),
                 )
             )
     return prompts
@@ -248,6 +254,8 @@ def generation_result_row(
         "round": round_index,
         "thinking_mode": thinking_mode,
         "thinking_strength": _thinking_strength(payload),
+        "temperature": payload.get("temperature"),
+        "top_p": payload.get("top_p"),
         "variant": variant,
         "ok": result.ok,
         "detail": result.detail,
@@ -293,6 +301,8 @@ def write_generation_transcript(path: Path, row: Json) -> None:
         f"- Round: `{row.get('round')}`",
         f"- Thinking mode: `{row.get('thinking_mode')}`",
         f"- Thinking strength: `{row.get('thinking_strength')}`",
+        f"- Temperature: `{row.get('temperature')}`",
+        f"- Top P: `{row.get('top_p')}`",
         f"- Variant: `{row.get('variant')}`",
         f"- OK: `{row.get('ok')}`",
         f"- Status: {'PASS' if row.get('ok') else 'FAIL'}",

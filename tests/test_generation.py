@@ -17,6 +17,7 @@ def test_load_generation_prompts_reads_markdown_metadata(tmp_path):
 tags: writing, subjective
 max_tokens: 1024
 temperature: 0.7
+top_p: 0.9
 min_chars: 20
 all_terms: Context, Recommendation
 forbidden_terms: as an ai
@@ -34,6 +35,7 @@ Write a short article with Context and Recommendation sections.
     assert prompt.workload == "writing"
     assert prompt.max_tokens == 1024
     assert prompt.temperature == 0.7
+    assert prompt.top_p == 0.9
     assert prompt.expectation.all_terms == ("Context", "Recommendation")
     assert prompt.expectation.forbidden_terms == ("as an ai",)
     assert prompt.prompt.startswith("Write a short article")
@@ -110,6 +112,8 @@ Translate this sentence into English: 隐私和延迟都很重要。
     assert rows[0]["model"] == "deepseek-ai/DeepSeek-V4-Flash"
     assert rows[0]["thinking_mode"] == "non-thinking"
     assert rows[0]["thinking_strength"] == "disabled"
+    assert rows[0]["temperature"] == 1.0
+    assert rows[0]["top_p"] == 1.0
     assert rows[0]["variant"] == "mtp"
     transcript = (
         transcript_dir / "zh" / "translation_probe.1.non-thinking.mtp.md"
@@ -120,6 +124,8 @@ Translate this sentence into English: 隐私和延迟都很重要。
     assert "- Model: `deepseek-ai/DeepSeek-V4-Flash`" in transcript
     assert "- Thinking mode: `non-thinking`" in transcript
     assert "- Thinking strength: `disabled`" in transcript
+    assert "- Temperature: `1.0`" in transcript
+    assert "- Top P: `1.0`" in transcript
     assert (
         '- Usage: `{"prompt_tokens": 12, "completion_tokens": 7, "total_tokens": 19}`'
         in transcript
@@ -140,6 +146,8 @@ def test_write_generation_transcript_strips_trailing_whitespace(tmp_path):
             "round": 1,
             "thinking_mode": "think-high",
             "thinking_strength": "high",
+            "temperature": 1.0,
+            "top_p": 1.0,
             "variant": "official-api",
             "ok": True,
             "detail": "matched expectation",

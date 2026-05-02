@@ -18,7 +18,8 @@ def _write_fixture_phase(root, variant, phase, *, output_tok_s=1600.0):
     (root / variant).mkdir(parents=True, exist_ok=True)
     serve_args = (
         "deepseek-ai/DeepSeek-V4-Flash --trust-remote-code --kv-cache-dtype fp8 "
-        "--block-size 256 --tensor-parallel-size 4 --host 127.0.0.1 --port 8080 "
+        "--block-size 256 --max-model-len 393216 --tensor-parallel-size 4 "
+        "--host 127.0.0.1 --port 8080 "
         "--no-enable-flashinfer-autotune --attention_config.use_fp4_indexer_cache=True "
         "--reasoning-parser deepseek_v4 --tokenizer-mode deepseek_v4 "
         "--tool-call-parser deepseek_v4 --enable-auto-tool-choice"
@@ -325,8 +326,8 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert "13.0.88" in report
     assert "595.58.03" in report
     assert "## Serve Shape" in report
-    assert "| `nomtp` | `fp8` | 256 | 4 | `n/a` | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |" in report
-    assert '| `mtp` | `fp8` | 256 | 4 | `{"method":"mtp","num_speculative_tokens":2}` | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |' in report
+    assert "| `nomtp` | `fp8` | 256 | 393216 | 4 | `n/a` | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |" in report
+    assert '| `mtp` | `fp8` | 256 | 393216 | 4 | `{"method":"mtp","num_speculative_tokens":2}` | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |' in report
     assert "## Quick Performance Summary" in report
     assert "### Real Scenario OP Cost Estimate" in report
     assert (

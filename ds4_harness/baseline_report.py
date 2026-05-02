@@ -1197,6 +1197,7 @@ def _serve_args_summary(args: list[str]) -> dict[str, Any]:
         "model": args[0] if args else None,
         "kv_cache_dtype": None,
         "block_size": None,
+        "max_model_len": None,
         "tensor_parallel_size": None,
         "speculative_config": None,
         "reasoning_parser": None,
@@ -1209,6 +1210,7 @@ def _serve_args_summary(args: list[str]) -> dict[str, Any]:
     options_with_values = {
         "--kv-cache-dtype": "kv_cache_dtype",
         "--block-size": "block_size",
+        "--max-model-len": "max_model_len",
         "--tensor-parallel-size": "tensor_parallel_size",
         "--speculative_config": "speculative_config",
         "--speculative-config": "speculative_config",
@@ -1268,14 +1270,15 @@ def _append_serve_shape(lines: list[str], rows: list[dict[str, Any]]) -> None:
         [
             "## Serve Shape",
             "",
-            "| Variant | KV dtype | Block size | TP | Speculative config | Reasoning parser | Tokenizer mode | Tool parser | Auto tool | FP4 index cache | FlashInfer autotune disabled |",
-            "| --- | --- | ---: | ---: | --- | --- | --- | --- | --- | --- | --- |",
+            "| Variant | KV dtype | Block size | Max model len | TP | Speculative config | Reasoning parser | Tokenizer mode | Tool parser | Auto tool | FP4 index cache | FlashInfer autotune disabled |",
+            "| --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for row in rows:
         lines.append(
             f"| `{row['variant']}` | `{_metadata(row.get('kv_cache_dtype'))}` | "
             f"{_metadata(row.get('block_size'))} | "
+            f"{_metadata(row.get('max_model_len'))} | "
             f"{_metadata(row.get('tensor_parallel_size'))} | "
             f"`{_metadata(row.get('speculative_config'))}` | "
             f"`{_metadata(row.get('reasoning_parser'))}` | "
