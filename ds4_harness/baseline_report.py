@@ -1091,15 +1091,10 @@ def _best_benchmark_rows(
 def _append_quick_performance_summary(
     lines: list[str],
     real_scenario_cost_rows: list[dict[str, Any]],
-    primary_bench_rows: list[dict[str, Any]],
-    supplement_bench_rows: list[dict[str, Any]],
+    bench_rows: list[dict[str, Any]],
     runtime_rows: list[dict[str, Any]],
-    *,
-    runtime_source: str,
 ) -> None:
-    best_rows = _best_benchmark_rows("Primary", primary_bench_rows)
-    if supplement_bench_rows:
-        best_rows.extend(_best_benchmark_rows("Supplement", supplement_bench_rows))
+    best_rows = _best_benchmark_rows("Primary", bench_rows)
 
     if not real_scenario_cost_rows and not best_rows and not runtime_rows:
         return
@@ -1178,7 +1173,7 @@ def _append_quick_performance_summary(
             metrics = row["metrics"]
             serve_log = row["serve_log"]
             lines.append(
-                f"| {runtime_source} | `{row['variant']}` | {row['phase_label']} | "
+                f"| Primary | `{row['variant']}` | {row['phase_label']} | "
                 f"{_fmt(serve_log.get('prefill_throughput_tok_s_avg'))} | "
                 f"{_fmt(serve_log.get('decode_throughput_tok_s_avg'))} | "
                 f"{_fmt_int(metrics.get('prefill_tokens_delta'))} | "
@@ -1682,7 +1677,6 @@ def _append_spec_decode(lines: list[str], rows: list[dict[str, Any]]) -> None:
 def build_baseline_report(
     run_dir: Path,
     *,
-    supplement_dir: Path | None = None,
     title: str = "DeepSeek V4 Baseline Report",
     label: str | None = None,
 ) -> str:
@@ -1703,16 +1697,6 @@ def build_baseline_report(
     collect_env_total, collect_env_ok, collect_env_failed = _collect_env_status(records)
     unresponsive_markers = _unresponsive_markers(run_dir)
 
-    supplement_records: list[PhaseRecord] = []
-    supplement_bench_rows: list[dict[str, Any]] = []
-    supplement_runtime_rows: list[dict[str, Any]] = []
-    if supplement_dir is not None:
-        supplement_dir = Path(supplement_dir)
-        supplement_records = _parse_phase_log(supplement_dir)
-        supplement_env = _first_environment(supplement_records) or env
-        supplement_bench_rows = _bench_rows(supplement_records, supplement_env)
-        supplement_runtime_rows = _runtime_rows(supplement_records)
-
     harness = env.get("harness", {})
     artifact = env.get("artifact", {})
     lines = [
@@ -1722,8 +1706,6 @@ def build_baseline_report(
         f"- Artifact generated at UTC: `{_metadata(env.get('generated_at_utc'))}`",
         f"- Primary artifact: `{_fmt_path(run_dir)}`",
     ]
-    if supplement_dir is not None:
-        lines.append(f"- Supplement artifact: `{_fmt_path(supplement_dir)}`")
     lines.extend(
         [
             f"- Model: `{_metadata(harness.get('model'))}`",
@@ -1752,14 +1734,11 @@ def build_baseline_report(
 
     _append_provenance(lines, collect_env_summary)
     _append_serve_shape(lines, serve_shape_rows)
-    summary_runtime_rows = supplement_runtime_rows or runtime_rows
     _append_quick_performance_summary(
         lines,
         real_scenario_cost_rows,
         bench_rows,
-        supplement_bench_rows,
-        summary_runtime_rows,
-        runtime_source="Supplement" if supplement_runtime_rows else "Primary",
+        runtime_rows,
     )
     _append_phase_table(lines, records)
     _append_acceptance_gates(lines, acceptance_gate_rows)
@@ -1768,30 +1747,9 @@ def build_baseline_report(
     _append_long_context(lines, long_context_rows)
     _append_oracle(lines, oracle_rows)
     _append_evals(lines, eval_rows)
-    if supplement_bench_rows:
-        _append_benchmark_tables(lines, supplement_bench_rows, title_prefix="Supplement")
-    if supplement_runtime_rows:
-        _append_runtime(lines, supplement_runtime_rows, "Supplement Runtime Stats")
-        _append_spec_decode(lines, supplement_runtime_rows)
-    elif runtime_rows:
+    if runtime_rows:
         _append_runtime(lines, runtime_rows, "Runtime Stats")
         _append_spec_decode(lines, runtime_rows)
-
-    if supplement_records:
-        lines.extend(
-            [
-                "## Supplement Phase Exit Codes",
-                "",
-                "| Variant | Phase | Exit | Artifact |",
-                "| --- | --- | ---: | --- |",
-            ]
-        )
-        for record in supplement_records:
-            lines.append(
-                f"| `{record.variant}` | `{record.phase}` | "
-                f"{_fmt_int(record.exit_code)} | `{record.variant}/{record.phase}` |"
-            )
-        lines.append("")
 
     lines.extend(
         [
@@ -1802,7 +1760,6 @@ def build_baseline_report(
             "- `tok/s/used GiB` divides output token throughput by sampled peak used GPU VRAM.",
             "- `tok/J` and `tok/s/kW` use sampled average GPU power for the phase.",
             "- Benchmark power and VRAM denominators are phase-level samples, not per-concurrency samples.",
-            "- Quick runtime prefill/decode averages use supplement rows when a supplement artifact is provided.",
             "",
         ]
     )

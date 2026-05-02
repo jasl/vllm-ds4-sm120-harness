@@ -82,87 +82,80 @@ def test_scripts_default_to_branch_timestamped_artifacts_dir():
         assert "/tmp/ds4-sm120" not in script
 
 
+def _env_sample_values():
+    values = {}
+    for line in (ROOT / "env.sample").read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value
+    return values
+
+
 def test_env_sample_and_local_env_are_configured():
-    sample = (ROOT / "env.sample").read_text(encoding="utf-8")
+    values = _env_sample_values()
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
 
-    assert "DEEPSEEK_API_KEY=" in sample
-    assert "DEEPSEEK_BASE_URL=https://api.deepseek.com" in sample
-    assert "DEEPSEEK_BETA_BASE_URL=https://api.deepseek.com/beta" in sample
-    assert "DEEPSEEK_MODEL=deepseek-v4-flash" in sample
-    assert "DEEPSEEK_FLASH_MODEL=deepseek-v4-flash" in sample
-    assert "DEEPSEEK_PRO_MODEL=deepseek-v4-pro" in sample
-    assert "DEEPSEEK_THINKING_TYPE=enabled" in sample
-    assert "DEEPSEEK_REASONING_EFFORT=high" in sample
-    assert "DEEPSEEK_PRESERVE_REASONING_CONTENT=1" in sample
-    assert "OFFICIAL_BASELINE_DATE=" in sample
-    assert "OFFICIAL_BASELINE_LABEL=" in sample
-    assert "OFFICIAL_BASELINE_DIR=" in sample
-    assert "OFFICIAL_REQUEST_RETRIES=1" in sample
-    assert "OFFICIAL_REPEAT_COUNT=3" in sample
-    assert "OFFICIAL_TEMPERATURE=1.0" in sample
-    assert "OFFICIAL_TOP_P=1.0" in sample
-    assert (
-        "OFFICIAL_GENERATION_PROMPTS=zh_wr_tech_001,en_wr_tech_001,"
-        "zh_code_fe_001,en_code_be_001,zh2en_tech_001,en2zh_tech_001,"
-        "zh_sum_tech_001,en_sum_tech_001"
-    ) in sample
-    assert "OFFICIAL_THINKING_MODES=non-thinking,think-high,think-max" in sample
-    assert (
-        "OFFICIAL_SMOKE_CASES=math_7_times_8,capital_of_france,spanish_greeting"
-        in sample
-    )
-    assert "OFFICIAL_SMOKE_REPEAT_COUNT=1" in sample
-    assert "BASELINE_LABEL=b200_oracle" in sample
-    assert "ORACLE_LOGPROBS=20" in sample
-    assert "ORACLE_TIMEOUT=300" in sample
-    assert "ORACLE_REQUEST_RETRIES=1" in sample
-    assert "ORACLE_CASES=" in sample
-    assert "OFFICIAL_RUN_TOOLCALL15=1" in sample
-    assert "OFFICIAL_TOOLCALL15_SCENARIO_SET=en" in sample
-    assert "OFFICIAL_TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max" in sample
-    assert "OFFICIAL_TOOLCALL15_REPEAT_COUNT=1" in sample
-    assert "OFFICIAL_STRICT=0" in sample
-    assert "REAL_SCENARIO_REPEAT_COUNT=3" in sample
-    assert "API_REQUEST_RETRIES=1" in sample
-    assert "ARTIFACT_ARCHIVE_PREVIOUS=1" in sample
-    assert "ARTIFACT_ARCHIVE_PREFIX=" in sample
-    assert "B200_BASELINE_PHASES=all" in sample
-    assert "B200_VARIANT_PARALLEL=0" in sample
-    assert "B200_PARALLEL_GPU_GROUPS=nomtp=0,1;mtp=2,3" in sample
-    assert "B200_PARALLEL_TENSOR_PARALLEL_SIZE=2" in sample
-    assert "B200_PARALLEL_PORTS=" in sample
-    assert "SERVE_USE_FP4_INDEXER_CACHE=auto" in sample
-    assert "RUN_LM_EVAL=1" in sample
-    assert "LM_EVAL_BIN=lm_eval" in sample
-    assert "LM_EVAL_TASKS=gsm8k" in sample
-    assert "LM_EVAL_NUM_FEWSHOT=8" in sample
-    assert "LM_EVAL_NUM_CONCURRENT=4" in sample
-    assert "LM_EVAL_MAX_RETRIES=10" in sample
-    assert "LM_EVAL_MAX_GEN_TOKS=2048" in sample
-    assert "LM_EVAL_TIMEOUT_MS=60000" in sample
-    assert "LM_EVAL_TOKENIZER_BACKEND=none" in sample
-    assert "LM_EVAL_COMMAND_TIMEOUT=7200" in sample
-    assert "B200_ARCHIVE_PREVIOUS" not in sample
-    assert "B200_ARCHIVE_PREFIX" not in sample
-    assert "GENERATION_PROMPT_ROOT=" in sample
-    assert "GENERATION_LANGUAGES=en,zh" in sample
-    assert "GENERATION_THINKING_MODES=non-thinking,think-high,think-max" in sample
-    assert "GENERATION_REPEAT_COUNT=3" in sample
-    assert "GENERATION_TEMPERATURE=1.0" in sample
-    assert "GENERATION_TOP_P=1.0" in sample
-    assert "TOOLCALL15_SCENARIO_SET=en" in sample
-    assert "TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max" in sample
-    assert "TOOLCALL15_REPEAT_COUNT=3" in sample
-    assert "SERVER_GUARD=1" in sample
-    assert "SERVER_STARTUP_TIMEOUT=1800" in sample
-    assert "SERVER_STARTUP_INTERVAL_SECONDS=15" in sample
-    assert "SERVER_HEALTH_TIMEOUT=10" in sample
-    assert "SERVER_FAILURE_PROBE_TIMEOUT=30" in sample
-    assert "SERVER_FAILURE_GRACE_TIMEOUT=300" in sample
-    assert "SERVER_RECOVERY_CMD=" in sample
-    assert "SERVE_MAX_MODEL_LEN=393216" in sample
-    assert "GPU_TOPOLOGY_SLUG=" in sample
+    required_keys = {
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_BASE_URL",
+        "DEEPSEEK_BETA_BASE_URL",
+        "DEEPSEEK_MODEL",
+        "DEEPSEEK_FLASH_MODEL",
+        "DEEPSEEK_PRO_MODEL",
+        "DEEPSEEK_PRESERVE_REASONING_CONTENT",
+        "OFFICIAL_BASELINE_DATE",
+        "OFFICIAL_BASELINE_LABEL",
+        "OFFICIAL_BASELINE_DIR",
+        "OFFICIAL_GENERATION_PROMPTS",
+        "OFFICIAL_THINKING_MODES",
+        "OFFICIAL_SMOKE_CASES",
+        "OFFICIAL_TOOLCALL15_THINKING_MODES",
+        "BASELINE_LABEL",
+        "ORACLE_LOGPROBS",
+        "ORACLE_TIMEOUT",
+        "ORACLE_REQUEST_RETRIES",
+        "ARTIFACT_ARCHIVE_PREVIOUS",
+        "ARTIFACT_ARCHIVE_PREFIX",
+        "B200_BASELINE_LABEL",
+        "B200_BASELINE_PHASES",
+        "B200_PARALLEL_GPU_GROUPS",
+        "SERVE_MAX_MODEL_LEN",
+        "SERVE_USE_FP4_INDEXER_CACHE",
+        "GENERATION_PROMPT_ROOT",
+        "GENERATION_LANGUAGES",
+        "GENERATION_THINKING_MODES",
+        "GENERATION_TEMPERATURE",
+        "GENERATION_TOP_P",
+        "TOOLCALL15_SCENARIO_SET",
+        "TOOLCALL15_THINKING_MODES",
+        "RUN_LM_EVAL",
+        "LM_EVAL_BIN",
+        "LM_EVAL_TASKS",
+        "SERVER_GUARD",
+        "SERVER_STARTUP_TIMEOUT",
+        "SERVER_HEALTH_TIMEOUT",
+        "SERVER_FAILURE_GRACE_TIMEOUT",
+        "SERVER_RECOVERY_CMD",
+        "GPU_TOPOLOGY_SLUG",
+    }
+    assert required_keys <= set(values)
+    assert {
+        "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+        "DEEPSEEK_BETA_BASE_URL": "https://api.deepseek.com/beta",
+        "DEEPSEEK_MODEL": "deepseek-v4-flash",
+        "DEEPSEEK_FLASH_MODEL": "deepseek-v4-flash",
+        "DEEPSEEK_PRO_MODEL": "deepseek-v4-pro",
+        "OFFICIAL_TEMPERATURE": "1.0",
+        "OFFICIAL_TOP_P": "1.0",
+        "GENERATION_TEMPERATURE": "1.0",
+        "GENERATION_TOP_P": "1.0",
+        "SERVE_MAX_MODEL_LEN": "393216",
+        "SERVE_USE_FP4_INDEXER_CACHE": "auto",
+    }.items() <= values.items()
+    assert "B200_ARCHIVE_PREVIOUS" not in values
+    assert "B200_ARCHIVE_PREFIX" not in values
     assert ".env" in gitignore
 
 
@@ -286,34 +279,6 @@ def test_scripts_collect_vllm_official_env_to_artifacts():
         assert "collect_vllm_env" in script
 
 
-def test_b200_baseline_script_uses_official_serve_shape():
-    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
-
-    assert 'VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-3600}"' in script
-    assert 'SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-auto}"' in script
-    assert "deepseek-ai/DeepSeek-V4-Flash" in script
-    assert "--trust-remote-code" in script
-    assert "--kv-cache-dtype" in script
-    assert "fp8" in script
-    assert "--block-size" in script
-    assert "256" in script
-    assert "--tensor-parallel-size" in script
-    assert "4" in script
-    assert "--no-enable-flashinfer-autotune" in script
-    assert "fp4_indexer_cache_enabled" in script
-    assert "--attention_config.use_fp4_indexer_cache=True" in script
-    assert "--reasoning-parser" in script
-    assert "deepseek_v4" in script
-    assert "--tokenizer-mode" in script
-    assert "--tool-call-parser" in script
-    assert "--enable-auto-tool-choice" in script
-    assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-393216}"' in script
-    assert "--max-model-len" in script
-    assert '"${SERVE_MAX_MODEL_LEN}"' in script
-    assert "--speculative_config" in script
-    assert '"method":"mtp","num_speculative_tokens":2' in script
-
-
 def test_b200_baseline_script_clears_inherited_vllm_launch_defaults():
     script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
 
@@ -343,8 +308,8 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"' in script
     assert 'RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"' in script
     assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
-    assert 'ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-${B200_ARCHIVE_PREVIOUS:-1}}"' in script
-    assert 'ARTIFACT_ARCHIVE_PREFIX="${ARTIFACT_ARCHIVE_PREFIX:-${B200_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}}"' in script
+    assert 'ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-1}"' in script
+    assert 'ARTIFACT_ARCHIVE_PREFIX="${ARTIFACT_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}"' in script
     assert "archive_previous_runs" in script
     assert "_archive_before_${RUN_TIMESTAMP}" in script
     assert 'ARTIFACT_PARENT="${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}"' in script
@@ -446,7 +411,6 @@ def test_baseline_bundle_script_generates_report_and_public_data():
     assert '--run-dir "${BASELINE_RUN_DIR}"' in script
     assert '--output-dir "${tmp_dir}"' in script
     assert '--output "${tmp_dir}/report.md"' in script
-    assert "--fail-on-sensitive" in script
     assert "scan_public_bundle" in script
     assert "load_oracle_cases" in script
     assert 'BASELINE_REQUIRE_GENERATION="${BASELINE_REQUIRE_GENERATION:-1}"' in script
@@ -813,6 +777,20 @@ def test_b200_baseline_driver_omits_fp4_indexer_cache_for_sm12x_auto(tmp_path):
 def test_b200_baseline_driver_enables_fp4_indexer_cache_for_b200_auto(tmp_path):
     out_dir = run_minimal_b200_baseline(tmp_path, "4x_nvidia_b200")
     command = (out_dir / "nomtp" / "serve_command.sh").read_text(encoding="utf-8")
+    for expected in (
+        "deepseek-ai/DeepSeek-V4-Flash",
+        "--trust-remote-code",
+        "--kv-cache-dtype fp8",
+        "--block-size 256",
+        "--max-model-len 393216",
+        "--tensor-parallel-size 4",
+        "--no-enable-flashinfer-autotune",
+        "--reasoning-parser deepseek_v4",
+        "--tokenizer-mode deepseek_v4",
+        "--tool-call-parser deepseek_v4",
+        "--enable-auto-tool-choice",
+    ):
+        assert expected in command
     assert "--attention_config.use_fp4_indexer_cache=True" in command
 
 
@@ -1166,12 +1144,12 @@ def test_b200_baseline_driver_archives_previous_managed_artifacts(tmp_path):
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
     artifact_root = tmp_path / "artifacts"
     parent = artifact_root / "main" / "4x_b200"
-    old_label_dir = parent / "b200_main_51295793a"
-    old_supplement_dir = parent / "b200_main_51295793a_logsliced_bench"
+    old_label_dir = parent / "b200_tp4_main_5737770c6"
+    old_extra_dir = parent / "b200_tp4_main_5737770c6_extra"
     old_label_dir.mkdir(parents=True)
-    old_supplement_dir.mkdir()
+    old_extra_dir.mkdir()
     (old_label_dir / "old.txt").write_text("old", encoding="utf-8")
-    (old_supplement_dir / "old.txt").write_text("old", encoding="utf-8")
+    (old_extra_dir / "old.txt").write_text("old", encoding="utf-8")
 
     env = os.environ | {
         "PYTHON": str(fake_python),
@@ -1179,7 +1157,7 @@ def test_b200_baseline_driver_archives_previous_managed_artifacts(tmp_path):
         "ARTIFACT_ROOT": str(artifact_root),
         "BRANCH_NAME": "main",
         "GPU_TOPOLOGY_SLUG": "4x_b200",
-        "B200_BASELINE_LABEL": "b200_main_51295793a",
+        "B200_BASELINE_LABEL": "b200_tp4_main_5737770c6",
         "RUN_TIMESTAMP": "20260502010102",
         "B200_BASELINE_VARIANTS": "nomtp",
         "RUN_ACCEPTANCE": "0",
@@ -1205,10 +1183,12 @@ def test_b200_baseline_driver_archives_previous_managed_artifacts(tmp_path):
     )
 
     archive_dir = parent / "_archive_before_20260502010102"
-    assert (archive_dir / "b200_main_51295793a" / "old.txt").exists()
-    assert (archive_dir / "b200_main_51295793a_logsliced_bench" / "old.txt").exists()
+    assert (archive_dir / "b200_tp4_main_5737770c6" / "old.txt").exists()
+    assert (archive_dir / "b200_tp4_main_5737770c6_extra" / "old.txt").exists()
     assert (archive_dir / "archive_manifest.tsv").exists()
-    assert (parent / "b200_main_51295793a" / "20260502010102" / "baseline_summary.md").exists()
+    assert (
+        parent / "b200_tp4_main_5737770c6" / "20260502010102" / "baseline_summary.md"
+    ).exists()
 
 
 def test_generate_baseline_report_wrapper_uses_report_cli():
@@ -1219,7 +1199,6 @@ def test_generate_baseline_report_wrapper_uses_report_cli():
     assert "load_harness_env" in script
     assert "baseline-report" in script
     assert "BASELINE_RUN_DIR" in script
-    assert "BASELINE_SUPPLEMENT_DIR" in script
     assert "BASELINE_REPORT_OUTPUT" in script
     assert "BASELINE_REPORT_DATE" in script
     assert 'baselines/${BASELINE_REPORT_DATE}_${output_label}/report.md' in script

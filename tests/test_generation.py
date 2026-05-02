@@ -1,7 +1,7 @@
 import json
 
 from ds4_harness import cli
-from ds4_harness.generation import load_generation_prompts, write_generation_transcript
+from ds4_harness.generation import load_generation_prompts
 
 
 def _write_prompt(path, body):
@@ -64,8 +64,8 @@ Translate this sentence into English: 隐私和延迟都很重要。
                     "finish_reason": "stop",
                     "message": {
                         "role": "assistant",
-                        "reasoning_content": "",
-                        "content": "Privacy and latency are both important.",
+                        "reasoning_content": "Reasoning line.  \nNext reasoning.  ",
+                        "content": "Privacy and latency are both important.  ",
                     },
                 }
             ],
@@ -132,52 +132,7 @@ Translate this sentence into English: 隐私和延迟都很重要。
     )
     assert "Translate this sentence into English" in transcript
     assert "Privacy and latency are both important." in transcript
-
-
-def test_write_generation_transcript_strips_trailing_whitespace(tmp_path):
-    transcript_path = tmp_path / "transcript.md"
-    write_generation_transcript(
-        transcript_path,
-        {
-            "case": "writing_probe",
-            "language": "en",
-            "workload": "writing",
-            "model": "deepseek-v4-flash",
-            "round": 1,
-            "thinking_mode": "think-high",
-            "thinking_strength": "high",
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "variant": "official-api",
-            "ok": True,
-            "detail": "matched expectation",
-            "elapsed_seconds": 1.0,
-            "finish_reason": "stop",
-            "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
-            "payload": {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": "Prompt line with Markdown hard break.  \nNext line.  ",
-                    }
-                ]
-            },
-            "response": {
-                "choices": [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "reasoning_content": "Reasoning line.  \nNext reasoning.  ",
-                            "content": "Assistant line.  \nNext assistant.  ",
-                        },
-                        "finish_reason": "stop",
-                    }
-                ]
-            },
-        },
-    )
-
-    lines = transcript_path.read_text(encoding="utf-8").splitlines()
+    lines = transcript.splitlines()
     assert lines
     assert all(line == line.rstrip() for line in lines)
 

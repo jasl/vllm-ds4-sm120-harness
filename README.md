@@ -257,9 +257,9 @@ unresponsive server.
 To turn a finished artifact tree into a checked-in baseline bundle, run:
 
 ```bash
-BASELINE_RUN_DIR=artifacts/main/4x_nvidia_b200/b200_main_51295793a/20260501184103 \
+BASELINE_RUN_DIR=artifacts/main/4x_nvidia_b200/b200_tp4_main_5737770c6/20260502064850 \
 BASELINE_REPORT_TITLE="B200 vLLM Main DeepSeek V4 Flash Baseline" \
-BASELINE_REPORT_LABEL=b200_main_51295793a \
+BASELINE_REPORT_LABEL=b200_tp4_main_5737770c6 \
 scripts/generate_baseline_bundle.sh
 ```
 
@@ -544,7 +544,7 @@ B200_VLLM_VENV=/workspace/vllm/.venv \
 HF_HOME=/workspace/.hf_home \
 BRANCH_NAME=main \
 GPU_TOPOLOGY_SLUG=4x_nvidia_b200 \
-B200_BASELINE_LABEL=b200_tp4_official_main \
+B200_BASELINE_LABEL=b200_tp4_main_5737770c6 \
 scripts/run_b200_baseline.sh
 ```
 
@@ -607,9 +607,9 @@ inventory and GPU telemetry are filtered to the child process's
 `CUDA_VISIBLE_DEVICES`, so normalized columns such as `tok/s/GPU`, `tok/J`, and
 rental cost use the two-GPU denominator for each child service.
 
-The older `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`, `RUN_RANDOM_LONG=0`, and
-`RUN_ORACLE_EXPORT=0` toggles remain available for disabling phases inside the
-selected phase set. The oracle export phase runs for each requested variant so
+The `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`, `RUN_RANDOM_LONG=0`, and
+`RUN_ORACLE_EXPORT=0` toggles disable phases inside the selected phase set.
+The oracle export phase runs for each requested variant so
 no-MTP and MTP both produce logprobs reference material. Before creating a new
 managed run directory, the script moves existing sibling artifact directories
 matching
@@ -635,7 +635,7 @@ are available in the vLLM venv. If FlashInfer is installed, keep `flashinfer-pyt
 ```bash
 python -m ds4_harness.cli oracle-compare \
   --base-url http://127.0.0.1:8000 \
-  --oracle-dir baselines/20260501_b200_main_51295793a/oracle \
+  --oracle-dir baselines/20260502_b200_tp4_main_5737770c6/oracle \
   --top-n 20 \
   --require-prompt-ids \
   --min-top1-match-rate 0.80 \

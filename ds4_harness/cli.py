@@ -1004,7 +1004,6 @@ def _cmd_env_summary(args: argparse.Namespace) -> int:
 def _cmd_baseline_report(args: argparse.Namespace) -> int:
     report = build_baseline_report(
         args.run_dir,
-        supplement_dir=args.supplement_dir,
         title=args.title,
         label=args.label,
     )
@@ -1019,7 +1018,6 @@ def _cmd_baseline_report(args: argparse.Namespace) -> int:
 def _cmd_reference_bundle(args: argparse.Namespace) -> int:
     findings = build_reference_bundle(
         run_dir=args.run_dir,
-        supplement_dir=args.supplement_dir,
         output_dir=args.output_dir,
         label=args.label,
         date=args.date,
@@ -1235,7 +1233,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     baseline_report = subparsers.add_parser("baseline-report")
     baseline_report.add_argument("--run-dir", type=Path, required=True)
-    baseline_report.add_argument("--supplement-dir", type=Path)
     baseline_report.add_argument("--title", default="DeepSeek V4 Baseline Report")
     baseline_report.add_argument("--label")
     baseline_report.add_argument("--output", type=Path)
@@ -1243,11 +1240,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     reference_bundle = subparsers.add_parser("reference-bundle")
     reference_bundle.add_argument("--run-dir", type=Path, required=True)
-    reference_bundle.add_argument("--supplement-dir", type=Path)
     reference_bundle.add_argument("--output-dir", type=Path, required=True)
     reference_bundle.add_argument("--label", required=True)
     reference_bundle.add_argument("--date")
-    reference_bundle.add_argument("--fail-on-sensitive", action="store_true")
     reference_bundle.set_defaults(func=_cmd_reference_bundle)
 
     official_baseline = subparsers.add_parser("official-baseline")

@@ -88,7 +88,7 @@ def test_case_payload_round_trips_as_json():
     assert payload["tool_choice"] == "auto"
 
 
-def test_benchmark_prompt_suite_replaces_seed_writing_and_translation_prompts():
+def test_benchmark_prompt_suite_covers_core_real_scenario_prompts():
     prompts = load_generation_prompts(ROOT / "prompts")
     names = {prompt.name: prompt for prompt in prompts}
 
@@ -98,14 +98,6 @@ def test_benchmark_prompt_suite_replaces_seed_writing_and_translation_prompts():
         assert "benchmark-suite" in names[name].tags
         assert names[name].temperature == 1.0
         assert names[name].top_p == 1.0
-
-    for replaced in (
-        "writing_local_llm_tradeoffs",
-        "writing_follow_instructions",
-        "translation_en_to_zh",
-        "translation_zh_to_en",
-    ):
-        assert replaced not in names
 
     for preserved in ("aquarium_html", "clock_html"):
         assert preserved in names

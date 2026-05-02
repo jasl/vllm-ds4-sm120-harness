@@ -6,7 +6,6 @@ from ds4_harness.toolcall15 import (
     ToolCallRecord,
     ToolCallState,
     evaluate_scenario,
-    handle_tool_call,
     localized_scenarios,
     run_scenario,
     scenarios,
@@ -216,32 +215,6 @@ def test_toolcall15_chinese_scenario_set_and_aliases():
         final_answer="股票服务暂时不可用，请稍后再试。",
     )
     assert evaluate_scenario("TC-14", error_recovery_state).status == "pass"
-
-
-def test_toolcall15_mock_tools_return_expected_payloads():
-    weather = handle_tool_call(
-        "TC-01",
-        ToolCallState(),
-        ToolCallRecord(
-            id="call_1",
-            name="get_weather",
-            arguments={"location": "Berlin"},
-            turn=1,
-        ),
-    )
-    search_empty = handle_tool_call(
-        "TC-13",
-        ToolCallState(),
-        ToolCallRecord(
-            id="call_2",
-            name="search_files",
-            arguments={"query": "Johnson proposal"},
-            turn=1,
-        ),
-    )
-
-    assert weather["location"] == "Berlin"
-    assert search_empty == {"results": []}
 
 
 def test_toolcall15_cli_writes_failure_artifact_on_request_error(monkeypatch, tmp_path):

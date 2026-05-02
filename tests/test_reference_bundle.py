@@ -117,14 +117,6 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     (smoke_dir / "smoke_quick.md").write_text(
         "assistant used /home/user/state.md  \nsecond line\n", encoding="utf-8"
     )
-    (smoke_dir / "smoke_quality.jsonl").write_text(
-        json.dumps({"case": "legacy_quality", "ok": True}) + "\n",
-        encoding="utf-8",
-    )
-    (smoke_dir / "smoke_coding.jsonl").write_text(
-        json.dumps({"case": "legacy_coding", "ok": True}) + "\n",
-        encoding="utf-8",
-    )
     (smoke_dir / "generation.jsonl").write_text(
         json.dumps(
             {
@@ -245,8 +237,6 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         out_dir / "oracle" / "mtp" / "completion_short_math_logprobs20.json"
     ).exists()
     assert (out_dir / "smoke" / "nomtp_quick.json").exists()
-    assert not (out_dir / "smoke" / "nomtp_quality.json").exists()
-    assert not (out_dir / "smoke" / "nomtp_coding.json").exists()
     assert (out_dir / "generation" / "nomtp.json").exists()
     assert (
         out_dir
@@ -304,16 +294,16 @@ def test_reference_bundle_cli_is_registered():
         [
             "reference-bundle",
             "--run-dir",
-            "artifacts/main/4x_nvidia_b200/b200_main/20260501000000",
+            "artifacts/main/4x_nvidia_b200/b200_tp4_main_5737770c6/20260502064850",
             "--output-dir",
-            "baselines/20260501_b200_main",
+            "baselines/20260502_b200_tp4_main_5737770c6",
             "--label",
-            "b200_main",
+            "20260502_b200_tp4_main_5737770c6",
         ]
     )
 
     assert args.command == "reference-bundle"
-    assert str(args.output_dir).endswith("baselines/20260501_b200_main")
+    assert str(args.output_dir).endswith("baselines/20260502_b200_tp4_main_5737770c6")
 
 
 def test_public_bundle_scan_catches_common_private_networks_and_secrets(tmp_path):

@@ -5,7 +5,6 @@
   "generated_at_utc": "2026-05-02T10:53:14.504788+00:00",
   "source": {
     "primary_run": "20260502064850",
-    "supplement_run": null,
     "raw_artifacts_are_not_required": true
   },
   "model": "deepseek-ai/DeepSeek-V4-Flash",

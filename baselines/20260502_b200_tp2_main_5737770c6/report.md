@@ -320,4 +320,3 @@ These rows are optional public accuracy gates, intended for expensive reference 
 - `tok/s/used GiB` divides output token throughput by sampled peak used GPU VRAM.
 - `tok/J` and `tok/s/kW` use sampled average GPU power for the phase.
 - Benchmark power and VRAM denominators are phase-level samples, not per-concurrency samples.
-- Quick runtime prefill/decode averages use supplement rows when a supplement artifact is provided.

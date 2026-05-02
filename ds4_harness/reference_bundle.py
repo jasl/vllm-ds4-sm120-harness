@@ -395,7 +395,6 @@ def _write_manifest(
     *,
     label: str,
     date: str | None,
-    supplement_dir: Path | None,
 ) -> None:
     env = _first_run_environment(run_dir)
     collect_env = _first_collect_env(run_dir)
@@ -406,7 +405,6 @@ def _write_manifest(
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "source": {
             "primary_run": run_dir.name,
-            "supplement_run": supplement_dir.name if supplement_dir else None,
             "raw_artifacts_are_not_required": True,
         },
         "model": env.get("harness", {}).get("model", "deepseek-ai/DeepSeek-V4-Flash"),
@@ -537,7 +535,6 @@ def build_reference_bundle(
     output_dir: Path,
     label: str,
     date: str | None = None,
-    supplement_dir: Path | None = None,
     fail_on_sensitive: bool = True,
 ) -> list[str]:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -546,7 +543,6 @@ def build_reference_bundle(
         output_dir,
         label=label,
         date=date,
-        supplement_dir=supplement_dir,
     )
     _write_readme(output_dir, label, run_dir)
     _copy_oracle(run_dir, output_dir)
@@ -555,11 +551,6 @@ def build_reference_bundle(
     _copy_smoke_and_toolcall(run_dir, output_dir)
     _copy_evals(run_dir, output_dir)
     _write_json(output_dir / "performance" / "primary.json", _performance_source("primary", run_dir))
-    if supplement_dir is not None:
-        _write_json(
-            output_dir / "performance" / "supplement.json",
-            _performance_source("supplement", supplement_dir),
-        )
 
     findings = scan_public_bundle(output_dir)
     if findings and fail_on_sensitive:

@@ -44,6 +44,11 @@ branches.
 - `ds4-sm120-full`: community evaluation branch based on `ds4-sm120`. Promote
   only validated optimizations and fixes from experimental work, and keep it
   stable enough for outside users to test.
+- `fix-mtp-draft-probs-sampling`: generic MTP correctness PR branch. Treat as
+  frozen unless reviewer feedback requires changes.
+
+Historical branches:
+
 - `ds4-sm120-perf-120`: temporary profiling branch. It may contain profiling
   instrumentation or throwaway measurement code and should not be treated as a
   promotion source without review.
@@ -51,8 +56,6 @@ branches.
   alignment. Its useful semantics have been absorbed into experimental/full;
   keep it only for archaeology unless a new API-compat follow-up is explicitly
   requested.
-- `fix-mtp-draft-probs-sampling`: generic MTP correctness PR branch. Treat as
-  frozen unless reviewer feedback requires changes.
 
 When upstream `main` has DeepSeek V4 related changes, rebase `ds4-sm120` onto
 the new `main` first. Then rebase `ds4-sm120-experimental` and `ds4-sm120-full`

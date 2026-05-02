@@ -9,7 +9,6 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 BASELINE_RUN_DIR="${BASELINE_RUN_DIR:?set BASELINE_RUN_DIR}"
-BASELINE_SUPPLEMENT_DIR="${BASELINE_SUPPLEMENT_DIR:-}"
 BASELINE_REPORT_TITLE="${BASELINE_REPORT_TITLE:-DeepSeek V4 Baseline Report}"
 BASELINE_REPORT_LABEL="${BASELINE_REPORT_LABEL:-}"
 BASELINE_DATE="${BASELINE_DATE:-}"
@@ -58,7 +57,6 @@ reference_args=(
   --output-dir "${tmp_dir}"
   --label "${BASELINE_BUNDLE_NAME}"
   --date "${BASELINE_DATE}"
-  --fail-on-sensitive
 )
 
 report_args=(
@@ -68,11 +66,6 @@ report_args=(
   --label "${BASELINE_REPORT_LABEL}"
   --output "${tmp_dir}/report.md"
 )
-
-if [[ -n "${BASELINE_SUPPLEMENT_DIR}" ]]; then
-  reference_args+=(--supplement-dir "${BASELINE_SUPPLEMENT_DIR}")
-  report_args+=(--supplement-dir "${BASELINE_SUPPLEMENT_DIR}")
-fi
 
 cd "${REPO_ROOT}"
 "${PYTHON}" -m ds4_harness.cli "${reference_args[@]}" >/dev/null

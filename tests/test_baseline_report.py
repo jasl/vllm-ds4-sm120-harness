@@ -125,6 +125,30 @@ def _write_fixture_phase(root, variant, phase, *, output_tok_s=1600.0):
             }
         ],
     )
+    _write_json(
+        phase_dir / "runtime_stats_summary.json",
+        {
+            "metrics": {
+                "available": True,
+                "prefill_tokens_delta": 1234.0,
+                "decode_tokens_delta": 5678.0,
+                "running_requests_max": 24.0,
+            },
+            "serve_log": {
+                "available": True,
+                "prefill_throughput_tok_s_avg": 111.0,
+                "decode_throughput_tok_s_avg": 222.0,
+                "spec_decode": {
+                    "samples": 4,
+                    "mean_acceptance_length_avg": 2.1,
+                    "avg_draft_acceptance_rate_percent_avg": 67.5,
+                    "per_position_acceptance_rate_avg": [0.81, 0.54],
+                    "accepted_tokens_observed": 1200.0,
+                    "drafted_tokens_observed": 1800.0,
+                },
+            },
+        },
+    )
     return phase_dir
 
 
@@ -445,49 +469,8 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert "| `nomtp` | GSM8K | 3 | yes | 8 | 4 | 2048 | 94.39 | 94.31 | 0.0063 |" in report
 
 
-def test_baseline_report_cli_writes_markdown_and_reads_supplement_runtime(tmp_path):
+def test_baseline_report_cli_writes_markdown_and_runtime_stats(tmp_path):
     run_dir = _write_fixture_run(tmp_path)
-    supplement_dir = tmp_path / "supplement"
-    phase_dir = _write_fixture_phase(
-        supplement_dir,
-        "mtp",
-        "bench_hf_mt_bench",
-        output_tok_s=2100.0,
-    )
-    _write_json(
-        phase_dir / "runtime_stats_summary.json",
-        {
-            "metrics": {
-                "available": True,
-                "prefill_tokens_delta": 1234.0,
-                "decode_tokens_delta": 5678.0,
-                "running_requests_max": 24.0,
-            },
-            "serve_log": {
-                "available": True,
-                "prefill_throughput_tok_s_avg": 111.0,
-                "decode_throughput_tok_s_avg": 222.0,
-                "spec_decode": {
-                    "samples": 4,
-                    "mean_acceptance_length_avg": 2.1,
-                    "avg_draft_acceptance_rate_percent_avg": 67.5,
-                    "per_position_acceptance_rate_avg": [0.81, 0.54],
-                    "accepted_tokens_observed": 1200.0,
-                    "drafted_tokens_observed": 1800.0,
-                },
-            },
-        },
-    )
-    (supplement_dir / "phase_exit_codes.tsv").write_text(
-        "\n".join(
-            [
-                "variant\tphase\texit_code\tartifact_dir",
-                f"mtp\tbench_hf_mt_bench\t0\t{phase_dir}",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
     output = tmp_path / "report.md"
 
     rc = cli.main(
@@ -495,8 +478,6 @@ def test_baseline_report_cli_writes_markdown_and_reads_supplement_runtime(tmp_pa
             "baseline-report",
             "--run-dir",
             str(run_dir),
-            "--supplement-dir",
-            str(supplement_dir),
             "--title",
             "Unit Report",
             "--label",
@@ -510,8 +491,8 @@ def test_baseline_report_cli_writes_markdown_and_reads_supplement_runtime(tmp_pa
     report = output.read_text(encoding="utf-8")
     assert "# Unit Report" in report
     assert "### Runtime Prefill/Decode Averages" in report
-    assert "| Supplement | `mtp` | HF/MT-Bench | 111.00 | 222.00 | 1234 | 5678 | 24 |" in report
-    assert "## Supplement Runtime Stats" in report
+    assert "| Primary | `mtp` | HF/MT-Bench | 111.00 | 222.00 | 1234 | 5678 | 24 |" in report
+    assert "## Runtime Stats" in report
     assert "## MTP Speculative Decoding" in report
     assert "`[0.810, 0.540]`" in report
     assert str(tmp_path) not in report
