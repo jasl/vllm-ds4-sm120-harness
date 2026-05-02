@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "returncode": 0,
+  "command": [
+    "lm_eval",
+    "--model",
+    "local-completions",
+    "--model_args",
+    "model=deepseek-ai/DeepSeek-V4-Flash,base_url=http://127.0.0.1:18080/v1/completions,num_concurrent=4,max_retries=10,tokenized_requests=False,tokenizer_backend=none,max_gen_toks=2048,timeout=60000",
+    "--tasks",
+    "gsm8k",
+    "--num_fewshot",
+    "8",
+    "--batch_size",
+    "auto",
+    "--output_path",
+    "<harness-root>/artifacts/main/4x_nvidia_b200/b200_tp2_main_5737770c6/20260502045726/_parallel_nomtp/nomtp/eval_gsm8k/raw"
+  ],
+  "config": {
+    "tasks": [
+      "gsm8k"
+    ],
+    "num_fewshot": 8,
+    "num_concurrent": 4,
+    "max_retries": 10,
+    "max_gen_toks": 2048,
+    "eval_timeout_ms": 60000,
+    "tokenizer_backend": "none",
+    "batch_size": "auto"
+  },
+  "tasks": [
+    {
+      "task": "gsm8k",
+      "version": 3.0,
+      "alias": "gsm8k",
+      "exact_match_flexible": 0.9492039423805914,
+      "exact_match_strict": 0.9499620924943138,
+      "exact_match_flexible_stderr": 0.006048352096878099,
+      "exact_match_strict_stderr": 0.0060054423545777376,
+      "acc": null,
+      "acc_stderr": null
+    }
+  ],
+  "raw_results_found": true
+}

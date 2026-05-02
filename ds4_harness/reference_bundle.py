@@ -19,10 +19,15 @@ BENCH_PHASE_LABELS = {
 FORBIDDEN_PATTERNS = (
     re.compile(r"DEEPSEEK_API_KEY\s*="),
     re.compile(r"\b[A-Z0-9_]*API_KEY\s*[:=]\s*['\"]?[^'\"\s]+"),
+    re.compile(
+        r"\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|ACCESS_KEY)\s*[:=]\s*['\"]?[^'\"\s]+"
+    ),
     re.compile(r"sk-[A-Za-z0-9_-]{12,}"),
     re.compile(r"Bearer\s+[A-Za-z0-9._-]+"),
     re.compile(r"root@"),
     re.compile(r"\b10\.0\.0\.\d+\b"),
+    re.compile(r"\b192\.168\.\d+\.\d+\b"),
+    re.compile(r"\b172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+\b"),
     re.compile(r"\b146\.88\.195\.11\b"),
     re.compile(r"/Users/"),
     re.compile(r"/workspace/"),
@@ -42,6 +47,8 @@ SANITIZE_REPLACEMENTS = (
     (re.compile(r"/home/user\b"), "<synthetic-home>"),
     (re.compile(r"/home/[^/\s\"'`,]+/[^\s\"'`,]*"), "<home-path>"),
     (re.compile(r"\b10\.0\.0\.\d+\b"), "<private-ip>"),
+    (re.compile(r"\b192\.168\.\d+\.\d+\b"), "<private-ip>"),
+    (re.compile(r"\b172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+\b"), "<private-ip>"),
     (re.compile(r"\b146\.88\.195\.11\b"), "<public-host>"),
     (re.compile(r"Bearer\s+[A-Za-z0-9._-]+"), "Bearer <redacted>"),
     (re.compile(r"sk-[A-Za-z0-9_-]{12,}"), "<redacted-key>"),

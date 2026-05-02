@@ -32,7 +32,12 @@ detect_gpu_topology_slug() {
   fi
 
   local names
-  names="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | sed '/^[[:space:]]*$/d' || true)"
+  local device_ids="${GPU_TOPOLOGY_DEVICE_IDS:-${CUDA_VISIBLE_DEVICES:-}}"
+  local query_args=()
+  if [[ -n "${device_ids}" && "${device_ids}" != "all" ]]; then
+    query_args+=("-i" "${device_ids}")
+  fi
+  names="$(nvidia-smi "${query_args[@]}" --query-gpu=name --format=csv,noheader 2>/dev/null | sed '/^[[:space:]]*$/d' || true)"
   if [[ -z "${names}" ]]; then
     printf '%s\n' "unknown_gpu"
     return 0

@@ -127,6 +127,19 @@ cleanup_static_gate_artifacts() {
   fi
 }
 
+live_env_args() {
+  local live_gate_path="${PATH}"
+  if [[ "${PYTHON}" == */* ]]; then
+    live_gate_path="$(cd -- "$(dirname -- "${PYTHON}")" && pwd):${live_gate_path}"
+  fi
+
+  printf '%s\0' \
+    "-i" \
+    "PATH=${live_gate_path}" \
+    "HOME=${HOME:-}" \
+    "TMPDIR=${TMPDIR:-/tmp}"
+}
+
 run_live_gate() {
   name="$1"
   shift
@@ -140,7 +153,11 @@ run_live_gate() {
     mark_server_unresponsive "${name}" "server unresponsive before ${name}"
     return
   fi
-  run_gate "${name}" "$@"
+  local -a env_args=()
+  while IFS= read -r -d '' item; do
+    env_args+=("${item}")
+  done < <(live_env_args)
+  run_gate "${name}" env "${env_args[@]}" "$@"
   if [[ "$(cat "${OUT_DIR}/${name}.exit_code")" != "0" ]] && ! wait_for_server_ready "${SERVER_FAILURE_GRACE_TIMEOUT}" "${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" "server after ${name}"; then
     server_failed=1
     mark_server_unresponsive "${name}" "server unresponsive after ${name}"
@@ -155,7 +172,11 @@ run_live_gate_capture() {
     mark_gate_skipped "${name}" "server already marked unresponsive; skipped"
     return
   fi
-  run_gate_capture "${name}" "${output}" "$@"
+  local -a env_args=()
+  while IFS= read -r -d '' item; do
+    env_args+=("${item}")
+  done < <(live_env_args)
+  run_gate_capture "${name}" "${output}" env "${env_args[@]}" "$@"
   if [[ "$(cat "${OUT_DIR}/${name}.exit_code")" != "0" ]] && ! wait_for_server_ready "${SERVER_FAILURE_GRACE_TIMEOUT}" "${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" "server after ${name}"; then
     server_failed=1
     mark_server_unresponsive "${name}" "server unresponsive after ${name}"

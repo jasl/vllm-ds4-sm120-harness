@@ -1,6 +1,7 @@
 GPU_STATS="${GPU_STATS:-1}"
 GPU_STATS_INTERVAL_SECONDS="${GPU_STATS_INTERVAL_SECONDS:-1}"
 GPU_STATS_QUERY="${GPU_STATS_QUERY:-timestamp,index,name,memory.used,memory.total,power.draw,power.limit,utilization.gpu}"
+GPU_STATS_DEVICE_IDS="${GPU_STATS_DEVICE_IDS:-${CUDA_VISIBLE_DEVICES:-}}"
 GPU_STATS_CSV="${OUT_DIR}/gpu_stats.csv"
 GPU_STATS_ERR="${OUT_DIR}/gpu_stats.err"
 GPU_STATS_PID=""
@@ -16,7 +17,13 @@ start_gpu_stats() {
     return 0
   fi
 
+  local query_args=()
+  if [[ -n "${GPU_STATS_DEVICE_IDS}" && "${GPU_STATS_DEVICE_IDS}" != "all" ]]; then
+    query_args+=("-i" "${GPU_STATS_DEVICE_IDS}")
+  fi
+
   nvidia-smi \
+    "${query_args[@]}" \
     --query-gpu="${GPU_STATS_QUERY}" \
     --format=csv,nounits \
     -l "${GPU_STATS_INTERVAL_SECONDS}" \

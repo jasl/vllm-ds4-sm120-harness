@@ -302,8 +302,14 @@ no-MTP/MTP smoke captures, ToolCall-15 traces, benchmark summaries,
 GPU/runtime telemetry summaries, and public provenance. Raw server logs,
 machine-local paths, private addresses, and secrets are deliberately excluded.
 The script generates into a temporary directory, verifies that the bundle has
-loadable oracle cases and no non-public data, then replaces the final
-`baselines/...` directory only after validation passes.
+loadable oracle cases, a complete generation matrix by
+variant/language/thinking mode/round, matching transcript Markdown files, and no
+non-public data, then replaces the final `baselines/...` directory only after
+validation passes.
+For archival runs, set `BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT` to the
+number of prompt files selected by the run. With the checked-in `en,zh` prompt
+suite today, that value is `35`, so each no-MTP/MTP variant must contain
+`35 * 3 thinking modes * 3 rounds = 315` generation rows and transcripts.
 
 To capture a separate DeepSeek official API reference directory, put
 `DEEPSEEK_API_KEY` in ignored `.env`, then run:
@@ -482,7 +488,7 @@ B200_VLLM_VENV=/workspace/vllm/.venv \
 HF_HOME=/workspace/.hf_home \
 BRANCH_NAME=main \
 GPU_TOPOLOGY_SLUG=4x_nvidia_b200 \
-B200_BASELINE_LABEL=b200_official_main \
+B200_BASELINE_LABEL=b200_tp4_official_main \
 scripts/run_b200_baseline.sh
 ```
 
@@ -535,7 +541,11 @@ and scheduler resources. Do not treat its throughput as directly comparable to
 the sequential four-GPU baseline unless that split topology is itself the target
 being evaluated. The coordinator writes temporary child runs, then merges the
 results back into the normal `nomtp/` and `mtp/` artifact layout before report
-or bundle generation.
+or bundle generation. Use a label that makes the effective serve topology
+explicit, for example `b200_tp2_main_<sha>`. In split mode, run-environment
+inventory and GPU telemetry are filtered to the child process's
+`CUDA_VISIBLE_DEVICES`, so normalized columns such as `tok/s/GPU`, `tok/J`, and
+rental cost use the two-GPU denominator for each child service.
 
 The older `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`, `RUN_RANDOM_LONG=0`, and
 `RUN_ORACLE_EXPORT=0` toggles remain available for disabling phases inside the

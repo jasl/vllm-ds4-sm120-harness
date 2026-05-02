@@ -199,6 +199,9 @@ def test_acceptance_script_runs_all_gates_and_records_exit_codes():
     assert "run_static_gate pytest" in script
     assert "run_live_gate smoke_quick" in script
     assert "run_live_gate generation" in script
+    assert "live_env_args()" in script
+    assert 'run_gate "${name}" env "${env_args[@]}" "$@"' in script
+    assert 'run_gate_capture "${name}" "${output}" env "${env_args[@]}" "$@"' in script
     assert "run_live_gate toolcall15" in script
     assert "run_live_gate oracle_compare" in script
     assert 'ORACLE_TOP_N="${ORACLE_TOP_N:-20}"' in script
@@ -440,7 +443,20 @@ def test_baseline_bundle_script_generates_report_and_public_data():
     assert "--fail-on-sensitive" in script
     assert "scan_public_bundle" in script
     assert "load_oracle_cases" in script
+    assert 'BASELINE_REQUIRE_GENERATION="${BASELINE_REQUIRE_GENERATION:-1}"' in script
+    assert 'BASELINE_EXPECT_VARIANTS="${BASELINE_EXPECT_VARIANTS:-nomtp,mtp}"' in script
+    assert "BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT" in script
+    assert "expected_case_count * len(expected_modes) * repeat_count" in script
+    assert "_validate_generation_matrix" in script
     assert 'mv "${tmp_dir}" "${BASELINE_OUTPUT_DIR}"' in script
+
+
+def test_gpu_stats_helper_limits_sampling_to_visible_devices():
+    script = (ROOT / "scripts" / "gpu_stats.sh").read_text(encoding="utf-8")
+
+    assert 'GPU_STATS_DEVICE_IDS="${GPU_STATS_DEVICE_IDS:-${CUDA_VISIBLE_DEVICES:-}}"' in script
+    assert 'query_args+=("-i" "${GPU_STATS_DEVICE_IDS}")' in script
+    assert '"${query_args[@]}"' in script
 
 
 def test_live_scripts_guard_against_unresponsive_servers():
@@ -452,6 +468,7 @@ def test_live_scripts_guard_against_unresponsive_servers():
     assert "SERVER_RECOVERY_CMD" in helper
     assert "SERVER_STARTUP_TIMEOUT" in helper
     assert "server_unresponsive.txt" in helper
+    assert 'GPU_TOPOLOGY_DEVICE_IDS:-${CUDA_VISIBLE_DEVICES:-}' in helper
 
     acceptance = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
     bench = (ROOT / "scripts" / "run_bench_matrix.sh").read_text(encoding="utf-8")

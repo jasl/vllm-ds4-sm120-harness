@@ -291,3 +291,24 @@ def test_reference_bundle_cli_is_registered():
 
     assert args.command == "reference-bundle"
     assert str(args.output_dir).endswith("baselines/20260501_b200_main")
+
+
+def test_public_bundle_scan_catches_common_private_networks_and_secrets(tmp_path):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "leak.txt").write_text(
+        "\n".join(
+            [
+                "service at 192.168.1.20",
+                "fallback at 172.20.4.5",
+                "HF_TOKEN=hf_secret",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    findings = scan_public_bundle(bundle)
+
+    assert any("192\\.168" in finding for finding in findings)
+    assert any("172\\." in finding for finding in findings)
+    assert any("TOKEN" in finding for finding in findings)

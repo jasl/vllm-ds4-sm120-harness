@@ -40,14 +40,17 @@ def parse_nvidia_smi_gpu_csv(text: str) -> list[dict[str, Any]]:
     return gpus
 
 
-def query_nvidia_smi_gpu_csv() -> str | None:
+def query_nvidia_smi_gpu_csv(device_ids: str | None = None) -> str | None:
+    command = [
+        "nvidia-smi",
+        "--query-gpu=index,name,memory.total",
+        "--format=csv,noheader,nounits",
+    ]
+    if device_ids:
+        command.extend(["-i", device_ids])
     try:
         completed = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-gpu=index,name,memory.total",
-                "--format=csv,noheader,nounits",
-            ],
+            command,
             check=False,
             text=True,
             stdout=subprocess.PIPE,
@@ -95,11 +98,13 @@ def summarize_run_environment(
     nvidia_smi_output: str | None = None,
 ) -> dict[str, Any]:
     env = dict(os.environ if env is None else env)
+    visible_devices = env.get("CUDA_VISIBLE_DEVICES") or None
     if nvidia_smi_output is None:
-        nvidia_smi_output = query_nvidia_smi_gpu_csv()
+        nvidia_smi_output = query_nvidia_smi_gpu_csv(visible_devices)
     gpus = parse_nvidia_smi_gpu_csv(nvidia_smi_output or "")
     configured_slug = env.get("GPU_TOPOLOGY_SLUG")
-    topology_slug = configured_slug or gpu_topology_slug(gpus)
+    effective_topology_slug = gpu_topology_slug(gpus)
+    artifact_topology_slug = configured_slug or effective_topology_slug
 
     return {
         "generated_at_utc": datetime.now(UTC).isoformat(),
@@ -113,7 +118,7 @@ def summarize_run_environment(
             "artifact_root": env.get("ARTIFACT_ROOT"),
             "branch_name": env.get("BRANCH_NAME"),
             "run_timestamp": env.get("RUN_TIMESTAMP"),
-            "gpu_topology_slug": topology_slug,
+            "gpu_topology_slug": artifact_topology_slug,
         },
         "harness": {
             "model": env.get("MODEL"),
@@ -148,7 +153,8 @@ def summarize_run_environment(
             "available": bool(gpus),
             "reason": None if gpus else "nvidia-smi unavailable or returned no GPUs",
             "count": len(gpus),
-            "topology_slug": topology_slug,
+            "topology_slug": effective_topology_slug,
+            "configured_topology_slug": configured_slug,
             "models": _model_counts(gpus),
             "devices": gpus,
         },

@@ -76,14 +76,46 @@ def test_summarize_run_environment_redacts_api_key_and_records_gpu_inventory():
     assert summary["official_api"]["reasoning_effort"] == "high"
     assert summary["official_api"]["preserve_reasoning_content"] == "1"
     assert summary["gpu"]["count"] == 2
+    assert summary["artifact"]["gpu_topology_slug"] == "2x_test_gpu"
     assert summary["gpu"]["topology_slug"] == "2x_test_gpu"
     assert summary["gpu"]["models"][0]["count"] == 2
+
+
+def test_summarize_run_environment_separates_configured_and_effective_gpu_topology():
+    env = {
+        "GPU_TOPOLOGY_SLUG": "4x_nvidia_b200",
+        "CUDA_VISIBLE_DEVICES": "2,3",
+    }
+    summary = summarize_run_environment(
+        env=env,
+        nvidia_smi_output="2, NVIDIA B200, 183359\n3, NVIDIA B200, 183359\n",
+    )
+
+    assert summary["artifact"]["gpu_topology_slug"] == "4x_nvidia_b200"
+    assert summary["gpu"]["count"] == 2
+    assert summary["gpu"]["topology_slug"] == "2x_nvidia_b200"
+    assert summary["gpu"]["configured_topology_slug"] == "4x_nvidia_b200"
+
+
+def test_summarize_run_environment_queries_only_visible_devices(monkeypatch):
+    captured = {}
+
+    def fake_query(device_ids=None):
+        captured["device_ids"] = device_ids
+        return "2, NVIDIA B200, 183359\n3, NVIDIA B200, 183359\n"
+
+    monkeypatch.setattr("ds4_harness.run_environment.query_nvidia_smi_gpu_csv", fake_query)
+
+    summary = summarize_run_environment(env={"CUDA_VISIBLE_DEVICES": "2,3"})
+
+    assert captured["device_ids"] == "2,3"
+    assert summary["gpu"]["count"] == 2
 
 
 def test_env_summary_cli_writes_json_and_markdown(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "ds4_harness.run_environment.query_nvidia_smi_gpu_csv",
-        lambda: "0, Test GPU, 49152\n",
+        lambda device_ids=None: "0, Test GPU, 49152\n",
     )
     monkeypatch.setenv("DEEPSEEK_API_KEY", "secret")
     monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
