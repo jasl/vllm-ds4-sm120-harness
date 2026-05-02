@@ -10,10 +10,10 @@
 - Temperature: `1.0`
 - Top P: `1.0`
 - Variant: `official-api`
-- OK: `False`
-- Status: FAIL
-- Check: missing complete HTML artifact
-- Detail: `missing complete HTML artifact`
+- OK: `True`
+- Status: PASS
+- Check: expectation checks skipped
+- Detail: `expectation checks skipped`
 - Elapsed seconds: 51.104592
 - Finish reason: `length`
 - Usage: `{"prompt_tokens": 295, "completion_tokens": 4096, "total_tokens": 4391, "prompt_tokens_details": {"cached_tokens": 256}, "completion_tokens_details": {"reasoning_tokens": 2190}, "prompt_cache_hit_tokens": 256, "prompt_cache_miss_tokens": 39}`

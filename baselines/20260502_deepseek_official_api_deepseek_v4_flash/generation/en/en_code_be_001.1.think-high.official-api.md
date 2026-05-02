@@ -12,8 +12,8 @@
 - Variant: `official-api`
 - OK: `True`
 - Status: PASS
-- Check: matched expectation
-- Detail: `matched expectation`
+- Check: expectation checks skipped
+- Detail: `expectation checks skipped`
 - Elapsed seconds: 39.902189
 - Finish reason: `stop`
 - Usage: `{"prompt_tokens": 318, "completion_tokens": 3380, "total_tokens": 3698, "prompt_tokens_details": {"cached_tokens": 256}, "completion_tokens_details": {"reasoning_tokens": 626}, "prompt_cache_hit_tokens": 256, "prompt_cache_miss_tokens": 62}`

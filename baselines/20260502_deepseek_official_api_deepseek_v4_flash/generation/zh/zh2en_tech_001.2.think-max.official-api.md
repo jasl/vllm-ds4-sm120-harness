@@ -10,10 +10,10 @@
 - Temperature: `1.0`
 - Top P: `1.0`
 - Variant: `official-api`
-- OK: `False`
-- Status: FAIL
-- Check: response too short: 0 chars, expected >= 200
-- Detail: `response too short: 0 chars, expected >= 200`
+- OK: `True`
+- Status: PASS
+- Check: expectation checks skipped
+- Detail: `expectation checks skipped`
 - Elapsed seconds: 49.088126
 - Finish reason: `length`
 - Usage: `{"prompt_tokens": 1112, "completion_tokens": 4096, "total_tokens": 5208, "prompt_tokens_details": {"cached_tokens": 1024}, "completion_tokens_details": {"reasoning_tokens": 4096}, "prompt_cache_hit_tokens": 1024, "prompt_cache_miss_tokens": 88}`

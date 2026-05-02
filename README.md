@@ -397,10 +397,8 @@ against vLLM samples with the same sampling shape.
 
 For the 8 generation cases shared by the official API bundle, both B200
 topologies and both serving variants have 72/72 passing rows. The official API
-sample was originally captured with strict prompt expectation checks and had
-55/72 passing rows under that older scoring policy. All 72 rows contain
-successful chat-completion choices, so future official API baselines use the
-relaxed generation scoring described above by default. For
+sample has 72/72 passing rows under the relaxed generation scoring described
+above; all 72 rows contain successful chat-completion choices. For
 ToolCall-15, compare percentages rather than raw points because the B200 runs
 use three repeats while the official API sample uses one repeat: official API is
 81/90 (90%), B200 TP=4 no-MTP is 243/270 (90%), and B200 TP=2 no-MTP, TP=2

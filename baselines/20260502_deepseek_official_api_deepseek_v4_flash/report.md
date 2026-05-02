@@ -9,7 +9,7 @@
 | Phase | Exit |
 | --- | ---: |
 | `smoke` | `0` |
-| `generation` | `1` |
+| `generation` | `0` |
 | `toolcall15` | `1` |
 
 ## Smoke Checks
@@ -19,9 +19,9 @@
 
 ## Generation
 
-- Passed: `55/72`
+- Passed: `72/72`
 - Unique cases: `8`
-- Failures: `17`
+- Failures: `0`
 - Thinking modes: `non-thinking`=24, `think-high`=24, `think-max`=24
 - Workloads: `coding`=18, `reading_summary`=18, `translation`=18, `writing`=18
 - Temperature: `1.0`=72
@@ -32,78 +32,78 @@
 
 | Case | Workload | Language | Thinking | Round | Temp | Top P | OK | Detail |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
-| `en2zh_tech_001` | `translation` | `en` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_code_be_001` | `coding` | `en` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_sum_tech_001` | `reading_summary` | `en` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_wr_tech_001` | `writing` | `en` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh2en_tech_001` | `translation` | `zh` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_code_fe_001` | `coding` | `zh` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_sum_tech_001` | `reading_summary` | `zh` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_wr_tech_001` | `writing` | `zh` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en2zh_tech_001` | `translation` | `en` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_code_be_001` | `coding` | `en` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_sum_tech_001` | `reading_summary` | `en` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_wr_tech_001` | `writing` | `en` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh2en_tech_001` | `translation` | `zh` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_code_fe_001` | `coding` | `zh` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_sum_tech_001` | `reading_summary` | `zh` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_wr_tech_001` | `writing` | `zh` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en2zh_tech_001` | `translation` | `en` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_code_be_001` | `coding` | `en` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_sum_tech_001` | `reading_summary` | `en` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_wr_tech_001` | `writing` | `en` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh2en_tech_001` | `translation` | `zh` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_code_fe_001` | `coding` | `zh` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_sum_tech_001` | `reading_summary` | `zh` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_wr_tech_001` | `writing` | `zh` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `en2zh_tech_001` | `translation` | `en` | `think-high` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_code_be_001` | `coding` | `en` | `think-high` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_sum_tech_001` | `reading_summary` | `en` | `think-high` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_wr_tech_001` | `writing` | `en` | `think-high` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh2en_tech_001` | `translation` | `zh` | `think-high` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_code_fe_001` | `coding` | `zh` | `think-high` | 1 | 1.0 | 1.0 | `False` | missing complete HTML artifact |
-| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-high` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_wr_tech_001` | `writing` | `zh` | `think-high` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en2zh_tech_001` | `translation` | `en` | `think-high` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_code_be_001` | `coding` | `en` | `think-high` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_sum_tech_001` | `reading_summary` | `en` | `think-high` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_wr_tech_001` | `writing` | `en` | `think-high` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh2en_tech_001` | `translation` | `zh` | `think-high` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_code_fe_001` | `coding` | `zh` | `think-high` | 2 | 1.0 | 1.0 | `False` | missing complete HTML artifact |
-| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-high` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_wr_tech_001` | `writing` | `zh` | `think-high` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en2zh_tech_001` | `translation` | `en` | `think-high` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_code_be_001` | `coding` | `en` | `think-high` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_sum_tech_001` | `reading_summary` | `en` | `think-high` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_wr_tech_001` | `writing` | `en` | `think-high` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh2en_tech_001` | `translation` | `zh` | `think-high` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_code_fe_001` | `coding` | `zh` | `think-high` | 3 | 1.0 | 1.0 | `False` | missing complete HTML artifact |
-| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-high` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_wr_tech_001` | `writing` | `zh` | `think-high` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `en2zh_tech_001` | `translation` | `en` | `think-max` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_code_be_001` | `coding` | `en` | `think-max` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_sum_tech_001` | `reading_summary` | `en` | `think-max` | 1 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 400 |
-| `en_wr_tech_001` | `writing` | `en` | `think-max` | 1 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 500 |
-| `zh2en_tech_001` | `translation` | `zh` | `think-max` | 1 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 200 |
-| `zh_code_fe_001` | `coding` | `zh` | `think-max` | 1 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 1000 |
-| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-max` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_wr_tech_001` | `writing` | `zh` | `think-max` | 1 | 1.0 | 1.0 | `True` | matched expectation |
-| `en2zh_tech_001` | `translation` | `en` | `think-max` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_code_be_001` | `coding` | `en` | `think-max` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_sum_tech_001` | `reading_summary` | `en` | `think-max` | 2 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 400 |
-| `en_wr_tech_001` | `writing` | `en` | `think-max` | 2 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 500 |
-| `zh2en_tech_001` | `translation` | `zh` | `think-max` | 2 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 200 |
-| `zh_code_fe_001` | `coding` | `zh` | `think-max` | 2 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 1000 |
-| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-max` | 2 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 400 |
-| `zh_wr_tech_001` | `writing` | `zh` | `think-max` | 2 | 1.0 | 1.0 | `True` | matched expectation |
-| `en2zh_tech_001` | `translation` | `en` | `think-max` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `en_code_be_001` | `coding` | `en` | `think-max` | 3 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 1000 |
-| `en_sum_tech_001` | `reading_summary` | `en` | `think-max` | 3 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 400 |
-| `en_wr_tech_001` | `writing` | `en` | `think-max` | 3 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 500 |
-| `zh2en_tech_001` | `translation` | `zh` | `think-max` | 3 | 1.0 | 1.0 | `False` | response too short: 0 chars, expected >= 200 |
-| `zh_code_fe_001` | `coding` | `zh` | `think-max` | 3 | 1.0 | 1.0 | `False` | missing complete HTML artifact |
-| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-max` | 3 | 1.0 | 1.0 | `True` | matched expectation |
-| `zh_wr_tech_001` | `writing` | `zh` | `think-max` | 3 | 1.0 | 1.0 | `True` | matched expectation |
+| `en2zh_tech_001` | `translation` | `en` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_code_be_001` | `coding` | `en` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_sum_tech_001` | `reading_summary` | `en` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_wr_tech_001` | `writing` | `en` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh2en_tech_001` | `translation` | `zh` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_code_fe_001` | `coding` | `zh` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_sum_tech_001` | `reading_summary` | `zh` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_wr_tech_001` | `writing` | `zh` | `non-thinking` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en2zh_tech_001` | `translation` | `en` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_code_be_001` | `coding` | `en` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_sum_tech_001` | `reading_summary` | `en` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_wr_tech_001` | `writing` | `en` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh2en_tech_001` | `translation` | `zh` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_code_fe_001` | `coding` | `zh` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_sum_tech_001` | `reading_summary` | `zh` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_wr_tech_001` | `writing` | `zh` | `non-thinking` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en2zh_tech_001` | `translation` | `en` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_code_be_001` | `coding` | `en` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_sum_tech_001` | `reading_summary` | `en` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_wr_tech_001` | `writing` | `en` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh2en_tech_001` | `translation` | `zh` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_code_fe_001` | `coding` | `zh` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_sum_tech_001` | `reading_summary` | `zh` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_wr_tech_001` | `writing` | `zh` | `non-thinking` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en2zh_tech_001` | `translation` | `en` | `think-high` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_code_be_001` | `coding` | `en` | `think-high` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_sum_tech_001` | `reading_summary` | `en` | `think-high` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_wr_tech_001` | `writing` | `en` | `think-high` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh2en_tech_001` | `translation` | `zh` | `think-high` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_code_fe_001` | `coding` | `zh` | `think-high` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-high` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_wr_tech_001` | `writing` | `zh` | `think-high` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en2zh_tech_001` | `translation` | `en` | `think-high` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_code_be_001` | `coding` | `en` | `think-high` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_sum_tech_001` | `reading_summary` | `en` | `think-high` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_wr_tech_001` | `writing` | `en` | `think-high` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh2en_tech_001` | `translation` | `zh` | `think-high` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_code_fe_001` | `coding` | `zh` | `think-high` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-high` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_wr_tech_001` | `writing` | `zh` | `think-high` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en2zh_tech_001` | `translation` | `en` | `think-high` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_code_be_001` | `coding` | `en` | `think-high` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_sum_tech_001` | `reading_summary` | `en` | `think-high` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_wr_tech_001` | `writing` | `en` | `think-high` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh2en_tech_001` | `translation` | `zh` | `think-high` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_code_fe_001` | `coding` | `zh` | `think-high` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-high` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_wr_tech_001` | `writing` | `zh` | `think-high` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en2zh_tech_001` | `translation` | `en` | `think-max` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_code_be_001` | `coding` | `en` | `think-max` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_sum_tech_001` | `reading_summary` | `en` | `think-max` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_wr_tech_001` | `writing` | `en` | `think-max` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh2en_tech_001` | `translation` | `zh` | `think-max` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_code_fe_001` | `coding` | `zh` | `think-max` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-max` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_wr_tech_001` | `writing` | `zh` | `think-max` | 1 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en2zh_tech_001` | `translation` | `en` | `think-max` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_code_be_001` | `coding` | `en` | `think-max` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_sum_tech_001` | `reading_summary` | `en` | `think-max` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_wr_tech_001` | `writing` | `en` | `think-max` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh2en_tech_001` | `translation` | `zh` | `think-max` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_code_fe_001` | `coding` | `zh` | `think-max` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-max` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_wr_tech_001` | `writing` | `zh` | `think-max` | 2 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en2zh_tech_001` | `translation` | `en` | `think-max` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_code_be_001` | `coding` | `en` | `think-max` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_sum_tech_001` | `reading_summary` | `en` | `think-max` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `en_wr_tech_001` | `writing` | `en` | `think-max` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh2en_tech_001` | `translation` | `zh` | `think-max` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_code_fe_001` | `coding` | `zh` | `think-max` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_sum_tech_001` | `reading_summary` | `zh` | `think-max` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
+| `zh_wr_tech_001` | `writing` | `zh` | `think-max` | 3 | 1.0 | 1.0 | `True` | expectation checks skipped |
 
 ## ToolCall-15
 

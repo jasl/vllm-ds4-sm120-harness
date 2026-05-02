@@ -79,3 +79,23 @@ def test_correctness_reference_selection_records_non_interchangeability_evidence
     assert tp2_tp4["token_oracles_are_interchangeable"] is False
 
     assert evidence["mtp_vs_nomtp"]["token_oracles_are_interchangeable"] is False
+
+
+def test_official_api_generation_baseline_uses_relaxed_response_scoring():
+    generation_path = (
+        ROOT
+        / "baselines"
+        / "20260502_deepseek_official_api_deepseek_v4_flash"
+        / "generation"
+        / "official_api.json"
+    )
+    rows = json.loads(generation_path.read_text(encoding="utf-8"))
+
+    assert len(rows) == 72
+    assert sum(1 for row in rows if row["ok"] is True) == 72
+    assert {row["detail"] for row in rows} == {"expectation checks skipped"}
+    assert all(
+        isinstance(row.get("response", {}).get("choices"), list)
+        and row["response"]["choices"]
+        for row in rows
+    )
