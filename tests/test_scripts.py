@@ -19,12 +19,27 @@ def test_acceptance_script_runs_generation_gate():
 def test_acceptance_script_runs_static_harness_gates():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
 
-    assert '"${PYTHON}" -m ruff check ds4_harness tests' in script
-    assert '"${PYTHON}" -m compileall -q ds4_harness' in script
+    assert 'run_static_gate pytest "${PYTHON}" -m pytest -q tests' in script
+    assert 'run_static_gate ruff "${PYTHON}" -m ruff check ds4_harness tests' in script
+    assert 'run_static_gate compileall "${PYTHON}" -m compileall -q ds4_harness' in script
+
+
+def test_acceptance_static_gates_do_not_inherit_live_artifact_context():
+    script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
+
+    assert 'STATIC_GATE_ARTIFACT_ROOT="${OUT_DIR}/_static_gate_artifacts"' in script
+    assert 'local static_gate_path="${PATH}"' in script
+    assert 'static_gate_path="$(cd -- "$(dirname -- "${PYTHON}")" && pwd):${static_gate_path}"' in script
+    assert 'static_env_args+=("-i")' in script
+    assert 'static_env_args+=("PATH=${static_gate_path}")' in script
+    assert 'static_env_args+=("HOME=${HOME:-}")' in script
+    assert 'static_env_args+=("TMPDIR=${TMPDIR:-/tmp}")' in script
+    assert 'static_env_args+=("ARTIFACT_ROOT=${STATIC_GATE_ARTIFACT_ROOT}")' in script
+    assert 'rm -rf "${STATIC_GATE_ARTIFACT_ROOT}"' in script
 
 
 def test_scripts_allow_explicit_python_interpreter():
-    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh"):
+    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh", "run_lm_eval.sh"):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
         assert 'PYTHON="${PYTHON:-python}"' in script
@@ -113,6 +128,20 @@ def test_env_sample_and_local_env_are_configured():
     assert "ARTIFACT_ARCHIVE_PREVIOUS=1" in sample
     assert "ARTIFACT_ARCHIVE_PREFIX=" in sample
     assert "B200_BASELINE_PHASES=all" in sample
+    assert "B200_VARIANT_PARALLEL=0" in sample
+    assert "B200_PARALLEL_GPU_GROUPS=nomtp=0,1;mtp=2,3" in sample
+    assert "B200_PARALLEL_TENSOR_PARALLEL_SIZE=2" in sample
+    assert "B200_PARALLEL_PORTS=" in sample
+    assert "RUN_LM_EVAL=1" in sample
+    assert "LM_EVAL_BIN=lm_eval" in sample
+    assert "LM_EVAL_TASKS=gsm8k" in sample
+    assert "LM_EVAL_NUM_FEWSHOT=8" in sample
+    assert "LM_EVAL_NUM_CONCURRENT=4" in sample
+    assert "LM_EVAL_MAX_RETRIES=10" in sample
+    assert "LM_EVAL_MAX_GEN_TOKS=2048" in sample
+    assert "LM_EVAL_TIMEOUT_MS=60000" in sample
+    assert "LM_EVAL_TOKENIZER_BACKEND=none" in sample
+    assert "LM_EVAL_COMMAND_TIMEOUT=7200" in sample
     assert "B200_ARCHIVE_PREVIOUS" not in sample
     assert "B200_ARCHIVE_PREFIX" not in sample
     assert "GENERATION_PROMPT_ROOT=" in sample
@@ -167,7 +196,7 @@ def test_acceptance_script_runs_all_gates_and_records_exit_codes():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
 
     assert "failures=0" in script
-    assert "run_gate pytest" in script
+    assert "run_static_gate pytest" in script
     assert "run_live_gate smoke_quick" in script
     assert "run_live_gate generation" in script
     assert "run_live_gate toolcall15" in script
@@ -191,7 +220,12 @@ def test_scripts_capture_gpu_stats_to_artifacts():
     assert '"${OUT_DIR}/gpu_stats_summary.json"' in helper
     assert '"${OUT_DIR}/gpu_stats_summary.md"' in helper
 
-    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh", "run_oracle_export.sh"):
+    for script_name in (
+        "run_acceptance.sh",
+        "run_bench_matrix.sh",
+        "run_oracle_export.sh",
+        "run_lm_eval.sh",
+    ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
         assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
@@ -212,7 +246,12 @@ def test_scripts_capture_vllm_runtime_stats_to_artifacts():
     assert '"${OUT_DIR}/serve_log_phase.log"' in helper
     assert '"${OUT_DIR}/serve_log_offset.txt"' in helper
 
-    for script_name in ("run_acceptance.sh", "run_bench_matrix.sh", "run_oracle_export.sh"):
+    for script_name in (
+        "run_acceptance.sh",
+        "run_bench_matrix.sh",
+        "run_oracle_export.sh",
+        "run_lm_eval.sh",
+    ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
         assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
@@ -235,6 +274,7 @@ def test_scripts_collect_vllm_official_env_to_artifacts():
         "run_acceptance.sh",
         "run_bench_matrix.sh",
         "run_oracle_export.sh",
+        "run_lm_eval.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
@@ -288,6 +328,10 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
 
     assert 'B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-nomtp,mtp}"' in script
     assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-all}"' in script
+    assert 'B200_VARIANT_PARALLEL="${B200_VARIANT_PARALLEL:-0}"' in script
+    assert 'B200_PARALLEL_GPU_GROUPS="${B200_PARALLEL_GPU_GROUPS:-nomtp=0,1;mtp=2,3}"' in script
+    assert "run_parallel_variants" in script
+    assert "B200_CUDA_VISIBLE_DEVICES" in script
     assert 'NO_MTP_CONCURRENCY="${NO_MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'MTP_CONCURRENCY="${MTP_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"' in script
@@ -302,9 +346,11 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert '"${variant_dir}/acceptance"' in script
     assert '"${variant_dir}/bench_hf_mt_bench"' in script
     assert '"${variant_dir}/bench_random_8192x512"' in script
+    assert '"${variant_dir}/eval_gsm8k"' in script
     assert '"${variant_dir}/oracle_export"' in script
     assert "run_acceptance.sh" in script
     assert "run_bench_matrix.sh" in script
+    assert "run_lm_eval.sh" in script
     assert "run_oracle_export.sh" in script
     assert 'SERVE_LOG="${serve_log}"' in script
     assert "baseline_summary.md" in script
@@ -484,6 +530,7 @@ def test_scripts_have_valid_bash_syntax():
     for script_name in (
         "run_acceptance.sh",
         "run_bench_matrix.sh",
+        "run_lm_eval.sh",
         "run_oracle_export.sh",
         "run_official_api_baseline.sh",
         "run_b200_baseline.sh",
@@ -608,6 +655,7 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
         "  *' generation-matrix '*) write_arg_file --jsonl-output \"$@\"; exit 0 ;;\n"
         "  *' toolcall15 '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
         "  *' bench-matrix '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
+        "  *' lm-eval '*) write_arg_file --json-output \"$@\"; printf '%s\\n' \"$@\" > \"$OUT_DIR/lm_eval_args.txt\"; exit 0 ;;\n"
         "  *' oracle-export '*) exit 0 ;;\n"
         "  *' pytest'*) exit 0 ;;\n"
         "  *' ruff check'*) exit 0 ;;\n"
@@ -625,10 +673,14 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
         encoding="utf-8",
     )
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    fake_lm_eval = tmp_path / "lm_eval"
+    fake_lm_eval.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    fake_lm_eval.chmod(fake_lm_eval.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
     env = os.environ | {
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
+        "LM_EVAL_BIN": str(fake_lm_eval),
         "OUT_DIR": str(out_dir),
         "GPU_STATS": "0",
         "RUNTIME_STATS": "0",
@@ -641,6 +693,7 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
         "RANDOM_LONG_CONCURRENCY": "1",
         "RANDOM_LONG_NUM_PROMPTS": "1",
         "RUN_ORACLE_EXPORT": "1",
+        "LM_EVAL_EXTRA_ARGS": "--limit 1",
         "SERVER_STARTUP_TIMEOUT": "5",
         "SERVER_STARTUP_INTERVAL_SECONDS": "0",
     }
@@ -659,10 +712,17 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
     phase_log = (out_dir / "phase_exit_codes.tsv").read_text(encoding="utf-8")
     assert "nomtp\tacceptance\t0" in phase_log
     assert "nomtp\tbench_hf_mt_bench\t0" in phase_log
+    assert "nomtp\teval_gsm8k\t0" in phase_log
     assert "nomtp\toracle_export\t0" in phase_log
     assert "mtp\tacceptance\t0" in phase_log
     assert "mtp\tbench_hf_mt_bench\t0" in phase_log
+    assert "mtp\teval_gsm8k\t0" in phase_log
     assert "mtp\toracle_export\t0" in phase_log
+    nomtp_lm_eval_args = (out_dir / "nomtp" / "eval_gsm8k" / "lm_eval_args.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "--extra-lm-eval-arg=--limit" in nomtp_lm_eval_args
+    assert "--extra-lm-eval-arg=1" in nomtp_lm_eval_args
     assert (out_dir / "baseline_summary.md").exists()
     assert "--speculative_config" in (out_dir / "mtp" / "serve_command.sh").read_text(
         encoding="utf-8"
@@ -698,6 +758,7 @@ def test_b200_baseline_driver_can_run_single_phase_with_mocked_tools(tmp_path):
         "  *' generation-matrix '*) write_arg_file --jsonl-output \"$@\"; exit 0 ;;\n"
         "  *' toolcall15 '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
         "  *' bench-matrix '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
+        "  *' lm-eval '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
         "  *' oracle-export '*) exit 0 ;;\n"
         "  *' pytest'*) exit 0 ;;\n"
         "  *' ruff check'*) exit 0 ;;\n"
@@ -745,9 +806,97 @@ def test_b200_baseline_driver_can_run_single_phase_with_mocked_tools(tmp_path):
     assert "mtp\tacceptance\t0" in phase_log
     assert "bench_hf_mt_bench" not in phase_log
     assert "bench_random_8192x512" not in phase_log
+    assert "eval_gsm8k" not in phase_log
     assert "oracle_export" not in phase_log
     assert (out_dir / "mtp" / "acceptance").exists()
     assert not (out_dir / "mtp" / "bench_hf_mt_bench").exists()
+
+
+def test_b200_baseline_driver_can_run_variants_in_parallel_with_gpu_splits(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env sh\n"
+        "args=\"$*\"\n"
+        "write_arg_file() {\n"
+        "  flag=\"$1\"\n"
+        "  shift\n"
+        "  while [ \"$#\" -gt 0 ]; do\n"
+        "    if [ \"$1\" = \"$flag\" ]; then\n"
+        "      shift\n"
+        "      mkdir -p \"$(dirname \"$1\")\"\n"
+        "      printf '%s\\n' '{}' > \"$1\"\n"
+        "      return 0\n"
+        "    fi\n"
+        "    shift\n"
+        "  done\n"
+        "}\n"
+        "case \"$args\" in\n"
+        "  *' env-summary '*) write_arg_file --json-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
+        "  *' health'*) printf '%s\\n' '{\"ok\":true}'; exit 0 ;;\n"
+        "  *' chat-smoke '*) write_arg_file --jsonl-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
+        "  *' generation-matrix '*) write_arg_file --jsonl-output \"$@\"; exit 0 ;;\n"
+        "  *' toolcall15 '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    fake_vllm = tmp_path / "fake-vllm"
+    fake_vllm.write_text(
+        "#!/usr/bin/env sh\n"
+        "trap 'exit 0' TERM INT\n"
+        "while :; do sleep 1; done\n",
+        encoding="utf-8",
+    )
+    fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    out_dir = tmp_path / "baseline"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "VLLM_BIN": str(fake_vllm),
+        "OUT_DIR": str(out_dir),
+        "GPU_STATS": "0",
+        "RUNTIME_STATS": "0",
+        "VLLM_COLLECT_ENV": "0",
+        "B200_BASELINE_VARIANTS": "nomtp,mtp",
+        "B200_BASELINE_PHASES": "acceptance",
+        "B200_VARIANT_PARALLEL": "1",
+        "B200_PARALLEL_GPU_GROUPS": "nomtp=0,1;mtp=2,3",
+        "B200_PARALLEL_TENSOR_PARALLEL_SIZE": "2",
+        "B200_PARALLEL_PORTS": "nomtp=18080;mtp=18081",
+        "SERVER_STARTUP_TIMEOUT": "5",
+        "SERVER_STARTUP_INTERVAL_SECONDS": "0",
+    }
+
+    subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_b200_baseline.sh")],
+        check=True,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    phase_log = (out_dir / "phase_exit_codes.tsv").read_text(encoding="utf-8")
+    assert "nomtp\tserver_startup\t0" in phase_log
+    assert "mtp\tserver_startup\t0" in phase_log
+    assert "nomtp\tacceptance\t0" in phase_log
+    assert "mtp\tacceptance\t0" in phase_log
+    assert (out_dir / "nomtp" / "acceptance").exists()
+    assert (out_dir / "mtp" / "acceptance").exists()
+    assert not (out_dir / "_parallel_nomtp").exists()
+    nomtp_command = (out_dir / "nomtp" / "serve_command.sh").read_text(
+        encoding="utf-8"
+    )
+    mtp_command = (out_dir / "mtp" / "serve_command.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'CUDA_VISIBLE_DEVICES="0,1"' in nomtp_command
+    assert 'CUDA_VISIBLE_DEVICES="2,3"' in mtp_command
+    assert "--tensor-parallel-size 2" in nomtp_command
+    assert "--port 18080" in nomtp_command
+    assert "--port 18081" in mtp_command
 
 
 def test_b200_baseline_driver_rejects_unknown_phase_before_launch(tmp_path):
@@ -787,6 +936,139 @@ def test_b200_baseline_driver_rejects_unknown_phase_before_launch(tmp_path):
     assert not launched.exists()
 
 
+def test_b200_baseline_driver_preflights_lm_eval_before_launch(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    fake_vllm = tmp_path / "fake-vllm"
+    launched = tmp_path / "launched"
+    fake_vllm.write_text(
+        "#!/usr/bin/env sh\n"
+        f"printf launched > {launched}\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    out_dir = tmp_path / "baseline"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "VLLM_BIN": str(fake_vllm),
+        "OUT_DIR": str(out_dir),
+        "B200_BASELINE_PHASES": "eval_gsm8k",
+        "RUN_LM_EVAL": "1",
+        "LM_EVAL_BIN": str(tmp_path / "missing-lm-eval"),
+    }
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_b200_baseline.sh")],
+        check=False,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 2
+    assert "LM_EVAL_BIN is not executable" in result.stderr
+    assert not launched.exists()
+
+
+def test_b200_baseline_driver_preflights_lm_eval_api_dependencies(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env sh\n"
+        "if [ \"$1\" = '-' ]; then exit 1; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    fake_vllm = tmp_path / "fake-vllm"
+    launched = tmp_path / "launched"
+    fake_vllm.write_text(
+        "#!/usr/bin/env sh\n"
+        f"printf launched > {launched}\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    fake_lm_eval = tmp_path / "lm_eval"
+    fake_lm_eval.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    fake_lm_eval.chmod(fake_lm_eval.stat().st_mode | 0o111)
+    out_dir = tmp_path / "baseline"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "VLLM_BIN": str(fake_vllm),
+        "OUT_DIR": str(out_dir),
+        "B200_BASELINE_PHASES": "eval_gsm8k",
+        "RUN_LM_EVAL": "1",
+        "LM_EVAL_BIN": str(fake_lm_eval),
+    }
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_b200_baseline.sh")],
+        check=False,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 2
+    assert "lm_eval API dependencies are missing" in result.stderr
+    assert not launched.exists()
+
+
+def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env sh\n"
+        "case \"$*\" in\n"
+        "  *' env-summary '*) exit 0 ;;\n"
+        "  *' health'*) printf '%s\\n' '{\"ok\":true}'; exit 0 ;;\n"
+        "  *' lm-eval '*) mkdir -p \"$OUT_DIR\"; printf '%s\\n' \"$@\" > \"$OUT_DIR/lm_eval_args.txt\"; printf '%s\\n' '{}' > \"$OUT_DIR/lm_eval_summary.json\"; exit 0 ;;\n"
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    out_dir = tmp_path / "eval"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "OUT_DIR": str(out_dir),
+        "GPU_STATS": "0",
+        "RUNTIME_STATS": "0",
+        "VLLM_COLLECT_ENV": "0",
+        "GPU_TOPOLOGY_SLUG": "test_gpu",
+        "LM_EVAL_TASKS": "gsm8k",
+        "LM_EVAL_EXTRA_ARGS": "--limit 1",
+        "SERVER_STARTUP_INTERVAL_SECONDS": "0",
+        "SERVE_LOG": "",
+    }
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_lm_eval.sh")],
+        check=True,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert (out_dir / "lm_eval.exit_code").read_text(encoding="utf-8").strip() == "0"
+    assert (out_dir / "lm_eval_summary.json").exists()
+    args = (out_dir / "lm_eval_args.txt").read_text(encoding="utf-8")
+    assert "--extra-lm-eval-arg=--limit" in args
+    assert "--extra-lm-eval-arg=1" in args
+    assert "--tokenizer-backend" in args
+    assert "none" in args
+    assert f"wrote {out_dir}" in result.stdout
+
+
 def test_b200_baseline_driver_archives_previous_managed_artifacts(tmp_path):
     fake_python = tmp_path / "fake-python"
     fake_python.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
@@ -820,6 +1102,7 @@ def test_b200_baseline_driver_archives_previous_managed_artifacts(tmp_path):
         "RUN_ACCEPTANCE": "0",
         "RUN_BENCH_HF": "0",
         "RUN_RANDOM_LONG": "0",
+        "RUN_LM_EVAL": "0",
         "RUN_ORACLE_EXPORT": "0",
         "SERVER_GUARD": "0",
         "GPU_STATS": "0",

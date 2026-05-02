@@ -98,6 +98,35 @@ mark_gate_skipped() {
   failures=1
 }
 
+STATIC_GATE_ARTIFACT_ROOT="${OUT_DIR}/_static_gate_artifacts"
+
+run_static_gate() {
+  local name="$1"
+  shift
+  local -a static_env_args=()
+  local static_gate_path="${PATH}"
+
+  mkdir -p "${STATIC_GATE_ARTIFACT_ROOT}"
+  if [[ "${PYTHON}" == */* ]]; then
+    static_gate_path="$(cd -- "$(dirname -- "${PYTHON}")" && pwd):${static_gate_path}"
+  fi
+  static_env_args+=("-i")
+  static_env_args+=("PATH=${static_gate_path}")
+  static_env_args+=("HOME=${HOME:-}")
+  static_env_args+=("TMPDIR=${TMPDIR:-/tmp}")
+  static_env_args+=("ARTIFACT_ROOT=${STATIC_GATE_ARTIFACT_ROOT}")
+
+  run_gate "${name}" env "${static_env_args[@]}" "$@"
+}
+
+cleanup_static_gate_artifacts() {
+  if [[ "$(cat "${OUT_DIR}/pytest.exit_code" 2>/dev/null || printf 1)" == "0" ]] &&
+    [[ "$(cat "${OUT_DIR}/ruff.exit_code" 2>/dev/null || printf 1)" == "0" ]] &&
+    [[ "$(cat "${OUT_DIR}/compileall.exit_code" 2>/dev/null || printf 1)" == "0" ]]; then
+    rm -rf "${STATIC_GATE_ARTIFACT_ROOT}"
+  fi
+}
+
 run_live_gate() {
   name="$1"
   shift
@@ -133,9 +162,10 @@ run_live_gate_capture() {
   fi
 }
 
-run_gate pytest "${PYTHON}" -m pytest -q tests
-run_gate ruff "${PYTHON}" -m ruff check ds4_harness tests
-run_gate compileall "${PYTHON}" -m compileall -q ds4_harness
+run_static_gate pytest "${PYTHON}" -m pytest -q tests
+run_static_gate ruff "${PYTHON}" -m ruff check ds4_harness tests
+run_static_gate compileall "${PYTHON}" -m compileall -q ds4_harness
+cleanup_static_gate_artifacts
 
 if ! wait_for_server_ready "${SERVER_STARTUP_TIMEOUT}" "${SERVER_STARTUP_INTERVAL_SECONDS}" "server startup before acceptance"; then
   server_failed=1

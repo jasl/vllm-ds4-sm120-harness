@@ -87,6 +87,12 @@ tool-call turn.
   - common-token logprob deltas
   - `request_*.json` / `response_*.json` bundles and wrapped
     `/v1/completions` export files
+- Optional `lm_eval` accuracy gate:
+  - defaults to GSM8K with OpenAI-compatible `local-completions`
+  - records exact-match metrics, command shape, stdout/stderr, and raw
+    `lm_eval` JSON output
+  - intended for expensive reference captures and branch-promotion checks, not
+    every local edit
 - vLLM `bench serve` matrix wrapper:
   - supports representative Hugging Face datasets such as
     `philschmid/mt-bench`
@@ -114,6 +120,10 @@ Use the harness as a layered gate, not as one monolithic command:
   progress.
 - Synthetic pressure: benchmark with `--dataset-name random` for controlled
   short/long context shapes such as 1024/1024 decode or 8192/512 prefill.
+- Public accuracy: run the optional `lm_eval` GSM8K phase on reference hosts
+  and promotion candidates. This provides a public scalar correctness signal
+  similar to the ROCm DeepSeek V4 support PRs, while oracle comparison remains
+  the stricter token-level kernel gate.
 - Serving variants: run no-MTP and MTP as separate server configurations. MTP
   changes generation trajectories, so compare it against a no-MTP baseline
   with the same harness profile.
@@ -252,20 +262,21 @@ copies live under `oracle/nomtp/` and `oracle/mtp/` when both exports are
 available.
 
 The report generator reads `phase_exit_codes.tsv`, `bench.json`,
-`toolcall15.json`, `oracle_export_summary.json`, `gpu_stats_summary.json`,
-`runtime_stats_summary.json`, `run_environment.json`, `vllm_collect_env.txt`,
-`generation.jsonl` when present, and each variant's `serve_command.sh`. It
+`toolcall15.json`, `lm_eval_summary.json`, `oracle_export_summary.json`,
+`gpu_stats_summary.json`, `runtime_stats_summary.json`,
+`run_environment.json`, `vllm_collect_env.txt`, `generation.jsonl` when
+present, and each variant's `serve_command.sh`. It
 writes stable Markdown tables for raw
-throughput/latency, ToolCall-15, oracle export, phase-local runtime stats, MTP
-speculative decoding, structured provenance, serve-shape parameters, and
-normalized efficiency. It also places a quick performance summary near the top
-with real-scenario operation cost estimates, best benchmark output throughput,
-and phase-local prefill/decode average `tok/s` values. The operation-cost
-overview is based on translation, writing, coding, and ToolCall-15 wall-clock
-samples, not benchmark rows. It is intended for OpenRouter/provider-style
-request costing. Benchmark rows remain useful for throughput and stress-shape
-tracking, but they are not used as the OP cost source. The default acceptance
-wrapper uses `GENERATION_LANGUAGES=en,zh`,
+throughput/latency, ToolCall-15, optional accuracy evals, oracle export,
+phase-local runtime stats, MTP speculative decoding, structured provenance,
+serve-shape parameters, and normalized efficiency. It also places a quick
+performance summary near the top with real-scenario operation cost estimates,
+best benchmark output throughput, and phase-local prefill/decode average
+`tok/s` values. The operation-cost overview is based on translation, writing,
+coding, and ToolCall-15 wall-clock samples, not benchmark rows. It is intended
+for OpenRouter/provider-style request costing. Benchmark rows remain useful for
+throughput and stress-shape tracking, but they are not used as the OP cost
+source. The default acceptance wrapper uses `GENERATION_LANGUAGES=en,zh`,
 `GENERATION_THINKING_MODES=non-thinking,think-high,think-max`, three repeats,
 `TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max`,
 `TOOLCALL15_SCENARIO_SET=en`, and one retry for transient API call failures.
@@ -377,11 +388,31 @@ python -m ds4_harness.cli toolcall15 \
   --repeat-count 3 \
   --request-retries 1 \
   --json-output artifacts/manual/toolcall15.json
+
+python -m ds4_harness.cli lm-eval \
+  --base-url http://127.0.0.1:8000 \
+  --model deepseek-ai/DeepSeek-V4-Flash \
+  --task gsm8k \
+  --num-fewshot 8 \
+  --num-concurrent 4 \
+  --max-retries 10 \
+  --max-gen-toks 2048 \
+  --eval-timeout-ms 60000 \
+  --tokenizer-backend none \
+  --output-dir artifacts/manual/eval_gsm8k \
+  --json-output artifacts/manual/eval_gsm8k/lm_eval_summary.json
 ```
 
 Use the Markdown outputs for human review of writing, translation, and coding
 quality. Use the JSON/JSONL outputs for archiving and comparison against the
 checked-in `baselines/.../generation/` samples.
+
+The `lm-eval` command is optional and requires the target vLLM venv to have the
+API-capable lm-evaluation-harness extra installed, for example
+`python -m pip install "lm-eval[api]"`. The shell wrapper
+`scripts/run_lm_eval.sh` adds the same artifact layout, GPU/runtime telemetry,
+`collect_env.py`, server guard, and deadlock marker behavior used by the
+benchmark wrapper.
 
 Use the B200/SM100 or H100 HTTP oracle bundle when you need stricter kernel
 correctness checks. Chat exports are covered by `chat-smoke`; `oracle-compare`
@@ -457,6 +488,7 @@ scripts/run_b200_baseline.sh
 
 Run this script on the reference host, not on a laptop. It defaults to
 `HOST=127.0.0.1 PORT=8080`, `B200_BASELINE_VARIANTS=nomtp,mtp`,
+`B200_VARIANT_PARALLEL=0`,
 `NO_MTP_CONCURRENCY=1,2,4,8,16,24`, `MTP_CONCURRENCY=1,2,4,8,16,24`,
 `SERVE_MAX_MODEL_LEN=393216`, `NUM_PROMPTS=80`, `REAL_SCENARIO_REPEAT_COUNT=3`,
 `API_REQUEST_RETRIES=1`,
@@ -464,21 +496,46 @@ Run this script on the reference host, not on a laptop. It defaults to
 `GENERATION_THINKING_MODES=non-thinking,think-high,think-max`,
 `GENERATION_TEMPERATURE=1.0`, `GENERATION_TOP_P=1.0`,
 `TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max`,
-`TOOLCALL15_SCENARIO_SET=en`, and a controlled random
+`TOOLCALL15_SCENARIO_SET=en`, `RUN_LM_EVAL=1`,
+`LM_EVAL_TASKS=gsm8k`, `LM_EVAL_NUM_FEWSHOT=8`,
+`LM_EVAL_NUM_CONCURRENT=4`, `MTP_LM_EVAL_NUM_CONCURRENT=1`,
+`LM_EVAL_MAX_GEN_TOKS=2048`, `LM_EVAL_TOKENIZER_BACKEND=none`,
+`LM_EVAL_COMMAND_TIMEOUT=7200`, and a controlled random
 long-context bench with
 `RANDOM_LONG_INPUT_LEN=8192 RANDOM_LONG_OUTPUT_LEN=512
 RANDOM_LONG_CONCURRENCY=1,2`.
 
 Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
 the requested server variant. Valid phase names are `acceptance`,
-`bench_hf_mt_bench`, `bench_random_8192x512`, and `oracle_export`; the default
-is `all`. For example:
+`bench_hf_mt_bench`, `eval_gsm8k`, `bench_random_8192x512`, and
+`oracle_export`; the default is `all`. For example:
 
 ```bash
 B200_BASELINE_VARIANTS=mtp \
 B200_BASELINE_PHASES=acceptance \
 scripts/run_b200_baseline.sh
 ```
+
+On a four-GPU reference host, optional parallel variant mode can run no-MTP and
+MTP at the same time by assigning disjoint GPU groups and ports:
+
+```bash
+B200_VARIANT_PARALLEL=1 \
+B200_BASELINE_VARIANTS=nomtp,mtp \
+B200_PARALLEL_GPU_GROUPS='nomtp=0,1;mtp=2,3' \
+B200_PARALLEL_TENSOR_PARALLEL_SIZE=2 \
+B200_PARALLEL_PORTS='nomtp=8080;mtp=8081' \
+scripts/run_b200_baseline.sh
+```
+
+This mode is useful for intermediate smoke or correctness sampling. It changes
+the serve shape from the default four-GPU TP=4 reference run to two independent
+two-GPU TP=2 servers, and both servers still share host CPU, storage, network,
+and scheduler resources. Do not treat its throughput as directly comparable to
+the sequential four-GPU baseline unless that split topology is itself the target
+being evaluated. The coordinator writes temporary child runs, then merges the
+results back into the normal `nomtp/` and `mtp/` artifact layout before report
+or bundle generation.
 
 The older `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`, `RUN_RANDOM_LONG=0`, and
 `RUN_ORACLE_EXPORT=0` toggles remain available for disabling phases inside the
@@ -493,15 +550,16 @@ matching
 baseline label. Explicit `OUT_DIR=...` runs skip this archive step. The script
 clears inherited
 `VLLM_*`, `TORCH_CUDA_ARCH_LIST`, and `CUDA_VISIBLE_DEVICES` launch defaults
-before starting vLLM, then stores phase exit codes in `phase_exit_codes.tsv`
-and a human summary in `baseline_summary.md`. It keeps running later phases
-after an earlier phase fails, then exits non-zero if any phase failed; the
-artifact tree is still valid for partial-baseline analysis.
+before starting vLLM, then sets `CUDA_VISIBLE_DEVICES` only when the driver has
+an explicit split-GPU assignment. It stores phase exit codes in
+`phase_exit_codes.tsv` and a human summary in `baseline_summary.md`. It keeps
+running later phases after an earlier phase fails, then exits non-zero if any
+phase failed; the artifact tree is still valid for partial-baseline analysis.
 
 The reference venv must include the packages needed by `vllm bench serve` and
 the harness self-checks. At minimum, confirm `python -m pip check` is clean and
-that `pytest`, `ruff`, and the Hugging Face `datasets` package are available in
-the vLLM venv. If FlashInfer is installed, keep `flashinfer-python`,
+that `pytest`, `ruff`, `lm-eval[api]`, and the Hugging Face `datasets` package
+are available in the vLLM venv. If FlashInfer is installed, keep `flashinfer-python`,
 `flashinfer-cubin`, and `flashinfer-jit-cache` on matching versions.
 
 ```bash
@@ -556,6 +614,8 @@ Before promoting an optimization:
 - `toolcall15 --scenario-set en --thinking-mode non-thinking --thinking-mode
   think-high --thinking-mode think-max --repeat-count 3` passes, or any
   partial/fail scenario is explained with trace evidence.
+- `lm-eval --task gsm8k --num-fewshot 8` is captured for expensive reference
+  baselines and before promoting a branch whose correctness could have changed.
 - `oracle-compare` has matching prompt token ids and no early token divergence
   on deterministic oracle cases, or any divergence is explained and recorded.
 - Real-scenario benchmark on `philschmid/mt-bench` does not regress more than
@@ -579,3 +639,6 @@ Before promoting an optimization:
   with benchmark concurrency greater than 1. Treat that as a runtime
   unresponsive-server case. For newer main-based reference builds, keep running
   the guarded MTP C>1 matrix and record the observed result.
+- For vLLM-side micro correctness checks inspired by the ROCm DeepSeek V4
+  support PRs, see `docs/vllm_correctness_gates.md`. Keep those tests in the
+  vLLM checkout; this repo records and orchestrates the gate commands.

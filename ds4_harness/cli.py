@@ -24,6 +24,12 @@ from ds4_harness.generation import (
     write_generation_transcript,
 )
 from ds4_harness.gpu_stats import summarize_gpu_csv, write_gpu_json, write_gpu_markdown
+from ds4_harness.lm_eval import (
+    build_lm_eval_command,
+    load_lm_eval_results,
+    run_lm_eval_command,
+    summarize_lm_eval_results,
+)
 from ds4_harness.oracle import (
     attach_prompt_token_ids,
     compare_response,
@@ -713,6 +719,76 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def _cmd_lm_eval(args: argparse.Namespace) -> int:
+    if not args.task:
+        print("at least one --task is required", file=sys.stderr)
+        return 2
+    if args.num_fewshot < 0:
+        print("--num-fewshot must be >= 0", file=sys.stderr)
+        return 2
+    if args.num_concurrent < 1:
+        print("--num-concurrent must be >= 1", file=sys.stderr)
+        return 2
+    if args.max_retries < 0:
+        print("--max-retries must be >= 0", file=sys.stderr)
+        return 2
+
+    raw_output_dir = args.output_dir / "raw"
+    raw_output_dir.mkdir(parents=True, exist_ok=True)
+    command = build_lm_eval_command(
+        lm_eval_bin=args.lm_eval_bin,
+        model=args.model,
+        base_url=args.base_url,
+        tasks=args.task,
+        num_fewshot=args.num_fewshot,
+        num_concurrent=args.num_concurrent,
+        max_retries=args.max_retries,
+        max_gen_toks=args.max_gen_toks,
+        eval_timeout_ms=args.eval_timeout_ms,
+        tokenizer_backend=args.tokenizer_backend,
+        batch_size=args.batch_size,
+        output_path=raw_output_dir,
+        extra_args=args.extra_lm_eval_arg,
+    )
+    command_result = run_lm_eval_command(command, timeout=args.command_timeout)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    (args.output_dir / "stdout.log").write_text(
+        command_result.get("stdout", ""),
+        encoding="utf-8",
+    )
+    (args.output_dir / "stderr.log").write_text(
+        command_result.get("stderr", ""),
+        encoding="utf-8",
+    )
+    (args.output_dir / "command.json").write_text(
+        json.dumps(command, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    raw_results = load_lm_eval_results(raw_output_dir)
+    summary = summarize_lm_eval_results(
+        raw_results,
+        command_result=command_result,
+        config={
+            "tasks": args.task,
+            "num_fewshot": args.num_fewshot,
+            "num_concurrent": args.num_concurrent,
+            "max_retries": args.max_retries,
+            "max_gen_toks": args.max_gen_toks,
+            "eval_timeout_ms": args.eval_timeout_ms,
+            "tokenizer_backend": args.tokenizer_backend,
+            "batch_size": args.batch_size,
+        },
+    )
+    output_path = args.json_output or (args.output_dir / "lm_eval_summary.json")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(json.dumps(summary, ensure_ascii=False))
+    return 0 if summary["ok"] else 1
+
+
 def _cmd_toolcall15(args: argparse.Namespace) -> int:
     if args.repeat_count < 1:
         print("--repeat-count must be >= 1", file=sys.stderr)
@@ -1035,6 +1111,24 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--log-dir", type=Path)
     bench.add_argument("--extra-bench-arg", action="append")
     bench.set_defaults(func=_cmd_bench_matrix)
+
+    lm_eval = subparsers.add_parser("lm-eval")
+    lm_eval.add_argument("--lm-eval-bin", default="lm_eval")
+    lm_eval.add_argument("--base-url", default="http://127.0.0.1:8000")
+    lm_eval.add_argument("--model", default=DEFAULT_MODEL)
+    lm_eval.add_argument("--task", action="append", required=True)
+    lm_eval.add_argument("--num-fewshot", type=int, default=8)
+    lm_eval.add_argument("--num-concurrent", type=int, default=4)
+    lm_eval.add_argument("--max-retries", type=int, default=10)
+    lm_eval.add_argument("--max-gen-toks", type=int, default=2048)
+    lm_eval.add_argument("--eval-timeout-ms", type=int, default=60000)
+    lm_eval.add_argument("--tokenizer-backend", default="none")
+    lm_eval.add_argument("--batch-size", default="auto")
+    lm_eval.add_argument("--command-timeout", type=float, default=7200.0)
+    lm_eval.add_argument("--output-dir", type=Path, required=True)
+    lm_eval.add_argument("--json-output", type=Path)
+    lm_eval.add_argument("--extra-lm-eval-arg", action="append")
+    lm_eval.set_defaults(func=_cmd_lm_eval)
 
     toolcall15 = subparsers.add_parser("toolcall15")
     toolcall15.add_argument("--base-url", default="http://127.0.0.1:8000")

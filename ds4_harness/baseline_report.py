@@ -929,6 +929,59 @@ def _oracle_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: _variant_sort_key(row["variant"]))
 
 
+def _task_label(task: Any) -> str:
+    value = str(task or "n/a")
+    if value.casefold() == "gsm8k":
+        return "GSM8K"
+    return value
+
+
+def _percent(value: Any) -> float | None:
+    number = _to_float(value)
+    if number is None:
+        return None
+    return number * 100.0
+
+
+def _eval_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
+    rows = []
+    for record in records:
+        if not record.phase.startswith("eval_"):
+            continue
+        data = _load_json(record.artifact_dir / "lm_eval_summary.json")
+        if not isinstance(data, dict):
+            continue
+        config = data.get("config", {})
+        if not isinstance(config, dict):
+            config = {}
+        tasks = data.get("tasks", [])
+        if not isinstance(tasks, list):
+            continue
+        for task in tasks:
+            if not isinstance(task, dict):
+                continue
+            rows.append(
+                {
+                    "variant": record.variant,
+                    "task": task.get("task"),
+                    "version": task.get("version"),
+                    "ok": data.get("ok"),
+                    "num_fewshot": config.get("num_fewshot"),
+                    "num_concurrent": config.get("num_concurrent"),
+                    "max_gen_toks": config.get("max_gen_toks"),
+                    "exact_match_flexible": task.get("exact_match_flexible"),
+                    "exact_match_strict": task.get("exact_match_strict"),
+                    "exact_match_flexible_stderr": task.get(
+                        "exact_match_flexible_stderr"
+                    ),
+                }
+            )
+    return sorted(
+        rows,
+        key=lambda row: (_variant_sort_key(row["variant"]), str(row.get("task"))),
+    )
+
+
 def _runtime_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
     rows = []
     for record in records:
@@ -1181,7 +1234,7 @@ def _serve_shape_rows(run_dir: Path, records: list[PhaseRecord]) -> list[dict[st
 
 
 def _parse_serve_command(text: str) -> dict[str, Any]:
-    for line in text.splitlines():
+    for line in _logical_shell_lines(text):
         if " vllm serve " not in f" {line} " and "vllm serve " not in line:
             continue
         tokens = shlex.split(line)
@@ -1192,6 +1245,23 @@ def _parse_serve_command(text: str) -> dict[str, Any]:
     return {}
 
 
+def _logical_shell_lines(text: str) -> list[str]:
+    lines = []
+    pending = ""
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.endswith("\\"):
+            pending += stripped[:-1].rstrip() + " "
+            continue
+        lines.append((pending + stripped).strip())
+        pending = ""
+    if pending.strip():
+        lines.append(pending.strip())
+    return lines
+
+
 def _serve_args_summary(args: list[str]) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "model": args[0] if args else None,
@@ -1199,7 +1269,13 @@ def _serve_args_summary(args: list[str]) -> dict[str, Any]:
         "block_size": None,
         "max_model_len": None,
         "tensor_parallel_size": None,
+        "max_num_seqs": None,
+        "max_num_batched_tokens": None,
+        "gpu_memory_utilization": None,
         "speculative_config": None,
+        "moe_backend": None,
+        "async_scheduling": False,
+        "enforce_eager": False,
         "reasoning_parser": None,
         "tokenizer_mode": None,
         "tool_call_parser": None,
@@ -1212,8 +1288,12 @@ def _serve_args_summary(args: list[str]) -> dict[str, Any]:
         "--block-size": "block_size",
         "--max-model-len": "max_model_len",
         "--tensor-parallel-size": "tensor_parallel_size",
+        "--max-num-seqs": "max_num_seqs",
+        "--max-num-batched-tokens": "max_num_batched_tokens",
+        "--gpu-memory-utilization": "gpu_memory_utilization",
         "--speculative_config": "speculative_config",
         "--speculative-config": "speculative_config",
+        "--moe-backend": "moe_backend",
         "--reasoning-parser": "reasoning_parser",
         "--tokenizer-mode": "tokenizer_mode",
         "--tool-call-parser": "tool_call_parser",
@@ -1227,6 +1307,10 @@ def _serve_args_summary(args: list[str]) -> dict[str, Any]:
             continue
         if token == "--enable-auto-tool-choice":
             summary["auto_tool_choice"] = True
+        elif token == "--async-scheduling":
+            summary["async_scheduling"] = True
+        elif token == "--enforce-eager":
+            summary["enforce_eager"] = True
         elif token == "--no-enable-flashinfer-autotune":
             summary["flashinfer_autotune_disabled"] = True
         elif token.startswith("--attention_config.use_fp4_indexer_cache"):
@@ -1270,8 +1354,8 @@ def _append_serve_shape(lines: list[str], rows: list[dict[str, Any]]) -> None:
         [
             "## Serve Shape",
             "",
-            "| Variant | KV dtype | Block size | Max model len | TP | Speculative config | Reasoning parser | Tokenizer mode | Tool parser | Auto tool | FP4 index cache | FlashInfer autotune disabled |",
-            "| --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- |",
+            "| Variant | KV dtype | Block size | Max model len | TP | Max seqs | Max batched tokens | GPU memory util | Speculative config | MoE backend | Async scheduling | Enforce eager | Reasoning parser | Tokenizer mode | Tool parser | Auto tool | FP4 index cache | FlashInfer autotune disabled |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for row in rows:
@@ -1280,7 +1364,13 @@ def _append_serve_shape(lines: list[str], rows: list[dict[str, Any]]) -> None:
             f"{_metadata(row.get('block_size'))} | "
             f"{_metadata(row.get('max_model_len'))} | "
             f"{_metadata(row.get('tensor_parallel_size'))} | "
+            f"{_metadata(row.get('max_num_seqs'))} | "
+            f"{_metadata(row.get('max_num_batched_tokens'))} | "
+            f"{_metadata(row.get('gpu_memory_utilization'))} | "
             f"`{_metadata(row.get('speculative_config'))}` | "
+            f"`{_metadata(row.get('moe_backend'))}` | "
+            f"{_yes_no(row.get('async_scheduling'))} | "
+            f"{_yes_no(row.get('enforce_eager'))} | "
             f"`{_metadata(row.get('reasoning_parser'))}` | "
             f"`{_metadata(row.get('tokenizer_mode'))}` | "
             f"`{_metadata(row.get('tool_call_parser'))}` | "
@@ -1445,6 +1535,36 @@ def _append_oracle(lines: list[str], rows: list[dict[str, Any]]) -> None:
     lines.append("")
 
 
+def _append_evals(lines: list[str], rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    lines.extend(
+        [
+            "## Accuracy Evals",
+            "",
+            (
+                "These rows are optional public accuracy gates, intended for "
+                "expensive reference captures and branch-promotion checks."
+            ),
+            "",
+            "| Variant | Task | Version | OK | Fewshot | Concurrent | Max gen toks | EM flexible % | EM strict % | EM flex stderr |",
+            "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            f"| `{row['variant']}` | {_task_label(row.get('task'))} | "
+            f"{_metadata(row.get('version'))} | {_yes_no(row.get('ok'))} | "
+            f"{_fmt_int(row.get('num_fewshot'))} | "
+            f"{_fmt_int(row.get('num_concurrent'))} | "
+            f"{_fmt_int(row.get('max_gen_toks'))} | "
+            f"{_fmt(_percent(row.get('exact_match_flexible')))} | "
+            f"{_fmt(_percent(row.get('exact_match_strict')))} | "
+            f"{_fmt(row.get('exact_match_flexible_stderr'), 4)} |"
+        )
+    lines.append("")
+
+
 def _append_runtime(lines: list[str], rows: list[dict[str, Any]], title: str) -> None:
     if not rows:
         return
@@ -1518,6 +1638,7 @@ def build_baseline_report(
     acceptance_gate_rows = _acceptance_gate_rows(records)
     toolcall_rows = _toolcall_rows(records)
     oracle_rows = _oracle_rows(records)
+    eval_rows = _eval_rows(records)
     collect_env_total, collect_env_ok, collect_env_failed = _collect_env_status(records)
     unresponsive_markers = _unresponsive_markers(run_dir)
 
@@ -1584,6 +1705,7 @@ def build_baseline_report(
     _append_benchmark_tables(lines, bench_rows)
     _append_toolcall(lines, toolcall_rows)
     _append_oracle(lines, oracle_rows)
+    _append_evals(lines, eval_rows)
     if supplement_bench_rows:
         _append_benchmark_tables(lines, supplement_bench_rows, title_prefix="Supplement")
     if supplement_runtime_rows:

@@ -149,6 +149,22 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         smoke_dir / "toolcall15.json",
         {"summary": {"cases": 1}, "results": [{"final_answer": "/workspace/leak"}]},
     )
+    private_ip = ".".join(["10", "0", "0", "110"])
+    _write_json(
+        run_dir / "nomtp" / "eval_gsm8k" / "lm_eval_summary.json",
+        {
+            "ok": True,
+            "tasks": [
+                {
+                    "task": "gsm8k",
+                    "exact_match_flexible": 0.9439,
+                    "exact_match_strict": 0.9431,
+                }
+            ],
+            "command": ["/workspace/vllm/.venv/bin/lm_eval", "--model"],
+            "model_args": f"base_url=http://{private_ip}:8000/v1/completions",
+        },
+    )
 
     bench_dir = run_dir / "nomtp" / "bench_hf_mt_bench"
     _write_json(
@@ -225,6 +241,7 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         / "translation_en_to_zh.1.think-high.nomtp.md"
     ).exists()
     assert (out_dir / "toolcall15" / "nomtp.json").exists()
+    assert (out_dir / "evals" / "nomtp_gsm8k.json").exists()
     assert (out_dir / "performance" / "primary.json").exists()
 
     assert not scan_public_bundle(out_dir)
@@ -249,6 +266,9 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     ).read_text()
     toolcall = json.loads((out_dir / "toolcall15" / "nomtp.json").read_text())
     assert toolcall["results"][0]["final_answer"] == "<workspace>/leak"
+    evals = json.loads((out_dir / "evals" / "nomtp_gsm8k.json").read_text())
+    assert evals["command"][0] == "lm_eval"
+    assert evals["model_args"] == "base_url=http://<private-ip>:8000/v1/completions"
     perf = json.loads((out_dir / "performance" / "primary.json").read_text())
     assert perf["phases"][0]["bench"][0]["command"][0] == "vllm"
 

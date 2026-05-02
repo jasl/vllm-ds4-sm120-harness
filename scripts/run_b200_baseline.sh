@@ -21,6 +21,11 @@ SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-393216}"
 B200_BASELINE_LABEL="${B200_BASELINE_LABEL:-b200_official}"
 B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-nomtp,mtp}"
 B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-all}"
+B200_VARIANT_PARALLEL="${B200_VARIANT_PARALLEL:-0}"
+B200_PARALLEL_GPU_GROUPS="${B200_PARALLEL_GPU_GROUPS:-nomtp=0,1;mtp=2,3}"
+B200_PARALLEL_TENSOR_PARALLEL_SIZE="${B200_PARALLEL_TENSOR_PARALLEL_SIZE:-2}"
+B200_PARALLEL_PORTS="${B200_PARALLEL_PORTS:-}"
+B200_CUDA_VISIBLE_DEVICES="${B200_CUDA_VISIBLE_DEVICES:-}"
 ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-${B200_ARCHIVE_PREVIOUS:-1}}"
 ARTIFACT_ARCHIVE_PREFIX="${ARTIFACT_ARCHIVE_PREFIX:-${B200_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}}"
 NO_MTP_CONCURRENCY="${NO_MTP_CONCURRENCY:-1,2,4,8,16,24}"
@@ -31,6 +36,19 @@ TEMPERATURE="${TEMPERATURE:-1.0}"
 RUN_RANDOM_LONG="${RUN_RANDOM_LONG:-1}"
 RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"
 RUN_BENCH_HF="${RUN_BENCH_HF:-1}"
+RUN_LM_EVAL="${RUN_LM_EVAL:-1}"
+LM_EVAL_BIN="${LM_EVAL_BIN:-${B200_VLLM_VENV}/bin/lm_eval}"
+LM_EVAL_TASKS="${LM_EVAL_TASKS:-gsm8k}"
+LM_EVAL_NUM_FEWSHOT="${LM_EVAL_NUM_FEWSHOT:-8}"
+LM_EVAL_NUM_CONCURRENT="${LM_EVAL_NUM_CONCURRENT:-4}"
+MTP_LM_EVAL_NUM_CONCURRENT="${MTP_LM_EVAL_NUM_CONCURRENT:-1}"
+LM_EVAL_MAX_RETRIES="${LM_EVAL_MAX_RETRIES:-10}"
+LM_EVAL_MAX_GEN_TOKS="${LM_EVAL_MAX_GEN_TOKS:-2048}"
+LM_EVAL_TIMEOUT_MS="${LM_EVAL_TIMEOUT_MS:-60000}"
+LM_EVAL_TOKENIZER_BACKEND="${LM_EVAL_TOKENIZER_BACKEND:-none}"
+LM_EVAL_BATCH_SIZE="${LM_EVAL_BATCH_SIZE:-auto}"
+LM_EVAL_COMMAND_TIMEOUT="${LM_EVAL_COMMAND_TIMEOUT:-7200}"
+LM_EVAL_EXTRA_ARGS="${LM_EVAL_EXTRA_ARGS:-}"
 RANDOM_LONG_CONCURRENCY="${RANDOM_LONG_CONCURRENCY:-1,2}"
 RANDOM_LONG_NUM_PROMPTS="${RANDOM_LONG_NUM_PROMPTS:-8}"
 RANDOM_LONG_INPUT_LEN="${RANDOM_LONG_INPUT_LEN:-8192}"
@@ -57,6 +75,8 @@ GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"
 ARTIFACT_PARENT="${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}"
 RUN_ROOT="${OUT_DIR:-${ARTIFACT_PARENT}/${B200_BASELINE_LABEL}/${RUN_TIMESTAMP}}"
 export MODEL HOST PORT BASE_URL PYTHON VLLM_BIN RUN_TIMESTAMP BRANCH_NAME
+export B200_VARIANT_PARALLEL B200_PARALLEL_GPU_GROUPS B200_PARALLEL_TENSOR_PARALLEL_SIZE
+export B200_PARALLEL_PORTS B200_CUDA_VISIBLE_DEVICES
 export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_PROBE_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT
 export SERVER_FAILURE_GRACE_INTERVAL_SECONDS ARTIFACT_ROOT GPU_TOPOLOGY_SLUG
@@ -65,6 +85,10 @@ export REAL_SCENARIO_REPEAT_COUNT GENERATION_PROMPT_ROOT GENERATION_LANGUAGES
 export GENERATION_THINKING_MODES GENERATION_REPEAT_COUNT GENERATION_TIMEOUT
 export GENERATION_MAX_CASE_TOKENS TOOLCALL15_SCENARIO_SET
 export TOOLCALL15_REPEAT_COUNT
+export RUN_LM_EVAL LM_EVAL_BIN LM_EVAL_TASKS LM_EVAL_NUM_FEWSHOT
+export LM_EVAL_NUM_CONCURRENT MTP_LM_EVAL_NUM_CONCURRENT LM_EVAL_MAX_RETRIES
+export LM_EVAL_MAX_GEN_TOKS LM_EVAL_TIMEOUT_MS LM_EVAL_TOKENIZER_BACKEND LM_EVAL_BATCH_SIZE
+export LM_EVAL_COMMAND_TIMEOUT LM_EVAL_EXTRA_ARGS
 
 if [[ -z "${MTP_SPECULATIVE_CONFIG+x}" ]]; then
   MTP_SPECULATIVE_CONFIG='{"method":"mtp","num_speculative_tokens":2}'
@@ -75,6 +99,7 @@ failures=0
 VALID_BASELINE_PHASES=(
   acceptance
   bench_hf_mt_bench
+  eval_gsm8k
   bench_random_8192x512
   oracle_export
 )
@@ -101,7 +126,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,acceptance,bench_hf_mt_bench,bench_random_8192x512,oracle_export' >&2
+        'valid phases: all,acceptance,bench_hf_mt_bench,eval_gsm8k,bench_random_8192x512,oracle_export' >&2
       return 2
     fi
   done
@@ -211,6 +236,11 @@ write_command_file() {
   {
     printf '#!/usr/bin/env bash\n'
     printf 'export VLLM_ENGINE_READY_TIMEOUT_S=%q\n' "${VLLM_ENGINE_READY_TIMEOUT_S}"
+    if [[ -n "${B200_CUDA_VISIBLE_DEVICES}" ]]; then
+      local visible_devices="${B200_CUDA_VISIBLE_DEVICES//\\/\\\\}"
+      visible_devices="${visible_devices//\"/\\\"}"
+      printf 'export CUDA_VISIBLE_DEVICES="%s"\n' "${visible_devices}"
+    fi
     printf '%q ' "$@"
     printf '\n'
   } > "${command_file}"
@@ -254,6 +284,9 @@ start_server() {
   printf '%s\n' "${VLLM_ENGINE_READY_TIMEOUT_S}" > "${variant_dir}/vllm_engine_ready_timeout_s.txt"
 
   clear_inherited_launch_env
+  if [[ -n "${B200_CUDA_VISIBLE_DEVICES}" ]]; then
+    export CUDA_VISIBLE_DEVICES="${B200_CUDA_VISIBLE_DEVICES}"
+  fi
   if command -v setsid >/dev/null 2>&1; then
     setsid "${VLLM_BIN}" "${OFFICIAL_SERVE_ARGS[@]}" > "${serve_log}" 2>&1 &
   else
@@ -351,6 +384,13 @@ phase_enabled() {
   return 1
 }
 
+lm_eval_phase_enabled() {
+  if [[ "${RUN_LM_EVAL}" != "1" && "${RUN_LM_EVAL}" != "true" ]]; then
+    return 1
+  fi
+  phase_enabled "eval_gsm8k"
+}
+
 write_summary() {
   {
     printf '# B200 Baseline Summary\n\n'
@@ -360,12 +400,22 @@ write_summary() {
     printf -- '- base_url: `%s`\n' "${BASE_URL}"
     printf -- '- variants: `%s`\n' "${B200_BASELINE_VARIANTS}"
     printf -- '- phases: `%s`\n' "${B200_BASELINE_PHASES}"
+    printf -- '- variant_parallel: `%s`\n' "${B200_VARIANT_PARALLEL}"
+    if [[ "${B200_VARIANT_PARALLEL}" == "1" || "${B200_VARIANT_PARALLEL}" == "true" ]]; then
+      printf -- '- parallel_gpu_groups: `%s`\n' "${B200_PARALLEL_GPU_GROUPS}"
+      printf -- '- parallel_ports: `%s`\n' "${B200_PARALLEL_PORTS:-nomtp=${PORT};mtp=$(default_parallel_mtp_port)}"
+      printf -- '- parallel_tensor_parallel_size: `%s`\n' "${B200_PARALLEL_TENSOR_PARALLEL_SIZE}"
+    fi
     printf -- '- serve_max_model_len: `%s`\n' "${SERVE_MAX_MODEL_LEN}"
     printf -- '- no_mtp_concurrency: `%s`\n' "${NO_MTP_CONCURRENCY}"
     printf -- '- mtp_concurrency: `%s`\n' "${MTP_CONCURRENCY}"
     printf -- '- num_prompts: `%s`\n' "${NUM_PROMPTS}"
     printf -- '- acceptance: `%s`\n' "${RUN_ACCEPTANCE}"
     printf -- '- hf_benchmark: `%s`\n' "${RUN_BENCH_HF}"
+    printf -- '- lm_eval: `%s`, tasks `%s`, fewshot `%s`, no-MTP concurrency `%s`, MTP concurrency `%s`\n' \
+      "${RUN_LM_EVAL}" "${LM_EVAL_TASKS}" "${LM_EVAL_NUM_FEWSHOT}" \
+      "${LM_EVAL_NUM_CONCURRENT}" "${MTP_LM_EVAL_NUM_CONCURRENT}"
+    printf -- '- lm_eval_tokenizer_backend: `%s`\n' "${LM_EVAL_TOKENIZER_BACKEND}"
     printf -- '- random_long: `%s`, concurrency `%s`, shape `%s/%s`, prompts `%s`\n' \
       "${RUN_RANDOM_LONG}" "${RANDOM_LONG_CONCURRENCY}" "${RANDOM_LONG_INPUT_LEN}" \
       "${RANDOM_LONG_OUTPUT_LEN}" "${RANDOM_LONG_NUM_PROMPTS}"
@@ -391,6 +441,157 @@ write_summary() {
   } > "${SUMMARY_MD}"
 }
 
+variant_setting() {
+  local mapping="$1"
+  local variant="$2"
+  local default_value="$3"
+  local entry key value
+  local -a entries
+
+  IFS=';' read -r -a entries <<< "${mapping}"
+  for entry in "${entries[@]}"; do
+    if [[ -z "${entry}" || "${entry}" != *=* ]]; then
+      continue
+    fi
+    key="${entry%%=*}"
+    value="${entry#*=}"
+    if [[ "${key}" == "${variant}" ]]; then
+      printf '%s\n' "${value}"
+      return 0
+    fi
+  done
+  printf '%s\n' "${default_value}"
+}
+
+default_parallel_mtp_port() {
+  if [[ "${PORT}" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$((PORT + 1))"
+  else
+    printf '%s\n' "8081"
+  fi
+}
+
+parallel_mode_enabled() {
+  [[ "${B200_VARIANT_PARALLEL}" == "1" || "${B200_VARIANT_PARALLEL}" == "true" ]]
+}
+
+validate_parallel_variants() {
+  local item
+  local count=0
+  local has_nomtp=0
+  local has_mtp=0
+  local -a requested_variants
+
+  IFS=',' read -r -a requested_variants <<< "${B200_BASELINE_VARIANTS}"
+  for item in "${requested_variants[@]}"; do
+    count=$((count + 1))
+    if [[ "${item}" == "nomtp" ]]; then
+      has_nomtp=1
+    elif [[ "${item}" == "mtp" ]]; then
+      has_mtp=1
+    else
+      printf 'parallel variant mode only supports nomtp,mtp; got %s\n' "${item}" >&2
+      return 2
+    fi
+  done
+
+  if [[ "${count}" != "2" || "${has_nomtp}" != "1" || "${has_mtp}" != "1" ]]; then
+    printf 'parallel variant mode requires B200_BASELINE_VARIANTS=nomtp,mtp\n' >&2
+    return 2
+  fi
+}
+
+merge_parallel_child() {
+  local variant="$1"
+  local child_root="$2"
+  local child_code="$3"
+  local child_phase_log="${child_root}/phase_exit_codes.tsv"
+  local child_variant_dir="${child_root}/${variant}"
+  local target_variant_dir="${RUN_ROOT}/${variant}"
+  local row_variant phase code artifact_dir
+
+  if [[ -f "${child_phase_log}" ]]; then
+    while IFS="$(printf '\t')" read -r row_variant phase code artifact_dir; do
+      if [[ -z "${row_variant}" || -z "${phase}" ]]; then
+        continue
+      fi
+      printf '%s\t%s\t%s\t%s\n' \
+        "${row_variant}" "${phase}" "${code}" "${RUN_ROOT}/${row_variant}/${phase}" \
+        >> "${PHASE_LOG}"
+      if [[ "${code}" != "0" ]]; then
+        failures=1
+      fi
+    done < <(tail -n +2 "${child_phase_log}")
+  else
+    record_phase "${variant}" "parallel_child" "${child_code}" "${child_root}"
+  fi
+
+  if [[ -d "${child_variant_dir}" ]]; then
+    rm -rf "${target_variant_dir}"
+    mv "${child_variant_dir}" "${target_variant_dir}"
+  fi
+
+  if [[ "${child_code}" == "0" ]]; then
+    rm -rf "${child_root}"
+  fi
+}
+
+run_parallel_variants() {
+  validate_parallel_variants
+
+  local nomtp_child="${RUN_ROOT}/_parallel_nomtp"
+  local mtp_child="${RUN_ROOT}/_parallel_mtp"
+  local nomtp_gpu mtp_gpu nomtp_port mtp_port
+  local nomtp_pid mtp_pid nomtp_code mtp_code
+
+  nomtp_gpu="$(variant_setting "${B200_PARALLEL_GPU_GROUPS}" "nomtp" "0,1")"
+  mtp_gpu="$(variant_setting "${B200_PARALLEL_GPU_GROUPS}" "mtp" "2,3")"
+  nomtp_port="$(variant_setting "${B200_PARALLEL_PORTS}" "nomtp" "${PORT}")"
+  mtp_port="$(variant_setting "${B200_PARALLEL_PORTS}" "mtp" "$(default_parallel_mtp_port)")"
+
+  rm -rf "${nomtp_child}" "${mtp_child}" "${RUN_ROOT}/nomtp" "${RUN_ROOT}/mtp"
+  mkdir -p "${nomtp_child}" "${mtp_child}"
+
+  env OUT_DIR="${nomtp_child}" \
+    B200_VARIANT_PARALLEL=0 B200_BASELINE_VARIANTS=nomtp \
+    B200_BASELINE_LABEL="${B200_BASELINE_LABEL}_nomtp" \
+    B200_TENSOR_PARALLEL_SIZE="${B200_PARALLEL_TENSOR_PARALLEL_SIZE}" \
+    B200_CUDA_VISIBLE_DEVICES="${nomtp_gpu}" \
+    HOST="${HOST}" PORT="${nomtp_port}" BASE_URL="http://${HOST}:${nomtp_port}" \
+    ARTIFACT_ARCHIVE_PREVIOUS=0 \
+    "${SCRIPT_DIR}/run_b200_baseline.sh" \
+    > "${nomtp_child}/driver.log" 2>&1 &
+  nomtp_pid="$!"
+
+  env OUT_DIR="${mtp_child}" \
+    B200_VARIANT_PARALLEL=0 B200_BASELINE_VARIANTS=mtp \
+    B200_BASELINE_LABEL="${B200_BASELINE_LABEL}_mtp" \
+    B200_TENSOR_PARALLEL_SIZE="${B200_PARALLEL_TENSOR_PARALLEL_SIZE}" \
+    B200_CUDA_VISIBLE_DEVICES="${mtp_gpu}" \
+    HOST="${HOST}" PORT="${mtp_port}" BASE_URL="http://${HOST}:${mtp_port}" \
+    ARTIFACT_ARCHIVE_PREVIOUS=0 \
+    "${SCRIPT_DIR}/run_b200_baseline.sh" \
+    > "${mtp_child}/driver.log" 2>&1 &
+  mtp_pid="$!"
+
+  set +e
+  wait "${nomtp_pid}"
+  nomtp_code="$?"
+  wait "${mtp_pid}"
+  mtp_code="$?"
+  set -e
+
+  merge_parallel_child "nomtp" "${nomtp_child}" "${nomtp_code}"
+  merge_parallel_child "mtp" "${mtp_child}" "${mtp_code}"
+
+  if [[ "${nomtp_code}" != "0" || "${mtp_code}" != "0" ]]; then
+    failures=1
+  fi
+  write_summary
+  echo "wrote ${RUN_ROOT}"
+  exit "${failures}"
+}
+
 if [[ ! -x "${PYTHON}" ]]; then
   printf 'PYTHON is not executable: %s\n' "${PYTHON}" >&2
   exit 2
@@ -399,8 +600,37 @@ if [[ ! -x "${VLLM_BIN}" ]]; then
   printf 'VLLM_BIN is not executable: %s\n' "${VLLM_BIN}" >&2
   exit 2
 fi
+if lm_eval_phase_enabled; then
+  if [[ "${LM_EVAL_BIN}" == */* ]]; then
+    if [[ ! -x "${LM_EVAL_BIN}" ]]; then
+      printf 'LM_EVAL_BIN is not executable: %s\n' "${LM_EVAL_BIN}" >&2
+      exit 2
+    fi
+  elif ! command -v "${LM_EVAL_BIN}" >/dev/null 2>&1; then
+    printf 'LM_EVAL_BIN was not found on PATH: %s\n' "${LM_EVAL_BIN}" >&2
+    exit 2
+  fi
+  if ! "${PYTHON}" - <<'PY' >/dev/null 2>&1
+import importlib.util
+import sys
+
+missing = [
+    name for name in ("lm_eval", "tenacity") if importlib.util.find_spec(name) is None
+]
+if missing:
+    raise SystemExit(",".join(missing))
+PY
+  then
+    printf 'lm_eval API dependencies are missing; install lm-eval[api] in the target venv\n' >&2
+    exit 2
+  fi
+fi
 
 write_summary
+
+if parallel_mode_enabled; then
+  run_parallel_variants
+fi
 
 variant_list="${B200_BASELINE_VARIANTS//,/ }"
 for variant in ${variant_list}; do
@@ -455,8 +685,10 @@ for variant in ${variant_list}; do
 
   if [[ "${variant}" == "mtp" ]]; then
     bench_concurrency="${MTP_CONCURRENCY}"
+    lm_eval_concurrency="${MTP_LM_EVAL_NUM_CONCURRENT}"
   else
     bench_concurrency="${NO_MTP_CONCURRENCY}"
+    lm_eval_concurrency="${LM_EVAL_NUM_CONCURRENT}"
   fi
 
   if phase_enabled "bench_hf_mt_bench" && { [[ "${RUN_BENCH_HF}" == "1" ]] || [[ "${RUN_BENCH_HF}" == "true" ]]; }; then
@@ -473,6 +705,29 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_bench_matrix.sh"
+  fi
+
+  if phase_enabled "eval_gsm8k" && { [[ "${RUN_LM_EVAL}" == "1" ]] || [[ "${RUN_LM_EVAL}" == "true" ]]; }; then
+    run_phase "${variant}" "eval_gsm8k" "${variant_dir}/eval_gsm8k" \
+      env OUT_DIR="${variant_dir}/eval_gsm8k" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" \
+        SERVE_LOG="${serve_log}" LM_EVAL_BIN="${LM_EVAL_BIN}" \
+        LM_EVAL_TASKS="${LM_EVAL_TASKS}" \
+        LM_EVAL_NUM_FEWSHOT="${LM_EVAL_NUM_FEWSHOT}" \
+        LM_EVAL_NUM_CONCURRENT="${lm_eval_concurrency}" \
+        LM_EVAL_MAX_RETRIES="${LM_EVAL_MAX_RETRIES}" \
+        LM_EVAL_MAX_GEN_TOKS="${LM_EVAL_MAX_GEN_TOKS}" \
+        LM_EVAL_TIMEOUT_MS="${LM_EVAL_TIMEOUT_MS}" \
+        LM_EVAL_TOKENIZER_BACKEND="${LM_EVAL_TOKENIZER_BACKEND}" \
+        LM_EVAL_BATCH_SIZE="${LM_EVAL_BATCH_SIZE}" \
+        LM_EVAL_COMMAND_TIMEOUT="${LM_EVAL_COMMAND_TIMEOUT}" \
+        LM_EVAL_EXTRA_ARGS="${LM_EVAL_EXTRA_ARGS}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_lm_eval.sh"
   fi
 
   if phase_enabled "bench_random_8192x512" && { [[ "${RUN_RANDOM_LONG}" == "1" ]] || [[ "${RUN_RANDOM_LONG}" == "true" ]]; }; then

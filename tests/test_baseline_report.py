@@ -2,6 +2,7 @@ import json
 
 from ds4_harness import cli
 from ds4_harness.baseline_report import (
+    _parse_serve_command,
     _reference_gpu_rental_hourly_usd,
     build_baseline_report,
 )
@@ -19,6 +20,9 @@ def _write_fixture_phase(root, variant, phase, *, output_tok_s=1600.0):
     serve_args = (
         "deepseek-ai/DeepSeek-V4-Flash --trust-remote-code --kv-cache-dtype fp8 "
         "--block-size 256 --max-model-len 393216 --tensor-parallel-size 4 "
+        "--max-num-seqs 16 --max-num-batched-tokens 1024 "
+        "--gpu-memory-utilization 0.35 --moe-backend triton_unfused "
+        "--async-scheduling --enforce-eager "
         "--host 127.0.0.1 --port 8080 "
         "--no-enable-flashinfer-autotune --attention_config.use_fp4_indexer_cache=True "
         "--reasoning-parser deepseek_v4 --tokenizer-mode deepseek_v4 "
@@ -126,10 +130,32 @@ def _write_fixture_phase(root, variant, phase, *, output_tok_s=1600.0):
 
 def _write_fixture_run(tmp_path):
     root = tmp_path / "baseline"
+    eval_dir = root / "nomtp" / "eval_gsm8k"
+    _write_json(
+        eval_dir / "lm_eval_summary.json",
+        {
+            "ok": True,
+            "tasks": [
+                {
+                    "task": "gsm8k",
+                    "version": 3,
+                    "exact_match_flexible": 0.9439,
+                    "exact_match_strict": 0.9431,
+                    "exact_match_flexible_stderr": 0.0063,
+                }
+            ],
+            "config": {
+                "num_fewshot": 8,
+                "num_concurrent": 4,
+                "max_gen_toks": 2048,
+            },
+        },
+    )
     phase_rows = [
         ("nomtp", "server_startup", 0, root / "nomtp" / "server_startup"),
         ("nomtp", "acceptance", 1, root / "nomtp" / "acceptance"),
         ("nomtp", "bench_hf_mt_bench", 0, _write_fixture_phase(root, "nomtp", "bench_hf_mt_bench")),
+        ("nomtp", "eval_gsm8k", 0, eval_dir),
         ("mtp", "server_startup", 0, root / "mtp" / "server_startup"),
         ("mtp", "acceptance", 1, root / "mtp" / "acceptance"),
         ("mtp", "bench_hf_mt_bench", 0, _write_fixture_phase(root, "mtp", "bench_hf_mt_bench", output_tok_s=2000.0)),
@@ -309,6 +335,41 @@ def test_reference_rental_hourly_costs_cover_sm12x_dev_hosts():
     )
 
 
+def test_parse_serve_command_handles_multiline_shell_continuations():
+    row = _parse_serve_command(
+        """#!/usr/bin/env bash
+export VLLM_ENGINE_READY_TIMEOUT_S=3600
+HF_HOME=/workspace/.hf_home /workspace/vllm/.venv/bin/vllm serve deepseek-ai/DeepSeek-V4-Flash \\
+  --trust-remote-code \\
+  --kv-cache-dtype fp8 \\
+  --block-size 256 \\
+  --max-model-len 393216 \\
+  --tensor-parallel-size 4 \\
+  --max-num-seqs 16 \\
+  --max-num-batched-tokens 1024 \\
+  --gpu-memory-utilization 0.35 \\
+  --moe-backend triton_unfused \\
+  --async-scheduling \\
+  --enforce-eager \\
+  --reasoning-parser deepseek_v4 \\
+  --tokenizer-mode deepseek_v4 \\
+  --tool-call-parser deepseek_v4 \\
+  --enable-auto-tool-choice
+"""
+    )
+
+    assert row["model"] == "deepseek-ai/DeepSeek-V4-Flash"
+    assert row["kv_cache_dtype"] == "fp8"
+    assert row["max_model_len"] == "393216"
+    assert row["max_num_seqs"] == "16"
+    assert row["max_num_batched_tokens"] == "1024"
+    assert row["gpu_memory_utilization"] == "0.35"
+    assert row["moe_backend"] == "triton_unfused"
+    assert row["async_scheduling"] is True
+    assert row["enforce_eager"] is True
+    assert row["auto_tool_choice"] is True
+
+
 def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_path):
     run_dir = _write_fixture_run(tmp_path)
 
@@ -326,8 +387,8 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert "13.0.88" in report
     assert "595.58.03" in report
     assert "## Serve Shape" in report
-    assert "| `nomtp` | `fp8` | 256 | 393216 | 4 | `n/a` | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |" in report
-    assert '| `mtp` | `fp8` | 256 | 393216 | 4 | `{"method":"mtp","num_speculative_tokens":2}` | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |' in report
+    assert "| `nomtp` | `fp8` | 256 | 393216 | 4 | 16 | 1024 | 0.35 | `n/a` | `triton_unfused` | yes | yes | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |" in report
+    assert '| `mtp` | `fp8` | 256 | 393216 | 4 | 16 | 1024 | 0.35 | `{"method":"mtp","num_speculative_tokens":2}` | `triton_unfused` | yes | yes | `deepseek_v4` | `deepseek_v4` | `deepseek_v4` | yes | yes | yes |' in report
     assert "## Quick Performance Summary" in report
     assert "### Real Scenario OP Cost Estimate" in report
     assert (
@@ -353,6 +414,8 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert "## ToolCall-15" in report
     assert "`TC-06`" in report
     assert "Did not split the translation request" in report
+    assert "## Accuracy Evals" in report
+    assert "| `nomtp` | GSM8K | 3 | yes | 8 | 4 | 2048 | 94.39 | 94.31 | 0.0063 |" in report
 
 
 def test_baseline_report_cli_writes_markdown_and_reads_supplement_runtime(tmp_path):

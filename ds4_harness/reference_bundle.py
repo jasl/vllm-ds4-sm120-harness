@@ -31,6 +31,7 @@ FORBIDDEN_PATTERNS = (
 )
 
 SANITIZE_REPLACEMENTS = (
+    (re.compile(r"/workspace/vllm/\.venv/bin/lm_eval"), "lm_eval"),
     (re.compile(r"/workspace/vllm/\.venv/bin/vllm"), "vllm"),
     (re.compile(r"/workspace/vllm/\.venv/bin/python"), "python"),
     (re.compile(r"/workspace/ds4-sm120-harness"), "<harness-root>"),
@@ -40,6 +41,8 @@ SANITIZE_REPLACEMENTS = (
     (re.compile(r"/root/[^\s\"'`,]*"), "<root-path>"),
     (re.compile(r"/home/user\b"), "<synthetic-home>"),
     (re.compile(r"/home/[^/\s\"'`,]+/[^\s\"'`,]*"), "<home-path>"),
+    (re.compile(r"\b10\.0\.0\.\d+\b"), "<private-ip>"),
+    (re.compile(r"\b146\.88\.195\.11\b"), "<public-host>"),
     (re.compile(r"Bearer\s+[A-Za-z0-9._-]+"), "Bearer <redacted>"),
     (re.compile(r"sk-[A-Za-z0-9_-]{12,}"), "<redacted-key>"),
 )
@@ -287,6 +290,35 @@ def _copy_generation(run_dir: Path, output_dir: Path) -> None:
             _copy_text(path, output_dir / "generation" / relative)
 
 
+def _sanitize_command_paths(data: Any) -> Any:
+    sanitized = _sanitize_json(data)
+    if isinstance(sanitized, dict):
+        command = sanitized.get("command")
+        if isinstance(command, list) and command:
+            first = str(command[0])
+            if first.startswith(("<", "/")) or "/" in first:
+                command[0] = Path(first).name if first.startswith("/") else first
+    return sanitized
+
+
+def _copy_evals(run_dir: Path, output_dir: Path) -> None:
+    for variant in VARIANTS:
+        variant_dir = run_dir / variant
+        if not variant_dir.exists():
+            continue
+        for phase_dir in sorted(variant_dir.glob("eval_*")):
+            if not phase_dir.is_dir():
+                continue
+            summary_path = phase_dir / "lm_eval_summary.json"
+            if not summary_path.exists():
+                continue
+            slug = phase_dir.name.removeprefix("eval_") or "eval"
+            _write_json(
+                output_dir / "evals" / f"{variant}_{slug}.json",
+                _sanitize_command_paths(_load_json(summary_path)),
+            )
+
+
 def _sanitize_bench_rows(rows: Any) -> Any:
     if not isinstance(rows, list):
         return _sanitize_json(rows)
@@ -363,6 +395,7 @@ def _write_manifest(
             "oracle": "Deterministic /v1/completions logprobs oracle cases. The oracle root is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp keep variant-specific copies when present.",
             "smoke": "no-MTP and MTP chat smoke request/response captures.",
             "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
+            "evals": "Optional lm_eval accuracy summaries such as GSM8K exact match.",
             "performance": "Benchmark, runtime, and GPU telemetry summaries.",
         },
     }
@@ -431,6 +464,8 @@ paths, server logs, tokens, and private connection details.
   logprobs, and usage.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
 - `toolcall15/`: no-MTP and MTP ToolCall-15 scores and traces.
+- `evals/`: optional `lm_eval` accuracy summaries such as GSM8K exact match
+  when the source run included an eval phase.
 - `performance/`: benchmark rows plus GPU/runtime telemetry summaries.
 
 ## Reuse
@@ -489,6 +524,7 @@ def build_reference_bundle(
     _copy_oracle(run_dir, output_dir)
     _copy_generation(run_dir, output_dir)
     _copy_smoke_and_toolcall(run_dir, output_dir)
+    _copy_evals(run_dir, output_dir)
     _write_json(output_dir / "performance" / "primary.json", _performance_source("primary", run_dir))
     if supplement_dir is not None:
         _write_json(
