@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from ds4_harness.client import post_json
+from ds4_harness.client import post_json, post_json_with_retries
 
 
 Json = dict[str, Any]
@@ -827,6 +827,7 @@ def run_scenario(
     headers: dict[str, str] | None = None,
     extra_body: Json | None = None,
     preserve_reasoning_content: bool = True,
+    request_retries: int = 0,
 ) -> Json:
     state = ToolCallState()
     messages: list[Json] = [
@@ -850,19 +851,23 @@ def run_scenario(
         if extra_body:
             payload.update(extra_body)
         if headers:
-            response = post_json(
+            response = post_json_with_retries(
                 base_url,
                 "/v1/chat/completions",
                 payload,
                 timeout,
                 headers=headers,
+                request_retries=request_retries,
+                post_func=post_json,
             )
         else:
-            response = post_json(
+            response = post_json_with_retries(
                 base_url,
                 "/v1/chat/completions",
                 payload,
                 timeout,
+                request_retries=request_retries,
+                post_func=post_json,
             )
         elapsed_seconds = round(time.monotonic() - request_started, 6)
         usage = _numeric_usage(response.get("usage"))
@@ -956,6 +961,7 @@ def run_suite(
     headers: dict[str, str] | None = None,
     extra_body: Json | None = None,
     preserve_reasoning_content: bool = True,
+    request_retries: int = 0,
 ) -> list[Json]:
     available = localized_scenarios(scenario_set)
     by_id = {scenario.id: scenario for scenario in available}
@@ -979,6 +985,7 @@ def run_suite(
                     headers=headers,
                     extra_body=extra_body,
                     preserve_reasoning_content=preserve_reasoning_content,
+                    request_retries=request_retries,
                 )
             )
         except Exception as exc:

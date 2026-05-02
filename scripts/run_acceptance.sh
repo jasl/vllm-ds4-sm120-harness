@@ -27,6 +27,7 @@ BRANCH_SLUG="${BRANCH_SLUG:-unknown-branch}"
 GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-$(detect_gpu_topology_slug)}"
 OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${RUN_TIMESTAMP}}"
 REAL_SCENARIO_REPEAT_COUNT="${REAL_SCENARIO_REPEAT_COUNT:-3}"
+API_REQUEST_RETRIES="${API_REQUEST_RETRIES:-1}"
 GENERATION_PROMPT_ROOT="${GENERATION_PROMPT_ROOT:-${REPO_ROOT}/prompts}"
 GENERATION_LANGUAGES="${GENERATION_LANGUAGES:-en,zh}"
 GENERATION_THINKING_MODES="${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}"
@@ -35,16 +36,17 @@ GENERATION_REPEAT_COUNT="${GENERATION_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT
 GENERATION_TIMEOUT="${GENERATION_TIMEOUT:-900}"
 GENERATION_MAX_CASE_TOKENS="${GENERATION_MAX_CASE_TOKENS:-12000}"
 TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-en}"
+TOOLCALL15_THINKING_MODES="${TOOLCALL15_THINKING_MODES:-${GENERATION_THINKING_MODES}}"
 TOOLCALL15_REPEAT_COUNT="${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"
 export BASE_URL MODEL ORACLE_DIR ORACLE_TOP_N RUN_TOOLCALL15 PYTHON
 export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
 export SERVER_RECOVERY_CMD
 export ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME GPU_TOPOLOGY_SLUG OUT_DIR
-export REAL_SCENARIO_REPEAT_COUNT GENERATION_REPEAT_COUNT GENERATION_VARIANT
+export REAL_SCENARIO_REPEAT_COUNT API_REQUEST_RETRIES GENERATION_REPEAT_COUNT GENERATION_VARIANT
 export GENERATION_PROMPT_ROOT GENERATION_LANGUAGES GENERATION_THINKING_MODES
 export GENERATION_TIMEOUT GENERATION_MAX_CASE_TOKENS
-export TOOLCALL15_SCENARIO_SET TOOLCALL15_REPEAT_COUNT
+export TOOLCALL15_SCENARIO_SET TOOLCALL15_THINKING_MODES TOOLCALL15_REPEAT_COUNT
 
 mkdir -p "${OUT_DIR}"
 write_run_environment
@@ -146,6 +148,7 @@ run_live_gate smoke_quick "${PYTHON}" -m ds4_harness.cli chat-smoke \
   --base-url "${BASE_URL}" \
   --model "${MODEL}" \
   --tag quick \
+  --request-retries "${API_REQUEST_RETRIES}" \
   --jsonl-output "${OUT_DIR}/smoke_quick.jsonl" \
   --markdown-output "${OUT_DIR}/smoke_quick.md"
 
@@ -169,6 +172,7 @@ run_live_gate generation "${PYTHON}" -m ds4_harness.cli generation-matrix \
   --prompt-root "${GENERATION_PROMPT_ROOT}" \
   --variant "${GENERATION_VARIANT}" \
   --repeat-count "${GENERATION_REPEAT_COUNT}" \
+  --request-retries "${API_REQUEST_RETRIES}" \
   --timeout "${GENERATION_TIMEOUT}" \
   --max-case-tokens "${GENERATION_MAX_CASE_TOKENS}" \
   --jsonl-output "${OUT_DIR}/generation.jsonl" \
@@ -176,13 +180,22 @@ run_live_gate generation "${PYTHON}" -m ds4_harness.cli generation-matrix \
   "${generation_args[@]}"
 
 if [[ "${RUN_TOOLCALL15}" == "1" ]]; then
+  toolcall15_args=()
+  IFS=',' read -r -a toolcall15_thinking_modes <<< "${TOOLCALL15_THINKING_MODES}"
+  for thinking_mode in "${toolcall15_thinking_modes[@]}"; do
+    if [[ -n "${thinking_mode}" ]]; then
+      toolcall15_args+=(--thinking-mode "${thinking_mode}")
+    fi
+  done
   run_live_gate toolcall15 "${PYTHON}" -m ds4_harness.cli toolcall15 \
     --base-url "${BASE_URL}" \
     --model "${MODEL}" \
     --min-points "${TOOLCALL15_MIN_POINTS:-2}" \
     --scenario-set "${TOOLCALL15_SCENARIO_SET}" \
     --repeat-count "${TOOLCALL15_REPEAT_COUNT}" \
-    --json-output "${OUT_DIR}/toolcall15.json"
+    --request-retries "${API_REQUEST_RETRIES}" \
+    --json-output "${OUT_DIR}/toolcall15.json" \
+    "${toolcall15_args[@]}"
 fi
 
 if [[ -n "${ORACLE_DIR}" ]]; then
@@ -192,6 +205,7 @@ if [[ -n "${ORACLE_DIR}" ]]; then
     --top-n "${ORACLE_TOP_N}" \
     --require-prompt-ids \
     --min-top1-match-rate "${MIN_TOP1_MATCH_RATE:-0.80}" \
+    --request-retries "${API_REQUEST_RETRIES}" \
     --json-output "${OUT_DIR}/oracle_compare.json"
 fi
 

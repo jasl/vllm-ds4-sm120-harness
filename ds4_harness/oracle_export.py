@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from ds4_harness.client import post_json
+from ds4_harness.client import post_json, post_json_with_retries
 from ds4_harness.oracle import attach_prompt_token_ids, token_ids_from_tokenize_response
 
 
@@ -173,6 +173,7 @@ def export_completion_oracles(
     timeout: float = 300.0,
     logprobs: int | None = None,
     stop_on_error: bool = False,
+    request_retries: int = 0,
     post_json_func: PostJson = post_json,
 ) -> list[Json]:
     cases = _selected_cases(case_names)
@@ -189,17 +190,26 @@ def export_completion_oracles(
         }
         try:
             tokenize_request = {"model": model, "prompt": case.prompt}
-            tokenize_response = post_json_func(
+            tokenize_response = post_json_with_retries(
                 base_url,
                 "/tokenize",
                 tokenize_request,
                 timeout,
+                request_retries=request_retries,
+                post_func=post_json_func,
             )
             _write_json(
                 output_dir / f"tokenize_{case.name}.json",
                 tokenize_response,
             )
-            response = post_json_func(base_url, "/v1/completions", request, timeout)
+            response = post_json_with_retries(
+                base_url,
+                "/v1/completions",
+                request,
+                timeout,
+                request_retries=request_retries,
+                post_func=post_json_func,
+            )
             response = attach_prompt_token_ids(
                 response,
                 token_ids_from_tokenize_response(tokenize_response),

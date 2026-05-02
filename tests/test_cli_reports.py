@@ -248,6 +248,21 @@ def test_oracle_compare_default_top_n_stays_within_vllm_http_limit(tmp_path):
     assert args.top_n == 20
 
 
+def test_api_cli_commands_retry_once_by_default(tmp_path):
+    parser = cli.build_parser()
+
+    cases = [
+        ["chat-smoke"],
+        ["generation-matrix"],
+        ["oracle-compare", "--oracle-dir", str(tmp_path)],
+        ["oracle-export", "--output-dir", str(tmp_path)],
+        ["toolcall15"],
+    ]
+
+    for argv in cases:
+        assert parser.parse_args(argv).request_retries == 1
+
+
 def test_oracle_compare_records_request_errors(monkeypatch, tmp_path):
     response = {
         "choices": [

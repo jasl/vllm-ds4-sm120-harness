@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from typing import Any
+from typing import Any, Callable
 
 
 Json = dict[str, Any]
+PostJson = Callable[..., Json]
 
 
 def get_status(base_url: str, path: str, timeout: float) -> Json:
@@ -48,6 +49,35 @@ def post_json(
     if not isinstance(data, dict):
         raise ValueError(f"{url} did not return a JSON object")
     return data
+
+
+def post_json_with_retries(
+    base_url: str,
+    path: str,
+    payload: Json,
+    timeout: float,
+    *,
+    headers: dict[str, str] | None = None,
+    request_retries: int = 0,
+    post_func: PostJson = post_json,
+) -> Json:
+    retries = max(0, request_retries)
+    attempts = retries + 1
+    last_exc: Exception | None = None
+    for _attempt in range(attempts):
+        try:
+            if headers is not None:
+                return post_func(base_url, path, payload, timeout, headers=headers)
+            return post_func(base_url, path, payload, timeout)
+        except Exception as exc:
+            last_exc = exc
+    if last_exc is not None:
+        if attempts > 1:
+            raise RuntimeError(
+                f"request failed after {attempts} attempts: {last_exc!r}"
+            ) from last_exc
+        raise last_exc
+    raise RuntimeError("post_json_with_retries exhausted without an attempt")
 
 
 def get_json(base_url: str, path: str, timeout: float) -> Json:

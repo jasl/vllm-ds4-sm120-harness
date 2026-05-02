@@ -111,6 +111,30 @@ def test_export_completion_oracles_keeps_going_after_case_error(tmp_path):
     assert "HTTP 500" in failed["error"]
 
 
+def test_export_completion_oracles_retries_api_failures(tmp_path):
+    calls = []
+
+    def fake_post_json(base_url, path, payload, timeout):
+        calls.append(path)
+        if len(calls) == 1:
+            raise RuntimeError("transient tokenize failure")
+        if path == "/tokenize":
+            return {"tokens": [1, 2, 3], "count": 3}
+        return _response("56")
+
+    rows = export_completion_oracles(
+        "http://127.0.0.1:8000",
+        "deepseek-ai/DeepSeek-V4-Flash",
+        tmp_path,
+        case_names=["completion_short_math_logprobs20"],
+        post_json_func=fake_post_json,
+        request_retries=1,
+    )
+
+    assert rows[0]["ok"] is True
+    assert calls == ["/tokenize", "/tokenize", "/v1/completions"]
+
+
 def test_export_completion_oracles_can_stop_after_first_error(tmp_path):
     calls = []
 

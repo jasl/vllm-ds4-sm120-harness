@@ -83,6 +83,7 @@ def test_env_sample_and_local_env_are_configured():
     assert "OFFICIAL_BASELINE_DATE=" in sample
     assert "OFFICIAL_BASELINE_LABEL=" in sample
     assert "OFFICIAL_BASELINE_DIR=" in sample
+    assert "OFFICIAL_REQUEST_RETRIES=1" in sample
     assert "OFFICIAL_REPEAT_COUNT=3" in sample
     assert (
         "OFFICIAL_GENERATION_PROMPTS=translation_en_to_zh,translation_zh_to_en,"
@@ -97,12 +98,15 @@ def test_env_sample_and_local_env_are_configured():
     assert "BASELINE_LABEL=b200_oracle" in sample
     assert "ORACLE_LOGPROBS=20" in sample
     assert "ORACLE_TIMEOUT=300" in sample
+    assert "ORACLE_REQUEST_RETRIES=1" in sample
     assert "ORACLE_CASES=" in sample
     assert "OFFICIAL_RUN_TOOLCALL15=1" in sample
     assert "OFFICIAL_TOOLCALL15_SCENARIO_SET=en" in sample
+    assert "OFFICIAL_TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max" in sample
     assert "OFFICIAL_TOOLCALL15_REPEAT_COUNT=1" in sample
     assert "OFFICIAL_STRICT=0" in sample
     assert "REAL_SCENARIO_REPEAT_COUNT=3" in sample
+    assert "API_REQUEST_RETRIES=1" in sample
     assert "ARTIFACT_ARCHIVE_PREVIOUS=1" in sample
     assert "ARTIFACT_ARCHIVE_PREFIX=" in sample
     assert "B200_BASELINE_PHASES=all" in sample
@@ -113,6 +117,7 @@ def test_env_sample_and_local_env_are_configured():
     assert "GENERATION_THINKING_MODES=non-thinking,think-high,think-max" in sample
     assert "GENERATION_REPEAT_COUNT=3" in sample
     assert "TOOLCALL15_SCENARIO_SET=en" in sample
+    assert "TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max" in sample
     assert "TOOLCALL15_REPEAT_COUNT=3" in sample
     assert "SERVER_GUARD=1" in sample
     assert "SERVER_STARTUP_TIMEOUT=1800" in sample
@@ -138,10 +143,14 @@ def test_acceptance_script_repeats_real_scenario_gates_three_times():
     assert 'REAL_SCENARIO_REPEAT_COUNT="${REAL_SCENARIO_REPEAT_COUNT:-3}"' in script
     assert 'GENERATION_REPEAT_COUNT="${GENERATION_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
     assert 'GENERATION_THINKING_MODES="${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}"' in script
+    assert 'TOOLCALL15_THINKING_MODES="${TOOLCALL15_THINKING_MODES:-${GENERATION_THINKING_MODES}}"' in script
+    assert 'API_REQUEST_RETRIES="${API_REQUEST_RETRIES:-1}"' in script
     assert 'TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-en}"' in script
     assert 'TOOLCALL15_REPEAT_COUNT="${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
     assert '--prompt-root "${GENERATION_PROMPT_ROOT}"' in script
     assert '--scenario-set "${TOOLCALL15_SCENARIO_SET}"' in script
+    assert '--request-retries "${API_REQUEST_RETRIES}"' in script
+    assert '--thinking-mode "${thinking_mode}"' in script
     assert '--repeat-count "${GENERATION_REPEAT_COUNT}"' in script
     assert '--repeat-count "${TOOLCALL15_REPEAT_COUNT}"' in script
 
@@ -352,6 +361,8 @@ def test_oracle_export_script_is_b200_ready():
     assert "mark_server_unresponsive" in script
     assert "oracle-export" in script
     assert 'ORACLE_LOGPROBS="${ORACLE_LOGPROBS:-20}"' in script
+    assert 'ORACLE_REQUEST_RETRIES="${ORACLE_REQUEST_RETRIES:-${API_REQUEST_RETRIES:-1}}"' in script
+    assert '--request-retries "${ORACLE_REQUEST_RETRIES}"' in script
     assert 'BASELINE_LABEL="${BASELINE_LABEL:-b200_oracle}"' in script
     assert '--output-dir "${OUT_DIR}"' in script
     assert "--stop-on-error" in script
@@ -844,6 +855,8 @@ def test_official_api_baseline_script_writes_separate_baseline_directory():
     assert 'OFFICIAL_BASELINE_DIR="${OFFICIAL_BASELINE_DIR:-${REPO_ROOT}/baselines/${OFFICIAL_BASELINE_DATE}_${OFFICIAL_BASELINE_LABEL}}"' in script
     assert 'OFFICIAL_GENERATION_PROMPTS="${OFFICIAL_GENERATION_PROMPTS:-translation_en_to_zh,translation_zh_to_en,writing_follow_instructions,writing_local_llm_tradeoffs}"' in script
     assert 'OFFICIAL_SMOKE_CASES="${OFFICIAL_SMOKE_CASES:-math_7_times_8,capital_of_france,spanish_greeting}"' in script
+    assert 'OFFICIAL_REQUEST_RETRIES="${OFFICIAL_REQUEST_RETRIES:-1}"' in script
+    assert 'OFFICIAL_TOOLCALL15_THINKING_MODES="${OFFICIAL_TOOLCALL15_THINKING_MODES:-${OFFICIAL_THINKING_MODES}}"' in script
     assert "chat-smoke" in script
     assert "generation-matrix" in script
     assert "toolcall15" in script
@@ -853,6 +866,8 @@ def test_official_api_baseline_script_writes_separate_baseline_directory():
     assert "official_toolcall15.json" in script
     assert "report.md" in script
     assert 'OFFICIAL_REPEAT_COUNT="${OFFICIAL_REPEAT_COUNT:-3}"' in script
+    assert '--request-retries "${OFFICIAL_REQUEST_RETRIES}"' in script
+    assert '--thinking-mode "${thinking_mode}"' in script
 
 
 def test_runtime_stats_helper_slices_serve_log_per_phase(tmp_path):

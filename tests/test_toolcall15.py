@@ -323,6 +323,70 @@ def test_toolcall15_cli_repeats_and_preserves_rounds(monkeypatch, tmp_path):
     ]
 
 
+def test_toolcall15_cli_runs_requested_thinking_matrix(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run_suite(*args, **kwargs):
+        calls.append((args, kwargs))
+        return [
+            {
+                "id": "TC-15",
+                "title": "Conflicting Information",
+                "category": "E",
+                "status": "pass",
+                "points": 2,
+                "summary": "ok",
+                "note": None,
+                "tool_calls": [],
+                "final_answer": "",
+                "elapsed_seconds": 1.0,
+                "usage_totals": {},
+                "trace": [],
+            }
+        ]
+
+    monkeypatch.setattr(cli, "run_suite", fake_run_suite)
+    output = tmp_path / "toolcall15.json"
+
+    rc = cli.main(
+        [
+            "toolcall15",
+            "--scenario",
+            "TC-15",
+            "--thinking-mode",
+            "non-thinking",
+            "--thinking-mode",
+            "think-high",
+            "--thinking-mode",
+            "think-max",
+            "--request-retries",
+            "1",
+            "--json-output",
+            str(output),
+        ]
+    )
+
+    assert rc == 0
+    assert [call[1]["extra_body"] for call in calls] == [
+        {"thinking": {"type": "disabled"}},
+        {"thinking": {"type": "enabled"}, "reasoning_effort": "high"},
+        {"thinking": {"type": "enabled"}, "reasoning_effort": "max"},
+    ]
+    assert [call[1]["request_retries"] for call in calls] == [1, 1, 1]
+    data = json.loads(output.read_text(encoding="utf-8"))
+    assert data["summary"]["thinking_modes"] == [
+        "non-thinking",
+        "think-high",
+        "think-max",
+    ]
+    assert data["summary"]["total_cases"] == 3
+    assert {row["thinking_mode"] for row in data["results"]} == {
+        "non-thinking",
+        "think-high",
+        "think-max",
+    }
+
+
 def test_toolcall15_cli_accepts_official_api_options(monkeypatch, tmp_path):
     calls = []
 

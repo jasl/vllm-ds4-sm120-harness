@@ -261,7 +261,8 @@ request costing. Benchmark rows remain useful for throughput and stress-shape
 tracking, but they are not used as the OP cost source. The default acceptance
 wrapper uses `GENERATION_LANGUAGES=en,zh`,
 `GENERATION_THINKING_MODES=non-thinking,think-high,think-max`, three repeats,
-and `TOOLCALL15_SCENARIO_SET=en`.
+`TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max`,
+`TOOLCALL15_SCENARIO_SET=en`, and one retry for transient API call failures.
 
 The normalized columns include `tok/s/GPU`, `tok/s/total GiB`,
 `tok/s/used GiB`, `tok/J`, and `tok/s/kW`, which are intended for comparing
@@ -308,10 +309,14 @@ that is useful across platforms:
 
 By default it runs three generation rounds, selected translation/writing
 generation prompts, `non-thinking`, `think-high`, and `think-max`, one round of
-three basic smoke checks, and the English ToolCall-15 set. Override
+three basic smoke checks, and the English ToolCall-15 set under the same
+thinking-mode matrix. Each OpenAI-compatible API request gets one retry for
+transient call failures; HTTP/API failures that remain after retry are recorded
+as failed rows. Override
 `OFFICIAL_GENERATION_PROMPTS`,
-`OFFICIAL_SMOKE_CASES`, `OFFICIAL_REPEAT_COUNT`, or
-`OFFICIAL_TOOLCALL15_REPEAT_COUNT` for broader or narrower reference captures.
+`OFFICIAL_SMOKE_CASES`, `OFFICIAL_REPEAT_COUNT`,
+`OFFICIAL_TOOLCALL15_THINKING_MODES`, `OFFICIAL_TOOLCALL15_REPEAT_COUNT`, or
+`OFFICIAL_REQUEST_RETRIES` for broader or narrower reference captures.
 Set `OFFICIAL_STRICT=1` only when non-green generation or ToolCall-15 checks
 should make the script exit non-zero; by default the report is still generated
 for subjective and policy comparison.
@@ -356,7 +361,11 @@ python -m ds4_harness.cli toolcall15 \
   --base-url http://127.0.0.1:8000 \
   --model deepseek-ai/DeepSeek-V4-Flash \
   --scenario-set en \
+  --thinking-mode non-thinking \
+  --thinking-mode think-high \
+  --thinking-mode think-max \
   --repeat-count 3 \
+  --request-retries 1 \
   --json-output artifacts/manual/toolcall15.json
 ```
 
@@ -438,8 +447,10 @@ Run this script on the reference host, not on a laptop. It defaults to
 `HOST=127.0.0.1 PORT=8080`, `B200_BASELINE_VARIANTS=nomtp,mtp`,
 `NO_MTP_CONCURRENCY=1,2,4,8,16,24`, `MTP_CONCURRENCY=1,2,4,8,16,24`,
 `NUM_PROMPTS=80`, `REAL_SCENARIO_REPEAT_COUNT=3`,
+`API_REQUEST_RETRIES=1`,
 `GENERATION_LANGUAGES=en,zh`,
 `GENERATION_THINKING_MODES=non-thinking,think-high,think-max`,
+`TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max`,
 `TOOLCALL15_SCENARIO_SET=en`, and a controlled random
 long-context bench with
 `RANDOM_LONG_INPUT_LEN=8192 RANDOM_LONG_OUTPUT_LEN=512
@@ -529,7 +540,8 @@ Before promoting an optimization:
 - `chat-smoke --tag quick` passes.
 - `generation-matrix --repeat-count 3` has no regression versus the previous
   branch for the relevant no-MTP or MTP serving variant.
-- `toolcall15 --scenario-set en --repeat-count 3` passes, or any
+- `toolcall15 --scenario-set en --thinking-mode non-thinking --thinking-mode
+  think-high --thinking-mode think-max --repeat-count 3` passes, or any
   partial/fail scenario is explained with trace evidence.
 - `oracle-compare` has matching prompt token ids and no early token divergence
   on deterministic oracle cases, or any divergence is explained and recorded.

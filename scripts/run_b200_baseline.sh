@@ -368,11 +368,13 @@ write_summary() {
       "${RANDOM_LONG_OUTPUT_LEN}" "${RANDOM_LONG_NUM_PROMPTS}"
     printf -- '- oracle_export: `%s`\n' "${RUN_ORACLE_EXPORT}"
     printf -- '- real_scenario_repeat_count: `%s`\n' "${REAL_SCENARIO_REPEAT_COUNT:-3}"
+    printf -- '- api_request_retries: `%s`\n' "${API_REQUEST_RETRIES:-1}"
     printf -- '- generation_prompt_root: `%s`\n' "${GENERATION_PROMPT_ROOT:-${REPO_ROOT}/prompts}"
     printf -- '- generation_languages: `%s`\n' "${GENERATION_LANGUAGES:-en,zh}"
     printf -- '- generation_thinking_modes: `%s`\n' "${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}"
     printf -- '- generation_repeat_count: `%s`\n' "${GENERATION_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}"
     printf -- '- toolcall15_scenario_set: `%s`\n' "${TOOLCALL15_SCENARIO_SET:-en}"
+    printf -- '- toolcall15_thinking_modes: `%s`\n' "${TOOLCALL15_THINKING_MODES:-${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}}"
     printf -- '- toolcall15_repeat_count: `%s`\n' "${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}"
     printf -- '- run_root: `%s`\n\n' "${RUN_ROOT}"
     printf '## Phase Exit Codes\n\n'
@@ -425,6 +427,7 @@ for variant in ${variant_list}; do
         BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" \
         RUN_TOOLCALL15="${RUN_TOOLCALL15}" SERVE_LOG="${serve_log}" \
         REAL_SCENARIO_REPEAT_COUNT="${REAL_SCENARIO_REPEAT_COUNT:-3}" \
+        API_REQUEST_RETRIES="${API_REQUEST_RETRIES:-1}" \
         GENERATION_PROMPT_ROOT="${GENERATION_PROMPT_ROOT:-${REPO_ROOT}/prompts}" \
         GENERATION_LANGUAGES="${GENERATION_LANGUAGES:-en,zh}" \
         GENERATION_THINKING_MODES="${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}" \
@@ -433,6 +436,7 @@ for variant in ${variant_list}; do
         GENERATION_TIMEOUT="${GENERATION_TIMEOUT:-900}" \
         GENERATION_MAX_CASE_TOKENS="${GENERATION_MAX_CASE_TOKENS:-12000}" \
         TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-en}" \
+        TOOLCALL15_THINKING_MODES="${TOOLCALL15_THINKING_MODES:-${GENERATION_THINKING_MODES:-non-thinking,think-high,think-max}}" \
         TOOLCALL15_REPEAT_COUNT="${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT:-3}}" \
         SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
         SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \

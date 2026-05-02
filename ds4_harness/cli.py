@@ -13,7 +13,7 @@ from ds4_harness.baseline_report import build_baseline_report, write_baseline_re
 from ds4_harness.bench import run_bench_command
 from ds4_harness.cases import SmokeCase, build_cases, select_cases
 from ds4_harness.checks import CheckResult, assistant_text, check_chat_response, tool_call_names
-from ds4_harness.client import get_json, get_status, post_json
+from ds4_harness.client import get_json, get_status, post_json, post_json_with_retries
 from ds4_harness.generation import (
     DEFAULT_THINKING_MODES,
     evaluate_generation_response,
@@ -175,6 +175,18 @@ def _parse_extra_body_json(value: str | None) -> dict[str, Any]:
     return data
 
 
+def _validate_request_retries(value: int) -> bool:
+    return value >= 0
+
+
+def _thinking_strength_from_extra_body(extra_body: dict[str, Any]) -> str:
+    thinking = extra_body.get("thinking")
+    if isinstance(thinking, dict) and thinking.get("type") == "disabled":
+        return "disabled"
+    effort = extra_body.get("reasoning_effort")
+    return str(effort) if effort else "default"
+
+
 def _print_case_result(case: SmokeCase, result: CheckResult, response: dict[str, Any]):
     status = "PASS" if result.ok else "FAIL"
     print(f"{status} {case.name}: {result.detail}")
@@ -213,6 +225,9 @@ def _cmd_chat_smoke(args: argparse.Namespace) -> int:
     if args.repeat_count < 1:
         print("--repeat-count must be >= 1", file=sys.stderr)
         return 2
+    if not _validate_request_retries(args.request_retries):
+        print("--request-retries must be >= 0", file=sys.stderr)
+        return 2
 
     cases = select_cases(
         build_cases(args.model),
@@ -247,19 +262,23 @@ def _cmd_chat_smoke(args: argparse.Namespace) -> int:
             started = time.monotonic()
             try:
                 if headers:
-                    response = post_json(
+                    response = post_json_with_retries(
                         args.base_url,
                         "/v1/chat/completions",
                         payload,
                         args.timeout,
                         headers=headers,
+                        request_retries=args.request_retries,
+                        post_func=post_json,
                     )
                 else:
-                    response = post_json(
+                    response = post_json_with_retries(
                         args.base_url,
                         "/v1/chat/completions",
                         payload,
                         args.timeout,
+                        request_retries=args.request_retries,
+                        post_func=post_json,
                     )
                 result = check_chat_response(case.expectation, response)
             except (
@@ -305,6 +324,9 @@ def _cmd_chat_smoke(args: argparse.Namespace) -> int:
 def _cmd_generation_matrix(args: argparse.Namespace) -> int:
     if args.repeat_count < 1:
         print("--repeat-count must be >= 1", file=sys.stderr)
+        return 2
+    if not _validate_request_retries(args.request_retries):
+        print("--request-retries must be >= 0", file=sys.stderr)
         return 2
 
     try:
@@ -353,19 +375,23 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
                 started = time.monotonic()
                 try:
                     if headers:
-                        response = post_json(
+                        response = post_json_with_retries(
                             args.base_url,
                             "/v1/chat/completions",
                             payload,
                             args.timeout,
                             headers=headers,
+                            request_retries=args.request_retries,
+                            post_func=post_json,
                         )
                     else:
-                        response = post_json(
+                        response = post_json_with_retries(
                             args.base_url,
                             "/v1/chat/completions",
                             payload,
                             args.timeout,
+                            request_retries=args.request_retries,
+                            post_func=post_json,
                         )
                     result = evaluate_generation_response(prompt, response)
                 except (
@@ -414,6 +440,10 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
 
 
 def _cmd_oracle_compare(args: argparse.Namespace) -> int:
+    if not _validate_request_retries(args.request_retries):
+        print("--request-retries must be >= 0", file=sys.stderr)
+        return 2
+
     failures = 0
     rows: list[dict[str, Any]] = []
     for case in load_oracle_cases(args.oracle_dir):
@@ -426,22 +456,26 @@ def _cmd_oracle_compare(args: argparse.Namespace) -> int:
         ):
             request_payload["logprobs"] = args.top_n
         try:
-            response = post_json(
+            response = post_json_with_retries(
                 args.base_url,
                 case.path,
                 request_payload,
                 args.timeout,
+                request_retries=args.request_retries,
+                post_func=post_json,
             )
             if args.require_prompt_ids:
                 tokenize_payload = {
                     "model": request_payload.get("model"),
                     "prompt": request_payload.get("prompt"),
                 }
-                tokenize_response = post_json(
+                tokenize_response = post_json_with_retries(
                     args.base_url,
                     "/tokenize",
                     tokenize_payload,
                     args.timeout,
+                    request_retries=args.request_retries,
+                    post_func=post_json,
                 )
                 response = attach_prompt_token_ids(
                     response,
@@ -493,6 +527,10 @@ def _cmd_oracle_compare(args: argparse.Namespace) -> int:
 
 
 def _cmd_oracle_export(args: argparse.Namespace) -> int:
+    if not _validate_request_retries(args.request_retries):
+        print("--request-retries must be >= 0", file=sys.stderr)
+        return 2
+
     rows = export_completion_oracles(
         base_url=args.base_url,
         model=args.model,
@@ -501,6 +539,7 @@ def _cmd_oracle_export(args: argparse.Namespace) -> int:
         timeout=args.timeout,
         logprobs=args.logprobs,
         stop_on_error=args.stop_on_error,
+        request_retries=args.request_retries,
     )
     failures = 0
     for row in rows:
@@ -677,6 +716,9 @@ def _cmd_toolcall15(args: argparse.Namespace) -> int:
     if args.repeat_count < 1:
         print("--repeat-count must be >= 1", file=sys.stderr)
         return 2
+    if not _validate_request_retries(args.request_retries):
+        print("--request-retries must be >= 0", file=sys.stderr)
+        return 2
 
     try:
         headers = _bearer_headers_from_env(args.api_key_env)
@@ -694,54 +736,77 @@ def _cmd_toolcall15(args: argparse.Namespace) -> int:
     rounds: list[dict[str, Any]] = []
     all_rows: list[dict[str, Any]] = []
     total_failures = 0
+    thinking_modes = args.thinking_mode or [None]
 
-    for scenario_set in scenario_sets:
-        for round_index in range(1, args.repeat_count + 1):
-            rows = run_suite(
-                args.base_url,
-                args.model,
-                scenario_ids=args.scenario,
-                scenario_set=scenario_set,
-                temperature=args.temperature,
-                timeout=args.timeout,
-                max_turns=args.max_turns,
-                headers=headers,
-                extra_body=extra_body,
-                preserve_reasoning_content=args.preserve_reasoning_content,
-            )
-            failures = 0
-            for row in rows:
-                ok = row["points"] >= args.min_points
-                row["ok"] = ok
-                row["round"] = round_index
-                row["scenario_set"] = scenario_set
-                failures += 0 if ok else 1
-                print(json.dumps(row, ensure_ascii=False))
+    for thinking_mode in thinking_modes:
+        if thinking_mode is None:
+            mode_extra_body: dict[str, Any] = {}
+            thinking_label = "default"
+        else:
+            try:
+                mode_extra_body = thinking_extra_body(thinking_mode)
+            except KeyError as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
+            thinking_label = thinking_mode
+        combined_extra_body = dict(mode_extra_body)
+        combined_extra_body.update(extra_body)
+        thinking_strength = _thinking_strength_from_extra_body(combined_extra_body)
 
-            total_points = sum(int(row["points"]) for row in rows)
-            max_points = len(rows) * 2
-            round_summary = {
-                "scenario_set": scenario_set,
-                "round": round_index,
-                "cases": len(rows),
-                "points": total_points,
-                "max_points": max_points,
-                "score_percent": round((total_points / max_points) * 100)
-                if max_points
-                else 0,
-                "min_points": args.min_points,
-                "failures": failures,
-            }
-            rounds.append(
-                {
+        for scenario_set in scenario_sets:
+            for round_index in range(1, args.repeat_count + 1):
+                rows = run_suite(
+                    args.base_url,
+                    args.model,
+                    scenario_ids=args.scenario,
+                    scenario_set=scenario_set,
+                    temperature=args.temperature,
+                    timeout=args.timeout,
+                    max_turns=args.max_turns,
+                    headers=headers,
+                    extra_body=combined_extra_body,
+                    preserve_reasoning_content=args.preserve_reasoning_content,
+                    request_retries=args.request_retries,
+                )
+                failures = 0
+                for row in rows:
+                    ok = row["points"] >= args.min_points
+                    row["ok"] = ok
+                    row["round"] = round_index
+                    row["scenario_set"] = scenario_set
+                    row["thinking_mode"] = thinking_label
+                    row["thinking_strength"] = thinking_strength
+                    failures += 0 if ok else 1
+                    print(json.dumps(row, ensure_ascii=False))
+
+                total_points = sum(int(row["points"]) for row in rows)
+                max_points = len(rows) * 2
+                round_summary = {
                     "scenario_set": scenario_set,
                     "round": round_index,
-                    "summary": round_summary,
-                    "results": rows,
+                    "thinking_mode": thinking_label,
+                    "thinking_strength": thinking_strength,
+                    "cases": len(rows),
+                    "points": total_points,
+                    "max_points": max_points,
+                    "score_percent": round((total_points / max_points) * 100)
+                    if max_points
+                    else 0,
+                    "min_points": args.min_points,
+                    "failures": failures,
                 }
-            )
-            all_rows.extend(rows)
-            total_failures += failures
+                rounds.append(
+                    {
+                        "scenario_set": scenario_set,
+                        "round": round_index,
+                        "thinking_mode": thinking_label,
+                        "thinking_strength": thinking_strength,
+                        "summary": round_summary,
+                        "results": rows,
+                    }
+                )
+                all_rows.extend(rows)
+                total_failures += failures
 
     total_points = sum(int(row["points"]) for row in all_rows)
     max_points = len(all_rows) * 2
@@ -752,6 +817,7 @@ def _cmd_toolcall15(args: argparse.Namespace) -> int:
     )
     summary = {
         "scenario_sets": scenario_sets,
+        "thinking_modes": [mode or "default" for mode in thinking_modes],
         "rounds": args.repeat_count,
         "cases": cases_per_round,
         "total_cases": len(all_rows),
@@ -766,11 +832,13 @@ def _cmd_toolcall15(args: argparse.Namespace) -> int:
     if args.json_output is not None:
         payload: dict[str, Any] = {
             "summary": summary,
-            "results": all_rows if len(scenario_sets) > 1 else rounds[-1]["results"]
+            "results": all_rows
+            if len(scenario_sets) > 1 or len(thinking_modes) > 1
+            else rounds[-1]["results"]
             if rounds
             else [],
         }
-        if args.repeat_count > 1 or len(scenario_sets) > 1:
+        if args.repeat_count > 1 or len(scenario_sets) > 1 or len(thinking_modes) > 1:
             payload["rounds"] = rounds
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
         args.json_output.write_text(
@@ -887,6 +955,7 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--temperature", type=float, default=0.0)
     smoke.add_argument("--timeout", type=float, default=300.0)
     smoke.add_argument("--repeat-count", type=int, default=1)
+    smoke.add_argument("--request-retries", type=int, default=1)
     smoke.add_argument("--api-key-env")
     smoke.add_argument("--max-case-tokens", type=int)
     smoke.add_argument("--extra-body-json")
@@ -908,6 +977,7 @@ def build_parser() -> argparse.ArgumentParser:
     generation.add_argument("--temperature", type=float, default=1.0)
     generation.add_argument("--timeout", type=float, default=900.0)
     generation.add_argument("--repeat-count", type=int, default=3)
+    generation.add_argument("--request-retries", type=int, default=1)
     generation.add_argument("--api-key-env")
     generation.add_argument("--extra-body-json")
     generation.add_argument("--jsonl-output", type=Path)
@@ -920,6 +990,7 @@ def build_parser() -> argparse.ArgumentParser:
     oracle.add_argument("--model")
     oracle.add_argument("--top-n", type=int, default=20)
     oracle.add_argument("--timeout", type=float, default=300.0)
+    oracle.add_argument("--request-retries", type=int, default=1)
     oracle.add_argument("--json-output", type=Path)
     oracle.add_argument("--require-prompt-ids", action="store_true")
     oracle.add_argument("--require-token-match", action="store_true")
@@ -933,6 +1004,7 @@ def build_parser() -> argparse.ArgumentParser:
     oracle_export.add_argument("--case", action="append")
     oracle_export.add_argument("--logprobs", type=int)
     oracle_export.add_argument("--timeout", type=float, default=300.0)
+    oracle_export.add_argument("--request-retries", type=int, default=1)
     oracle_export.add_argument("--stop-on-error", action="store_true")
     oracle_export.set_defaults(func=_cmd_oracle_export)
 
@@ -967,10 +1039,12 @@ def build_parser() -> argparse.ArgumentParser:
     toolcall15.add_argument("--model", default=DEFAULT_MODEL)
     toolcall15.add_argument("--scenario", action="append")
     toolcall15.add_argument("--scenario-set", choices=("en", "zh", "both"), default="en")
+    toolcall15.add_argument("--thinking-mode", action="append", default=None)
     toolcall15.add_argument("--temperature", type=float, default=0.0)
     toolcall15.add_argument("--timeout", type=float, default=120.0)
     toolcall15.add_argument("--max-turns", type=int, default=8)
     toolcall15.add_argument("--repeat-count", type=int, default=1)
+    toolcall15.add_argument("--request-retries", type=int, default=1)
     toolcall15.add_argument("--min-points", type=int, choices=(0, 1, 2), default=2)
     toolcall15.add_argument("--api-key-env")
     toolcall15.add_argument("--extra-body-json")

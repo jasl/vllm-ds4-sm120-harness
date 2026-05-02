@@ -11,6 +11,7 @@ load_harness_env
 OFFICIAL_BASE_URL="${DEEPSEEK_BASE_URL:-https://api.deepseek.com}"
 OFFICIAL_MODEL="${DEEPSEEK_MODEL:-deepseek-v4-flash}"
 OFFICIAL_TIMEOUT="${OFFICIAL_TIMEOUT:-900}"
+OFFICIAL_REQUEST_RETRIES="${OFFICIAL_REQUEST_RETRIES:-1}"
 OFFICIAL_REPEAT_COUNT="${OFFICIAL_REPEAT_COUNT:-3}"
 OFFICIAL_PROMPT_ROOT="${OFFICIAL_PROMPT_ROOT:-${REPO_ROOT}/prompts}"
 OFFICIAL_GENERATION_PROMPTS="${OFFICIAL_GENERATION_PROMPTS:-translation_en_to_zh,translation_zh_to_en,writing_follow_instructions,writing_local_llm_tradeoffs}"
@@ -21,6 +22,7 @@ OFFICIAL_SMOKE_REPEAT_COUNT="${OFFICIAL_SMOKE_REPEAT_COUNT:-1}"
 OFFICIAL_SMOKE_TIMEOUT="${OFFICIAL_SMOKE_TIMEOUT:-300}"
 OFFICIAL_RUN_TOOLCALL15="${OFFICIAL_RUN_TOOLCALL15:-1}"
 OFFICIAL_TOOLCALL15_SCENARIO_SET="${OFFICIAL_TOOLCALL15_SCENARIO_SET:-en}"
+OFFICIAL_TOOLCALL15_THINKING_MODES="${OFFICIAL_TOOLCALL15_THINKING_MODES:-${OFFICIAL_THINKING_MODES}}"
 OFFICIAL_TOOLCALL15_REPEAT_COUNT="${OFFICIAL_TOOLCALL15_REPEAT_COUNT:-1}"
 OFFICIAL_TOOLCALL15_MIN_POINTS="${OFFICIAL_TOOLCALL15_MIN_POINTS:-2}"
 OFFICIAL_TOOLCALL15_TIMEOUT="${OFFICIAL_TOOLCALL15_TIMEOUT:-120}"
@@ -68,12 +70,21 @@ if [[ -n "${OFFICIAL_EXTRA_BODY_JSON}" ]]; then
   extra_body_args+=(--extra-body-json "${OFFICIAL_EXTRA_BODY_JSON}")
 fi
 
+toolcall15_args=()
+IFS=',' read -r -a official_toolcall15_thinking_modes <<< "${OFFICIAL_TOOLCALL15_THINKING_MODES}"
+for thinking_mode in "${official_toolcall15_thinking_modes[@]}"; do
+  if [[ -n "${thinking_mode}" ]]; then
+    toolcall15_args+=(--thinking-mode "${thinking_mode}")
+  fi
+done
+
 set +e
 "${PYTHON}" -m ds4_harness.cli chat-smoke \
   --base-url "${OFFICIAL_BASE_URL}" \
   --model "${OFFICIAL_MODEL}" \
   --api-key-env DEEPSEEK_API_KEY \
   --repeat-count "${OFFICIAL_SMOKE_REPEAT_COUNT}" \
+  --request-retries "${OFFICIAL_REQUEST_RETRIES}" \
   --timeout "${OFFICIAL_SMOKE_TIMEOUT}" \
   --jsonl-output "${OFFICIAL_ARTIFACT_DIR}/official_smoke.jsonl" \
   --markdown-output "${OFFICIAL_ARTIFACT_DIR}/official_smoke.md" \
@@ -92,6 +103,7 @@ set +e
   --repeat-count "${OFFICIAL_REPEAT_COUNT}" \
   --api-key-env DEEPSEEK_API_KEY \
   --max-case-tokens "${OFFICIAL_MAX_CASE_TOKENS}" \
+  --request-retries "${OFFICIAL_REQUEST_RETRIES}" \
   --timeout "${OFFICIAL_TIMEOUT}" \
   --jsonl-output "${OFFICIAL_ARTIFACT_DIR}/official_generation.jsonl" \
   --markdown-output-dir "${OFFICIAL_ARTIFACT_DIR}/generation" \
@@ -112,8 +124,10 @@ if [[ "${OFFICIAL_RUN_TOOLCALL15}" == "1" || "${OFFICIAL_RUN_TOOLCALL15}" == "tr
     --scenario-set "${OFFICIAL_TOOLCALL15_SCENARIO_SET}" \
     --repeat-count "${OFFICIAL_TOOLCALL15_REPEAT_COUNT}" \
     --min-points "${OFFICIAL_TOOLCALL15_MIN_POINTS}" \
+    --request-retries "${OFFICIAL_REQUEST_RETRIES}" \
     --timeout "${OFFICIAL_TOOLCALL15_TIMEOUT}" \
-    --json-output "${OFFICIAL_ARTIFACT_DIR}/official_toolcall15.json"
+    --json-output "${OFFICIAL_ARTIFACT_DIR}/official_toolcall15.json" \
+    "${toolcall15_args[@]}"
   toolcall_rc="$?"
   set -e
   printf '%s\n' "${toolcall_rc}" > "${OFFICIAL_ARTIFACT_DIR}/official_toolcall15.exit_code"

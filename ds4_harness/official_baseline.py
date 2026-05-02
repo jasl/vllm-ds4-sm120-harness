@@ -204,6 +204,12 @@ def _write_report(
             f"{toolcall_summary.get('max_points', 'n/a')}`",
             "- Total cases: "
             f"`{toolcall_summary.get('total_cases', toolcall_summary.get('cases', 'n/a'))}`",
+            "- Scenario sets: "
+            f"`{', '.join(toolcall_summary.get('scenario_sets', [])) or 'n/a'}`",
+            "- Thinking modes: "
+            f"`{', '.join(toolcall_summary.get('thinking_modes', [])) or 'n/a'}`",
+            "- Rounds: "
+            f"`{toolcall_summary.get('rounds', 'n/a')}`",
             "- Failures: "
             f"`{toolcall_summary.get('failures', len(failures) if failures else 0)}`",
             "",
