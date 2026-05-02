@@ -30,8 +30,31 @@ def test_official_api_baseline_writes_report_and_public_outputs(tmp_path):
         },
         "response": {"model": "deepseek-v4-flash", "choices": []},
     }
+    failed_generation_row = {
+        "case": "translation_zh_to_en",
+        "language": "zh",
+        "workload": "translation",
+        "thinking_mode": "think-max",
+        "thinking_strength": "max",
+        "variant": "official-api",
+        "ok": False,
+        "detail": "missing required terms: privacy",
+        "elapsed_seconds": 1.1,
+        "usage": {"prompt_tokens": 5, "completion_tokens": 6, "total_tokens": 11},
+        "payload": {
+            "model": "deepseek-v4-flash",
+            "messages": [{"content": "Translate."}],
+        },
+        "response": {"error": "request failed"},
+    }
     (artifact_dir / "official_generation.jsonl").write_text(
-        json.dumps(generation_row, ensure_ascii=False) + "\n",
+        "\n".join(
+            [
+                json.dumps(generation_row, ensure_ascii=False),
+                json.dumps(failed_generation_row, ensure_ascii=False),
+            ]
+        )
+        + "\n",
         encoding="utf-8",
     )
     transcript = (
@@ -41,7 +64,9 @@ def test_official_api_baseline_writes_report_and_public_outputs(tmp_path):
         / "translation_en_to_zh.1.think-high.official-api.md"
     )
     transcript.parent.mkdir(parents=True)
-    transcript.write_text("# Generation Transcript\n", encoding="utf-8")
+    transcript.write_text(
+        "# Generation Transcript\n\nAssistant line.  \n", encoding="utf-8"
+    )
     (artifact_dir / "official_smoke.jsonl").write_text(
         json.dumps(
             {
@@ -71,7 +96,7 @@ def test_official_api_baseline_writes_report_and_public_outputs(tmp_path):
         ),
         encoding="utf-8",
     )
-    (artifact_dir / "official_generation.exit_code").write_text("0\n", encoding="utf-8")
+    (artifact_dir / "official_generation.exit_code").write_text("1\n", encoding="utf-8")
     (artifact_dir / "official_smoke.exit_code").write_text("0\n", encoding="utf-8")
     (artifact_dir / "official_toolcall15.exit_code").write_text("1\n", encoding="utf-8")
 
@@ -96,6 +121,9 @@ def test_official_api_baseline_writes_report_and_public_outputs(tmp_path):
 
     assert "# DeepSeek Official API Baseline" in report
     assert "translation_en_to_zh" in report
+    assert "| `generation` | `1` |" in report
+    assert "Passed: `1/2`" in report
+    assert "missing required terms: privacy" in report
     assert "28/30" in report
     assert "TC-06" in report
     assert manifest["source"]["artifact_run"] == "20260502120000"
@@ -103,6 +131,10 @@ def test_official_api_baseline_writes_report_and_public_outputs(tmp_path):
     assert generation[0]["variant"] == "official-api"
     assert smoke[0]["case"] == "math_7_times_8"
     assert (output_dir / "generation" / "en" / transcript.name).exists()
+    transcript_lines = (
+        output_dir / "generation" / "en" / transcript.name
+    ).read_text(encoding="utf-8").splitlines()
+    assert all(line == line.rstrip() for line in transcript_lines)
     assert (output_dir / "toolcall15" / "official_api.json").exists()
     assert not scan_public_bundle(output_dir)
 

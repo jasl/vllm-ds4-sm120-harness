@@ -2,9 +2,9 @@
   "schema_version": 1,
   "label": "deepseek_official_api_deepseek_v4_flash",
   "date": "20260502",
-  "generated_at_utc": "2026-05-01T23:49:08.535477+00:00",
+  "generated_at_utc": "2026-05-02T00:08:26.973397+00:00",
   "source": {
-    "artifact_run": "20260501234546",
+    "artifact_run": "20260502075959",
     "raw_artifacts_are_not_required": true
   },
   "model": "deepseek-v4-flash",

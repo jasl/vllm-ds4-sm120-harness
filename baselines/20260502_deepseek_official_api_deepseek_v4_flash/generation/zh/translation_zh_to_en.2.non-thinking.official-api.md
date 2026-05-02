@@ -4,7 +4,7 @@
 - Language group: `zh`
 - Workload: `translation`
 - Model: `deepseek-v4-flash`
-- Round: `1`
+- Round: `2`
 - Thinking mode: `non-thinking`
 - Thinking strength: `disabled`
 - Variant: `official-api`
@@ -12,12 +12,12 @@
 - Status: PASS
 - Check: matched expectation
 - Detail: `matched expectation`
-- Elapsed seconds: 1.673346
+- Elapsed seconds: 1.520774
 - Finish reason: `stop`
-- Usage: `{"prompt_tokens": 88, "completion_tokens": 72, "total_tokens": 160, "prompt_tokens_details": {"cached_tokens": 0}, "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 88}`
+- Usage: `{"prompt_tokens": 88, "completion_tokens": 77, "total_tokens": 165, "prompt_tokens_details": {"cached_tokens": 0}, "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 88}`
 - Prompt tokens: 88
-- Completion tokens: 72
-- Total tokens: 160
+- Completion tokens: 77
+- Total tokens: 165
 
 ## Prompt
 
@@ -30,5 +30,5 @@ Translate the following Chinese paragraph into clear, idiomatic English for an e
 ## Assistant
 
 ```markdown
-Deploying a large language model on-premises involves more than simply downloading its weights onto a server. It places privacy, latency, and controllability into the team’s hands, while also turning capacity planning, model upgrades, troubleshooting, and quality evaluation into ongoing responsibilities. The real question to assess is whether this degree of control justifies the corresponding operational costs.
+Deploying a large language model on-premises is not simply a matter of downloading weights onto a server. It brings privacy, latency, and controllability into the hands of the team, but it also turns capacity planning, model upgrades, troubleshooting, and quality evaluation into long-term responsibilities. What truly needs to be assessed is whether this level of control is worth the corresponding operational costs.
 ```

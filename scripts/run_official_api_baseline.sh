@@ -11,7 +11,7 @@ load_harness_env
 OFFICIAL_BASE_URL="${DEEPSEEK_BASE_URL:-https://api.deepseek.com}"
 OFFICIAL_MODEL="${DEEPSEEK_MODEL:-deepseek-v4-flash}"
 OFFICIAL_TIMEOUT="${OFFICIAL_TIMEOUT:-900}"
-OFFICIAL_REPEAT_COUNT="${OFFICIAL_REPEAT_COUNT:-1}"
+OFFICIAL_REPEAT_COUNT="${OFFICIAL_REPEAT_COUNT:-3}"
 OFFICIAL_PROMPT_ROOT="${OFFICIAL_PROMPT_ROOT:-${REPO_ROOT}/prompts}"
 OFFICIAL_GENERATION_PROMPTS="${OFFICIAL_GENERATION_PROMPTS:-translation_en_to_zh,translation_zh_to_en,writing_follow_instructions,writing_local_llm_tradeoffs}"
 OFFICIAL_THINKING_MODES="${OFFICIAL_THINKING_MODES:-non-thinking,think-high,think-max}"

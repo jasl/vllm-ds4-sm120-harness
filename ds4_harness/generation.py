@@ -323,7 +323,8 @@ def write_generation_transcript(path: Path, row: Json) -> None:
         lines.extend(["## Error", "", _fenced_block(str(response["error"])), ""])
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    transcript = "\n".join(line.rstrip() for line in "\n".join(lines).splitlines())
+    path.write_text(transcript.rstrip() + "\n", encoding="utf-8")
 
 
 def evaluate_generation_response(

@@ -17,8 +17,6 @@ This bundle is a current reference baseline, not necessarily a completely green 
   exit codes.
 - `report.md`: readable baseline report with throughput, latency, correctness,
   runtime telemetry, and synthetic real-scenario OP cost metrics.
-- `subjective_quality/`: B200 no-MTP, B200 MTP, and DeepSeek official API
-  writing, translation, and coding samples for human comparison when present.
 - `oracle/`: no-MTP deterministic `/v1/completions` compatibility entrypoint;
   `oracle/nomtp/` and `oracle/mtp/` contain variant-specific copies when
   present, including prompt token ids, generated tokens, token logprobs, top

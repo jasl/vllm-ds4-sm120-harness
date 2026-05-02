@@ -125,7 +125,6 @@
   ],
   "contents": {
     "report": "Readable baseline report with correctness, performance, and cost metrics.",
-    "subjective_quality": "Optional side-by-side writing, translation, and coding samples.",
     "oracle": "Deterministic /v1/completions logprobs oracle cases. The oracle root is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp keep variant-specific copies when present.",
     "smoke": "no-MTP and MTP chat smoke request/response captures.",
     "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",

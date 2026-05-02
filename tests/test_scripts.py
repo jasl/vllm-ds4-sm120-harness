@@ -83,7 +83,7 @@ def test_env_sample_and_local_env_are_configured():
     assert "OFFICIAL_BASELINE_DATE=" in sample
     assert "OFFICIAL_BASELINE_LABEL=" in sample
     assert "OFFICIAL_BASELINE_DIR=" in sample
-    assert "OFFICIAL_REPEAT_COUNT=1" in sample
+    assert "OFFICIAL_REPEAT_COUNT=3" in sample
     assert (
         "OFFICIAL_GENERATION_PROMPTS=translation_en_to_zh,translation_zh_to_en,"
         "writing_follow_instructions,writing_local_llm_tradeoffs"
@@ -834,28 +834,6 @@ def test_generate_baseline_report_wrapper_uses_report_cli():
     assert 'baselines/${BASELINE_REPORT_DATE}_${output_label}/report.md' in script
 
 
-def test_official_subjective_baseline_script_uses_api_key_and_baseline_output():
-    script = (ROOT / "scripts" / "run_official_subjective_baseline.sh").read_text(
-        encoding="utf-8"
-    )
-
-    assert "load_harness_env" in script
-    assert "--api-key-env DEEPSEEK_API_KEY" in script
-    assert 'OFFICIAL_PROMPT_ROOT="${OFFICIAL_PROMPT_ROOT:-${REPO_ROOT}/prompts}"' in script
-    assert 'OFFICIAL_THINKING_MODES="${OFFICIAL_THINKING_MODES:-non-thinking,think-high,think-max}"' in script
-    assert 'OFFICIAL_RUN_TOOLCALL15="${OFFICIAL_RUN_TOOLCALL15:-1}"' in script
-    assert 'OFFICIAL_TOOLCALL15_SCENARIO_SET="${OFFICIAL_TOOLCALL15_SCENARIO_SET:-en}"' in script
-    assert 'OFFICIAL_TOOLCALL15_REPEAT_COUNT="${OFFICIAL_TOOLCALL15_REPEAT_COUNT:-${OFFICIAL_REPEAT_COUNT}}"' in script
-    assert "generation-matrix" in script
-    assert "--repeat-count" in script
-    assert "--max-case-tokens" in script
-    assert "--extra-body-json" in script
-    assert "official_generation.jsonl" in script
-    assert "official_toolcall15.json" in script
-    assert "baselines/20260501_b200_main_51295793a" in script
-    assert "subjective_quality" in script
-
-
 def test_official_api_baseline_script_writes_separate_baseline_directory():
     script = (ROOT / "scripts" / "run_official_api_baseline.sh").read_text(
         encoding="utf-8"
@@ -874,7 +852,7 @@ def test_official_api_baseline_script_writes_separate_baseline_directory():
     assert "official_generation.jsonl" in script
     assert "official_toolcall15.json" in script
     assert "report.md" in script
-    assert "subjective_quality" not in script
+    assert 'OFFICIAL_REPEAT_COUNT="${OFFICIAL_REPEAT_COUNT:-3}"' in script
 
 
 def test_runtime_stats_helper_slices_serve_log_per_phase(tmp_path):

@@ -359,7 +359,6 @@ def _write_manifest(
         "phase_exit_codes": _phase_exit_codes(run_dir),
         "contents": {
             "report": "Readable baseline report with correctness, performance, and cost metrics.",
-            "subjective_quality": "Optional side-by-side writing, translation, and coding samples.",
             "generation": "Directory-driven writing, translation, and coding transcripts.",
             "oracle": "Deterministic /v1/completions logprobs oracle cases. The oracle root is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp keep variant-specific copies when present.",
             "smoke": "no-MTP and MTP chat smoke request/response captures.",
@@ -424,8 +423,6 @@ paths, server logs, tokens, and private connection details.
   exit codes.
 - `report.md`: readable baseline report with throughput, latency, correctness,
   runtime telemetry, and synthetic real-scenario OP cost metrics.
-- `subjective_quality/`: B200 no-MTP, B200 MTP, and DeepSeek official API
-  writing, translation, and coding samples for human comparison when present.
 - `generation/`: no-MTP and MTP directory-driven generation transcripts and
   JSON rows when the source run used `generation-matrix`.
 - `oracle/`: no-MTP deterministic `/v1/completions` compatibility entrypoint;

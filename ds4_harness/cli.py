@@ -38,7 +38,6 @@ from ds4_harness.runtime_stats import (
     write_runtime_json,
     write_runtime_markdown,
 )
-from ds4_harness.subjective_comparison import build_subjective_comparison
 from ds4_harness.run_environment import (
     summarize_run_environment,
     write_run_environment_json,
@@ -844,18 +843,6 @@ def _cmd_reference_bundle(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_subjective_comparison(args: argparse.Namespace) -> int:
-    build_subjective_comparison(
-        baseline_dir=args.baseline_dir,
-        official_paths=args.official_input or [],
-        official_toolcall_paths=args.official_toolcall_input or [],
-        output_dir=args.output_dir,
-        label=args.label or args.baseline_dir.name,
-    )
-    print(str(args.output_dir))
-    return 0
-
-
 def _cmd_official_baseline(args: argparse.Namespace) -> int:
     findings = build_official_api_baseline(
         artifact_dir=args.artifact_dir,
@@ -1029,14 +1016,6 @@ def build_parser() -> argparse.ArgumentParser:
     reference_bundle.add_argument("--date")
     reference_bundle.add_argument("--fail-on-sensitive", action="store_true")
     reference_bundle.set_defaults(func=_cmd_reference_bundle)
-
-    subjective = subparsers.add_parser("subjective-comparison")
-    subjective.add_argument("--baseline-dir", type=Path, required=True)
-    subjective.add_argument("--official-input", type=Path, action="append")
-    subjective.add_argument("--official-toolcall-input", type=Path, action="append")
-    subjective.add_argument("--output-dir", type=Path, required=True)
-    subjective.add_argument("--label")
-    subjective.set_defaults(func=_cmd_subjective_comparison)
 
     official_baseline = subparsers.add_parser("official-baseline")
     official_baseline.add_argument("--artifact-dir", type=Path, required=True)

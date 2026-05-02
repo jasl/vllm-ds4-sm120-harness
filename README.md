@@ -306,33 +306,15 @@ that is useful across platforms:
 - `smoke/`: a few small runnable chat checks for API-shape comparison.
 - `toolcall15/`: official API ToolCall-15 trace and score.
 
-By default it runs one round, selected translation/writing generation prompts,
-`non-thinking`, `think-high`, and `think-max`, three basic smoke checks, and the
-English ToolCall-15 set. Override `OFFICIAL_GENERATION_PROMPTS`,
+By default it runs three generation rounds, selected translation/writing
+generation prompts, `non-thinking`, `think-high`, and `think-max`, one round of
+three basic smoke checks, and the English ToolCall-15 set. Override
+`OFFICIAL_GENERATION_PROMPTS`,
 `OFFICIAL_SMOKE_CASES`, `OFFICIAL_REPEAT_COUNT`, or
 `OFFICIAL_TOOLCALL15_REPEAT_COUNT` for broader or narrower reference captures.
 Set `OFFICIAL_STRICT=1` only when non-green generation or ToolCall-15 checks
 should make the script exit non-zero; by default the report is still generated
 for subjective and policy comparison.
-
-To refresh the human subjective comparison against the DeepSeek official API,
-put `DEEPSEEK_API_KEY` in ignored `.env`, then run:
-
-```bash
-SUBJECTIVE_BASELINE_DIR=baselines/20260501_b200_main_51295793a \
-scripts/run_official_subjective_baseline.sh
-```
-
-The script captures official API generation and ToolCall-15 outputs under
-ignored `artifacts/official_api/...`, then writes public Markdown transcripts
-under `subjective_quality/generation/` plus `subjective_quality/agentic/`
-inside the selected baseline. API keys are only read from the environment and
-are not written to the public comparison. By default the script runs the same
-generation thinking matrix as the local harness; override
-`OFFICIAL_THINKING_MODES` or `OFFICIAL_EXTRA_BODY_JSON` when comparing a
-different official serving mode. ToolCall-15 preserves returned
-`reasoning_content` fields when replaying tool results for official API
-compatibility.
 
 ## Expected Workflow
 

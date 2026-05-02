@@ -43,7 +43,11 @@ def _copy_text(src: Path, dst: Path) -> None:
     if not src.exists():
         return
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(src.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+    lines = src.read_text(encoding="utf-8", errors="replace").splitlines()
+    dst.write_text(
+        "\n".join(line.rstrip() for line in lines).rstrip() + "\n",
+        encoding="utf-8",
+    )
 
 
 def _copy_tree_contents(src: Path, dst: Path) -> None:
@@ -54,7 +58,10 @@ def _copy_tree_contents(src: Path, dst: Path) -> None:
             continue
         target = dst / path.relative_to(src)
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
+        if path.suffix == ".md":
+            _copy_text(path, target)
+        else:
+            shutil.copyfile(path, target)
 
 
 def _exit_code(path: Path) -> int | str | None:

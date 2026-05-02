@@ -228,8 +228,6 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     assert (out_dir / "performance" / "primary.json").exists()
 
     assert not scan_public_bundle(out_dir)
-    manifest = json.loads((out_dir / "manifest.json").read_text())
-    assert "subjective_quality" in manifest["contents"]
     assert "Known Non-Green Gates" in (out_dir / "README.md").read_text()
     assert load_oracle_cases(out_dir / "oracle")[0].name == (
         "completion_short_math_logprobs20"
