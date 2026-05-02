@@ -22,7 +22,7 @@ FORBIDDEN_PATTERNS = (
     re.compile(
         r"\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|ACCESS_KEY)\s*[:=]\s*['\"]?[^'\"\s]+"
     ),
-    re.compile(r"sk-[A-Za-z0-9_-]{12,}"),
+    re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{12,}"),
     re.compile(r"Bearer\s+[A-Za-z0-9._-]+"),
     re.compile(r"root@"),
     re.compile(r"\b10\.0\.0\.\d+\b"),
@@ -51,7 +51,7 @@ SANITIZE_REPLACEMENTS = (
     (re.compile(r"\b172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+\b"), "<private-ip>"),
     (re.compile(r"\b146\.88\.195\.11\b"), "<public-host>"),
     (re.compile(r"Bearer\s+[A-Za-z0-9._-]+"), "Bearer <redacted>"),
-    (re.compile(r"sk-[A-Za-z0-9_-]{12,}"), "<redacted-key>"),
+    (re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{12,}"), "<redacted-key>"),
 )
 
 

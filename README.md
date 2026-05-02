@@ -346,6 +346,47 @@ Set `OFFICIAL_STRICT=1` only when non-green generation or ToolCall-15 checks
 should make the script exit non-zero; by default the report is still generated
 for subjective and policy comparison.
 
+## Current Archived Baselines
+
+As of 2026-05-02, the checked-in long-term reference bundles are:
+
+- `baselines/20260502_b200_tp2_main_5737770c6`: B200 split topology, TP=2,
+  no-MTP and MTP.
+- `baselines/20260502_b200_tp4_main_5737770c6`: B200 full topology, TP=4,
+  no-MTP and MTP.
+- `baselines/20260502_deepseek_official_api_deepseek_v4_flash`: hosted
+  DeepSeek official API comparison sample.
+
+The B200 TP=2 and TP=4 bundles are complete public bundles: each serving
+variant has 315 generation rows and matching Markdown transcripts
+(`35 prompts * 3 thinking modes * 3 rounds`), ToolCall-15 traces, GSM8K
+summaries, HF and random benchmark summaries, GPU/runtime telemetry,
+parsed `collect_env.py` environment summary, oracle export data, and a
+generated `report.md`. Their
+phase tables intentionally preserve the current acceptance gate status; other
+benchmark, eval, oracle, telemetry, and bundle-generation artifacts are still
+usable for performance and correctness comparison.
+
+The official API bundle is a smaller reference sample, not a hardware
+benchmark. It has 72 generation rows and transcripts from 8 selected prompts
+(`8 prompts * 3 thinking modes * 3 rounds`), 3 smoke checks, and one
+ToolCall-15 pass over the English scenario set. It records `temperature=1.0`
+and `top_p=1.0` for generation rows so hosted API behavior can be compared
+against vLLM samples with the same sampling shape.
+
+For the 8 generation cases shared by the official API bundle, both B200
+topologies and both serving variants have 72/72 passing rows. The official API
+sample has 55/72 passing rows; the recorded failures are concentrated in
+Think Max empty-content responses and the Chinese HTML coding sanity check. For
+ToolCall-15, compare percentages rather than raw points because the B200 runs
+use three repeats while the official API sample uses one repeat: official API is
+81/90 (90%), B200 TP=4 no-MTP is 243/270 (90%), and B200 TP=2 no-MTP, TP=2
+MTP, and TP=4 MTP are 225/270 (83%).
+
+Future RTX Pro 6000, RTX 5090, GB10, or other reference captures should follow
+the same topology-in-label convention and publish sanitized bundles under
+`baselines/<YYYYMMDD>_<topology>_<source>_<short-sha-or-label>/`.
+
 ## Expected Workflow
 
 Run these after every SM12x kernel optimization before pushing to

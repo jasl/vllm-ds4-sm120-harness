@@ -6,7 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ds4_harness.reference_bundle import scan_public_bundle
+from ds4_harness.reference_bundle import (
+    _sanitize_json,
+    _sanitize_string,
+    scan_public_bundle,
+)
 
 
 Json = dict[str, Any]
@@ -34,7 +38,7 @@ def _read_jsonl(path: Path) -> list[Json]:
 def _write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        json.dumps(_sanitize_json(data), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
 
@@ -43,7 +47,9 @@ def _copy_text(src: Path, dst: Path) -> None:
     if not src.exists():
         return
     dst.parent.mkdir(parents=True, exist_ok=True)
-    lines = src.read_text(encoding="utf-8", errors="replace").splitlines()
+    lines = _sanitize_string(
+        src.read_text(encoding="utf-8", errors="replace")
+    ).splitlines()
     dst.write_text(
         "\n".join(line.rstrip() for line in lines).rstrip() + "\n",
         encoding="utf-8",
@@ -87,21 +93,36 @@ def _usage_total(row: Json) -> dict[str, int]:
 
 
 def _generation_summary(rows: list[Json]) -> Json:
+    cases = {
+        (row.get("language"), row.get("case"))
+        for row in rows
+        if row.get("language") and row.get("case")
+    }
     summary: Json = {
-        "cases": len(rows),
+        "rows": len(rows),
+        "cases": len(cases),
         "ok": sum(1 for row in rows if row.get("ok") is True),
+        "failures": sum(1 for row in rows if row.get("ok") is not True),
         "by_thinking_mode": {},
         "by_workload": {},
+        "temperatures": {},
+        "top_ps": {},
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
     by_thinking = summary["by_thinking_mode"]
     by_workload = summary["by_workload"]
+    temperatures = summary["temperatures"]
+    top_ps = summary["top_ps"]
     usage_totals = summary["usage"]
     for row in rows:
         thinking = str(row.get("thinking_mode") or "unknown")
         workload = str(row.get("workload") or "generation")
+        temperature = str(row.get("temperature", "n/a"))
+        top_p = str(row.get("top_p", "n/a"))
         by_thinking[thinking] = by_thinking.get(thinking, 0) + 1
         by_workload[workload] = by_workload.get(workload, 0) + 1
+        temperatures[temperature] = temperatures.get(temperature, 0) + 1
+        top_ps[top_p] = top_ps.get(top_p, 0) + 1
         usage = _usage_total(row)
         for key, value in usage.items():
             usage_totals[key] += value
@@ -123,6 +144,12 @@ def _toolcall_summary(data: Any) -> Json:
         return {}
     summary = data.get("summary")
     return summary if isinstance(summary, dict) else {}
+
+
+def _inline_counts(values: Any) -> str:
+    if not isinstance(values, dict) or not values:
+        return "n/a"
+    return ", ".join(f"`{key}`={value}" for key, value in sorted(values.items()))
 
 
 def _write_report(
@@ -173,13 +200,19 @@ def _write_report(
             "",
             "## Generation",
             "",
-            f"- Passed: `{generation_summary['ok']}/{generation_summary['cases']}`",
+            f"- Passed: `{generation_summary['ok']}/{generation_summary['rows']}`",
+            f"- Unique cases: `{generation_summary['cases']}`",
+            f"- Failures: `{generation_summary['failures']}`",
+            f"- Thinking modes: {_inline_counts(generation_summary['by_thinking_mode'])}",
+            f"- Workloads: {_inline_counts(generation_summary['by_workload'])}",
+            f"- Temperature: {_inline_counts(generation_summary['temperatures'])}",
+            f"- Top P: {_inline_counts(generation_summary['top_ps'])}",
             f"- Prompt tokens: `{generation_summary['usage']['prompt_tokens']}`",
             f"- Completion tokens: `{generation_summary['usage']['completion_tokens']}`",
             f"- Total tokens: `{generation_summary['usage']['total_tokens']}`",
             "",
-            "| Case | Workload | Language | Thinking | Round | OK | Detail |",
-            "| --- | --- | --- | --- | ---: | ---: | --- |",
+            "| Case | Workload | Language | Thinking | Round | Temp | Top P | OK | Detail |",
+            "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
         ]
     )
     for row in generation_rows:
@@ -190,6 +223,8 @@ def _write_report(
             f"`{row.get('language')}` | "
             f"`{row.get('thinking_mode')}` | "
             f"{row.get('round', 'n/a')} | "
+            f"{row.get('temperature', 'n/a')} | "
+            f"{row.get('top_p', 'n/a')} | "
             f"`{row.get('ok')}` | "
             f"{row.get('detail') or ''} |"
         )
@@ -237,7 +272,10 @@ def _write_report(
             "",
         ]
     )
-    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    path.write_text(
+        _sanitize_string("\n".join(lines).rstrip() + "\n"),
+        encoding="utf-8",
+    )
 
 
 def build_official_api_baseline(

@@ -38,7 +38,10 @@ def test_official_api_baseline_writes_report_and_public_outputs(tmp_path):
         "thinking_strength": "max",
         "variant": "official-api",
         "ok": False,
-        "detail": "missing required terms: privacy",
+        "detail": (
+            "missing required terms: privacy; debug token sk-abcdefghijklmnop "
+            "from /Users/jasl/private"
+        ),
         "elapsed_seconds": 1.1,
         "usage": {"prompt_tokens": 5, "completion_tokens": 6, "total_tokens": 11},
         "payload": {
@@ -90,7 +93,13 @@ def test_official_api_baseline_writes_report_and_public_outputs(tmp_path):
                     "total_cases": 15,
                     "failures": 1,
                 },
-                "results": [{"id": "TC-06", "status": "fail", "summary": "miss"}],
+                "results": [
+                    {
+                        "id": "TC-06",
+                        "status": "fail",
+                        "summary": "miss with Bearer abc.def_ghi",
+                    }
+                ],
             },
             ensure_ascii=False,
         ),
@@ -123,7 +132,16 @@ def test_official_api_baseline_writes_report_and_public_outputs(tmp_path):
     assert "translation_en_to_zh" in report
     assert "| `generation` | `1` |" in report
     assert "Passed: `1/2`" in report
+    assert "Unique cases: `2`" in report
+    assert "- Temperature: `n/a`=2" in report
+    assert "- Top P: `n/a`=2" in report
     assert "missing required terms: privacy" in report
+    assert "sk-abcdefghijklmnop" not in report
+    assert "/Users/jasl/private" not in report
+    assert "Bearer abc.def_ghi" not in report
+    assert "<redacted-key>" in report
+    assert "<local-path>" in report
+    assert "Bearer <redacted>" in report
     assert "28/30" in report
     assert "TC-06" in report
     assert manifest["source"]["artifact_run"] == "20260502120000"

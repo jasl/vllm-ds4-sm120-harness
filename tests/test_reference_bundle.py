@@ -302,6 +302,8 @@ def test_public_bundle_scan_catches_common_private_networks_and_secrets(tmp_path
                 "service at 192.168.1.20",
                 "fallback at 172.20.4.5",
                 "HF_TOKEN=hf_secret",
+                "standalone key sk-abcdefghijklmnop",
+                "css class .task-priority-badge is not a key",
             ]
         ),
         encoding="utf-8",
@@ -312,3 +314,5 @@ def test_public_bundle_scan_catches_common_private_networks_and_secrets(tmp_path
     assert any("192\\.168" in finding for finding in findings)
     assert any("172\\." in finding for finding in findings)
     assert any("TOKEN" in finding for finding in findings)
+    assert any("sk-" in finding for finding in findings)
+    assert not any("task-priority" in finding for finding in findings)
