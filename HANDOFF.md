@@ -61,6 +61,13 @@ When upstream `main` has DeepSeek V4 related changes, rebase `ds4-sm120` onto
 the new `main` first. Then rebase `ds4-sm120-experimental` and `ds4-sm120-full`
 onto the updated `ds4-sm120`.
 
+Treat every rebase with conflicts or same-area upstream changes as a semantic
+integration gate, not just a textual conflict-resolution step. Audit the
+branch-unique commits against the updated upstream shape, drop or squash
+obsolete cherry-picks that have landed upstream, adjust overlapping logic so it
+fits the new owner code paths, and run targeted tests on SM120 hardware before
+benchmarking or promotion.
+
 When in doubt, do not push exploratory changes directly to `ds4-sm120`.
 
 ## Environment Notes
