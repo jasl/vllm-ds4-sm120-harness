@@ -18,6 +18,7 @@ B200_TENSOR_PARALLEL_SIZE="${B200_TENSOR_PARALLEL_SIZE:-4}"
 B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"
 B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"
 SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-393216}"
+SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-auto}"
 B200_BASELINE_LABEL="${B200_BASELINE_LABEL:-b200_official}"
 B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-nomtp,mtp}"
 B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-all}"
@@ -81,7 +82,7 @@ export B200_PARALLEL_PORTS B200_CUDA_VISIBLE_DEVICES
 export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_PROBE_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT
 export SERVER_FAILURE_GRACE_INTERVAL_SECONDS ARTIFACT_ROOT GPU_TOPOLOGY_SLUG
-export VLLM_ENGINE_READY_TIMEOUT_S SERVE_MAX_MODEL_LEN
+export VLLM_ENGINE_READY_TIMEOUT_S SERVE_MAX_MODEL_LEN SERVE_USE_FP4_INDEXER_CACHE
 export REAL_SCENARIO_REPEAT_COUNT GENERATION_PROMPT_ROOT GENERATION_LANGUAGES
 export GENERATION_THINKING_MODES GENERATION_REPEAT_COUNT GENERATION_TIMEOUT
 export GENERATION_MAX_CASE_TOKENS TOOLCALL15_SCENARIO_SET
@@ -204,6 +205,54 @@ clear_inherited_launch_env() {
   unset CUDA_VISIBLE_DEVICES
 }
 
+lowercase_value() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+fp4_indexer_cache_enabled() {
+  local mode
+  mode="$(lowercase_value "${SERVE_USE_FP4_INDEXER_CACHE}")"
+  case "${mode}" in
+    1|true|yes|on|enabled)
+      return 0
+      ;;
+    0|false|no|off|disabled)
+      return 1
+      ;;
+    auto|"")
+      ;;
+    *)
+      printf 'invalid SERVE_USE_FP4_INDEXER_CACHE=%s; expected auto, 1, or 0\n' \
+        "${SERVE_USE_FP4_INDEXER_CACHE}" >&2
+      exit 2
+      ;;
+  esac
+
+  local topology_slug
+  topology_slug="$(lowercase_value "${GPU_TOPOLOGY_SLUG:-}")"
+  if [[ "${topology_slug}" == *b200* || "${topology_slug}" == *sm100* ]]; then
+    return 0
+  fi
+
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    local device_ids names
+    local query_args=()
+    device_ids="${B200_CUDA_VISIBLE_DEVICES:-${GPU_TOPOLOGY_DEVICE_IDS:-${CUDA_VISIBLE_DEVICES:-}}}"
+    if [[ -n "${device_ids}" && "${device_ids}" != "all" ]]; then
+      query_args+=("-i" "${device_ids}")
+    fi
+    names="$(
+      nvidia-smi "${query_args[@]}" --query-gpu=name --format=csv,noheader 2>/dev/null \
+        | tr '[:upper:]' '[:lower:]' || true
+    )"
+    if [[ "${names}" == *b200* || "${names}" == *sm100* ]]; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 official_serve_args() {
   local variant="$1"
   OFFICIAL_SERVE_ARGS=(
@@ -216,12 +265,15 @@ official_serve_args() {
     --host "${HOST}"
     --port "${PORT}"
     --no-enable-flashinfer-autotune
-    --attention_config.use_fp4_indexer_cache=True
     --reasoning-parser deepseek_v4
     --tokenizer-mode deepseek_v4
     --tool-call-parser deepseek_v4
     --enable-auto-tool-choice
   )
+
+  if fp4_indexer_cache_enabled; then
+    OFFICIAL_SERVE_ARGS+=(--attention_config.use_fp4_indexer_cache=True)
+  fi
 
   if [[ "${variant}" == "mtp" ]]; then
     OFFICIAL_SERVE_ARGS+=(--speculative_config "${MTP_SPECULATIVE_CONFIG}")
@@ -412,6 +464,7 @@ write_summary() {
       printf -- '- parallel_tensor_parallel_size: `%s`\n' "${B200_PARALLEL_TENSOR_PARALLEL_SIZE}"
     fi
     printf -- '- serve_max_model_len: `%s`\n' "${SERVE_MAX_MODEL_LEN}"
+    printf -- '- serve_use_fp4_indexer_cache: `%s`\n' "${SERVE_USE_FP4_INDEXER_CACHE}"
     printf -- '- no_mtp_concurrency: `%s`\n' "${NO_MTP_CONCURRENCY}"
     printf -- '- mtp_concurrency: `%s`\n' "${MTP_CONCURRENCY}"
     printf -- '- num_prompts: `%s`\n' "${NUM_PROMPTS}"

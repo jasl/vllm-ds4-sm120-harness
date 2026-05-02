@@ -527,6 +527,9 @@ The final `--speculative_config` line enables MTP. Remove it for the no-MTP
 baseline, and keep the rest of the serve command the same when comparing MTP
 against no-MTP. `--max-model-len 393216` follows the DeepSeek recommendation
 to keep Think Max quality tests on a context window of at least 384K tokens.
+The `--attention_config.use_fp4_indexer_cache=True` flag is currently SM100/B200
+specific. Do not use it on SM12x hosts such as RTX Pro 6000, RTX 5090, or GB10;
+those runs should leave `SERVE_USE_FP4_INDEXER_CACHE=auto` or set it to `0`.
 
 The reusable B200 baseline driver starts this serve shape itself, runs no-MTP
 and MTP as separate server lifecycles, and reuses the acceptance, benchmark,
@@ -550,7 +553,7 @@ Run this script on the reference host, not on a laptop. It defaults to
 `B200_VARIANT_PARALLEL=0`,
 `NO_MTP_CONCURRENCY=1,2,4,8,16,24`, `MTP_CONCURRENCY=1,2,4,8,16,24`,
 `SERVE_MAX_MODEL_LEN=393216`, `NUM_PROMPTS=80`, `REAL_SCENARIO_REPEAT_COUNT=3`,
-`API_REQUEST_RETRIES=1`,
+`API_REQUEST_RETRIES=1`, `SERVE_USE_FP4_INDEXER_CACHE=auto`,
 `GENERATION_LANGUAGES=en,zh`,
 `GENERATION_THINKING_MODES=non-thinking,think-high,think-max`,
 `GENERATION_TEMPERATURE=1.0`, `GENERATION_TOP_P=1.0`,

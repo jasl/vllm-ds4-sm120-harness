@@ -75,6 +75,10 @@ export TORCH_CUDA_ARCH_LIST="12.0a"
 unset PYTORCH_CUDA_ALLOC_CONF
 ```
 
+Do not pass `--attention_config.use_fp4_indexer_cache=True` on SM12x hosts such
+as RTX PRO 6000, RTX 5090, or GB10. That flag is currently SM100/B200-specific;
+keep `SERVE_USE_FP4_INDEXER_CACHE=auto` or set it to `0` for SM12x runs.
+
 Copy `env.sample` to `.env` for machine-local values such as the optional
 DeepSeek official API key, vLLM paths, benchmark defaults, or artifact labels.
 The wrapper scripts load `.env` without overriding variables already set in the

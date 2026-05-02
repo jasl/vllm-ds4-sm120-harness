@@ -132,6 +132,7 @@ def test_env_sample_and_local_env_are_configured():
     assert "B200_PARALLEL_GPU_GROUPS=nomtp=0,1;mtp=2,3" in sample
     assert "B200_PARALLEL_TENSOR_PARALLEL_SIZE=2" in sample
     assert "B200_PARALLEL_PORTS=" in sample
+    assert "SERVE_USE_FP4_INDEXER_CACHE=auto" in sample
     assert "RUN_LM_EVAL=1" in sample
     assert "LM_EVAL_BIN=lm_eval" in sample
     assert "LM_EVAL_TASKS=gsm8k" in sample
@@ -289,6 +290,7 @@ def test_b200_baseline_script_uses_official_serve_shape():
     script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
 
     assert 'VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-3600}"' in script
+    assert 'SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-auto}"' in script
     assert "deepseek-ai/DeepSeek-V4-Flash" in script
     assert "--trust-remote-code" in script
     assert "--kv-cache-dtype" in script
@@ -298,6 +300,7 @@ def test_b200_baseline_script_uses_official_serve_shape():
     assert "--tensor-parallel-size" in script
     assert "4" in script
     assert "--no-enable-flashinfer-autotune" in script
+    assert "fp4_indexer_cache_enabled" in script
     assert "--attention_config.use_fp4_indexer_cache=True" in script
     assert "--reasoning-parser" in script
     assert "deepseek_v4" in script
@@ -754,6 +757,63 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
         out_dir / "nomtp" / "serve_command.sh"
     ).read_text(encoding="utf-8")
     assert "wrote" in result.stdout
+
+
+def run_minimal_b200_baseline(tmp_path, gpu_topology_slug):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    fake_vllm = tmp_path / "fake-vllm"
+    fake_vllm.write_text(
+        "#!/usr/bin/env sh\n"
+        "trap 'exit 0' TERM INT\n"
+        "while :; do sleep 1; done\n",
+        encoding="utf-8",
+    )
+    fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    out_dir = tmp_path / "baseline"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "VLLM_BIN": str(fake_vllm),
+        "OUT_DIR": str(out_dir),
+        "GPU_TOPOLOGY_SLUG": gpu_topology_slug,
+        "B200_BASELINE_VARIANTS": "nomtp",
+        "RUN_ACCEPTANCE": "0",
+        "RUN_LONG_CONTEXT_PROBE": "0",
+        "RUN_BENCH_HF": "0",
+        "RUN_RANDOM_LONG": "0",
+        "RUN_LM_EVAL": "0",
+        "RUN_ORACLE_EXPORT": "0",
+        "SERVER_GUARD": "0",
+        "GPU_STATS": "0",
+        "RUNTIME_STATS": "0",
+        "VLLM_COLLECT_ENV": "0",
+    }
+
+    subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_b200_baseline.sh")],
+        check=True,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    return out_dir
+
+
+def test_b200_baseline_driver_omits_fp4_indexer_cache_for_sm12x_auto(tmp_path):
+    out_dir = run_minimal_b200_baseline(tmp_path, "2x_nvidia_rtx_pro_6000")
+    command = (out_dir / "nomtp" / "serve_command.sh").read_text(encoding="utf-8")
+    assert "--attention_config.use_fp4_indexer_cache=True" not in command
+
+
+def test_b200_baseline_driver_enables_fp4_indexer_cache_for_b200_auto(tmp_path):
+    out_dir = run_minimal_b200_baseline(tmp_path, "4x_nvidia_b200")
+    command = (out_dir / "nomtp" / "serve_command.sh").read_text(encoding="utf-8")
+    assert "--attention_config.use_fp4_indexer_cache=True" in command
 
 
 def test_b200_baseline_driver_can_run_single_phase_with_mocked_tools(tmp_path):
