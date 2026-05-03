@@ -1,0 +1,376 @@
+{
+  "schema_version": 1,
+  "case": "packed_fp8_indexer_cache_layout",
+  "variant": "nomtp",
+  "ok": true,
+  "detail": "packed helper matched expected byte layout",
+  "parameters": {
+    "num_blocks": 2,
+    "block_size": 256,
+    "head_dim": 448,
+    "scale_bytes": 8
+  },
+  "target": {
+    "python_executable": "python",
+    "torch_version": "2.11.0+cu130",
+    "cuda_available": true
+  },
+  "cache": {
+    "dtype": "torch.uint8",
+    "shape": [
+      2,
+      256,
+      456
+    ],
+    "stride": [
+      116736,
+      456,
+      1
+    ],
+    "storage_offset": 0
+  },
+  "packed_offsets": {
+    "block_stride_bytes": 116736,
+    "value_bytes_per_block": 114688,
+    "scale_bytes_per_block": 2048,
+    "values_offset": 0,
+    "scales_offset": 114688,
+    "scale_end": 116736
+  },
+  "helper": {
+    "available": true,
+    "matches_expected": true,
+    "value_diff_count": 0,
+    "scale_diff_count": 0,
+    "error": null
+  },
+  "helper_views": {
+    "values_shape": [
+      2,
+      256,
+      1,
+      448
+    ],
+    "values_stride": [
+      116736,
+      448,
+      448,
+      1
+    ],
+    "values_storage_offset": 0,
+    "scales_shape": [
+      2,
+      256,
+      1,
+      2
+    ],
+    "scales_stride": [
+      29184,
+      2,
+      2,
+      1
+    ],
+    "scales_storage_offset": 28672
+  },
+  "interleaved_legacy_view": {
+    "value_diff_count": 228000,
+    "scale_diff_count": 4064,
+    "diff_count": 232064
+  },
+  "sentinels": [
+    {
+      "block": 0,
+      "token": 0,
+      "packed_value_offset": 0,
+      "packed_scale_offset": 114688,
+      "value_sha256": "0e7343cdbc9a8cee7f84c4dd0548eba98c1a2ad8315f86fd585dc10fd57e7a4d",
+      "scale_sha256": "7047d3abd04c473c52a42640ab6b1a93c28845f4c0a088d378d3335240c051e9",
+      "value_head_bytes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "scale_bytes": [
+        7,
+        10,
+        13,
+        16,
+        19,
+        22,
+        25,
+        28
+      ]
+    },
+    {
+      "block": 0,
+      "token": 1,
+      "packed_value_offset": 448,
+      "packed_scale_offset": 114696,
+      "value_sha256": "09d0b6a7809fe44e45f39ba78bb3acad50793dc4ad5543388abdf4b6ef3d9b2c",
+      "scale_sha256": "e0d44e72a4162ad369fe73f4b8a5bbe3eb3bfca3f486565c6419e0ba2b418a6e",
+      "value_head_bytes": [
+        197,
+        198,
+        199,
+        200,
+        201,
+        202,
+        203,
+        204,
+        205,
+        206,
+        207,
+        208,
+        209,
+        210,
+        211,
+        212
+      ],
+      "scale_bytes": [
+        31,
+        34,
+        37,
+        40,
+        43,
+        46,
+        49,
+        52
+      ]
+    },
+    {
+      "block": 0,
+      "token": 128,
+      "packed_value_offset": 57344,
+      "packed_scale_offset": 115712,
+      "value_sha256": "6c26b4deb01f82616b5944cdc5251936977eba5b8eb66e253176fb1313503949",
+      "scale_sha256": "ed25d4df89af4894f9a845ba32e5b96b5bba0b042ea479c26f573d1f5454bcc6",
+      "value_head_bytes": [
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        130,
+        131
+      ],
+      "scale_bytes": [
+        67,
+        70,
+        73,
+        76,
+        79,
+        82,
+        85,
+        88
+      ]
+    },
+    {
+      "block": 0,
+      "token": 255,
+      "packed_value_offset": 114240,
+      "packed_scale_offset": 116728,
+      "value_sha256": "a13bd9a2f6fba82c4f914f6d3af0411b46be07c054d2964a660b6dae15b4d6ab",
+      "scale_sha256": "9cc291f4472bd5cd1ab4de169c2ab9f6d9a38fe1040bbf29773d8407b669b88c",
+      "value_head_bytes": [
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50
+      ],
+      "scale_bytes": [
+        103,
+        106,
+        109,
+        112,
+        115,
+        118,
+        121,
+        124
+      ]
+    },
+    {
+      "block": 1,
+      "token": 0,
+      "packed_value_offset": 0,
+      "packed_scale_offset": 114688,
+      "value_sha256": "4242bd7e820458794fd92fc2b560bd0408a3d392e80aeeb42781e52dc2fd1fe9",
+      "scale_sha256": "8d234e1de0d6bfef2400095be13bc97e8b8949cd4ffe3cc43e6c9266dbef2d73",
+      "value_head_bytes": [
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32
+      ],
+      "scale_bytes": [
+        36,
+        39,
+        42,
+        45,
+        48,
+        51,
+        54,
+        57
+      ]
+    },
+    {
+      "block": 1,
+      "token": 1,
+      "packed_value_offset": 448,
+      "packed_scale_offset": 114696,
+      "value_sha256": "34e037a77c22d27283c4a0ae9e266bf4eb1671dbdd8084587988b257918f57e4",
+      "scale_sha256": "da64cf44198683d0ecd9ff50279a3d4113c0f746d733d7c75c3580c60703b42e",
+      "value_head_bytes": [
+        214,
+        215,
+        216,
+        217,
+        218,
+        219,
+        220,
+        221,
+        222,
+        223,
+        224,
+        225,
+        226,
+        227,
+        228,
+        229
+      ],
+      "scale_bytes": [
+        60,
+        63,
+        66,
+        69,
+        72,
+        75,
+        78,
+        81
+      ]
+    },
+    {
+      "block": 1,
+      "token": 128,
+      "packed_value_offset": 57344,
+      "packed_scale_offset": 115712,
+      "value_sha256": "ba5523637814fff68d5dd938a460252f72a36c4a6da2e2687c5f87fe7248633e",
+      "scale_sha256": "cd363629b62f2030cb1dadc0c8bc8d486eb808debb9299e12c57a00c3f253c51",
+      "value_head_bytes": [
+        133,
+        134,
+        135,
+        136,
+        137,
+        138,
+        139,
+        140,
+        141,
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        148
+      ],
+      "scale_bytes": [
+        96,
+        99,
+        102,
+        105,
+        108,
+        111,
+        114,
+        117
+      ]
+    },
+    {
+      "block": 1,
+      "token": 255,
+      "packed_value_offset": 114240,
+      "packed_scale_offset": 116728,
+      "value_sha256": "6c3026c78bf2ff022b5a827a73418981c6506e04b230804555f3ef602afee5dd",
+      "scale_sha256": "6fa38eaf8547387ba06413e6fd9698e32d608b8b6fb49411949a0ca7a50fae78",
+      "value_head_bytes": [
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67
+      ],
+      "scale_bytes": [
+        132,
+        135,
+        138,
+        141,
+        144,
+        147,
+        150,
+        153
+      ]
+    }
+  ],
+  "raw_cache": {
+    "bytes": 233472,
+    "sha256": "9deae44c829663e6e3add2ccb03f2a48254db60eea77a8e16e7f63a6460fdb0b",
+    "filename": "kv_layout_probe_packed_cache.bin",
+    "sha256_file": "kv_layout_probe_packed_cache.bin.sha256"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "available": true,
+  "sample_count": 112,
+  "overall": {
+    "memory_used_mib_max": 97026.0,
+    "memory_used_mib_avg": 97007.18,
+    "memory_used_percent_max": 99.12,
+    "memory_used_percent_avg": 99.1,
+    "power_draw_w_max": 603.11,
+    "power_draw_w_avg": 575.26,
+    "gpu_utilization_percent_max": 100.0,
+    "gpu_utilization_percent_avg": 98.21
+  },
+  "gpus": {
+    "0": {
+      "index": "0",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "uuid": "",
+      "samples": 56,
+      "timestamp_start": "2026/05/04 06:18:14.621",
+      "timestamp_end": "2026/05/04 06:19:09.756",
+      "memory_used_mib_max": 97026.0,
+      "memory_used_mib_avg": 97007.18,
+      "memory_total_mib_max": 97887.0,
+      "memory_used_percent_max": 99.12,
+      "memory_used_percent_avg": 99.1,
+      "power_draw_w_max": 603.11,
+      "power_draw_w_avg": 575.08,
+      "power_limit_w_max": 600.0,
+      "gpu_utilization_percent_max": 100.0,
+      "gpu_utilization_percent_avg": 98.21
+    },
+    "1": {
+      "index": "1",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "uuid": "",
+      "samples": 56,
+      "timestamp_start": "2026/05/04 06:18:14.624",
+      "timestamp_end": "2026/05/04 06:19:09.756",
+      "memory_used_mib_max": 97026.0,
+      "memory_used_mib_avg": 97007.18,
+      "memory_total_mib_max": 97887.0,
+      "memory_used_percent_max": 99.12,
+      "memory_used_percent_avg": 99.1,
+      "power_draw_w_max": 602.97,
+      "power_draw_w_avg": 575.45,
+      "power_limit_w_max": 600.0,
+      "gpu_utilization_percent_max": 100.0,
+      "gpu_utilization_percent_avg": 98.21
+    }
+  }
+}
