@@ -64,7 +64,8 @@ detect_gpu_topology_slug() {
 }
 
 write_run_environment() {
-  "${PYTHON}" -m ds4_harness.cli env-summary \
+  HARNESS_REPO="${HARNESS_REPO:-${REPO_ROOT}}" \
+    "${PYTHON}" -m ds4_harness.cli env-summary \
     --json-output "${OUT_DIR}/run_environment.json" \
     --markdown-output "${OUT_DIR}/run_environment.md" \
     >/dev/null || true

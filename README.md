@@ -197,8 +197,17 @@ available or when you need a shorter label. Override `ARTIFACT_ROOT`,
 `BRANCH_NAME`, `RUN_TIMESTAMP`, or `OUT_DIR` when you need an explicit location.
 
 Each wrapper run writes `run_environment.json` and `run_environment.md` with
-GPU count/model inventory, selected CUDA env vars, benchmark settings, and
-official API configuration state. GPU UUIDs and API key values are not written.
+GPU count/model inventory, selected CUDA env vars, benchmark settings, source
+provenance, and official API configuration state. GPU UUIDs and API key values
+are not written.
+
+Source provenance is best-effort and non-blocking. The harness records the
+harness source and vLLM source label/path basename, and records branch, commit,
+dirty count, and upstream tracking only when that source is a Git worktree.
+Tarball, copied, or otherwise non-Git source directories are valid; the report
+marks Git as unavailable with a reason instead of failing the run. Use
+`HARNESS_SOURCE_LABEL`, `VLLM_SOURCE_LABEL`, and `VLLM_REPO` when you want a
+clearer report label or when vLLM cannot be inferred from `VLLM_BIN`/`PYTHON`.
 
 `chat-smoke` can also write Markdown reports with `--markdown-output` and can
 repeat selected deterministic cases with `--repeat-count`.

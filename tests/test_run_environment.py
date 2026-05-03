@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 from ds4_harness import cli
 from ds4_harness.run_environment import (
@@ -112,6 +113,70 @@ def test_summarize_run_environment_queries_only_visible_devices(monkeypatch):
     assert summary["gpu"]["count"] == 2
 
 
+def test_summarize_run_environment_records_non_git_sources_without_crashing(tmp_path):
+    harness_src = tmp_path / "harness-src"
+    vllm_src = tmp_path / "vllm-src"
+    harness_src.mkdir()
+    vllm_src.mkdir()
+
+    summary = summarize_run_environment(
+        env={
+            "HARNESS_REPO": str(harness_src),
+            "VLLM_REPO": str(vllm_src),
+            "HARNESS_SOURCE_LABEL": "local-harness",
+            "VLLM_SOURCE_LABEL": "dev-vllm",
+        },
+        nvidia_smi_output="",
+    )
+
+    assert summary["source"]["harness"] == {
+        "label": "local-harness",
+        "path_basename": "harness-src",
+        "git_available": False,
+        "git_reason": "not a git worktree",
+    }
+    assert summary["source"]["vllm"] == {
+        "label": "dev-vllm",
+        "path_basename": "vllm-src",
+        "git_available": False,
+        "git_reason": "not a git worktree",
+    }
+
+
+def test_summarize_run_environment_records_git_source_status(tmp_path):
+    repo = tmp_path / "git-harness"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+    )
+    (repo / "README.md").write_text("baseline\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True)
+    (repo / "dirty.txt").write_text("dirty\n", encoding="utf-8")
+
+    summary = summarize_run_environment(
+        env={"HARNESS_REPO": str(repo)},
+        nvidia_smi_output="",
+    )
+
+    harness = summary["source"]["harness"]
+    assert harness["path_basename"] == "git-harness"
+    assert harness["git_available"] is True
+    assert len(harness["commit"]) == 40
+    assert harness["short_commit"] == harness["commit"][:12]
+    assert harness["branch"] in {"master", "main"}
+    assert harness["dirty"] is True
+    assert harness["dirty_file_count"] == 1
+
+
 def test_env_summary_cli_writes_json_and_markdown(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "ds4_harness.run_environment.query_nvidia_smi_gpu_csv",
@@ -143,6 +208,7 @@ def test_env_summary_cli_writes_json_and_markdown(monkeypatch, tmp_path):
     assert "Test GPU" in report
     assert "deepseek-v4-flash" in report
     assert "Preserve reasoning_content" in report
+    assert "## Source" in report
     assert "secret" not in report
 
 

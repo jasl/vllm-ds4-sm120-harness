@@ -64,6 +64,87 @@ def query_nvidia_smi_gpu_csv(device_ids: str | None = None) -> str | None:
     return completed.stdout
 
 
+def _git_output(repo: Path, *args: str, timeout: float = 5.0) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repo), *args],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
+
+
+def _infer_repo_from_tool(path_value: str | None) -> str | None:
+    if not path_value:
+        return None
+    path = Path(path_value)
+    if path.parent.name == "bin" and path.parent.parent.name == ".venv":
+        return str(path.parent.parent.parent)
+    return None
+
+
+def _source_summary(path_value: str | None, *, label: str | None = None) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "label": label,
+        "path_basename": Path(path_value).name if path_value else None,
+    }
+    if not path_value:
+        summary.update(
+            {
+                "git_available": False,
+                "git_reason": "source path not configured",
+            }
+        )
+        return summary
+
+    repo = Path(path_value)
+    if not repo.exists():
+        summary.update(
+            {
+                "git_available": False,
+                "git_reason": "source path not found",
+            }
+        )
+        return summary
+
+    inside = _git_output(repo, "rev-parse", "--is-inside-work-tree")
+    if inside != "true":
+        summary.update(
+            {
+                "git_available": False,
+                "git_reason": "not a git worktree",
+            }
+        )
+        return summary
+
+    commit = _git_output(repo, "rev-parse", "HEAD")
+    branch = _git_output(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    status = _git_output(repo, "status", "--porcelain")
+    upstream = _git_output(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    tracking = _git_output(repo, "status", "--short", "--branch")
+    dirty_files = [line for line in (status or "").splitlines() if line.strip()]
+    summary.update(
+        {
+            "git_available": True,
+            "branch": branch,
+            "commit": commit,
+            "short_commit": commit[:12] if commit else None,
+            "dirty": bool(dirty_files),
+            "dirty_file_count": len(dirty_files),
+            "upstream": upstream,
+            "status_short_branch": tracking.splitlines()[0] if tracking else None,
+        }
+    )
+    return summary
+
+
 def _model_counts(gpus: list[dict[str, Any]]) -> list[dict[str, Any]]:
     counts = Counter(str(gpu.get("name") or "unknown") for gpu in gpus)
     output = []
@@ -105,6 +186,13 @@ def summarize_run_environment(
     configured_slug = env.get("GPU_TOPOLOGY_SLUG")
     effective_topology_slug = gpu_topology_slug(gpus)
     artifact_topology_slug = configured_slug or effective_topology_slug
+    harness_repo = env.get("HARNESS_REPO") or env.get("REPO_ROOT") or os.getcwd()
+    vllm_repo = (
+        env.get("VLLM_REPO")
+        or env.get("B200_VLLM_REPO")
+        or _infer_repo_from_tool(env.get("VLLM_BIN"))
+        or _infer_repo_from_tool(env.get("PYTHON"))
+    )
 
     return {
         "generated_at_utc": datetime.now(UTC).isoformat(),
@@ -128,6 +216,16 @@ def summarize_run_environment(
             "concurrency": env.get("CONCURRENCY"),
             "dataset_name": env.get("DATASET_NAME"),
             "dataset_path": env.get("DATASET_PATH"),
+        },
+        "source": {
+            "harness": _source_summary(
+                harness_repo,
+                label=env.get("HARNESS_SOURCE_LABEL"),
+            ),
+            "vllm": _source_summary(
+                vllm_repo,
+                label=env.get("VLLM_SOURCE_LABEL"),
+            ),
         },
         "official_api": {
             "api_key_present": bool(env.get("DEEPSEEK_API_KEY")),
@@ -192,6 +290,38 @@ def write_run_environment_markdown(path: Path, summary: dict[str, Any]) -> None:
             f"- Branch: `{_format_value(artifact.get('branch_name'))}`",
             f"- GPU topology slug: `{_format_value(artifact.get('gpu_topology_slug'))}`",
             "",
+            "## Source",
+            "",
+        ]
+    )
+    source = summary.get("source", {})
+    for source_name in ("harness", "vllm"):
+        source_row = source.get(source_name, {})
+        lines.extend(
+            [
+                f"### {source_name}",
+                "",
+                f"- Label: `{_format_value(source_row.get('label'))}`",
+                f"- Path basename: `{_format_value(source_row.get('path_basename'))}`",
+                f"- Git available: `{_format_value(source_row.get('git_available'))}`",
+            ]
+        )
+        if source_row.get("git_available"):
+            lines.extend(
+                [
+                    f"- Branch: `{_format_value(source_row.get('branch'))}`",
+                    f"- Commit: `{_format_value(source_row.get('short_commit'))}`",
+                    f"- Dirty: `{_format_value(source_row.get('dirty'))}`",
+                    f"- Dirty file count: `{_format_value(source_row.get('dirty_file_count'))}`",
+                    f"- Upstream: `{_format_value(source_row.get('upstream'))}`",
+                    f"- Tracking: `{_format_value(source_row.get('status_short_branch'))}`",
+                ]
+            )
+        else:
+            lines.append(f"- Git reason: `{_format_value(source_row.get('git_reason'))}`")
+        lines.append("")
+    lines.extend(
+        [
             "## Official API",
             "",
         ]
