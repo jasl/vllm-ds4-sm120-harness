@@ -67,6 +67,12 @@ change explicitly accepts that performance tradeoff.
 Use this harness to capture behavior around the vLLM-side tests:
 
 - `generation-matrix` for subjective writing, translation, and coding quality.
+  For DeepSeek V4 `think-max`, run at least one targeted long-context quality
+  probe with the model-card serving shape: `--max-model-len` at or above
+  `393216`, `temperature=1.0`, `top_p=1.0`, and enough request `max_tokens` for
+  reasoning plus final content. Short-window or low-output-cap failures should
+  be labeled as budget diagnostics before they are used as correctness
+  evidence.
 - `toolcall15` for OpenAI-compatible tool-call loop behavior.
 - `oracle-export` on an expensive reference host, then `oracle-compare` on
   SM120/SM121 for token-level divergence. Use prompt-id matching, top-k

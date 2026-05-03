@@ -742,6 +742,14 @@ Before promoting an optimization:
   branch for the relevant no-MTP or MTP serving variant, and
   `generation-compare` has no missing rows or behavior regressions versus the
   selected full-directory baseline reference.
+- Treat DeepSeek V4 `think-max` generation as an official-shape quality gate,
+  not as a short-context smoke. The local server should use
+  `--max-model-len` of at least `393216`, and long coding prompts may need a
+  request `max_tokens` larger than the checked-in prompt default. For targeted
+  probes, override the request with `--extra-body-json '{"max_tokens":32768}'`.
+  A `think-max` failure under a small context window or a 12K completion cap is
+  a budget diagnostic until reproduced under the recommended long-context
+  shape.
 - `toolcall15 --scenario-set en --thinking-mode non-thinking --thinking-mode
   think-high --thinking-mode think-max --repeat-count 3` passes, or any
   partial/fail scenario is explained with trace evidence.
