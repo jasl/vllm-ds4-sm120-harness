@@ -216,7 +216,15 @@ def test_acceptance_script_runs_all_gates_and_records_exit_codes():
     assert "run_live_gate toolcall15" in script
     assert "run_live_gate oracle_compare" in script
     assert 'ORACLE_TOP_N="${ORACLE_TOP_N:-20}"' in script
+    assert 'ORACLE_LOW_MARGIN_THRESHOLD="${ORACLE_LOW_MARGIN_THRESHOLD:-0.5}"' in script
+    assert 'MIN_TOP1_MATCH_RATE="${MIN_TOP1_MATCH_RATE:-0.80}"' in script
+    assert 'MIN_TOPK_OVERLAP_MEAN="${MIN_TOPK_OVERLAP_MEAN:-0.80}"' in script
     assert '--top-n "${ORACLE_TOP_N}"' in script
+    assert '--low-margin-threshold "${ORACLE_LOW_MARGIN_THRESHOLD}"' in script
+    assert "--require-high-margin-token-match" in script
+    assert '--min-top1-match-rate "${MIN_TOP1_MATCH_RATE}"' in script
+    assert '--min-topk-overlap-mean "${MIN_TOPK_OVERLAP_MEAN}"' in script
+    assert '--stability-json-output "${OUT_DIR}/oracle_stability.json"' in script
     assert '"${OUT_DIR}/${name}.exit_code"' in script
     assert "exit ${failures}" in script
 

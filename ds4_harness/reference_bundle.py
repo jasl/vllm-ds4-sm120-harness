@@ -517,6 +517,11 @@ python -m ds4_harness.cli oracle-compare \\
   --oracle-dir baselines/{label}/oracle \\
   --top-n 20 \\
   --require-prompt-ids \\
+  --low-margin-threshold 0.5 \\
+  --require-high-margin-token-match \\
+  --min-top1-match-rate 0.80 \\
+  --min-topk-overlap-mean 0.80 \\
+  --stability-json-output artifacts/manual/oracle_stability.json \\
   --json-output artifacts/manual/oracle_compare.json
 ```
 

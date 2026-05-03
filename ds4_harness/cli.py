@@ -9,6 +9,11 @@ import urllib.error
 from pathlib import Path
 from typing import Any
 
+from ds4_harness.attention_dump import (
+    build_attention_dump_report,
+    write_attention_dump_json,
+    write_attention_dump_markdown,
+)
 from ds4_harness.baseline_report import build_baseline_report, write_baseline_report
 from ds4_harness.bench import run_bench_command
 from ds4_harness.cases import SmokeCase, build_cases, select_cases
@@ -396,6 +401,7 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
                     default_temperature=args.temperature,
                     default_top_p=args.top_p,
                     max_case_tokens=args.max_case_tokens,
+                    override_prompt_sampling=args.override_prompt_sampling,
                 )
                 payload.update(mode_extra_body)
                 payload.update(extra_body)
@@ -491,6 +497,17 @@ def _cmd_generation_compare(args: argparse.Namespace) -> int:
     return 0 if report["ok"] else 1
 
 
+def _cmd_sparse_mla_dump_report(args: argparse.Namespace) -> int:
+    report = build_attention_dump_report(args.dump_dir)
+    if args.json_output is not None:
+        write_attention_dump_json(args.json_output, report)
+    if args.markdown_output is not None:
+        write_attention_dump_markdown(args.markdown_output, report)
+    if args.json_output is None and args.markdown_output is None:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _cmd_oracle_compare(args: argparse.Namespace) -> int:
     if not _validate_request_retries(args.request_retries):
         print("--request-retries must be >= 0", file=sys.stderr)
@@ -562,14 +579,16 @@ def _cmd_oracle_compare(args: argparse.Namespace) -> int:
                     ok = False
                 if (
                     args.min_top1_match_rate is not None
-                    and report["top1_match_rate"] is not None
-                    and report["top1_match_rate"] < args.min_top1_match_rate
+                    and report["trajectory_top1_match_rate"] is not None
+                    and report["trajectory_top1_match_rate"]
+                    < args.min_top1_match_rate
                 ):
                     ok = False
                 if (
                     args.min_topk_overlap_mean is not None
-                    and report["topk_overlap_mean"] is not None
-                    and report["topk_overlap_mean"] < args.min_topk_overlap_mean
+                    and report["trajectory_topk_overlap_mean"] is not None
+                    and report["trajectory_topk_overlap_mean"]
+                    < args.min_topk_overlap_mean
                 ):
                     ok = False
                 report["ok"] = ok
@@ -1223,6 +1242,7 @@ def build_parser() -> argparse.ArgumentParser:
     generation.add_argument("--max-case-tokens", type=int)
     generation.add_argument("--temperature", type=float, default=1.0)
     generation.add_argument("--top-p", type=float, default=1.0)
+    generation.add_argument("--override-prompt-sampling", action="store_true")
     generation.add_argument("--timeout", type=float, default=900.0)
     generation.add_argument("--repeat-count", type=int, default=3)
     generation.add_argument("--request-retries", type=int, default=1)
@@ -1239,6 +1259,12 @@ def build_parser() -> argparse.ArgumentParser:
     generation_compare.add_argument("--json-output", type=Path)
     generation_compare.add_argument("--markdown-output", type=Path)
     generation_compare.set_defaults(func=_cmd_generation_compare)
+
+    sparse_mla_dump_report = subparsers.add_parser("sparse-mla-dump-report")
+    sparse_mla_dump_report.add_argument("--dump-dir", type=Path, required=True)
+    sparse_mla_dump_report.add_argument("--json-output", type=Path)
+    sparse_mla_dump_report.add_argument("--markdown-output", type=Path)
+    sparse_mla_dump_report.set_defaults(func=_cmd_sparse_mla_dump_report)
 
     oracle = subparsers.add_parser("oracle-compare")
     oracle.add_argument("--base-url", default="http://127.0.0.1:8000")

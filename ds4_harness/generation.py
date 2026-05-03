@@ -60,20 +60,31 @@ class GenerationPrompt:
         default_temperature: float,
         default_top_p: float,
         max_case_tokens: int | None = None,
+        override_prompt_sampling: bool = False,
     ) -> Json:
         max_tokens = self.max_tokens or default_max_tokens
         if max_case_tokens is not None and max_tokens > max_case_tokens:
             max_tokens = max_case_tokens
+        temperature = (
+            default_temperature
+            if override_prompt_sampling
+            else (
+                self.temperature
+                if self.temperature is not None
+                else default_temperature
+            )
+        )
+        top_p = (
+            default_top_p
+            if override_prompt_sampling
+            else (self.top_p if self.top_p is not None else default_top_p)
+        )
         return {
             "model": model,
             "messages": [{"role": "user", "content": self.prompt}],
             "max_tokens": max_tokens,
-            "temperature": (
-                self.temperature
-                if self.temperature is not None
-                else default_temperature
-            ),
-            "top_p": self.top_p if self.top_p is not None else default_top_p,
+            "temperature": temperature,
+            "top_p": top_p,
         }
 
 

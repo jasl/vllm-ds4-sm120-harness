@@ -80,6 +80,9 @@ Use this harness to capture behavior around the vLLM-side tests:
   SM120/SM121 for token-level divergence. Use prompt-id matching, top-k
   overlap, top-1 margin, and repeated-request stability to separate
   high-margin correctness failures from low-margin trajectory differences.
+  The strict top-1/top-k trajectory thresholds intentionally score the shared
+  prefix before a low-margin fork; use the raw full-trajectory metrics as
+  diagnostics after the sampled context has diverged.
 - `bench-matrix` on `philschmid/mt-bench` for representative throughput.
 - `lm-eval` / `scripts/run_lm_eval.sh` for public GSM8K exact-match reporting.
 

@@ -137,6 +137,53 @@ Translate this sentence into English: 隐私和延迟都很重要。
     assert all(line == line.rstrip() for line in lines)
 
 
+def test_generation_matrix_can_override_prompt_sampling(monkeypatch, tmp_path):
+    prompt_root = tmp_path / "prompts"
+    _write_prompt(
+        prompt_root / "en" / "writing_probe.md",
+        """---
+tags: writing
+temperature: 1.0
+top_p: 1.0
+---
+Write one sentence about local inference.
+""",
+    )
+    captured = {}
+
+    def fake_post_json(base_url, path, payload, timeout):
+        captured["payload"] = payload
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "Local inference is useful."},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+
+    rc = cli.main(
+        [
+            "generation-matrix",
+            "--prompt-root",
+            str(prompt_root),
+            "--thinking-mode",
+            "non-thinking",
+            "--temperature",
+            "0.0",
+            "--top-p",
+            "0.95",
+            "--override-prompt-sampling",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["payload"]["temperature"] == 0.0
+    assert captured["payload"]["top_p"] == 0.95
+
+
 def test_generation_matrix_applies_think_max_body(monkeypatch, tmp_path):
     prompt_root = tmp_path / "prompts"
     _write_prompt(

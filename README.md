@@ -232,6 +232,24 @@ shape, so baseline extraction treats that preset as part of the test contract.
 Non-thinking checks may deliberately choose a different sampling policy when
 the test is meant to be deterministic.
 
+Prompt front matter wins over CLI `--temperature` and `--top-p` by default so
+checked-in quality prompts keep their intended request shape. For deterministic
+debug localization, pass `--override-prompt-sampling` to force the CLI sampling
+values for that run.
+
+`oracle-compare` keeps raw full-trajectory top-1/top-k diagnostics, but strict
+threshold gates are low-margin fork aware. If the first token divergence is a
+low-margin branch, `--min-top1-match-rate` and `--min-topk-overlap-mean` score
+only the shared prefix before that branch; the full-trajectory values remain in
+the JSON output for analysis.
+
+Sparse MLA runtime tensor dumps are a separate opt-in diagnostic path for
+kernel/KV-cache investigations. They are not enabled by the harness by default;
+summarize captured metadata with `sparse-mla-dump-report` and keep raw tensor
+payloads in the run artifact directory. Keep B200/reference captures narrow
+unless raw tensors are explicitly needed; larger exploratory dumps belong on
+storage-rich development hosts. See `docs/sparse_mla_debug_dumps.md`.
+
 The shell wrappers also sample GPU telemetry with `nvidia-smi` when available.
 Each run writes `gpu_stats.csv`, `gpu_stats_summary.json`, and
 `gpu_stats_summary.md` next to the other artifacts. The summary includes per-GPU

@@ -493,6 +493,89 @@ def test_oracle_compare_can_repeat_and_write_stability_summary(monkeypatch, tmp_
     ]
 
 
+def test_oracle_compare_uses_prefork_metrics_for_low_margin_forks(
+    monkeypatch,
+    tmp_path,
+):
+    oracle_response = {
+        "choices": [
+            {
+                "text": "",
+                "logprobs": {
+                    "tokens": ["token_id:10", "token_id:20", "token_id:30"],
+                    "token_logprobs": [-0.1, -0.1, -0.1],
+                    "top_logprobs": [
+                        {"token_id:10": -0.1, "token_id:11": -1.0},
+                        {"token_id:20": -0.1, "token_id:21": -0.15},
+                        {"token_id:30": -0.1, "token_id:31": -1.0},
+                    ],
+                },
+                "token_ids": [10, 20, 30],
+                "prompt_token_ids": [1, 2, 3],
+            }
+        ]
+    }
+    actual_response = {
+        "choices": [
+            {
+                "text": "",
+                "logprobs": {
+                    "tokens": ["token_id:10", "token_id:21", "token_id:31"],
+                    "token_logprobs": [-0.1, -0.12, -0.1],
+                    "top_logprobs": [
+                        {"token_id:10": -0.1, "token_id:11": -1.0},
+                        {"token_id:21": -0.12, "token_id:20": -0.16},
+                        {"token_id:31": -0.1, "token_id:32": -1.0},
+                    ],
+                },
+                "token_ids": [10, 21, 31],
+                "prompt_token_ids": [1, 2, 3],
+            }
+        ]
+    }
+    case = OracleCase(
+        name="low_margin_fork",
+        path="/v1/completions",
+        request={"model": "m", "prompt": "x", "logprobs": 20},
+        response=oracle_response,
+    )
+
+    monkeypatch.setattr(cli, "load_oracle_cases", lambda oracle_dir: [case])
+    monkeypatch.setattr(
+        cli,
+        "post_json",
+        lambda base_url, path, payload, timeout: actual_response,
+    )
+    json_output = tmp_path / "oracle_compare.json"
+
+    rc = cli.main(
+        [
+            "oracle-compare",
+            "--oracle-dir",
+            str(tmp_path),
+            "--low-margin-threshold",
+            "0.2",
+            "--require-high-margin-token-match",
+            "--min-top1-match-rate",
+            "0.8",
+            "--min-topk-overlap-mean",
+            "0.8",
+            "--json-output",
+            str(json_output),
+        ]
+    )
+
+    assert rc == 0
+    [row] = json.loads(json_output.read_text(encoding="utf-8"))
+    assert row["tokens_match"] is False
+    assert row["first_token_mismatch_low_margin"] is True
+    assert row["top1_match_rate"] == 1 / 3
+    assert row["trajectory_stopped_at_low_margin_fork"] is True
+    assert row["trajectory_compared_steps"] == 1
+    assert row["trajectory_top1_match_rate"] == 1.0
+    assert row["trajectory_topk_overlap_mean"] == 1.0
+
+
 def test_oracle_compare_can_fail_high_margin_token_mismatch(monkeypatch, tmp_path):
     oracle_response = {
         "choices": [

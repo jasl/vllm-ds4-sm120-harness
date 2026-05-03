@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import copy
+import json
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -330,6 +330,35 @@ def compare_response(
     )
     mismatch_oracle_margin = _margin_at(oracle_margins, mismatch_step)
     mismatch_actual_margin = _margin_at(actual_margins, mismatch_step)
+    first_mismatch_low_margin = _is_low_margin(
+        mismatch_oracle_margin,
+        mismatch_actual_margin,
+        low_margin_threshold,
+    )
+    trajectory_stopped_at_low_margin_fork = (
+        first_mismatch is not None and first_mismatch_low_margin is True
+    )
+    trajectory_steps = (
+        min(steps, mismatch_step)
+        if trajectory_stopped_at_low_margin_fork and mismatch_step is not None
+        else steps
+    )
+    trajectory_top1_matches = 0
+    trajectory_topk_overlaps: list[float] = []
+
+    for step in range(trajectory_steps):
+        oracle_keys = _top_keys(oracle_top[step], top_n)
+        actual_keys = _top_keys(actual_top[step], top_n)
+        if oracle_keys and actual_keys and oracle_keys[0] == actual_keys[0]:
+            trajectory_top1_matches += 1
+
+        oracle_set = set(oracle_keys)
+        actual_set = set(actual_keys)
+        if oracle_set:
+            trajectory_topk_overlaps.append(
+                len(oracle_set & actual_set) / len(oracle_set)
+            )
+
     known_oracle_margins = _known_values(oracle_margins)
     known_actual_margins = _known_values(actual_margins)
     return {
@@ -353,11 +382,7 @@ def compare_response(
             step=mismatch_step,
             top_n=top_n,
         ),
-        "first_token_mismatch_low_margin": _is_low_margin(
-            mismatch_oracle_margin,
-            mismatch_actual_margin,
-            low_margin_threshold,
-        ),
+        "first_token_mismatch_low_margin": first_mismatch_low_margin,
         "matching_prefix_tokens": _matching_prefix(oracle_tokens, actual_tokens),
         "oracle_token_count": len(oracle_tokens),
         "actual_token_count": len(actual_tokens),
@@ -366,6 +391,23 @@ def compare_response(
         "top1_match_rate": top1_matches / steps if steps else None,
         "topk_overlap_mean": _mean(topk_overlaps),
         "topk_overlap_min": min(topk_overlaps) if topk_overlaps else None,
+        "trajectory_stopped_at_low_margin_fork": (
+            trajectory_stopped_at_low_margin_fork
+        ),
+        "trajectory_stop_step": (
+            mismatch_step if trajectory_stopped_at_low_margin_fork else None
+        ),
+        "trajectory_compared_steps": trajectory_steps,
+        "trajectory_top1_matches": trajectory_top1_matches,
+        "trajectory_top1_match_rate": (
+            trajectory_top1_matches / trajectory_steps
+            if trajectory_steps
+            else None
+        ),
+        "trajectory_topk_overlap_mean": _mean(trajectory_topk_overlaps),
+        "trajectory_topk_overlap_min": (
+            min(trajectory_topk_overlaps) if trajectory_topk_overlaps else None
+        ),
         "oracle_top1_margin_mean": _mean(known_oracle_margins),
         "oracle_top1_margin_min": (
             min(known_oracle_margins) if known_oracle_margins else None
