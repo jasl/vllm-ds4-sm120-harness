@@ -193,6 +193,87 @@ def test_bench_matrix_marks_partial_successful_requests_as_failed(monkeypatch):
     assert rc == 1
 
 
+def test_bench_matrix_retries_transient_hf_dataset_failure_once(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(command, timeout=None):
+        calls.append(command)
+        if len(calls) == 1:
+            return {
+                "returncode": 1,
+                "metrics": {},
+                "stdout": "huggingface_hub.utils.ReadTimeout: dataset download timed out\n",
+                "command": command,
+            }
+        return {
+            "returncode": 0,
+            "metrics": {"successful_requests": 80},
+            "stdout": "ok\n",
+            "command": command,
+        }
+
+    monkeypatch.setattr(cli, "run_bench_command", fake_run)
+    output = tmp_path / "bench.json"
+
+    rc = cli.main(
+        [
+            "bench-matrix",
+            "--dataset-name",
+            "hf",
+            "--dataset-path",
+            "philschmid/mt-bench",
+            "--num-prompts",
+            "80",
+            "--concurrency",
+            "4",
+            "--json-output",
+            str(output),
+        ]
+    )
+
+    rows = json.loads(output.read_text(encoding="utf-8"))
+    assert rc == 0
+    assert len(calls) == 2
+    assert len(rows) == 1
+    assert rows[0]["ok"] is True
+    assert rows[0]["attempts"] == 2
+    assert rows[0]["retry_failures"] == [
+        "attempt 1: vllm bench exited 1 (transient infrastructure failure)"
+    ]
+
+
+def test_bench_matrix_does_not_retry_quality_or_metric_failures(monkeypatch):
+    calls = []
+
+    def fake_run(command, timeout=None):
+        calls.append(command)
+        return {
+            "returncode": 0,
+            "metrics": {"successful_requests": 4},
+            "stdout": "",
+            "command": command,
+        }
+
+    monkeypatch.setattr(cli, "run_bench_command", fake_run)
+
+    rc = cli.main(
+        [
+            "bench-matrix",
+            "--dataset-name",
+            "hf",
+            "--dataset-path",
+            "philschmid/mt-bench",
+            "--num-prompts",
+            "80",
+            "--concurrency",
+            "4",
+        ]
+    )
+
+    assert rc == 1
+    assert len(calls) == 1
+
+
 def test_bench_matrix_stops_after_unresponsive_server(monkeypatch, tmp_path):
     calls = []
 

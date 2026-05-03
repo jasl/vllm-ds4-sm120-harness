@@ -150,9 +150,11 @@ limits when the logs point to VRAM/KV-cache/CUDA-graph pressure; record the
 highest passing concurrency and the failure evidence instead of blocking a
 change solely on that tier.
 
-`scripts/run_bench_matrix.sh` defaults to the HF/MT-Bench profile. Set
-`DATASET_NAME=random IGNORE_EOS=1` when intentionally running random shape
-stress tests.
+`scripts/run_bench_matrix.sh` defaults to the HF/MT-Bench profile and retries
+one transient infrastructure failure per concurrency tier, such as a Hugging
+Face dataset `ReadTimeout`. Set `BENCH_TRANSIENT_FAILURE_RETRIES=0` to disable
+that behavior. Set `DATASET_NAME=random IGNORE_EOS=1` when intentionally
+running random shape stress tests.
 
 ## Generation Prompts
 

@@ -83,7 +83,10 @@ Use this harness to capture behavior around the vLLM-side tests:
   The strict top-1/top-k trajectory thresholds intentionally score the shared
   prefix before a low-margin fork; use the raw full-trajectory metrics as
   diagnostics after the sampled context has diverged.
-- `bench-matrix` on `philschmid/mt-bench` for representative throughput.
+- `bench-matrix` on `philschmid/mt-bench` for representative throughput. One
+  transient infrastructure failure per concurrency tier is retried by default,
+  so a recovered Hugging Face dataset timeout is recorded as run context rather
+  than as a model-quality failure.
 - `lm-eval` / `scripts/run_lm_eval.sh` for public GSM8K exact-match reporting.
 
 Checked-in baselines are final result artifacts. This harness should consume

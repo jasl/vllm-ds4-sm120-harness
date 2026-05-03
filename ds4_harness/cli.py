@@ -758,6 +758,45 @@ def _check_bench_result(result: dict[str, Any], expected_requests: int) -> tuple
     return True, f"successful_requests {successful}/{expected_requests}"
 
 
+_TRANSIENT_BENCH_FAILURE_MARKERS = (
+    "readtimeout",
+    "connecttimeout",
+    "connectionerror",
+    "connection reset by peer",
+    "remotedisconnected",
+    "maxretryerror",
+    "max retries exceeded",
+    "temporary failure in name resolution",
+    "temporarily unavailable",
+    "huggingface_hub",
+    "datasets.exceptions",
+    "502 bad gateway",
+    "503 service unavailable",
+    "504 gateway timeout",
+)
+
+
+def _is_transient_bench_failure(result: dict[str, Any]) -> bool:
+    if result["returncode"] == 0:
+        return False
+    output = str(result.get("stdout") or "").lower()
+    return any(marker in output for marker in _TRANSIENT_BENCH_FAILURE_MARKERS)
+
+
+def _format_bench_attempt_log(attempts: list[dict[str, Any]]) -> str:
+    if len(attempts) == 1:
+        return str(attempts[0].get("stdout") or "")
+
+    parts: list[str] = []
+    for index, result in enumerate(attempts, start=1):
+        parts.append(f"=== attempt {index} returncode {result['returncode']} ===\n")
+        stdout = str(result.get("stdout") or "")
+        parts.append(stdout)
+        if stdout and not stdout.endswith("\n"):
+            parts.append("\n")
+    return "".join(parts)
+
+
 def _server_responding(base_url: str, timeout: float) -> bool:
     try:
         response = get_status(base_url, "/health", timeout)
@@ -854,14 +893,35 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
             command.extend(["--temperature", str(args.temperature)])
         command.extend(args.extra_bench_arg or [])
 
-        result = run_bench_command(command, timeout=args.timeout)
-        ok, detail = _check_bench_result(result, args.num_prompts)
+        attempts: list[dict[str, Any]] = []
+        retry_failures: list[str] = []
+        max_attempts = max(1, args.transient_failure_retries + 1)
+        for attempt_index in range(1, max_attempts + 1):
+            result = run_bench_command(command, timeout=args.timeout)
+            attempts.append(result)
+            ok, detail = _check_bench_result(result, args.num_prompts)
+            if ok:
+                if attempt_index > 1:
+                    detail = f"{detail} after {attempt_index} attempts"
+                break
+            if (
+                attempt_index >= max_attempts
+                or not _is_transient_bench_failure(result)
+            ):
+                break
+            retry_failures.append(
+                f"attempt {attempt_index}: {detail} "
+                "(transient infrastructure failure)"
+            )
+
         row = {
             "concurrency": concurrency,
             "ok": ok,
             "detail": detail,
             "metrics": result["metrics"],
             "command": result["command"],
+            "attempts": len(attempts),
+            "retry_failures": retry_failures,
         }
         rows.append(row)
         failures += 0 if row["ok"] else 1
@@ -869,7 +929,7 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
         if args.log_dir is not None:
             args.log_dir.mkdir(parents=True, exist_ok=True)
             (args.log_dir / f"bench_c{concurrency}.log").write_text(
-                result["stdout"],
+                _format_bench_attempt_log(attempts),
                 encoding="utf-8",
             )
         if (
@@ -1348,6 +1408,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--temperature", type=float)
     bench.add_argument("--ignore-eos", action="store_true")
     bench.add_argument("--timeout", type=float)
+    bench.add_argument("--transient-failure-retries", type=int, default=1)
     bench.add_argument("--health-timeout", type=float, default=10.0)
     bench.add_argument("--failure-probe-timeout", type=float, default=30.0)
     bench.add_argument("--failure-grace-timeout", type=float, default=0.0)

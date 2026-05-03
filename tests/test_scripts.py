@@ -548,7 +548,9 @@ def test_live_scripts_guard_against_unresponsive_servers():
     assert "mark_gate_skipped" in acceptance
     assert "SERVER_HEALTH_TIMEOUT" in acceptance
     assert "SERVER_STARTUP_TIMEOUT" in acceptance
+    assert "BENCH_TRANSIENT_FAILURE_RETRIES" in bench
     assert "--stop-on-unresponsive" in bench
+    assert "--transient-failure-retries" in bench
     assert "--health-timeout" in bench
     assert "--failure-probe-timeout" in bench
     assert "--failure-grace-timeout" in bench
