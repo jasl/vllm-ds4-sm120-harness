@@ -84,6 +84,8 @@ tool-call turn.
   - prompt token id mismatch
   - top-1 match rate
   - top-k overlap
+  - top-1 logprob margin for reference and actual choices
+  - repeated-request token stability for low-margin cases
   - common-token logprob deltas
   - `request_*.json` / `response_*.json` bundles and wrapped
     `/v1/completions` export files
@@ -519,6 +521,12 @@ only consumes `/v1/completions` logprobs cases. For no-MTP comparisons, the
 baseline `oracle/` path is the default. For MTP-specific checks, use the
 variant directory such as `oracle/mtp/`.
 
+Baseline directories are immutable result snapshots. If a checked-in baseline
+becomes stale after upstream or prompt changes, select a newer baseline or
+record the stale reference explicitly in the consuming analysis; the harness
+does not rewrite old baseline content or add format-compatibility handling for
+retired exports.
+
 When you have access to an expensive reference host, first export the oracle
 bundle from that host while the reference vLLM server is running:
 
@@ -684,7 +692,12 @@ python -m ds4_harness.cli oracle-compare \
   --oracle-dir baselines/20260502_b200_tp4_main_5737770c6/oracle \
   --top-n 20 \
   --require-prompt-ids \
+  --repeat-count 5 \
+  --low-margin-threshold 0.5 \
+  --require-high-margin-token-match \
   --min-top1-match-rate 0.80 \
+  --min-topk-overlap-mean 0.80 \
+  --stability-json-output artifacts/manual/oracle_stability.json \
   --json-output artifacts/manual/oracle_compare.json
 ```
 
@@ -737,7 +750,9 @@ Before promoting an optimization:
 - `long-context-probe` passes when touching KV cache, FP4 indexer cache,
   chunked prefill, scheduler, or long-context serving behavior.
 - `oracle-compare` has matching prompt token ids and no early token divergence
-  on deterministic oracle cases, or any divergence is explained and recorded.
+  on high-margin deterministic oracle cases. Low-margin divergence must be
+  explained with top-k overlap, top-1 margin, and repeated-request stability
+  evidence rather than treated as a strict token oracle failure by itself.
 - Real-scenario benchmark on `philschmid/mt-bench` does not regress more than
   the explicitly accepted threshold. Random-shape benchmark regressions are
   useful diagnostics, but should not be the only performance signal.

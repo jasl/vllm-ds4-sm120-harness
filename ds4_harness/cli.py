@@ -51,7 +51,9 @@ from ds4_harness.long_context_probe import (
 from ds4_harness.oracle import (
     attach_prompt_token_ids,
     compare_response,
+    generated_tokens,
     load_oracle_cases,
+    summarize_stability_records,
     token_ids_from_tokenize_response,
 )
 from ds4_harness.oracle_export import export_completion_oracles
@@ -493,84 +495,135 @@ def _cmd_oracle_compare(args: argparse.Namespace) -> int:
     if not _validate_request_retries(args.request_retries):
         print("--request-retries must be >= 0", file=sys.stderr)
         return 2
+    if args.repeat_count < 1:
+        print("--repeat-count must be >= 1", file=sys.stderr)
+        return 2
 
     failures = 0
     rows: list[dict[str, Any]] = []
+    stability_rows: list[dict[str, Any]] = []
     for case in load_oracle_cases(args.oracle_dir):
-        request_payload = dict(case.request)
-        if args.model is not None:
-            request_payload["model"] = args.model
-        if (
-            isinstance(request_payload.get("logprobs"), int)
-            and request_payload["logprobs"] > args.top_n
-        ):
-            request_payload["logprobs"] = args.top_n
-        try:
-            response = post_json_with_retries(
-                args.base_url,
-                case.path,
-                request_payload,
-                args.timeout,
-                request_retries=args.request_retries,
-                post_func=post_json,
-            )
-            if args.require_prompt_ids:
-                tokenize_payload = {
-                    "model": request_payload.get("model"),
-                    "prompt": request_payload.get("prompt"),
-                }
-                tokenize_response = post_json_with_retries(
+        case_stability_records: list[dict[str, Any]] = []
+        for round_index in range(1, args.repeat_count + 1):
+            request_payload = dict(case.request)
+            if args.model is not None:
+                request_payload["model"] = args.model
+            if (
+                isinstance(request_payload.get("logprobs"), int)
+                and request_payload["logprobs"] > args.top_n
+            ):
+                request_payload["logprobs"] = args.top_n
+            try:
+                response = post_json_with_retries(
                     args.base_url,
-                    "/tokenize",
-                    tokenize_payload,
+                    case.path,
+                    request_payload,
                     args.timeout,
                     request_retries=args.request_retries,
                     post_func=post_json,
                 )
-                response = attach_prompt_token_ids(
+                if args.require_prompt_ids:
+                    tokenize_payload = {
+                        "model": request_payload.get("model"),
+                        "prompt": request_payload.get("prompt"),
+                    }
+                    tokenize_response = post_json_with_retries(
+                        args.base_url,
+                        "/tokenize",
+                        tokenize_payload,
+                        args.timeout,
+                        request_retries=args.request_retries,
+                        post_func=post_json,
+                    )
+                    response = attach_prompt_token_ids(
+                        response,
+                        token_ids_from_tokenize_response(tokenize_response),
+                    )
+                report = compare_response(
+                    case.name,
+                    case.response,
                     response,
-                    token_ids_from_tokenize_response(tokenize_response),
+                    top_n=args.top_n,
+                    low_margin_threshold=args.low_margin_threshold,
                 )
-            report = compare_response(
-                case.name,
-                case.response,
-                response,
-                top_n=args.top_n,
-            )
-            ok = True
-            if args.require_prompt_ids and report["prompt_token_ids_match"] is not True:
-                ok = False
-            if args.require_token_match and not report["tokens_match"]:
-                ok = False
-            if (
-                args.min_top1_match_rate is not None
-                and report["top1_match_rate"] is not None
-                and report["top1_match_rate"] < args.min_top1_match_rate
-            ):
-                ok = False
-            report["ok"] = ok
-        except (
-            OSError,
-            RuntimeError,
-            TimeoutError,
-            urllib.error.URLError,
-            json.JSONDecodeError,
-            ValueError,
-        ) as exc:
-            report = {
-                "name": case.name,
-                "path": case.path,
-                "ok": False,
-                "error": repr(exc),
-            }
-        print(json.dumps(report, ensure_ascii=False))
-        rows.append(report)
-        failures += 0 if report["ok"] else 1
+                ok = True
+                if (
+                    args.require_prompt_ids
+                    and report["prompt_token_ids_match"] is not True
+                ):
+                    ok = False
+                if args.require_token_match and not report["tokens_match"]:
+                    ok = False
+                if (
+                    args.require_high_margin_token_match
+                    and not report["tokens_match"]
+                    and report["first_token_mismatch_low_margin"] is not True
+                ):
+                    ok = False
+                if (
+                    args.min_top1_match_rate is not None
+                    and report["top1_match_rate"] is not None
+                    and report["top1_match_rate"] < args.min_top1_match_rate
+                ):
+                    ok = False
+                if (
+                    args.min_topk_overlap_mean is not None
+                    and report["topk_overlap_mean"] is not None
+                    and report["topk_overlap_mean"] < args.min_topk_overlap_mean
+                ):
+                    ok = False
+                report["ok"] = ok
+                report["round"] = round_index
+                case_stability_records.append(
+                    {
+                        "actual_tokens": generated_tokens(response),
+                        "tokens_match": report["tokens_match"],
+                        "first_token_mismatch_low_margin": report[
+                            "first_token_mismatch_low_margin"
+                        ],
+                    }
+                )
+            except (
+                OSError,
+                RuntimeError,
+                TimeoutError,
+                urllib.error.URLError,
+                json.JSONDecodeError,
+                ValueError,
+            ) as exc:
+                report = {
+                    "case": case.name,
+                    "name": case.name,
+                    "path": case.path,
+                    "round": round_index,
+                    "ok": False,
+                    "error": repr(exc),
+                }
+                case_stability_records.append(
+                    {
+                        "actual_tokens": [],
+                        "error": report["error"],
+                    }
+                )
+            print(json.dumps(report, ensure_ascii=False))
+            rows.append(report)
+            failures += 0 if report["ok"] else 1
+        if args.repeat_count > 1 or args.stability_json_output is not None:
+            stability = summarize_stability_records(case.name, case_stability_records)
+            stability_rows.append(stability)
+            if args.repeat_count > 1:
+                print(json.dumps({"stability": stability}, ensure_ascii=False))
 
     if args.json_output is not None:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
         args.json_output.write_text(
             json.dumps(rows, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    if args.stability_json_output is not None:
+        args.stability_json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.stability_json_output.write_text(
+            json.dumps(stability_rows, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
     return 1 if failures else 0
@@ -1190,11 +1243,16 @@ def build_parser() -> argparse.ArgumentParser:
     oracle.add_argument("--model")
     oracle.add_argument("--top-n", type=int, default=20)
     oracle.add_argument("--timeout", type=float, default=300.0)
+    oracle.add_argument("--repeat-count", type=int, default=1)
     oracle.add_argument("--request-retries", type=int, default=1)
     oracle.add_argument("--json-output", type=Path)
+    oracle.add_argument("--stability-json-output", type=Path)
     oracle.add_argument("--require-prompt-ids", action="store_true")
     oracle.add_argument("--require-token-match", action="store_true")
+    oracle.add_argument("--require-high-margin-token-match", action="store_true")
+    oracle.add_argument("--low-margin-threshold", type=float, default=0.5)
     oracle.add_argument("--min-top1-match-rate", type=float)
+    oracle.add_argument("--min-topk-overlap-mean", type=float)
     oracle.set_defaults(func=_cmd_oracle_compare)
 
     oracle_export = subparsers.add_parser("oracle-export")

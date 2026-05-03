@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from ds4_harness.oracle import compare_response, load_oracle_cases
 
 
@@ -67,6 +69,55 @@ def test_compare_response_reports_first_token_divergence():
         "actual": "token_id:99",
     }
     assert report["matching_prefix_tokens"] == 1
+
+
+def test_compare_response_reports_margin_at_first_divergence():
+    report = compare_response(
+        "case0",
+        _response(
+            ["token_id:10", "token_id:11"],
+            [
+                {"token_id:10": -0.1, "token_id:20": -0.3},
+                {"token_id:11": -0.2, "token_id:99": -0.35},
+            ],
+        ),
+        _response(
+            ["token_id:10", "token_id:99"],
+            [
+                {"token_id:10": -0.1, "token_id:20": -0.4},
+                {"token_id:99": -0.25, "token_id:11": -0.31},
+            ],
+        ),
+        top_n=2,
+        low_margin_threshold=0.2,
+    )
+
+    assert report["oracle_top1_margin_min"] == pytest.approx(0.15)
+    assert report["actual_top1_margin_min"] == pytest.approx(0.06)
+    assert report["first_token_mismatch_oracle_top1_margin"] == pytest.approx(0.15)
+    assert report["first_token_mismatch_actual_top1_margin"] == pytest.approx(0.06)
+    assert report["first_token_mismatch_oracle_actual_rank"] == 2
+    assert report["first_token_mismatch_actual_oracle_rank"] == 2
+    assert report["first_token_mismatch_topk_overlap"] == 1.0
+    assert report["first_token_mismatch_low_margin"] is True
+
+
+def test_compare_response_marks_high_margin_token_divergence():
+    report = compare_response(
+        "case0",
+        _response(
+            ["token_id:10"],
+            [{"token_id:10": -0.1, "token_id:20": -1.0}],
+        ),
+        _response(
+            ["token_id:30"],
+            [{"token_id:30": -0.2, "token_id:40": -1.2}],
+        ),
+        top_n=2,
+        low_margin_threshold=0.2,
+    )
+
+    assert report["first_token_mismatch_low_margin"] is False
 
 
 def test_compare_response_marks_prompt_token_mismatch():

@@ -397,6 +397,159 @@ def test_oracle_compare_requires_prompt_ids_by_tokenizing_actual_prompt(
     assert paths == ["/v1/completions", "/tokenize"]
 
 
+def test_oracle_compare_can_repeat_and_write_stability_summary(monkeypatch, tmp_path):
+    oracle_response = {
+        "choices": [
+            {
+                "text": "",
+                "logprobs": {
+                    "tokens": ["token_id:10"],
+                    "token_logprobs": [-0.1],
+                    "top_logprobs": [{"token_id:10": -0.1, "token_id:20": -1.0}],
+                },
+                "token_ids": [10],
+                "prompt_token_ids": [1, 2, 3],
+            }
+        ]
+    }
+    alternate_response = {
+        "choices": [
+            {
+                "text": "",
+                "logprobs": {
+                    "tokens": ["token_id:20"],
+                    "token_logprobs": [-0.12],
+                    "top_logprobs": [{"token_id:20": -0.12, "token_id:10": -0.21}],
+                },
+                "token_ids": [20],
+                "prompt_token_ids": [1, 2, 3],
+            }
+        ]
+    }
+    case = OracleCase(
+        name="unstable",
+        path="/v1/completions",
+        request={"model": "m", "prompt": "x", "logprobs": 20},
+        response=oracle_response,
+    )
+    responses = [
+        oracle_response,
+        alternate_response,
+        oracle_response,
+    ]
+
+    monkeypatch.setattr(cli, "load_oracle_cases", lambda oracle_dir: [case])
+
+    def fake_post_json(base_url, path, payload, timeout):
+        return responses.pop(0)
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+    json_output = tmp_path / "oracle_compare.json"
+    stability_output = tmp_path / "oracle_stability.json"
+
+    rc = cli.main(
+        [
+            "oracle-compare",
+            "--oracle-dir",
+            str(tmp_path),
+            "--repeat-count",
+            "3",
+            "--low-margin-threshold",
+            "0.2",
+            "--require-high-margin-token-match",
+            "--json-output",
+            str(json_output),
+            "--stability-json-output",
+            str(stability_output),
+        ]
+    )
+
+    assert rc == 0
+    rows = json.loads(json_output.read_text(encoding="utf-8"))
+    assert [row["round"] for row in rows] == [1, 2, 3]
+    assert rows[1]["tokens_match"] is False
+    assert rows[1]["first_token_mismatch_low_margin"] is True
+
+    stability_rows = json.loads(stability_output.read_text(encoding="utf-8"))
+    assert stability_rows == [
+        {
+            "case": "unstable",
+            "rounds": 3,
+            "stable_token_sequence": False,
+            "unique_token_sequences": 2,
+            "token_sequence_counts": [
+                {"tokens": ["token_id:10"], "count": 2},
+                {"tokens": ["token_id:20"], "count": 1},
+            ],
+            "first_token_counts": [
+                {"token": "token_id:10", "count": 2},
+                {"token": "token_id:20", "count": 1},
+            ],
+            "exact_token_match_rounds": 2,
+            "low_margin_mismatch_rounds": 1,
+            "high_margin_mismatch_rounds": 0,
+            "error_rounds": 0,
+        }
+    ]
+
+
+def test_oracle_compare_can_fail_high_margin_token_mismatch(monkeypatch, tmp_path):
+    oracle_response = {
+        "choices": [
+            {
+                "text": "",
+                "logprobs": {
+                    "tokens": ["token_id:10"],
+                    "token_logprobs": [-0.1],
+                    "top_logprobs": [{"token_id:10": -0.1, "token_id:20": -1.0}],
+                },
+                "token_ids": [10],
+                "prompt_token_ids": [1, 2, 3],
+            }
+        ]
+    }
+    actual_response = {
+        "choices": [
+            {
+                "text": "",
+                "logprobs": {
+                    "tokens": ["token_id:30"],
+                    "token_logprobs": [-0.1],
+                    "top_logprobs": [{"token_id:30": -0.1, "token_id:40": -1.0}],
+                },
+                "token_ids": [30],
+                "prompt_token_ids": [1, 2, 3],
+            }
+        ]
+    }
+    case = OracleCase(
+        name="drift",
+        path="/v1/completions",
+        request={"model": "m", "prompt": "x", "logprobs": 20},
+        response=oracle_response,
+    )
+
+    monkeypatch.setattr(cli, "load_oracle_cases", lambda oracle_dir: [case])
+    monkeypatch.setattr(
+        cli,
+        "post_json",
+        lambda base_url, path, payload, timeout: actual_response,
+    )
+
+    rc = cli.main(
+        [
+            "oracle-compare",
+            "--oracle-dir",
+            str(tmp_path),
+            "--low-margin-threshold",
+            "0.2",
+            "--require-high-margin-token-match",
+        ]
+    )
+
+    assert rc == 1
+
+
 def test_oracle_export_cli_writes_bundle(monkeypatch, tmp_path):
     captured = {}
 

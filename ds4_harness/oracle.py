@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import copy
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -102,6 +103,10 @@ def _top_logprobs(response: Json) -> list[dict[str, float]]:
     return out
 
 
+def generated_tokens(response: Json) -> list[str]:
+    return _generated_tokens(response)
+
+
 def _first_mismatch(oracle_tokens: list[str], actual_tokens: list[str]) -> Json | None:
     for step, (oracle_token, actual_token) in enumerate(
         zip(oracle_tokens, actual_tokens)
@@ -135,12 +140,126 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _rank(token: str | None, keys: list[str]) -> int | None:
+    if token is None:
+        return None
+    try:
+        return keys.index(token) + 1
+    except ValueError:
+        return None
+
+
+def _top1_margins(top_logprobs: list[dict[str, float]]) -> list[float | None]:
+    margins: list[float | None] = []
+    for step in top_logprobs:
+        values = list(step.values())
+        if len(values) < 2:
+            margins.append(None)
+            continue
+        margins.append(values[0] - values[1])
+    return margins
+
+
+def _known_values(values: list[float | None]) -> list[float]:
+    return [value for value in values if value is not None]
+
+
+def _margin_at(margins: list[float | None], step: int | None) -> float | None:
+    if step is None or step >= len(margins):
+        return None
+    return margins[step]
+
+
+def _is_low_margin(
+    oracle_margin: float | None,
+    actual_margin: float | None,
+    threshold: float | None,
+) -> bool | None:
+    if threshold is None:
+        return None
+    known = [margin for margin in (oracle_margin, actual_margin) if margin is not None]
+    if not known:
+        return False
+    return min(known) <= threshold
+
+
+def _topk_overlap_at(
+    oracle_top: list[dict[str, float]],
+    actual_top: list[dict[str, float]],
+    *,
+    step: int | None,
+    top_n: int,
+) -> float | None:
+    if step is None or step >= len(oracle_top) or step >= len(actual_top):
+        return None
+    oracle_set = set(_top_keys(oracle_top[step], top_n))
+    actual_set = set(_top_keys(actual_top[step], top_n))
+    if not oracle_set:
+        return None
+    return len(oracle_set & actual_set) / len(oracle_set)
+
+
+def _count_items_in_first_seen_order(values: list[Any]) -> list[Json]:
+    counts = Counter(values)
+    seen = []
+    for value in values:
+        if value not in seen:
+            seen.append(value)
+    return [{"value": value, "count": counts[value]} for value in seen]
+
+
+def summarize_stability_records(case_name: str, records: list[Json]) -> Json:
+    token_sequences = [tuple(record.get("actual_tokens", [])) for record in records]
+    sequence_counts = _count_items_in_first_seen_order(token_sequences)
+    first_tokens = [
+        sequence[0] if sequence else None
+        for sequence in token_sequences
+    ]
+    first_token_counts = _count_items_in_first_seen_order(first_tokens)
+    mismatch_records = [
+        record
+        for record in records
+        if record.get("tokens_match") is False and "error" not in record
+    ]
+    low_margin_mismatches = [
+        record
+        for record in mismatch_records
+        if record.get("first_token_mismatch_low_margin") is True
+    ]
+    high_margin_mismatches = [
+        record
+        for record in mismatch_records
+        if record.get("first_token_mismatch_low_margin") is not True
+    ]
+    return {
+        "case": case_name,
+        "rounds": len(records),
+        "stable_token_sequence": len(sequence_counts) <= 1,
+        "unique_token_sequences": len(sequence_counts),
+        "token_sequence_counts": [
+            {"tokens": list(item["value"]), "count": item["count"]}
+            for item in sequence_counts
+        ],
+        "first_token_counts": [
+            {"token": item["value"], "count": item["count"]}
+            for item in first_token_counts
+        ],
+        "exact_token_match_rounds": sum(
+            1 for record in records if record.get("tokens_match") is True
+        ),
+        "low_margin_mismatch_rounds": len(low_margin_mismatches),
+        "high_margin_mismatch_rounds": len(high_margin_mismatches),
+        "error_rounds": sum(1 for record in records if "error" in record),
+    }
+
+
 def compare_response(
     case_name: str,
     oracle_response: Json,
     actual_response: Json,
     *,
     top_n: int = 50,
+    low_margin_threshold: float | None = None,
 ) -> Json:
     oracle_tokens = _generated_tokens(oracle_response)
     actual_tokens = _generated_tokens(actual_response)
@@ -148,6 +267,8 @@ def compare_response(
     actual_top = _top_logprobs(actual_response)
     oracle_token_logprobs = _token_logprobs(oracle_response)
     actual_token_logprobs = _token_logprobs(actual_response)
+    oracle_margins = _top1_margins(oracle_top)
+    actual_margins = _top1_margins(actual_top)
 
     steps = min(
         len(oracle_tokens), len(actual_tokens), len(oracle_top), len(actual_top)
@@ -192,11 +313,51 @@ def compare_response(
     )
 
     first_mismatch = _first_mismatch(oracle_tokens, actual_tokens)
+    mismatch_step = (
+        int(first_mismatch["step"])
+        if first_mismatch is not None and isinstance(first_mismatch.get("step"), int)
+        else None
+    )
+    mismatch_oracle_keys = (
+        _top_keys(oracle_top[mismatch_step], top_n)
+        if mismatch_step is not None and mismatch_step < len(oracle_top)
+        else []
+    )
+    mismatch_actual_keys = (
+        _top_keys(actual_top[mismatch_step], top_n)
+        if mismatch_step is not None and mismatch_step < len(actual_top)
+        else []
+    )
+    mismatch_oracle_margin = _margin_at(oracle_margins, mismatch_step)
+    mismatch_actual_margin = _margin_at(actual_margins, mismatch_step)
+    known_oracle_margins = _known_values(oracle_margins)
+    known_actual_margins = _known_values(actual_margins)
     return {
         "case": case_name,
         "tokens_match": first_mismatch is None,
         "prompt_token_ids_match": prompt_ids_match,
         "first_token_mismatch": first_mismatch,
+        "first_token_mismatch_oracle_top1_margin": mismatch_oracle_margin,
+        "first_token_mismatch_actual_top1_margin": mismatch_actual_margin,
+        "first_token_mismatch_oracle_actual_rank": _rank(
+            first_mismatch.get("actual") if first_mismatch else None,
+            mismatch_oracle_keys,
+        ),
+        "first_token_mismatch_actual_oracle_rank": _rank(
+            first_mismatch.get("oracle") if first_mismatch else None,
+            mismatch_actual_keys,
+        ),
+        "first_token_mismatch_topk_overlap": _topk_overlap_at(
+            oracle_top,
+            actual_top,
+            step=mismatch_step,
+            top_n=top_n,
+        ),
+        "first_token_mismatch_low_margin": _is_low_margin(
+            mismatch_oracle_margin,
+            mismatch_actual_margin,
+            low_margin_threshold,
+        ),
         "matching_prefix_tokens": _matching_prefix(oracle_tokens, actual_tokens),
         "oracle_token_count": len(oracle_tokens),
         "actual_token_count": len(actual_tokens),
@@ -205,6 +366,14 @@ def compare_response(
         "top1_match_rate": top1_matches / steps if steps else None,
         "topk_overlap_mean": _mean(topk_overlaps),
         "topk_overlap_min": min(topk_overlaps) if topk_overlaps else None,
+        "oracle_top1_margin_mean": _mean(known_oracle_margins),
+        "oracle_top1_margin_min": (
+            min(known_oracle_margins) if known_oracle_margins else None
+        ),
+        "actual_top1_margin_mean": _mean(known_actual_margins),
+        "actual_top1_margin_min": (
+            min(known_actual_margins) if known_actual_margins else None
+        ),
         "max_common_logprob_abs_error": (
             max(common_logprob_errors) if common_logprob_errors else None
         ),

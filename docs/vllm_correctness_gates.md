@@ -69,9 +69,16 @@ Use this harness to capture behavior around the vLLM-side tests:
 - `generation-matrix` for subjective writing, translation, and coding quality.
 - `toolcall15` for OpenAI-compatible tool-call loop behavior.
 - `oracle-export` on an expensive reference host, then `oracle-compare` on
-  SM120/SM121 for token-level divergence.
+  SM120/SM121 for token-level divergence. Use prompt-id matching, top-k
+  overlap, top-1 margin, and repeated-request stability to separate
+  high-margin correctness failures from low-margin trajectory differences.
 - `bench-matrix` on `philschmid/mt-bench` for representative throughput.
 - `lm-eval` / `scripts/run_lm_eval.sh` for public GSM8K exact-match reporting.
+
+Checked-in baselines are final result artifacts. This harness should consume
+them as-is and write new analysis artifacts when they become stale; do not
+backfill old baselines or add compatibility layers for retired baseline
+content.
 
 The baseline report parses serve-shape flags such as TP, max model length,
 max sequences, max batched tokens, GPU memory utilization, MoE backend,

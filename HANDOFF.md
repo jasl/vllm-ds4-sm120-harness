@@ -240,6 +240,10 @@ ids into the wrapped completion response. With `--require-prompt-ids`,
 or different.
 `ORACLE_STOP_ON_ERROR=1` is the default for the wrapper, so an unresponsive
 reference server consumes only one request timeout before stopping the export.
+Treat checked-in baseline directories as immutable snapshots. If an older
+baseline becomes stale, record the exact directory used in the consuming
+analysis and select a newer baseline when available; do not mutate the old
+bundle or add compatibility branches for retired baseline formats.
 
 ```bash
 python -m ds4_harness.cli oracle-compare \
@@ -247,12 +251,21 @@ python -m ds4_harness.cli oracle-compare \
   --oracle-dir /path/to/b200_or_h100_oracle_bundle \
   --top-n 20 \
   --require-prompt-ids \
+  --repeat-count 5 \
+  --low-margin-threshold 0.5 \
+  --require-high-margin-token-match \
   --min-top1-match-rate 0.80 \
+  --min-topk-overlap-mean 0.80 \
+  --stability-json-output artifacts/manual/oracle_stability.json \
   --json-output artifacts/manual/oracle_compare.json
 ```
 
 The default oracle `top_n` is 20 because the current vLLM HTTP API rejects
 sample logprobs above that limit.
+`--require-high-margin-token-match` keeps exact-token gating for mismatches
+whose reference and actual top-1 choices are not near ties. Low-margin
+divergence remains visible in the JSON rows and the stability summary, but does
+not by itself prove a kernel correctness bug.
 
 Keep machine-local oracle bundle paths in ignored local notes, not in the public
 repository.
