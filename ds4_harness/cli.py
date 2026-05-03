@@ -1007,6 +1007,7 @@ def _cmd_toolcall15(args: argparse.Namespace) -> int:
                     scenario_ids=args.scenario,
                     scenario_set=scenario_set,
                     temperature=args.temperature,
+                    top_p=args.top_p,
                     timeout=args.timeout,
                     max_turns=args.max_turns,
                     headers=headers,
@@ -1070,6 +1071,8 @@ def _cmd_toolcall15(args: argparse.Namespace) -> int:
         "points": total_points,
         "max_points": max_points,
         "score_percent": round((total_points / max_points) * 100) if max_points else 0,
+        "temperature": args.temperature,
+        "top_p": args.top_p,
         "min_points": args.min_points,
         "failures": total_failures,
     }
@@ -1353,7 +1356,8 @@ def build_parser() -> argparse.ArgumentParser:
     toolcall15.add_argument("--scenario", action="append")
     toolcall15.add_argument("--scenario-set", choices=("en", "zh", "both"), default="en")
     toolcall15.add_argument("--thinking-mode", action="append", default=None)
-    toolcall15.add_argument("--temperature", type=float, default=0.0)
+    toolcall15.add_argument("--temperature", type=float, default=1.0)
+    toolcall15.add_argument("--top-p", type=float, default=1.0)
     toolcall15.add_argument("--timeout", type=float, default=120.0)
     toolcall15.add_argument("--max-turns", type=int, default=8)
     toolcall15.add_argument("--repeat-count", type=int, default=1)

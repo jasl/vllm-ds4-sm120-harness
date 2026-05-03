@@ -117,6 +117,8 @@ def test_env_sample_and_local_env_are_configured():
         "OFFICIAL_THINKING_MODES",
         "OFFICIAL_SMOKE_CASES",
         "OFFICIAL_TOOLCALL15_THINKING_MODES",
+        "OFFICIAL_TOOLCALL15_TEMPERATURE",
+        "OFFICIAL_TOOLCALL15_TOP_P",
         "BASELINE_LABEL",
         "ORACLE_LOGPROBS",
         "ORACLE_TIMEOUT",
@@ -135,6 +137,8 @@ def test_env_sample_and_local_env_are_configured():
         "GENERATION_TOP_P",
         "TOOLCALL15_SCENARIO_SET",
         "TOOLCALL15_THINKING_MODES",
+        "TOOLCALL15_TEMPERATURE",
+        "TOOLCALL15_TOP_P",
         "RUN_LM_EVAL",
         "LM_EVAL_BIN",
         "LM_EVAL_TASKS",
@@ -154,8 +158,12 @@ def test_env_sample_and_local_env_are_configured():
         "DEEPSEEK_PRO_MODEL": "deepseek-v4-pro",
         "OFFICIAL_TEMPERATURE": "1.0",
         "OFFICIAL_TOP_P": "1.0",
+        "OFFICIAL_TOOLCALL15_TEMPERATURE": "1.0",
+        "OFFICIAL_TOOLCALL15_TOP_P": "1.0",
         "GENERATION_TEMPERATURE": "1.0",
         "GENERATION_TOP_P": "1.0",
+        "TOOLCALL15_TEMPERATURE": "1.0",
+        "TOOLCALL15_TOP_P": "1.0",
         "SERVE_MAX_MODEL_LEN": "393216",
         "SERVE_USE_FP4_INDEXER_CACHE": "auto",
     }.items() <= values.items()
@@ -181,10 +189,14 @@ def test_acceptance_script_repeats_real_scenario_gates_three_times():
     assert 'API_REQUEST_RETRIES="${API_REQUEST_RETRIES:-1}"' in script
     assert 'TOOLCALL15_SCENARIO_SET="${TOOLCALL15_SCENARIO_SET:-en}"' in script
     assert 'TOOLCALL15_REPEAT_COUNT="${TOOLCALL15_REPEAT_COUNT:-${REAL_SCENARIO_REPEAT_COUNT}}"' in script
+    assert 'TOOLCALL15_TEMPERATURE="${TOOLCALL15_TEMPERATURE:-1.0}"' in script
+    assert 'TOOLCALL15_TOP_P="${TOOLCALL15_TOP_P:-1.0}"' in script
     assert '--prompt-root "${GENERATION_PROMPT_ROOT}"' in script
     assert '--temperature "${GENERATION_TEMPERATURE}"' in script
     assert '--top-p "${GENERATION_TOP_P}"' in script
     assert '--scenario-set "${TOOLCALL15_SCENARIO_SET}"' in script
+    assert '--temperature "${TOOLCALL15_TEMPERATURE}"' in script
+    assert '--top-p "${TOOLCALL15_TOP_P}"' in script
     assert '--request-retries "${API_REQUEST_RETRIES}"' in script
     assert '--thinking-mode "${thinking_mode}"' in script
     assert '--repeat-count "${GENERATION_REPEAT_COUNT}"' in script
@@ -315,6 +327,8 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'RUN_KV_LAYOUT_PROBE="${RUN_KV_LAYOUT_PROBE:-1}"' in script
     assert 'RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"' in script
     assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
+    assert 'TOOLCALL15_TEMPERATURE="${TOOLCALL15_TEMPERATURE:-1.0}"' in script
+    assert 'TOOLCALL15_TOP_P="${TOOLCALL15_TOP_P:-1.0}"' in script
     assert 'ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-1}"' in script
     assert 'ARTIFACT_ARCHIVE_PREFIX="${ARTIFACT_ARCHIVE_PREFIX:-${B200_BASELINE_LABEL}}"' in script
     assert "archive_previous_runs" in script
@@ -329,6 +343,8 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert '"${variant_dir}/bench_random_8192x512"' in script
     assert '"${variant_dir}/eval_gsm8k"' in script
     assert '"${variant_dir}/oracle_export"' in script
+    assert 'toolcall15_temperature: `%s`' in script
+    assert 'toolcall15_top_p: `%s`' in script
     assert "run_acceptance.sh" in script
     assert "run_kv_layout_probe.sh" in script
     assert "run_long_context_probe.sh" in script
@@ -1296,6 +1312,8 @@ def test_official_api_baseline_script_writes_separate_baseline_directory():
     assert 'OFFICIAL_SMOKE_CASES="${OFFICIAL_SMOKE_CASES:-math_7_times_8,capital_of_france,spanish_greeting}"' in script
     assert 'OFFICIAL_REQUEST_RETRIES="${OFFICIAL_REQUEST_RETRIES:-1}"' in script
     assert 'OFFICIAL_TOOLCALL15_THINKING_MODES="${OFFICIAL_TOOLCALL15_THINKING_MODES:-${OFFICIAL_THINKING_MODES}}"' in script
+    assert 'OFFICIAL_TOOLCALL15_TEMPERATURE="${OFFICIAL_TOOLCALL15_TEMPERATURE:-${OFFICIAL_TEMPERATURE}}"' in script
+    assert 'OFFICIAL_TOOLCALL15_TOP_P="${OFFICIAL_TOOLCALL15_TOP_P:-${OFFICIAL_TOP_P}}"' in script
     assert 'OFFICIAL_GENERATION_EXPECTATION_CHECKS="${OFFICIAL_GENERATION_EXPECTATION_CHECKS:-0}"' in script
     assert "chat-smoke" in script
     assert "generation-matrix" in script
@@ -1309,6 +1327,8 @@ def test_official_api_baseline_script_writes_separate_baseline_directory():
     assert '--request-retries "${OFFICIAL_REQUEST_RETRIES}"' in script
     assert '--temperature "${OFFICIAL_TEMPERATURE}"' in script
     assert '--top-p "${OFFICIAL_TOP_P}"' in script
+    assert '--temperature "${OFFICIAL_TOOLCALL15_TEMPERATURE}"' in script
+    assert '--top-p "${OFFICIAL_TOOLCALL15_TOP_P}"' in script
     assert '--skip-expectation-checks' in script
     assert '--thinking-mode "${thinking_mode}"' in script
 

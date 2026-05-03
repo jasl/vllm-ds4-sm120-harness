@@ -215,6 +215,14 @@ subjective review can be tied back to the exact request shape. Generation
 defaults use `temperature=1.0` and `top_p=1.0`, matching the DeepSeek V4
 sampling recommendation used for quality-oriented comparisons.
 
+For any harness gate that enables DeepSeek V4 thinking mode, use the model-card
+local-deployment preset: `temperature=1.0`, `top_p=1.0`, and for `think-max`
+run the server with a context window of at least 384K tokens. We have seen
+unexpected behavior when thinking-mode captures are taken outside this request
+shape, so baseline extraction treats that preset as part of the test contract.
+Non-thinking checks may deliberately choose a different sampling policy when
+the test is meant to be deterministic.
+
 The shell wrappers also sample GPU telemetry with `nvidia-smi` when available.
 Each run writes `gpu_stats.csv`, `gpu_stats_summary.json`, and
 `gpu_stats_summary.md` next to the other artifacts. The summary includes per-GPU
@@ -350,7 +358,9 @@ By default it runs three generation rounds over a compact slice of the
 checked-in writing, coding, translation, and reading-summary benchmark suite,
 `non-thinking`, `think-high`, and `think-max`, one round of three basic smoke
 checks, and the English ToolCall-15 set under the same thinking-mode matrix.
-Generation requests use `OFFICIAL_TEMPERATURE=1.0` and `OFFICIAL_TOP_P=1.0`.
+Generation and ToolCall-15 requests use `OFFICIAL_TEMPERATURE=1.0` and
+`OFFICIAL_TOP_P=1.0`; ToolCall-15 can be overridden separately with
+`OFFICIAL_TOOLCALL15_TEMPERATURE` and `OFFICIAL_TOOLCALL15_TOP_P`.
 Official API generation runs default to `OFFICIAL_GENERATION_EXPECTATION_CHECKS=0`:
 they record successful chat-completion responses without applying the prompt
 metadata's content sanity checks such as minimum length or complete HTML
@@ -362,7 +372,8 @@ OpenAI-compatible API request gets one retry for transient call failures;
 HTTP/API failures that remain after retry, or responses without chat choices,
 are recorded as failed rows. Override `OFFICIAL_GENERATION_PROMPTS`,
 `OFFICIAL_SMOKE_CASES`, `OFFICIAL_REPEAT_COUNT`, `OFFICIAL_TEMPERATURE`,
-`OFFICIAL_TOP_P`,
+`OFFICIAL_TOP_P`, `OFFICIAL_TOOLCALL15_TEMPERATURE`,
+`OFFICIAL_TOOLCALL15_TOP_P`,
 `OFFICIAL_TOOLCALL15_THINKING_MODES`, `OFFICIAL_TOOLCALL15_REPEAT_COUNT`, or
 `OFFICIAL_REQUEST_RETRIES` for broader or narrower reference captures.
 Set `OFFICIAL_STRICT=1` only when non-green generation or ToolCall-15 checks
@@ -394,8 +405,8 @@ The official API bundle is a smaller reference sample, not a hardware
 benchmark. It has 72 generation rows and transcripts from 8 selected prompts
 (`8 prompts * 3 thinking modes * 3 rounds`), 3 smoke checks, and one
 ToolCall-15 pass over the English scenario set. It records `temperature=1.0`
-and `top_p=1.0` for generation rows so hosted API behavior can be compared
-against vLLM samples with the same sampling shape.
+and `top_p=1.0` for generation rows and future ToolCall-15 captures so hosted
+API behavior can be compared against vLLM samples with the same sampling shape.
 
 For the 8 generation cases shared by the official API bundle, both B200
 topologies and both serving variants have 72/72 passing rows. The official API
@@ -476,6 +487,8 @@ python -m ds4_harness.cli toolcall15 \
   --thinking-mode think-high \
   --thinking-mode think-max \
   --repeat-count 3 \
+  --temperature 1.0 \
+  --top-p 1.0 \
   --request-retries 1 \
   --json-output artifacts/manual/toolcall15.json
 
@@ -606,6 +619,7 @@ Run this script on the reference host, not on a laptop. It defaults to
 `GENERATION_THINKING_MODES=non-thinking,think-high,think-max`,
 `GENERATION_TEMPERATURE=1.0`, `GENERATION_TOP_P=1.0`,
 `TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max`,
+`TOOLCALL15_TEMPERATURE=1.0`, `TOOLCALL15_TOP_P=1.0`,
 `TOOLCALL15_SCENARIO_SET=en`, `RUN_LM_EVAL=1`,
 `LM_EVAL_TASKS=gsm8k`, `LM_EVAL_NUM_FEWSHOT=8`,
 `LM_EVAL_NUM_CONCURRENT=4`, `MTP_LM_EVAL_NUM_CONCURRENT=1`,
@@ -617,6 +631,9 @@ RANDOM_LONG_CONCURRENCY=1,2`.
 The default long-context probe uses `LONG_CONTEXT_LINE_COUNT=2400`,
 `LONG_CONTEXT_MAX_TOKENS=128`, `LONG_CONTEXT_TEMPERATURE=0.0`,
 `LONG_CONTEXT_TOP_P=1.0`, and `LONG_CONTEXT_THINKING_MODE=non-thinking`.
+When changing the long-context probe to `think-high` or `think-max`, also set
+`LONG_CONTEXT_TEMPERATURE=1.0`; for `think-max`, keep
+`SERVE_MAX_MODEL_LEN=393216` or larger.
 The default KV layout probe uses a synthetic packed FP8 indexer cache with
 `KV_LAYOUT_NUM_BLOCKS=2`, `KV_LAYOUT_BLOCK_SIZE=256`,
 `KV_LAYOUT_HEAD_DIM=448`, `KV_LAYOUT_SCALE_BYTES=8`, and
@@ -745,13 +762,15 @@ Before promoting an optimization:
 - Treat DeepSeek V4 `think-max` generation as an official-shape quality gate,
   not as a short-context smoke. The local server should use
   `--max-model-len` of at least `393216`, and long coding prompts may need a
-  request `max_tokens` larger than the checked-in prompt default. For targeted
-  probes, override the request with `--extra-body-json '{"max_tokens":32768}'`.
+  request `max_tokens` larger than the checked-in prompt default. Keep
+  `temperature=1.0` and `top_p=1.0`. For targeted probes, override the request
+  with `--extra-body-json '{"max_tokens":32768}'`.
   A `think-max` failure under a small context window or a 12K completion cap is
   a budget diagnostic until reproduced under the recommended long-context
   shape.
 - `toolcall15 --scenario-set en --thinking-mode non-thinking --thinking-mode
-  think-high --thinking-mode think-max --repeat-count 3` passes, or any
+  think-high --thinking-mode think-max --repeat-count 3 --temperature 1.0
+  --top-p 1.0` passes, or any
   partial/fail scenario is explained with trace evidence.
 - `lm-eval --task gsm8k --num-fewshot 8` is captured for expensive reference
   baselines and before promoting a branch whose correctness could have changed.

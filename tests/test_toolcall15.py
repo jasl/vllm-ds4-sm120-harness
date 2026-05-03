@@ -345,6 +345,8 @@ def test_toolcall15_cli_runs_requested_thinking_matrix(monkeypatch, tmp_path):
         {"thinking": {"type": "enabled"}, "reasoning_effort": "high"},
         {"thinking": {"type": "enabled"}, "reasoning_effort": "max"},
     ]
+    assert [call[1]["temperature"] for call in calls] == [1.0, 1.0, 1.0]
+    assert [call[1]["top_p"] for call in calls] == [1.0, 1.0, 1.0]
     assert [call[1]["request_retries"] for call in calls] == [1, 1, 1]
     data = json.loads(output.read_text(encoding="utf-8"))
     assert data["summary"]["thinking_modes"] == [
@@ -452,7 +454,8 @@ def test_toolcall15_replays_empty_reasoning_content(monkeypatch):
         "https://api.deepseek.com",
         "deepseek-v4-flash",
         localized_scenarios("en")[0],
-        temperature=0.0,
+        temperature=1.0,
+        top_p=1.0,
         timeout=30,
         max_turns=2,
         headers={"Authorization": "Bearer test-key"},
@@ -461,6 +464,8 @@ def test_toolcall15_replays_empty_reasoning_content(monkeypatch):
 
     replayed_assistant = requests[1]["messages"][2]
     assert replayed_assistant["reasoning_content"] == ""
+    assert requests[0]["temperature"] == 1.0
+    assert requests[0]["top_p"] == 1.0
     assert requests[0]["thinking"] == {"type": "enabled"}
 
 

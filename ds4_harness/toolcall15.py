@@ -822,6 +822,7 @@ def run_scenario(
     scenario: Scenario,
     *,
     temperature: float,
+    top_p: float,
     timeout: float,
     max_turns: int,
     headers: dict[str, str] | None = None,
@@ -846,6 +847,7 @@ def run_scenario(
             "tools": universal_tools(),
             "tool_choice": "auto",
             "temperature": temperature,
+            "top_p": top_p,
             "max_tokens": 1024,
         }
         if extra_body:
@@ -933,6 +935,8 @@ def run_scenario(
         "points": evaluation.points,
         "summary": evaluation.summary,
         "note": evaluation.note,
+        "temperature": temperature,
+        "top_p": top_p,
         "tool_calls": [
             {
                 "id": call.id,
@@ -955,7 +959,8 @@ def run_suite(
     *,
     scenario_ids: list[str] | None = None,
     scenario_set: str = "en",
-    temperature: float = 0.0,
+    temperature: float = 1.0,
+    top_p: float = 1.0,
     timeout: float = 120.0,
     max_turns: int = 8,
     headers: dict[str, str] | None = None,
@@ -980,6 +985,7 @@ def run_suite(
                     model,
                     scenario,
                     temperature=temperature,
+                    top_p=top_p,
                     timeout=timeout,
                     max_turns=max_turns,
                     headers=headers,

@@ -243,6 +243,10 @@ def _write_report(
             f"`{', '.join(toolcall_summary.get('scenario_sets', [])) or 'n/a'}`",
             "- Thinking modes: "
             f"`{', '.join(toolcall_summary.get('thinking_modes', [])) or 'n/a'}`",
+            "- Temperature: "
+            f"`{toolcall_summary.get('temperature', 'n/a')}`",
+            "- Top P: "
+            f"`{toolcall_summary.get('top_p', 'n/a')}`",
             "- Rounds: "
             f"`{toolcall_summary.get('rounds', 'n/a')}`",
             "- Failures: "

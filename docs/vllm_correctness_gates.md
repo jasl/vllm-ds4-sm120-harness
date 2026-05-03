@@ -73,7 +73,9 @@ Use this harness to capture behavior around the vLLM-side tests:
   reasoning plus final content. Short-window or low-output-cap failures should
   be labeled as budget diagnostics before they are used as correctness
   evidence.
-- `toolcall15` for OpenAI-compatible tool-call loop behavior.
+- `toolcall15` for OpenAI-compatible tool-call loop behavior. When running the
+  thinking-mode matrix, keep `temperature=1.0` and `top_p=1.0`; treat those
+  model-card sampling settings as part of the baseline contract.
 - `oracle-export` on an expensive reference host, then `oracle-compare` on
   SM120/SM121 for token-level divergence. Use prompt-id matching, top-k
   overlap, top-1 margin, and repeated-request stability to separate
