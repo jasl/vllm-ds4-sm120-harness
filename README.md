@@ -804,3 +804,15 @@ Before promoting an optimization:
 - For vLLM-side micro correctness checks inspired by the ROCm DeepSeek V4
   support PRs, see `docs/vllm_correctness_gates.md`. Keep those tests in the
   vLLM checkout; this repo records and orchestrates the gate commands.
+
+## Third-Party Reference Code
+
+`third_party/deepseek_v4_reference_inference/` contains a local MIT-licensed
+snapshot of the DeepSeek V4 Flash reference inference files. It is reference
+material only: the harness runtime, wrapper scripts, and test suite do not
+import or execute it. Use the directory's `SOURCE.md` and `SHA256SUMS` when
+checking provenance or refreshing the snapshot.
+
+## License
+
+This harness is released under the MIT License. See `LICENSE`.
