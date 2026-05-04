@@ -356,6 +356,9 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
     if args.repeat_count < 1:
         print("--repeat-count must be >= 1", file=sys.stderr)
         return 2
+    if args.think_max_token_budget is not None and args.think_max_token_budget < 1:
+        print("--think-max-token-budget must be >= 1", file=sys.stderr)
+        return 2
     if not _validate_request_retries(args.request_retries):
         print("--request-retries must be >= 0", file=sys.stderr)
         return 2
@@ -393,6 +396,11 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
         except KeyError as exc:
             print(str(exc), file=sys.stderr)
             return 2
+        if (
+            thinking_mode == "think-max"
+            and args.think_max_token_budget is not None
+        ):
+            mode_extra_body["thinking_token_budget"] = args.think_max_token_budget
         for round_index in range(1, args.repeat_count + 1):
             for prompt in prompts:
                 payload = prompt.to_payload(
@@ -1308,6 +1316,7 @@ def build_parser() -> argparse.ArgumentParser:
     generation.add_argument("--request-retries", type=int, default=1)
     generation.add_argument("--api-key-env")
     generation.add_argument("--extra-body-json")
+    generation.add_argument("--think-max-token-budget", type=int)
     generation.add_argument("--skip-expectation-checks", action="store_true")
     generation.add_argument("--jsonl-output", type=Path)
     generation.add_argument("--markdown-output-dir", type=Path)

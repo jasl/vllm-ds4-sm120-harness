@@ -226,6 +226,58 @@ Write one sentence about local inference.
     assert captured["payload"]["reasoning_effort"] == "max"
 
 
+def test_generation_matrix_applies_think_max_token_budget_only_to_think_max(
+    monkeypatch,
+    tmp_path,
+):
+    prompt_root = tmp_path / "prompts"
+    _write_prompt(
+        prompt_root / "en" / "writing_probe.md",
+        """---
+tags: writing
+---
+Write one sentence about local inference.
+""",
+    )
+    payloads = []
+
+    def fake_post_json(base_url, path, payload, timeout):
+        payloads.append(payload)
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "Local inference is useful."},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+
+    rc = cli.main(
+        [
+            "generation-matrix",
+            "--prompt-root",
+            str(prompt_root),
+            "--thinking-mode",
+            "non-thinking",
+            "--thinking-mode",
+            "think-max",
+            "--think-max-token-budget",
+            "4096",
+            "--max-tokens",
+            "128",
+            "--repeat-count",
+            "1",
+        ]
+    )
+
+    assert rc == 0
+    assert len(payloads) == 2
+    assert "thinking_token_budget" not in payloads[0]
+    assert payloads[1]["thinking_token_budget"] == 4096
+
+
 def test_generation_matrix_can_skip_prompt_expectation_checks(monkeypatch, tmp_path):
     prompt_root = tmp_path / "prompts"
     _write_prompt(

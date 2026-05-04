@@ -228,11 +228,15 @@ sampling recommendation used for quality-oriented comparisons.
 
 For any harness gate that enables DeepSeek V4 thinking mode, use the model-card
 local-deployment preset: `temperature=1.0`, `top_p=1.0`, and for `think-max`
-run the server with a context window of at least 384K tokens. We have seen
-unexpected behavior when thinking-mode captures are taken outside this request
-shape, so baseline extraction treats that preset as part of the test contract.
-Non-thinking checks may deliberately choose a different sampling policy when
-the test is meant to be deterministic.
+run the server with a context window of at least 384K tokens. Local generation
+acceptance also applies a `think-max` `thinking_token_budget` preset through
+`GENERATION_THINK_MAX_TOKEN_BUDGET` so long reasoning has room to finish while
+still producing final content. The preset is not applied to ToolCall-15 by
+default because tool-call policy scoring should remain comparable across
+thinking modes. We have seen unexpected behavior when thinking-mode captures
+are taken outside this request shape, so baseline extraction treats that preset
+as part of the test contract. Non-thinking checks may deliberately choose a
+different sampling policy when the test is meant to be deterministic.
 
 Prompt front matter wins over CLI `--temperature` and `--top-p` by default so
 checked-in quality prompts keep their intended request shape. For deterministic
@@ -647,6 +651,7 @@ Run this script on the reference host, not on a laptop. It defaults to
 `GENERATION_LANGUAGES=en,zh`,
 `GENERATION_THINKING_MODES=non-thinking,think-high,think-max`,
 `GENERATION_TEMPERATURE=1.0`, `GENERATION_TOP_P=1.0`,
+`GENERATION_THINK_MAX_TOKEN_BUDGET=4096`,
 `TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max`,
 `TOOLCALL15_TEMPERATURE=1.0`, `TOOLCALL15_TOP_P=1.0`,
 `TOOLCALL15_SCENARIO_SET=en`, `RUN_LM_EVAL=1`,
@@ -792,8 +797,9 @@ Before promoting an optimization:
   not as a short-context smoke. The local server should use
   `--max-model-len` of at least `393216`, and long coding prompts may need a
   request `max_tokens` larger than the checked-in prompt default. Keep
-  `temperature=1.0` and `top_p=1.0`. For targeted probes, override the request
-  with `--extra-body-json '{"max_tokens":32768}'`.
+  `temperature=1.0`, `top_p=1.0`, and the generation-only
+  `GENERATION_THINK_MAX_TOKEN_BUDGET` preset. For targeted probes, override the
+  request with `--extra-body-json '{"max_tokens":32768}'`.
   A `think-max` failure under a small context window or a 12K completion cap is
   a budget diagnostic until reproduced under the recommended long-context
   shape.
