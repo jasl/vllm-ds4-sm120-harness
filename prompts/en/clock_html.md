@@ -1,11 +1,13 @@
 ---
 tags: coding, html, long, subjective, user-report
-max_tokens: 12000
+max_tokens: 32768
 temperature: 1.0
 top_p: 1.0
 min_chars: 1800
-all_terms: updateClock, Asia/Shanghai, hour, minute
 any_terms: setInterval, requestAnimationFrame
+any_terms_hour_hand: hour, hourHand, 时针
+any_terms_minute_hand: minute, minuteHand, 分针
+any_terms_timezone: Asia/Shanghai, UTC+8, Beijing Time, China Standard Time, Beijing
 require_html_artifact: true
 ---
 Please help me create a single-file HTML clock application. Please think through and write the code according to the following steps:

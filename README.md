@@ -229,12 +229,14 @@ sampling recommendation used for quality-oriented comparisons.
 For any harness gate that enables DeepSeek V4 thinking mode, use the model-card
 local-deployment preset: `temperature=1.0`, `top_p=1.0`, and for `think-max`
 run the server with a context window of at least 384K tokens. Local generation
-acceptance also applies a `think-max` `thinking_token_budget` preset through
-`GENERATION_THINK_MAX_TOKEN_BUDGET` so long reasoning has room to finish while
-still producing final content. The preset is not applied to ToolCall-15 by
-default because tool-call policy scoring should remain comparable across
-thinking modes. We have seen unexpected behavior when thinking-mode captures
-are taken outside this request shape, so baseline extraction treats that preset
+acceptance applies a generation-only `GENERATION_THINK_HIGH_TOKEN_BUDGET`
+preset for `think-high`. `think-max` defaults to no explicit hidden-reasoning
+budget and instead uses `GENERATION_THINK_MAX_REQUEST_MAX_TOKENS` to give the
+request a larger completion ceiling. These presets are not applied to
+ToolCall-15 by default because tool-call policy scoring should remain
+comparable across thinking modes. We have seen unexpected behavior when
+thinking-mode captures
+are taken outside this request shape, so baseline extraction treats this shape
 as part of the test contract. Non-thinking checks may deliberately choose a
 different sampling policy when the test is meant to be deterministic.
 
@@ -651,7 +653,10 @@ Run this script on the reference host, not on a laptop. It defaults to
 `GENERATION_LANGUAGES=en,zh`,
 `GENERATION_THINKING_MODES=non-thinking,think-high,think-max`,
 `GENERATION_TEMPERATURE=1.0`, `GENERATION_TOP_P=1.0`,
-`GENERATION_THINK_MAX_TOKEN_BUDGET=4096`,
+`GENERATION_MAX_CASE_TOKENS=65536`,
+`GENERATION_THINK_HIGH_TOKEN_BUDGET=4096`,
+`GENERATION_THINK_MAX_TOKEN_BUDGET=` (unset by default),
+`GENERATION_THINK_MAX_REQUEST_MAX_TOKENS=65536`,
 `TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max`,
 `TOOLCALL15_TEMPERATURE=1.0`, `TOOLCALL15_TOP_P=1.0`,
 `TOOLCALL15_SCENARIO_SET=en`, `RUN_LM_EVAL=1`,
@@ -795,13 +800,18 @@ Before promoting an optimization:
   selected full-directory baseline reference.
 - Treat DeepSeek V4 `think-max` generation as an official-shape quality gate,
   not as a short-context smoke. The local server should use
-  `--max-model-len` of at least `393216`, and long coding prompts may need a
-  request `max_tokens` larger than the checked-in prompt default. Keep
+  `--max-model-len` of at least `393216`. The checked-in long coding and HTML
+  prompts reserve a larger completion budget so reasoning content does not
+  truncate the final artifact. Keep
   `temperature=1.0`, `top_p=1.0`, and the generation-only
-  `GENERATION_THINK_MAX_TOKEN_BUDGET` preset. For targeted probes, override the
-  request with `--extra-body-json '{"max_tokens":32768}'`.
-  A `think-max` failure under a small context window or a 12K completion cap is
-  a budget diagnostic until reproduced under the recommended long-context
+  `GENERATION_THINK_HIGH_TOKEN_BUDGET` and
+  `GENERATION_THINK_MAX_REQUEST_MAX_TOKENS` presets. Avoid setting a small
+  `GENERATION_THINK_MAX_TOKEN_BUDGET` unless the goal is specifically to test
+  hidden-reasoning truncation. For targeted probes, override
+  `GENERATION_MAX_CASE_TOKENS` or the request `max_tokens` rather than treating
+  a length finish as a model-quality failure.
+  A thinking-mode failure under a small context window or a 12K completion cap
+  is a budget diagnostic until reproduced under the recommended long-context
   shape.
 - `toolcall15 --scenario-set en --thinking-mode non-thinking --thinking-mode
   think-high --thinking-mode think-max --repeat-count 3 --temperature 1.0

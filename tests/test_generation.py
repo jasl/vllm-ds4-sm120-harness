@@ -20,6 +20,8 @@ temperature: 0.7
 top_p: 0.9
 min_chars: 20
 all_terms: Context, Recommendation
+any_terms: setInterval, requestAnimationFrame
+any_terms_timezone: Asia/Shanghai, UTC+8
 forbidden_terms: as an ai
 ---
 Write a short article with Context and Recommendation sections.
@@ -37,6 +39,8 @@ Write a short article with Context and Recommendation sections.
     assert prompt.temperature == 0.7
     assert prompt.top_p == 0.9
     assert prompt.expectation.all_terms == ("Context", "Recommendation")
+    assert prompt.expectation.any_terms == ("setInterval", "requestAnimationFrame")
+    assert prompt.expectation.any_term_groups == (("Asia/Shanghai", "UTC+8"),)
     assert prompt.expectation.forbidden_terms == ("as an ai",)
     assert prompt.prompt.startswith("Write a short article")
 
@@ -226,7 +230,7 @@ Write one sentence about local inference.
     assert captured["payload"]["reasoning_effort"] == "max"
 
 
-def test_generation_matrix_applies_think_max_token_budget_only_to_think_max(
+def test_generation_matrix_applies_thinking_token_budgets_to_matching_modes(
     monkeypatch,
     tmp_path,
 ):
@@ -262,20 +266,80 @@ Write one sentence about local inference.
             "--thinking-mode",
             "non-thinking",
             "--thinking-mode",
+            "think-high",
+            "--thinking-mode",
             "think-max",
+            "--think-high-token-budget",
+            "2048",
             "--think-max-token-budget",
             "4096",
             "--max-tokens",
             "128",
+            "--max-case-tokens",
+            "3000",
             "--repeat-count",
             "1",
         ]
     )
 
     assert rc == 0
-    assert len(payloads) == 2
+    assert len(payloads) == 3
     assert "thinking_token_budget" not in payloads[0]
-    assert payloads[1]["thinking_token_budget"] == 4096
+    assert payloads[1]["thinking_token_budget"] == 2048
+    assert payloads[2]["thinking_token_budget"] == 4096
+    assert [payload["max_tokens"] for payload in payloads] == [128, 2176, 3000]
+
+
+def test_generation_matrix_can_expand_think_max_request_max_tokens(
+    monkeypatch,
+    tmp_path,
+):
+    prompt_root = tmp_path / "prompts"
+    _write_prompt(
+        prompt_root / "en" / "coding_probe.md",
+        """---
+tags: coding
+max_tokens: 2048
+---
+Write a small program.
+""",
+    )
+    payloads = []
+
+    def fake_post_json(base_url, path, payload, timeout):
+        payloads.append(payload)
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "print('ok')"},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+
+    rc = cli.main(
+        [
+            "generation-matrix",
+            "--prompt-root",
+            str(prompt_root),
+            "--thinking-mode",
+            "non-thinking",
+            "--thinking-mode",
+            "think-max",
+            "--max-case-tokens",
+            "65536",
+            "--think-max-request-max-tokens",
+            "65536",
+            "--repeat-count",
+            "1",
+        ]
+    )
+
+    assert rc == 0
+    assert [payload["max_tokens"] for payload in payloads] == [2048, 65536]
+    assert "thinking_token_budget" not in payloads[1]
 
 
 def test_generation_matrix_can_skip_prompt_expectation_checks(monkeypatch, tmp_path):

@@ -1,11 +1,13 @@
 ---
 tags: coding, html, long, subjective, user-report
-max_tokens: 12000
+max_tokens: 32768
 temperature: 1.0
 top_p: 1.0
 min_chars: 1800
-all_terms: updateClock, Asia/Shanghai
 any_terms: setInterval, requestAnimationFrame
+any_terms_hour_hand: hour, hourHand, 时针
+any_terms_minute_hand: minute, minuteHand, 分针
+any_terms_timezone: Asia/Shanghai, UTC+8, 北京时间, 中国标准时间, 北京时区
 require_html_artifact: true
 ---
 请帮我创建一个单文件 HTML 时钟应用，要求直接给出完整代码。

@@ -5,7 +5,7 @@ task_type: coding
 language: zh-CN
 category: algorithm_single_file
 source: gpt-pro-llm-benchmark-prompt-suite
-max_tokens: 8192
+max_tokens: 32768
 temperature: 1.0
 top_p: 1.0
 min_chars: 1000

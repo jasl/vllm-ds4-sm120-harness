@@ -14,8 +14,12 @@ def test_acceptance_script_runs_generation_gate():
     assert "generation-matrix" in script
     assert '--jsonl-output "${OUT_DIR}/generation.jsonl"' in script
     assert '--markdown-output-dir "${OUT_DIR}/generation"' in script
-    assert 'GENERATION_THINK_MAX_TOKEN_BUDGET="${GENERATION_THINK_MAX_TOKEN_BUDGET-4096}"' in script
+    assert 'GENERATION_THINK_HIGH_TOKEN_BUDGET="${GENERATION_THINK_HIGH_TOKEN_BUDGET-4096}"' in script
+    assert '--think-high-token-budget "${GENERATION_THINK_HIGH_TOKEN_BUDGET}"' in script
+    assert 'GENERATION_THINK_MAX_TOKEN_BUDGET="${GENERATION_THINK_MAX_TOKEN_BUDGET-}"' in script
     assert '--think-max-token-budget "${GENERATION_THINK_MAX_TOKEN_BUDGET}"' in script
+    assert 'GENERATION_THINK_MAX_REQUEST_MAX_TOKENS="${GENERATION_THINK_MAX_REQUEST_MAX_TOKENS:-65536}"' in script
+    assert '--think-max-request-max-tokens "${GENERATION_THINK_MAX_REQUEST_MAX_TOKENS}"' in script
 
 
 def test_acceptance_script_runs_static_harness_gates():

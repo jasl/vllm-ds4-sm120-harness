@@ -197,6 +197,38 @@ def _apply_max_case_tokens_cap(
         payload["max_tokens"] = max_case_tokens
 
 
+def _reserve_thinking_token_budget(
+    payload: dict[str, Any],
+    mode_extra_body: dict[str, Any],
+    max_case_tokens: int | None,
+) -> None:
+    budget = mode_extra_body.get("thinking_token_budget")
+    current = payload.get("max_tokens")
+    if not isinstance(budget, int) or not isinstance(current, int):
+        return
+
+    max_tokens = current + budget
+    if max_case_tokens is not None:
+        max_tokens = min(max_tokens, max_case_tokens)
+    payload["max_tokens"] = max_tokens
+
+
+def _apply_mode_request_max_tokens(
+    payload: dict[str, Any],
+    request_max_tokens: int | None,
+    max_case_tokens: int | None,
+) -> None:
+    if request_max_tokens is None:
+        return
+
+    target = request_max_tokens
+    if max_case_tokens is not None:
+        target = min(target, max_case_tokens)
+    current = payload.get("max_tokens")
+    if not isinstance(current, int) or current < target:
+        payload["max_tokens"] = target
+
+
 def _parse_extra_body_json(value: str | None) -> dict[str, Any]:
     if not value:
         return {}
@@ -356,9 +388,16 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
     if args.repeat_count < 1:
         print("--repeat-count must be >= 1", file=sys.stderr)
         return 2
-    if args.think_max_token_budget is not None and args.think_max_token_budget < 1:
-        print("--think-max-token-budget must be >= 1", file=sys.stderr)
-        return 2
+    for name in (
+        "think_high_token_budget",
+        "think_max_token_budget",
+        "think_max_request_max_tokens",
+    ):
+        value = getattr(args, name)
+        if value is not None and value < 1:
+            option = "--" + name.replace("_", "-")
+            print(f"{option} must be >= 1", file=sys.stderr)
+            return 2
     if not _validate_request_retries(args.request_retries):
         print("--request-retries must be >= 0", file=sys.stderr)
         return 2
@@ -397,9 +436,11 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         if (
-            thinking_mode == "think-max"
-            and args.think_max_token_budget is not None
+            thinking_mode == "think-high"
+            and args.think_high_token_budget is not None
         ):
+            mode_extra_body["thinking_token_budget"] = args.think_high_token_budget
+        if thinking_mode == "think-max" and args.think_max_token_budget is not None:
             mode_extra_body["thinking_token_budget"] = args.think_max_token_budget
         for round_index in range(1, args.repeat_count + 1):
             for prompt in prompts:
@@ -411,6 +452,17 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
                     max_case_tokens=args.max_case_tokens,
                     override_prompt_sampling=args.override_prompt_sampling,
                 )
+                _reserve_thinking_token_budget(
+                    payload,
+                    mode_extra_body,
+                    args.max_case_tokens,
+                )
+                if thinking_mode == "think-max":
+                    _apply_mode_request_max_tokens(
+                        payload,
+                        args.think_max_request_max_tokens,
+                        args.max_case_tokens,
+                    )
                 payload.update(mode_extra_body)
                 payload.update(extra_body)
                 started = time.monotonic()
@@ -1316,7 +1368,9 @@ def build_parser() -> argparse.ArgumentParser:
     generation.add_argument("--request-retries", type=int, default=1)
     generation.add_argument("--api-key-env")
     generation.add_argument("--extra-body-json")
+    generation.add_argument("--think-high-token-budget", type=int)
     generation.add_argument("--think-max-token-budget", type=int)
+    generation.add_argument("--think-max-request-max-tokens", type=int)
     generation.add_argument("--skip-expectation-checks", action="store_true")
     generation.add_argument("--jsonl-output", type=Path)
     generation.add_argument("--markdown-output-dir", type=Path)

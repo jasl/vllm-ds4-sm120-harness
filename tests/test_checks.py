@@ -55,6 +55,22 @@ def test_html_expectation_rejects_reasoning_without_artifact():
     assert not result.ok
 
 
+def test_html_expectation_rejects_unclosed_artifact():
+    result = check_chat_response(
+        Expectation(require_html_artifact=True),
+        _chat_response(
+            """```html
+<!doctype html>
+<html>
+<head><style>body { color: black; }</style></head>
+<body><script>const value = 1;"""
+        ),
+    )
+
+    assert not result.ok
+    assert result.detail == "missing complete HTML artifact"
+
+
 def test_malformed_empty_choices_response_is_failed_check():
     result = check_chat_response(Expectation(all_terms=("anything",)), {"choices": []})
 
@@ -166,3 +182,46 @@ def test_english_to_chinese_translation_accepts_concise_complete_translation():
     result = check_chat_response(prompt.expectation, response)
 
     assert result.ok
+
+
+def test_check_chat_response_requires_each_any_term_group():
+    expectation = Expectation(
+        any_terms=("setInterval", "requestAnimationFrame"),
+        any_term_groups=(("Asia/Shanghai", "UTC+8", "Beijing Time"),),
+    )
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "Use requestAnimationFrame and UTC+8 for the clock.",
+                }
+            }
+        ]
+    }
+
+    result = check_chat_response(expectation, response)
+
+    assert result.ok
+
+
+def test_check_chat_response_fails_missing_any_term_group():
+    expectation = Expectation(
+        any_terms=("setInterval", "requestAnimationFrame"),
+        any_term_groups=(("Asia/Shanghai", "UTC+8", "Beijing Time"),),
+    )
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "Use requestAnimationFrame for the clock.",
+                }
+            }
+        ]
+    }
+
+    result = check_chat_response(expectation, response)
+
+    assert not result.ok
+    assert "missing any expected term group" in result.detail

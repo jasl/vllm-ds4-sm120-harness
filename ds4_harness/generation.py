@@ -149,6 +149,16 @@ def _bool_value(value: Any) -> bool:
     return str(value or "").strip().casefold() in {"1", "true", "yes", "on"}
 
 
+def _any_term_groups(metadata: Json) -> tuple[tuple[str, ...], ...]:
+    groups: list[tuple[str, ...]] = []
+    for key in sorted(metadata):
+        if key.startswith("any_terms_"):
+            group = _csv(metadata.get(key))
+            if group:
+                groups.append(group)
+    return tuple(groups)
+
+
 def load_generation_prompts(
     prompt_root: Path,
     *,
@@ -180,6 +190,7 @@ def load_generation_prompts(
             expectation = Expectation(
                 all_terms=_csv(metadata.get("all_terms")),
                 any_terms=_csv(metadata.get("any_terms")),
+                any_term_groups=_any_term_groups(metadata),
                 forbidden_terms=_csv(metadata.get("forbidden_terms")),
                 min_chars=_int_value(metadata.get("min_chars")) or 0,
                 require_html_artifact=_bool_value(

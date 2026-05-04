@@ -8,6 +8,7 @@ from typing import Any
 class Expectation:
     all_terms: tuple[str, ...] = ()
     any_terms: tuple[str, ...] = ()
+    any_term_groups: tuple[tuple[str, ...], ...] = ()
     forbidden_terms: tuple[str, ...] = ()
     min_chars: int = 0
     require_html_artifact: bool = False
@@ -52,7 +53,17 @@ def _has_html_artifact(text: str) -> bool:
     has_root = "<html" in lowered or "<!doctype html" in lowered
     has_style = "<style" in lowered or "style=" in lowered
     has_runtime = "<script" in lowered or "canvas" in lowered
-    return has_root and has_style and has_runtime
+    has_closed_document = "</body>" in lowered and "</html>" in lowered
+    has_closed_style = "<style" not in lowered or "</style>" in lowered
+    has_closed_script = "<script" not in lowered or "</script>" in lowered
+    return (
+        has_root
+        and has_style
+        and has_runtime
+        and has_closed_document
+        and has_closed_style
+        and has_closed_script
+    )
 
 
 def check_chat_response(
@@ -91,6 +102,13 @@ def check_chat_response(
             False,
             "missing any expected term: " + ", ".join(expectation.any_terms),
         )
+
+    for term_group in expectation.any_term_groups:
+        if term_group and not any(term.casefold() in lowered for term in term_group):
+            return CheckResult(
+                False,
+                "missing any expected term group: " + ", ".join(term_group),
+            )
 
     forbidden = [
         term for term in expectation.forbidden_terms if term.casefold() in lowered
