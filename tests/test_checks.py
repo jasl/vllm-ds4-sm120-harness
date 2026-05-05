@@ -101,7 +101,26 @@ def test_case_payload_round_trips_as_json():
     encoded = json.dumps(payload)
 
     assert json.loads(encoded)["tools"][0]["function"]["name"] == "read"
-    assert payload["tool_choice"] == "auto"
+    assert payload["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "read"},
+    }
+
+
+def test_openclaw_quick_tool_case_uses_forced_tool_choice():
+    case = next(
+        case
+        for case in build_cases("deepseek-ai/DeepSeek-V4-Flash")
+        if case.name == "openclaw_read_tool"
+    )
+    payload = case.to_payload(default_max_tokens=128, default_temperature=0.0)
+
+    assert payload["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "read"},
+    }
+    assert payload["top_p"] == 1.0
+    assert payload["seed"] == 1
 
 
 def test_benchmark_prompt_suite_covers_core_real_scenario_prompts():
