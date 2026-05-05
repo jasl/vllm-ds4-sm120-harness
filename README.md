@@ -33,6 +33,11 @@ DEEPSEEK_PRESERVE_REASONING_CONTENT=1
 Never commit `.env`. The harness records only whether `DEEPSEEK_API_KEY` is
 present; it does not write the key value into run artifacts.
 
+For two-node DGX Spark bare-metal Ray/vLLM bring-up, see
+[`docs/dgx_spark_bare_metal_cluster.md`](docs/dgx_spark_bare_metal_cluster.md).
+That document uses placeholders only; keep private hostnames, IP addresses, and
+local paths in ignored local notes.
+
 ## DeepSeek Official API Notes
 
 Use these docs as the reference behavior when comparing local vLLM output with

@@ -24,6 +24,10 @@ branches.
 - Secondary validation host: GB10. Single GB10 is not currently a DeepSeek V4
   Flash runtime gate; use it for environment, build, architecture, and log
   comparison data until a second GB10 is available for cluster testing.
+- Two-node DGX Spark bare-metal cluster bring-up is documented in
+  `docs/dgx_spark_bare_metal_cluster.md`. That public document uses
+  placeholders only; keep concrete Spark IP addresses, SSH targets, and remote
+  paths in ignored local notes.
 - Supported CUDA targets for this effort are only SM120 and SM121, the CUDA
   arch `12.0f` / `120f` family. Do not widen the support matrix without a new
   explicit requirement.
