@@ -20,10 +20,11 @@ BASELINE_EXPECT_GENERATION_REPEAT_COUNT="${BASELINE_EXPECT_GENERATION_REPEAT_COU
 BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT="${BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT:-}"
 BASELINE_EXPECT_TEMPERATURE="${BASELINE_EXPECT_TEMPERATURE:-1.0}"
 BASELINE_EXPECT_TOP_P="${BASELINE_EXPECT_TOP_P:-1.0}"
+BASELINE_REQUIRE_ORACLE="${BASELINE_REQUIRE_ORACLE:-1}"
 export BASELINE_REQUIRE_GENERATION BASELINE_EXPECT_VARIANTS BASELINE_EXPECT_LANGUAGES
 export BASELINE_EXPECT_THINKING_MODES BASELINE_EXPECT_GENERATION_REPEAT_COUNT
 export BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT
-export BASELINE_EXPECT_TEMPERATURE BASELINE_EXPECT_TOP_P
+export BASELINE_EXPECT_TEMPERATURE BASELINE_EXPECT_TOP_P BASELINE_REQUIRE_ORACLE
 
 if [[ -z "${BASELINE_DATE}" ]]; then
   run_basename="$(basename "${BASELINE_RUN_DIR}")"
@@ -227,9 +228,10 @@ findings = scan_public_bundle(root)
 if findings:
     raise SystemExit("baseline bundle contains non-public data:\n" + "\n".join(findings))
 
-cases = load_oracle_cases(root / "oracle")
-if not cases:
-    raise SystemExit("baseline bundle has no oracle cases")
+if os.environ.get("BASELINE_REQUIRE_ORACLE", "1").lower() not in {"0", "false", "no"}:
+    cases = load_oracle_cases(root / "oracle")
+    if not cases:
+        raise SystemExit("baseline bundle has no oracle cases")
 
 report = root / "report.md"
 if not report.exists() or report.stat().st_size == 0:

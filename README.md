@@ -400,6 +400,10 @@ loadable oracle cases, a complete generation matrix by
 variant/language/thinking mode/round, matching transcript Markdown files, and no
 non-public data, then replaces the final `baselines/...` directory only after
 validation passes.
+For runs that intentionally did not include an oracle export, set
+`BASELINE_REQUIRE_ORACLE=0`; the bundle still archives sanitized generation,
+smoke, ToolCall-15, performance, telemetry, manifest, README, and report data,
+but it must not be used as a token-level correctness oracle.
 For archival runs, set `BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT` to the
 number of prompt files selected by the run. With the checked-in `en,zh` prompt
 suite today, that value is `35`, so each no-MTP/MTP variant must contain

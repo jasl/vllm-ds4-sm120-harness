@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -599,12 +600,97 @@ def test_baseline_bundle_script_generates_report_and_public_data():
     assert '--output "${tmp_dir}/report.md"' in script
     assert "scan_public_bundle" in script
     assert "load_oracle_cases" in script
+    assert 'BASELINE_REQUIRE_ORACLE="${BASELINE_REQUIRE_ORACLE:-1}"' in script
     assert 'BASELINE_REQUIRE_GENERATION="${BASELINE_REQUIRE_GENERATION:-1}"' in script
     assert 'BASELINE_EXPECT_VARIANTS="${BASELINE_EXPECT_VARIANTS:-nomtp,mtp}"' in script
     assert "BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT" in script
     assert "expected_case_count * len(expected_modes) * repeat_count" in script
     assert "_validate_generation_matrix" in script
     assert 'mv "${tmp_dir}" "${BASELINE_OUTPUT_DIR}"' in script
+
+
+def test_baseline_bundle_script_can_archive_runs_without_oracle(tmp_path):
+    run_dir = tmp_path / "artifacts" / "official_b300_mtp2_clean" / "20260505184836"
+    acceptance_dir = run_dir / "mtp" / "acceptance"
+    generation_dir = acceptance_dir / "generation" / "en"
+    generation_dir.mkdir(parents=True)
+    generation_row = {
+        "case": "en_sum_tech_001",
+        "language": "en",
+        "thinking_mode": "non-thinking",
+        "variant": "mtp",
+        "round": 1,
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "ok": True,
+        "response": {"usage": {"prompt_tokens": 8, "completion_tokens": 13}},
+    }
+    (acceptance_dir / "generation.jsonl").write_text(
+        json.dumps(generation_row, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    (generation_dir / "en_sum_tech_001.1.non-thinking.mtp.md").write_text(
+        "# en_sum_tech_001\n\nok\n",
+        encoding="utf-8",
+    )
+    (acceptance_dir / "toolcall15.json").write_text(
+        json.dumps({"summary": {"points": 2, "max_points": 2}, "results": []}),
+        encoding="utf-8",
+    )
+    bench_dir = run_dir / "mtp" / "bench_random_8192x512"
+    bench_dir.mkdir(parents=True)
+    (bench_dir / "bench.json").write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "metrics": {"output_token_throughput_tok_s": 123.4},
+                    "command": ["/workspace/vllm/.venv/bin/vllm", "bench", "serve"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "baselines" / "20260505_official_b300_mtp2_clean"
+    env = os.environ | {
+        "PYTHON": sys.executable,
+        "BASELINE_RUN_DIR": str(run_dir),
+        "BASELINE_OUTPUT_DIR": str(output_dir),
+        "BASELINE_REPORT_TITLE": "B300 Baseline",
+        "BASELINE_REPORT_LABEL": "official_b300_mtp2_clean",
+        "BASELINE_DATE": "20260505",
+        "BASELINE_REQUIRE_ORACLE": "0",
+        "BASELINE_EXPECT_VARIANTS": "mtp",
+        "BASELINE_EXPECT_LANGUAGES": "en",
+        "BASELINE_EXPECT_THINKING_MODES": "non-thinking",
+        "BASELINE_EXPECT_GENERATION_REPEAT_COUNT": "1",
+        "BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT": "1",
+    }
+
+    subprocess.run(
+        ["bash", str(ROOT / "scripts" / "generate_baseline_bundle.sh")],
+        check=True,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    assert (output_dir / "report.md").exists()
+    assert (output_dir / "manifest.json").exists()
+    assert (output_dir / "generation" / "mtp.json").exists()
+    assert (
+        output_dir / "generation" / "en" / "en_sum_tech_001.1.non-thinking.mtp.md"
+    ).exists()
+    assert (output_dir / "toolcall15" / "mtp.json").exists()
+    assert (output_dir / "performance" / "primary.json").exists()
+    assert not (output_dir / "oracle").exists()
+    assert "does not include an oracle export" in (
+        output_dir / "README.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_gpu_stats_helper_limits_sampling_to_visible_devices():

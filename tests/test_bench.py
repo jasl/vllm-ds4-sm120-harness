@@ -28,6 +28,44 @@ Mean TTFT (ms):                          1210.50
     assert report["mean_tpot_ms"] == 15.25
 
 
+def test_parse_bench_output_extracts_latency_percentiles_and_spec_decode_metrics():
+    report = parse_bench_output(
+        """
+Median TTFT (ms):                        371.19
+P99 TTFT (ms):                           395.08
+Mean TPOT (ms):                          10.14
+Median TPOT (ms):                        10.87
+P99 TPOT (ms):                           12.02
+Mean ITL (ms):                           11.59
+Median ITL (ms):                         11.27
+P99 ITL (ms):                            18.14
+---------------Speculative Decoding---------------
+Acceptance rate (%):                     7.11
+Acceptance length:                       1.14
+Drafts:                                  14319
+Draft tokens:                            28638
+Accepted tokens:                         2037
+Per-position acceptance (%):
+  Position 0:                            10.01
+  Position 1:                            4.21
+==================================================
+"""
+    )
+
+    assert report["median_ttft_ms"] == 371.19
+    assert report["p99_ttft_ms"] == 395.08
+    assert report["median_tpot_ms"] == 10.87
+    assert report["p99_tpot_ms"] == 12.02
+    assert report["median_itl_ms"] == 11.27
+    assert report["p99_itl_ms"] == 18.14
+    assert report["spec_acceptance_rate_percent"] == 7.11
+    assert report["spec_acceptance_length"] == 1.14
+    assert report["spec_drafts"] == 14319
+    assert report["spec_draft_tokens"] == 28638
+    assert report["spec_accepted_tokens"] == 2037
+    assert report["spec_per_position_acceptance_percent"] == [10.01, 4.21]
+
+
 def test_run_bench_command_records_launch_errors():
     result = run_bench_command(["/path/does/not/exist/vllm"])
 

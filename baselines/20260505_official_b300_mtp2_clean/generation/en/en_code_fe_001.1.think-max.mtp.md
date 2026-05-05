@@ -1,0 +1,820 @@
+# Generation Transcript
+
+- Case: `en_code_fe_001`
+- Language group: `en`
+- Workload: `coding`
+- Model: `deepseek-ai/DeepSeek-V4-Flash`
+- Round: `1`
+- Thinking mode: `think-max`
+- Thinking strength: `max`
+- Temperature: `1.0`
+- Top P: `1.0`
+- Variant: `mtp`
+- OK: `True`
+- Status: PASS
+- Check: matched expectation
+- Detail: `matched expectation`
+- Elapsed seconds: 25.72226
+- Finish reason: `stop`
+- Usage: `{"prompt_tokens": 226, "total_tokens": 6230, "completion_tokens": 6004, "prompt_tokens_details": null}`
+- Prompt tokens: 226
+- Completion tokens: 6004
+- Total tokens: 6230
+
+## Prompt
+
+```markdown
+Create a single-file frontend app named `index.html`. Do not use external libraries, CDNs, images, or build tools. Keep the total code under 1,000 lines.
+
+Task: build an accessible “meeting notes board” for a small team.
+
+Functional requirements:
+1. Users can add a note with title, owner, meeting date, tags, and body.
+2. Notes appear as cards and can be filtered by owner, tag, and free-text search.
+3. A note can be marked as “Action Required,” “Decision,” or “Reference.”
+4. Users can edit and delete notes.
+5. Persist all data in `localStorage`.
+6. Provide a compact statistics strip: total notes, action-required count, unique owners, and most common tag.
+7. Responsive layout: two-column card grid on wide screens, single column on narrow screens.
+8. Basic accessibility: labels for inputs, keyboard-operable controls, visible focus states.
+
+Output only the complete `index.html` content, including HTML, CSS, and JavaScript. Do not include explanatory text.
+```
+
+## Assistant
+
+````markdown
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>meeting notes board</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #f4f7fc;
+      color: #1d2b3e;
+      padding: 1.5rem;
+      min-height: 100vh;
+    }
+
+    /* focus visible */
+    :focus-visible {
+      outline: 3px solid #1a73e8;
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    .app-container {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    /* stats strip */
+    .stats-strip {
+      background: white;
+      padding: 1rem 1.4rem;
+      border-radius: 18px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.8rem 2.5rem;
+      margin-bottom: 1.8rem;
+      font-size: 0.95rem;
+      border: 1px solid #e9ecf0;
+    }
+
+    .stat-item {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      background: #f2f5f9;
+      padding: 0.25rem 0.9rem 0.25rem 0.7rem;
+      border-radius: 30px;
+    }
+
+    .stat-label {
+      font-weight: 450;
+      color: #3c4b5f;
+      letter-spacing: 0.02em;
+    }
+
+    .stat-value {
+      font-weight: 600;
+      color: #0f1a2e;
+    }
+
+    /* controls */
+    .filter-area {
+      background: white;
+      padding: 1.2rem 1.5rem;
+      border-radius: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+      margin-bottom: 2rem;
+      border: 1px solid #e2e8f0;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 1.2rem 1.8rem;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      min-width: 140px;
+    }
+
+    .filter-group label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: #3d556e;
+    }
+
+    .filter-group input,
+    .filter-group select {
+      padding: 0.5rem 0.8rem;
+      border: 1px solid #ccd6e0;
+      border-radius: 30px;
+      font-size: 0.9rem;
+      background: white;
+      transition: 0.15s;
+      min-width: 140px;
+    }
+
+    .filter-group input:focus,
+    .filter-group select:focus {
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+    }
+
+    .btn-primary {
+      background: #1a73e8;
+      color: white;
+      border: none;
+      padding: 0.5rem 1.2rem;
+      border-radius: 30px;
+      font-weight: 500;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.05s;
+      margin-left: auto;
+      align-self: center;
+    }
+
+    .btn-primary:hover {
+      background: #1557b0;
+    }
+    .btn-primary:active {
+      transform: scale(0.97);
+    }
+
+    /* card grid */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 720px) {
+      .card-grid {
+        grid-template-columns: 1fr;
+      }
+      .filter-area {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .btn-primary {
+        margin-left: 0;
+        width: 100%;
+      }
+      .stats-strip {
+        gap: 0.8rem 1.2rem;
+      }
+    }
+
+    .note-card {
+      background: white;
+      border-radius: 24px;
+      padding: 1.3rem 1.5rem 1rem 1.5rem;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.02);
+      border: 1px solid #e3eaf1;
+      transition: 0.1s ease;
+      position: relative;
+    }
+
+    .note-card:hover {
+      border-color: #cbd6e3;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.04);
+    }
+
+    .note-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.5rem;
+    }
+
+    .note-title {
+      font-weight: 600;
+      font-size: 1.1rem;
+      word-break: break-word;
+      margin-right: 0.5rem;
+    }
+
+    .note-badge {
+      display: inline-block;
+      font-size: 0.6rem;
+      font-weight: 600;
+      padding: 0.2rem 0.7rem;
+      border-radius: 50px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+      background: #eef2f7;
+      color: #1f2a3a;
+    }
+
+    .badge-action {
+      background: #fde7d9;
+      color: #a3330a;
+    }
+    .badge-decision {
+      background: #d9e9fd;
+      color: #004e9e;
+    }
+    .badge-reference {
+      background: #e2e8f0;
+      color: #2d4059;
+    }
+
+    .note-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.8rem 1.5rem;
+      font-size: 0.8rem;
+      color: #3b5672;
+      margin: 0.5rem 0 0.6rem 0;
+      border-bottom: 1px solid #edf2f7;
+      padding-bottom: 0.6rem;
+    }
+
+    .meta-item {
+      display: flex;
+      gap: 0.3rem;
+    }
+    .meta-label {
+      font-weight: 500;
+      color: #2f4a66;
+    }
+
+    .note-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem 0.6rem;
+      margin: 0.4rem 0 0.7rem 0;
+    }
+
+    .tag {
+      background: #eef3f9;
+      padding: 0.2rem 0.7rem;
+      border-radius: 30px;
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: #1f3a57;
+    }
+
+    .note-body {
+      font-size: 0.9rem;
+      line-height: 1.45;
+      margin: 0.5rem 0 1rem 0;
+      color: #20344b;
+      word-break: break-word;
+      background: #f9fbfd;
+      padding: 0.5rem 0.7rem;
+      border-radius: 12px;
+    }
+
+    .card-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.8rem;
+      margin-top: 0.2rem;
+      padding-top: 0.3rem;
+      border-top: 1px solid #ecf1f7;
+    }
+
+    .btn-sm {
+      background: transparent;
+      border: 1px solid #cfdbe8;
+      padding: 0.2rem 0.9rem;
+      border-radius: 30px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: 0.1s;
+    }
+
+    .btn-edit {
+      background: #f0f4fa;
+      border-color: #bccadb;
+    }
+    .btn-edit:hover {
+      background: #e3ecf7;
+    }
+    .btn-delete {
+      color: #b13e3e;
+      border-color: #f1cfcf;
+      background: #fdf2f2;
+    }
+    .btn-delete:hover {
+      background: #f8e3e3;
+    }
+
+    /* modal overlay */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 1rem;
+    }
+
+    .modal {
+      background: white;
+      max-width: 600px;
+      width: 100%;
+      border-radius: 36px;
+      padding: 1.8rem 2rem 2rem 2rem;
+      box-shadow: 0 30px 50px rgba(0, 0, 0, 0.25);
+      max-height: 95vh;
+      overflow-y: auto;
+    }
+
+    .modal h2 {
+      font-weight: 600;
+      margin-bottom: 1.2rem;
+      font-size: 1.4rem;
+    }
+
+    .form-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .form-row label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #2a405a;
+      letter-spacing: 0.02em;
+    }
+
+    .form-row input,
+    .form-row select,
+    .form-row textarea {
+      padding: 0.6rem 0.8rem;
+      border: 1px solid #ccd6e2;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      background: white;
+      font-family: inherit;
+    }
+
+    .form-row textarea {
+      min-height: 70px;
+      resize: vertical;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .btn-secondary {
+      background: #eef3f9;
+      border: 1px solid #c2d0de;
+      padding: 0.55rem 1.4rem;
+      border-radius: 30px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .btn-save {
+      background: #1a73e8;
+      border: none;
+      padding: 0.55rem 2rem;
+      border-radius: 30px;
+      font-weight: 500;
+      color: white;
+      cursor: pointer;
+    }
+
+    .btn-save:hover {
+      background: #1557b0;
+    }
+    .btn-secondary:hover {
+      background: #dfe8f3;
+    }
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+<div class="app-container">
+  <h1>📋 meeting notes board</h1>
+
+  <!-- statistics strip -->
+  <section class="stats-strip" aria-label="note statistics">
+    <div class="stat-item"><span class="stat-label">📌 total</span><span class="stat-value" id="statTotal">0</span></div>
+    <div class="stat-item"><span class="stat-label">⚡ action</span><span class="stat-value" id="statAction">0</span></div>
+    <div class="stat-item"><span class="stat-label">👥 owners</span><span class="stat-value" id="statOwners">0</span></div>
+    <div class="stat-item"><span class="stat-label">🏷️ top tag</span><span class="stat-value" id="statTopTag">—</span></div>
+  </section>
+
+  <!-- filters + add -->
+  <div class="filter-area" role="search" aria-label="filter notes">
+    <div class="filter-group">
+      <label for="filterOwner">owner</label>
+      <select id="filterOwner"><option value="">All owners</option></select>
+    </div>
+    <div class="filter-group">
+      <label for="filterTag">tag</label>
+      <select id="filterTag"><option value="">All tags</option></select>
+    </div>
+    <div class="filter-group">
+      <label for="filterSearch">search</label>
+      <input type="text" id="filterSearch" placeholder="free text…" aria-label="search notes">
+    </div>
+    <button class="btn-primary" id="addNoteBtn" aria-label="add new note">+ New note</button>
+  </div>
+
+  <!-- card grid -->
+  <div class="card-grid" id="cardGrid" role="list" aria-label="notes list"></div>
+</div>
+
+<!-- modal (hidden) -->
+<div id="modalOverlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal">
+    <h2 id="modalTitle">New note</h2>
+    <form id="noteForm" class="form-grid">
+      <div class="form-row">
+        <label for="inputTitle">Title *</label>
+        <input type="text" id="inputTitle" required placeholder="e.g. Sprint review">
+      </div>
+      <div class="form-row">
+        <label for="inputOwner">Owner *</label>
+        <input type="text" id="inputOwner" required placeholder="e.g. Maria">
+      </div>
+      <div class="form-row">
+        <label for="inputDate">Meeting date</label>
+        <input type="date" id="inputDate">
+      </div>
+      <div class="form-row">
+        <label for="inputTags">Tags (comma separated)</label>
+        <input type="text" id="inputTags" placeholder="design, frontend, api">
+      </div>
+      <div class="form-row">
+        <label for="inputCategory">Category</label>
+        <select id="inputCategory">
+          <option value="Reference">📄 Reference</option>
+          <option value="Action Required">⚡ Action Required</option>
+          <option value="Decision">✅ Decision</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label for="inputBody">Body</label>
+        <textarea id="inputBody" placeholder="Key points ..."></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="cancelModalBtn">Cancel</button>
+        <button type="submit" class="btn-save" id="saveNoteBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // ----- data layer -----
+    let notes = [];
+    let editingId = null;
+
+    const STORAGE_KEY = 'meeting_notes_board';
+
+    function loadFromStorage() {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          notes = JSON.parse(stored);
+          if (!Array.isArray(notes)) notes = [];
+          // ensure each note has proper fields
+          notes = notes.filter(n => n && typeof n === 'object');
+          notes = notes.map(n => ({
+            id: n.id || crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random(),
+            title: n.title || '',
+            owner: n.owner || '',
+            date: n.date || '',
+            tags: Array.isArray(n.tags) ? n.tags : [],
+            category: ['Action Required','Decision','Reference'].includes(n.category) ? n.category : 'Reference',
+            body: n.body || ''
+          }));
+        }
+      } catch (e) { notes = []; }
+    }
+
+    function saveToStorage() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+    }
+
+    // ----- helpers -----
+    function getUniqueOwners() {
+      const set = new Set(notes.map(n => n.owner?.trim()).filter(Boolean));
+      return set;
+    }
+
+    function getTagFrequency() {
+      const freq = {};
+      notes.forEach(n => (n.tags || []).forEach(t => {
+        const key = t.trim().toLowerCase();
+        if (key) freq[key] = (freq[key] || 0) + 1;
+      }));
+      return freq;
+    }
+
+    function getMostCommonTag() {
+      const freq = getTagFrequency();
+      let maxCount = 0;
+      let topTag = '';
+      for (const [tag, count] of Object.entries(freq)) {
+        if (count > maxCount) { maxCount = count; topTag = tag; }
+      }
+      return topTag || '—';
+    }
+
+    function getFilteredNotes() {
+      const ownerFilter = document.getElementById('filterOwner').value.toLowerCase().trim();
+      const tagFilter = document.getElementById('filterTag').value.toLowerCase().trim();
+      const search = document.getElementById('filterSearch').value.toLowerCase().trim();
+
+      return notes.filter(n => {
+        if (ownerFilter && n.owner?.toLowerCase().trim() !== ownerFilter) return false;
+        if (tagFilter) {
+          const noteTags = (n.tags || []).map(t => t.toLowerCase().trim());
+          if (!noteTags.includes(tagFilter)) return false;
+        }
+        if (search) {
+          const haystack = (n.title + ' ' + n.owner + ' ' + n.body + ' ' + (n.tags||[]).join(' ')).toLowerCase();
+          if (!haystack.includes(search)) return false;
+        }
+        return true;
+      });
+    }
+
+    // ----- render  -----
+    function populateFilterOptions() {
+      const ownerSelect = document.getElementById('filterOwner');
+      const tagSelect = document.getElementById('filterTag');
+
+      // preserve current values
+      const currentOwner = ownerSelect.value;
+      const currentTag = tagSelect.value;
+
+      const owners = new Set();
+      const tags = new Set();
+      notes.forEach(n => {
+        if (n.owner?.trim()) owners.add(n.owner.trim());
+        (n.tags || []).forEach(t => { if (t.trim()) tags.add(t.trim()); });
+      });
+
+      ownerSelect.innerHTML = '<option value="">All owners</option>';
+      owners.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o;
+        opt.textContent = o;
+        ownerSelect.appendChild(opt);
+      });
+
+      tagSelect.innerHTML = '<option value="">All tags</option>';
+      tags.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        tagSelect.appendChild(opt);
+      });
+
+      // reset values if still valid
+      if ([...owners].includes(currentOwner)) ownerSelect.value = currentOwner;
+      if ([...tags].includes(currentTag)) tagSelect.value = currentTag;
+    }
+
+    function renderStats() {
+      const total = notes.length;
+      const actionCount = notes.filter(n => n.category === 'Action Required').length;
+      const uniqueOwners = getUniqueOwners().size;
+      const topTag = getMostCommonTag();
+
+      document.getElementById('statTotal').textContent = total;
+      document.getElementById('statAction').textContent = actionCount;
+      document.getElementById('statOwners').textContent = uniqueOwners;
+      document.getElementById('statTopTag').textContent = topTag;
+    }
+
+    function renderCards() {
+      const grid = document.getElementById('cardGrid');
+      const filtered = getFilteredNotes();
+      grid.innerHTML = '';
+
+      if (filtered.length === 0) {
+        grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:3rem 1rem; color:#4a6382;">📭 No notes match the current filters</div>';
+        return;
+      }
+
+      filtered.forEach(note => {
+        const card = document.createElement('div');
+        card.className = 'note-card';
+        card.setAttribute('role', 'listitem');
+
+        const badgeClass = note.category === 'Action Required' ? 'badge-action' : note.category === 'Decision' ? 'badge-decision' : 'badge-reference';
+
+        card.innerHTML = `
+          <div class="note-header">
+            <span class="note-title">${escapeHtml(note.title) || 'Untitled'}</span>
+            <span class="note-badge ${badgeClass}">${escapeHtml(note.category)}</span>
+          </div>
+          <div class="note-meta">
+            <span class="meta-item"><span class="meta-label">👤</span> ${escapeHtml(note.owner) || '—'}</span>
+            <span class="meta-item"><span class="meta-label">📅</span> ${escapeHtml(note.date) || '—'}</span>
+          </div>
+          ${ (note.tags && note.tags.length) ? `<div class="note-tags">${note.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>` : '' }
+          <div class="note-body">${escapeHtml(note.body) || ''}</div>
+          <div class="card-actions">
+            <button class="btn-sm btn-edit" data-id="${note.id}" aria-label="edit note">✎ edit</button>
+            <button class="btn-sm btn-delete" data-id="${note.id}" aria-label="delete note">🗑 delete</button>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      // attach listeners to edit/delete buttons
+      grid.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = e.currentTarget.dataset.id;
+          openEditModal(id);
+        });
+      });
+      grid.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = e.currentTarget.dataset.id;
+          if (confirm('Delete this note?')) {
+            notes = notes.filter(n => n.id !== id);
+            saveToStorage();
+            refreshUI();
+          }
+        });
+      });
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function refreshUI() {
+      populateFilterOptions();
+      renderStats();
+      renderCards();
+    }
+
+    // ----- modal logic -----
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalTitle = document.getElementById('modalTitle');
+    const form = document.getElementById('noteForm');
+    const cancelBtn = document.getElementById('cancelModalBtn');
+
+    function openNewModal() {
+      editingId = null;
+      modalTitle.textContent = 'New note';
+      form.reset();
+      document.getElementById('inputCategory').value = 'Reference';
+      modalOverlay.classList.remove('hidden');
+      document.getElementById('inputTitle').focus();
+    }
+
+    function openEditModal(id) {
+      const note = notes.find(n => n.id === id);
+      if (!note) return;
+      editingId = id;
+      modalTitle.textContent = 'Edit note';
+      document.getElementById('inputTitle').value = note.title || '';
+      document.getElementById('inputOwner').value = note.owner || '';
+      document.getElementById('inputDate').value = note.date || '';
+      document.getElementById('inputTags').value = (note.tags || []).join(', ');
+      document.getElementById('inputCategory').value = note.category || 'Reference';
+      document.getElementById('inputBody').value = note.body || '';
+      modalOverlay.classList.remove('hidden');
+      document.getElementById('inputTitle').focus();
+    }
+
+    function closeModal() {
+      modalOverlay.classList.add('hidden');
+      editingId = null;
+    }
+
+    // form submit
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const title = document.getElementById('inputTitle').value.trim();
+      const owner = document.getElementById('inputOwner').value.trim();
+      const date = document.getElementById('inputDate').value;
+      const tagsRaw = document.getElementById('inputTags').value.trim();
+      const category = document.getElementById('inputCategory').value;
+      const body = document.getElementById('inputBody').value.trim();
+
+      if (!title || !owner) {
+        alert('Title and Owner are required.');
+        return;
+      }
+
+      const tags = tagsRaw ? tagsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+      if (editingId) {
+        const index = notes.findIndex(n => n.id === editingId);
+        if (index !== -1) {
+          notes[index] = { ...notes[index], title, owner, date, tags, category, body };
+        }
+      } else {
+        const newNote = {
+          id: crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random(),
+          title,
+          owner,
+          date,
+          tags,
+          category,
+          body
+        };
+        notes.push(newNote);
+      }
+
+      saveToStorage();
+      closeModal();
+      refreshUI();
+    });
+
+    cancelBtn.addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal();
+    });
+
+    // add button
+    document.getElementById('addNoteBtn').addEventListener('click', openNewModal);
+
+    // filter listeners
+    document.getElementById('filterOwner').addEventListener('change', renderCards);
+    document.getElementById('filterTag').addEventListener('change', renderCards);
+    document.getElementById('filterSearch').addEventListener('input', renderCards);
+
+    // init
+    loadFromStorage();
+    refreshUI();
+  })();
+</script>
+</body>
+</html>
+```
+````

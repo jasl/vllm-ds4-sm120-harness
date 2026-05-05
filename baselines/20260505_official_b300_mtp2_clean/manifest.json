@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "label": "20260505_official_b300_mtp2_clean",
+  "date": "20260505",
+  "generated_at_utc": "2026-05-05T19:34:06.551221+00:00",
+  "source": {
+    "primary_run": "20260505184836",
+    "raw_artifacts_are_not_required": true
+  },
+  "model": "deepseek-ai/DeepSeek-V4-Flash",
+  "gpu": {
+    "available": true,
+    "reason": null,
+    "count": 8,
+    "topology_slug": "8x_nvidia_b300_sxm6_ac",
+    "configured_topology_slug": "8x_nvidia_b300_sxm6_ac",
+    "models": [
+      {
+        "name": "NVIDIA B300 SXM6 AC",
+        "count": 8,
+        "memory_total_mib_each": 275040.0
+      }
+    ],
+    "devices": [
+      {
+        "index": "0",
+        "name": "NVIDIA B300 SXM6 AC",
+        "memory_total_mib": 275040.0
+      },
+      {
+        "index": "1",
+        "name": "NVIDIA B300 SXM6 AC",
+        "memory_total_mib": 275040.0
+      },
+      {
+        "index": "2",
+        "name": "NVIDIA B300 SXM6 AC",
+        "memory_total_mib": 275040.0
+      },
+      {
+        "index": "3",
+        "name": "NVIDIA B300 SXM6 AC",
+        "memory_total_mib": 275040.0
+      },
+      {
+        "index": "4",
+        "name": "NVIDIA B300 SXM6 AC",
+        "memory_total_mib": 275040.0
+      },
+      {
+        "index": "5",
+        "name": "NVIDIA B300 SXM6 AC",
+        "memory_total_mib": 275040.0
+      },
+      {
+        "index": "6",
+        "name": "NVIDIA B300 SXM6 AC",
+        "memory_total_mib": 275040.0
+      },
+      {
+        "index": "7",
+        "name": "NVIDIA B300 SXM6 AC",
+        "memory_total_mib": 275040.0
+      }
+    ]
+  },
+  "collect_env": {
+    "os": "Ubuntu 24.04.4 LTS (x86_64)",
+    "pytorch_version": "2.11.0+cu130",
+    "pytorch_cuda_build": "13.0",
+    "python_version": "3.12.3 (main, Mar 23 2026, 19:04:32) [GCC 13.3.0] (64-bit runtime)",
+    "cuda_runtime_version": "Could not collect",
+    "nvidia_driver_version": "595.58.03",
+    "transformers_version": "5.7.0",
+    "triton_version": "3.6.0",
+    "vllm_version": "0.20.2rc1.dev48+g628c43630",
+    "vllm_cuda_archs": "Not Set",
+    "vllm_git_sha": "628c43630"
+  },
+  "serve_commands": {
+    "mtp": "#!/usr/bin/env bash\nexport VLLM_ENGINE_READY_TIMEOUT_S=3600\nvllm serve deepseek-ai/DeepSeek-V4-Flash \\\n  --trust-remote-code \\\n  --kv-cache-dtype fp8 \\\n  --block-size 256 \\\n  --enable-expert-parallel \\\n  --tensor-parallel-size 8 \\\n  --attention_config.use_fp4_indexer_cache=True \\\n  --moe-backend deep_gemm_mega_moe \\\n  --tokenizer-mode deepseek_v4 \\\n  --tool-call-parser deepseek_v4 \\\n  --enable-auto-tool-choice \\\n  --speculative_config '{\"method\":\"mtp\",\"num_speculative_tokens\":2}' \\\n  --reasoning-parser deepseek_v4"
+  },
+  "phase_exit_codes": [
+    {
+      "variant": "mtp",
+      "phase": "static_compileall",
+      "exit_code": 0,
+      "artifact": "mtp/static_compileall"
+    },
+    {
+      "variant": "mtp",
+      "phase": "static_pytest",
+      "exit_code": 0,
+      "artifact": "mtp/static_pytest"
+    },
+    {
+      "variant": "mtp",
+      "phase": "static_ruff",
+      "exit_code": 0,
+      "artifact": "mtp/static_ruff"
+    },
+    {
+      "variant": "mtp",
+      "phase": "acceptance",
+      "exit_code": 0,
+      "artifact": "mtp/acceptance"
+    },
+    {
+      "variant": "mtp",
+      "phase": "bench_random_8192x512",
+      "exit_code": 0,
+      "artifact": "mtp/bench_random_8192x512"
+    }
+  ],
+  "contents": {
+    "report": "Readable baseline report with correctness, performance, and cost metrics.",
+    "generation": "Directory-driven writing, translation, and coding transcripts.",
+    "smoke": "no-MTP and MTP chat smoke request/response captures.",
+    "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
+    "kv_layout": "Synthetic packed KV byte-layout snapshots for indexer-cache regressions.",
+    "long_context": "Long-context sentinel retrieval probes for cache-layout regressions.",
+    "prefix_cache": "Concurrent long-prefix cache reuse probes with request-level timing plus KV/runtime telemetry.",
+    "streaming_pressure": "Optional short concurrent streaming-pressure soak with request timing plus KV/runtime telemetry.",
+    "evals": "Optional lm_eval accuracy summaries such as GSM8K exact match.",
+    "performance": "Benchmark, runtime, and GPU telemetry summaries."
+  }
+}

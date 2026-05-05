@@ -1,0 +1,589 @@
+# Generation Transcript
+
+- Case: `aquarium_html`
+- Language group: `zh`
+- Workload: `coding`
+- Model: `deepseek-ai/DeepSeek-V4-Flash`
+- Round: `1`
+- Thinking mode: `think-max`
+- Thinking strength: `max`
+- Temperature: `1.0`
+- Top P: `1.0`
+- Variant: `mtp`
+- OK: `True`
+- Status: PASS
+- Check: matched expectation
+- Detail: `matched expectation`
+- Elapsed seconds: 27.924291
+- Finish reason: `stop`
+- Usage: `{"prompt_tokens": 130, "total_tokens": 5942, "completion_tokens": 5812, "prompt_tokens_details": null}`
+- Prompt tokens: 130
+- Completion tokens: 5812
+- Total tokens: 5942
+
+## Prompt
+
+```markdown
+请帮我写一个单文件 HTML 水族箱动画。
+
+要求：
+1. 画面里有多条不同颜色、不同大小的鱼，游动要尽量自然。
+2. 用户左键点击水族箱时，可以在点击位置放下一粒鱼食。
+3. 每条鱼会追逐离自己最近的鱼食并尝试吃掉它；没有鱼食时恢复自由游动。
+4. 需要有完整的 HTML、CSS 和 JavaScript，能直接保存为一个 `.html` 文件运行。
+5. 视觉效果要精致一些，不要只给伪代码或解释，直接给出完整代码。
+```
+
+## Assistant
+
+````markdown
+以下是您需要的单文件水族箱动画HTML代码。它包含了色彩各异的鱼群、自然的游动轨迹以及点击投喂的互动功能。
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>水族箱 · 鱼</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a1a2a;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', Roboto, system-ui, sans-serif;
+        }
+        .aquarium-wrapper {
+            background: #0b2b3f;
+            padding: 12px;
+            border-radius: 36px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.8), inset 0 0 8px rgba(255,255,255,0.06);
+        }
+        canvas {
+            display: block;
+            width: 900px;
+            height: 600px;
+            border-radius: 28px;
+            box-shadow: inset 0 0 60px rgba(0,20,30,0.9), 0 8px 32px rgba(0,0,0,0.7);
+            cursor: pointer;
+            background: radial-gradient(ellipse at 30% 40%, #195d7a, #0b2f42 70%, #04161f);
+            transition: filter 0.3s ease;
+        }
+        canvas:active {
+            filter: brightness(1.02);
+        }
+        .ui-note {
+            text-align: center;
+            margin-top: 16px;
+            color: #6b9bb0;
+            font-weight: 400;
+            letter-spacing: 1px;
+            font-size: 1rem;
+            background: rgba(10, 30, 45, 0.7);
+            padding: 8px 18px;
+            border-radius: 60px;
+            backdrop-filter: blur(2px);
+            display: inline-block;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .ui-note span {
+            display: inline-block;
+            background: #f1c40f;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            box-shadow: 0 0 16px #f1c40f66;
+        }
+        @media (max-width: 960px) {
+            canvas { width: 100%; height: auto; aspect-ratio: 3/2; }
+            .aquarium-wrapper { padding: 8px; border-radius: 24px; }
+        }
+    </style>
+</head>
+<body>
+<div style="display: flex; flex-direction: column; align-items: center;">
+    <div class="aquarium-wrapper">
+        <canvas id="aquariumCanvas" width="900" height="600"></canvas>
+    </div>
+    <div class="ui-note">
+        <span></span> 点击任意位置投放鱼食 · 鱼儿会追逐最近的鱼食
+    </div>
+</div>
+<script>
+    (function() {
+        const canvas = document.getElementById('aquariumCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // ----- 尺寸参数 -----
+        const W = 900, H = 600;
+
+        // ----- 工具函数 -----
+        function random(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function clamp(val, min, max) {
+            return Math.min(max, Math.max(min, val));
+        }
+
+        function distance(x1, y1, x2, y2) {
+            const dx = x2 - x1, dy = y2 - y1;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        // ----- 鱼食管理 -----
+        let foodPellets = [];        // 每个元素 { x, y, radius, life }
+
+        // ----- 鱼群 -----
+        const FISH_COUNT = 14;
+        let fishes = [];
+
+        // 颜色调色板 (半透明保证水润感)
+        const COLORS = [
+            { body: '#FF6B6B', fin: '#FF8E8E', eye: '#222' },
+            { body: '#4ECDC4', fin: '#6EE7DE', eye: '#1a3a3a' },
+            { body: '#FFE66D', fin: '#FFF0A0', eye: '#553b00' },
+            { body: '#A29BFE', fin: '#C4BFFF', eye: '#2d1f5e' },
+            { body: '#FD79A8', fin: '#FEA3C3', eye: '#5c1a33' },
+            { body: '#FDCB6E', fin: '#FEDB92', eye: '#5e4a1a' },
+            { body: '#6C5CE7', fin: '#8E7FF5', eye: '#1f1452' },
+            { body: '#00B894', fin: '#55D6B0', eye: '#0a3d2e' },
+            { body: '#E17055', fin: '#E8927A', eye: '#4a1e12' },
+            { body: '#0984E3', fin: '#4AACF0', eye: '#002a4d' },
+            { body: '#F8A5C2', fin: '#FBC8D9', eye: '#5c2a3e' },
+            { body: '#81ECEC', fin: '#A8F0F0', eye: '#1b4b4b' },
+            { body: '#FF9FF3', fin: '#FFB8F0', eye: '#4e1f47' },
+            { body: '#FEC8D8', fin: '#FEDAE6', eye: '#6a3949' }
+        ];
+
+        // 鱼构造函数
+        class Fish {
+            constructor(index) {
+                const colorScheme = COLORS[index % COLORS.length];
+                this.bodyColor = colorScheme.body;
+                this.finColor = colorScheme.fin;
+                this.eyeColor = colorScheme.eye;
+
+                // 尺寸 (大小不一)
+                const sizeFactor = random(0.65, 1.25);
+                this.bodyLength = 38 * sizeFactor;   // 鱼身长度
+                this.bodyHeight = 18 * sizeFactor;    // 鱼身最高处
+                this.finSize = 12 * sizeFactor;
+
+                // 位置 & 速度
+                this.x = random(60, W - 60);
+                this.y = random(50, H - 50);
+                this.vx = random(-1.2, 1.2);
+                this.vy = random(-0.8, 0.8);
+                // 限制初始速度别太疯
+                const sp = Math.hypot(this.vx, this.vy);
+                if (sp > 1.5) {
+                    this.vx = (this.vx / sp) * 1.2;
+                    this.vy = (this.vy / sp) * 1.2;
+                }
+
+                // 游动参数 (用于自然摆动)
+                this.wavePhase = random(0, Math.PI * 2);
+                this.waveSpeed = random(2.2, 4.5);
+                this.waveAmp = random(0.9, 2.2);
+
+                // 尾鳍摆动相位
+                this.tailPhase = random(0, Math.PI * 2);
+                this.tailSpeed = random(3.0, 6.0);
+
+                // 个体目标 (自由 roaming)
+                this.targetX = this.x;
+                this.targetY = this.y;
+                this.changeTargetTimer = random(40, 150);
+
+                // 转向平滑
+                this.angle = Math.atan2(this.vy, this.vx);
+            }
+
+            // 更新目标点 (自由漫游)
+            updateRoamingTarget() {
+                this.changeTargetTimer--;
+                if (this.changeTargetTimer <= 0) {
+                    // 选择视野内的随机点，避免太靠边
+                    this.targetX = clamp(random(50, W - 50), 20, W - 20);
+                    this.targetY = clamp(random(40, H - 40), 20, H - 20);
+                    this.changeTargetTimer = random(60, 180);
+                }
+            }
+
+            // 追逐逻辑：找到最近的鱼食 (如果没有鱼食则使用 roaming target)
+            getChaseTarget() {
+                if (foodPellets.length === 0) {
+                    return { x: this.targetX, y: this.targetY, isFood: false };
+                }
+                let nearest = null;
+                let minDist = Infinity;
+                for (let i = 0; i < foodPellets.length; i++) {
+                    const pellet = foodPellets[i];
+                    const d = distance(this.x, this.y, pellet.x, pellet.y);
+                    if (d < minDist) {
+                        minDist = d;
+                        nearest = pellet;
+                    }
+                }
+                if (nearest) {
+                    return { x: nearest.x, y: nearest.y, isFood: true, ref: nearest };
+                }
+                return { x: this.targetX, y: this.targetY, isFood: false };
+            }
+
+            // 更新物理、行为
+            update() {
+                // 1. 更新漫游目标 (即使有食物也会维持，但追逐会覆盖)
+                this.updateRoamingTarget();
+
+                // 2. 确定追击目标
+                const target = this.getChaseTarget();
+                const dx = target.x - this.x;
+                const dy = target.y - this.y;
+                const distToTarget = Math.hypot(dx, dy);
+
+                // 3. 转向与加速
+                let accel = 0.012;
+                let maxSpeed = 2.4;
+                let minSpeed = 0.9;
+
+                // 如果是食物，加速更快
+                if (target.isFood) {
+                    accel = 0.038;
+                    maxSpeed = 3.6;
+                    // 非常接近食物时直接吃掉
+                    if (distToTarget < 12 && target.ref) {
+                        const idx = foodPellets.indexOf(target.ref);
+                        if (idx !== -1) {
+                            foodPellets.splice(idx, 1);
+                        }
+                        // 吃掉后稍微减速，增加真实感
+                        this.vx *= 0.7;
+                        this.vy *= 0.7;
+                    }
+                } else {
+                    // 自由游动时轻微随机加速
+                    accel = 0.014 + Math.sin(this.wavePhase * 0.5) * 0.006;
+                }
+
+                // 计算转向力
+                if (distToTarget > 1.5) {
+                    const normX = dx / distToTarget;
+                    const normY = dy / distToTarget;
+                    // 应用加速度
+                    this.vx += normX * accel;
+                    this.vy += normY * accel;
+                }
+
+                // 限制速度范围
+                let speed = Math.hypot(this.vx, this.vy);
+                if (speed > maxSpeed) {
+                    this.vx = (this.vx / speed) * maxSpeed;
+                    this.vy = (this.vy / speed) * maxSpeed;
+                } else if (speed < minSpeed && !target.isFood) {
+                    // 低速时稍微推动，保持灵动
+                    this.vx *= 1.02;
+                    this.vy *= 1.02;
+                }
+
+                // 4. 边界反弹 (柔边)
+                const margin = 30;
+                const damping = 0.85;
+                if (this.x < margin) { this.vx += (margin - this.x) * 0.006; }
+                if (this.x > W - margin) { this.vx -= (this.x - (W - margin)) * 0.006; }
+                if (this.y < margin) { this.vy += (margin - this.y) * 0.006; }
+                if (this.y > H - margin) { this.vy -= (this.y - (H - margin)) * 0.006; }
+
+                // 最终边界钳位 (强制不能出去)
+                this.x = clamp(this.x, 8, W - 8);
+                this.y = clamp(this.y, 8, H - 8);
+
+                // 5. 更新位置
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // 6. 更新角度 (平滑)
+                const targetAngle = Math.atan2(this.vy, this.vx);
+                let diff = targetAngle - this.angle;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                this.angle += diff * 0.12;
+
+                // 7. 波浪相位更新 (自然摆动)
+                this.wavePhase += this.waveSpeed * 0.02;
+                this.tailPhase += this.tailSpeed * 0.03;
+            }
+
+            // 绘制鱼 (精致风格)
+            draw(ctx) {
+                const angle = this.angle;
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+
+                // 鱼身参数
+                const len = this.bodyLength;
+                const height = this.bodyHeight;
+                const tailLen = len * 0.4;
+
+                // 身体波形偏移 (让鱼身体轻微波浪)
+                const waveOffset = Math.sin(this.wavePhase) * this.waveAmp;
+
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(angle);
+
+                // ---- 尾鳍 (动态摆动) ----
+                const tailWag = Math.sin(this.tailPhase) * 0.25 + 0.2;
+                ctx.save();
+                ctx.translate(-len * 0.45, 0);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(-tailLen * 0.6, -height * 0.7 * tailWag, -tailLen * 1.0, -height * 0.3 * tailWag);
+                ctx.quadraticCurveTo(-tailLen * 0.8, 0, -tailLen * 1.0, height * 0.3 * tailWag);
+                ctx.quadraticCurveTo(-tailLen * 0.6, height * 0.7 * tailWag, 0, 0);
+                ctx.fillStyle = this.finColor;
+                ctx.shadowColor = 'rgba(0,0,0,0.2)';
+                ctx.shadowBlur = 8;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.restore();
+
+                // ---- 身体 (椭圆+动态弧度) ----
+                ctx.beginPath();
+                // 使用贝塞尔绘制鱼身 (更自然)
+                const bodyTop = -height/2 + waveOffset * 0.3;
+                const bodyBottom = height/2 + waveOffset * 0.2;
+                ctx.moveTo(len * 0.45, 0);
+                ctx.quadraticCurveTo(len * 0.2, bodyTop - height*0.1, 0, bodyTop);
+                ctx.quadraticCurveTo(-len * 0.2, bodyTop - height*0.05, -len * 0.4, 0);
+                ctx.quadraticCurveTo(-len * 0.2, bodyBottom + height*0.05, 0, bodyBottom);
+                ctx.quadraticCurveTo(len * 0.2, bodyBottom + height*0.1, len * 0.45, 0);
+                ctx.closePath();
+
+                // 鱼身渐变
+                const grad = ctx.createLinearGradient(-len*0.3, -height*0.5, len*0.3, height*0.5);
+                grad.addColorStop(0, this.bodyColor);
+                grad.addColorStop(0.6, this.bodyColor);
+                grad.addColorStop(1, '#f0f0f0');
+                ctx.fillStyle = grad;
+                ctx.shadowColor = 'rgba(0,20,30,0.4)';
+                ctx.shadowBlur = 12;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // ---- 背鳍/腹鳍 (小点缀) ----
+                ctx.beginPath();
+                ctx.moveTo(len*0.1, -height*0.7);
+                ctx.quadraticCurveTo(-len*0.05, -height*0.9, -len*0.2, -height*0.6);
+                ctx.fillStyle = this.finColor;
+                ctx.globalAlpha = 0.55;
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+
+                ctx.beginPath();
+                ctx.moveTo(len*0.1, height*0.7);
+                ctx.quadraticCurveTo(-len*0.05, height*0.9, -len*0.2, height*0.6);
+                ctx.fillStyle = this.finColor;
+                ctx.globalAlpha = 0.45;
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+
+                // ---- 眼睛 ----
+                const eyeX = len * 0.3;
+                const eyeY = -height * 0.18;
+                ctx.beginPath();
+                ctx.arc(eyeX, eyeY, height * 0.2, 0, Math.PI * 2);
+                ctx.fillStyle = '#f9f9fa';
+                ctx.shadowBlur = 6;
+                ctx.shadowColor = 'rgba(0,0,0,0.2)';
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.beginPath();
+                ctx.arc(eyeX + height*0.05, eyeY - height*0.02, height*0.1, 0, Math.PI*2);
+                ctx.fillStyle = this.eyeColor;
+                ctx.fill();
+                // 高光
+                ctx.beginPath();
+                ctx.arc(eyeX + height*0.08, eyeY - height*0.07, height*0.04, 0, Math.PI*2);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+
+                // 第二只眼 (另一侧，轻微显露)
+                ctx.globalAlpha = 0.25;
+                ctx.beginPath();
+                ctx.arc(len * 0.2, height * 0.25, height*0.12, 0, Math.PI*2);
+                ctx.fillStyle = '#1a1a1a';
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+
+                ctx.restore();
+            }
+        }
+
+        // ----- 初始化鱼群 -----
+        function initFishes() {
+            fishes = [];
+            const count = FISH_COUNT;
+            for (let i = 0; i < count; i++) {
+                const fish = new Fish(i);
+                fishes.push(fish);
+            }
+        }
+
+        // ----- 动画循环 -----
+        function animate() {
+            // 更新所有鱼
+            for (let fish of fishes) {
+                fish.update();
+            }
+
+            // 鱼食逐渐消失 (寿命)
+            for (let i = foodPellets.length - 1; i >= 0; i--) {
+                const pellet = foodPellets[i];
+                pellet.life -= 0.003;
+                if (pellet.life <= 0.2 || pellet.radius < 0.8) {
+                    foodPellets.splice(i, 1);
+                } else {
+                    // 轻微扩散模拟水纹
+                    pellet.radius *= 0.999;
+                }
+            }
+
+            // 绘制
+            ctx.clearRect(0, 0, W, H);
+            drawBackground();
+
+            // ----- 绘制鱼食 (光晕) -----
+            for (let p of foodPellets) {
+                const rad = p.radius * (0.7 + 0.3 * Math.sin(Date.now() * 0.005 + p.x));
+                const gradient = ctx.createRadialGradient(p.x-2, p.y-2, 1, p.x, p.y, rad+4);
+                gradient.addColorStop(0, '#f7e58c');
+                gradient.addColorStop(0.5, '#e8b84b');
+                gradient.addColorStop(1, '#a5671a');
+                ctx.shadowColor = '#f1c40f';
+                ctx.shadowBlur = 20;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, rad, 0, Math.PI*2);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                // 高光
+                ctx.shadowBlur = 30;
+                ctx.beginPath();
+                ctx.arc(p.x-2, p.y-2, rad*0.3, 0, Math.PI*2);
+                ctx.fillStyle = '#fffbe6';
+                ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+
+            // 绘制鱼 (在食物上层)
+            for (let fish of fishes) {
+                fish.draw(ctx);
+            }
+
+            // 水纹柔光
+            ctx.fillStyle = 'rgba(255,255,255,0.02)';
+            ctx.fillRect(0, 0, W, H);
+
+            requestAnimationFrame(animate);
+        }
+
+        // ----- 背景 (水纹光影) -----
+        function drawBackground() {
+            // 基础渐变 + 光晕
+            const grad = ctx.createRadialGradient(300, 200, 100, 400, 300, 800);
+            grad.addColorStop(0, '#216b8a');
+            grad.addColorStop(0.4, '#10455c');
+            grad.addColorStop(0.8, '#06232f');
+            grad.addColorStop(1, '#02121a');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            // 水底光纹 (模拟)
+            ctx.globalAlpha = 0.06;
+            for (let i = 0; i < 14; i++) {
+                ctx.beginPath();
+                const x = (i * 70 + 20) % W;
+                const y = (i * 40 + 10) % H + 100;
+                ctx.ellipse(x, y, 180, 30, 0.3, 0, Math.PI*2);
+                ctx.fillStyle = '#c1e6f0';
+                ctx.fill();
+            }
+            ctx.globalAlpha = 0.15;
+            for (let i = 0; i < 6; i++) {
+                ctx.beginPath();
+                const x = (i * 130 + 70) % W;
+                const y = (i * 70 + 200) % H + 50;
+                ctx.ellipse(x, y, 90, 18, -0.1, 0, Math.PI*2);
+                ctx.fillStyle = '#8bc9db';
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        // ----- 投放鱼食 (点击) -----
+        function addFood(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (clientX - rect.left) * scaleX;
+            const y = (clientY - rect.top) * scaleY;
+            // 边界限制
+            const cx = clamp(x, 10, W - 10);
+            const cy = clamp(y, 10, H - 10);
+            // 添加鱼食 (初始大小随机)
+            foodPellets.push({
+                x: cx,
+                y: cy,
+                radius: random(7, 12),
+                life: 1.0
+            });
+            // 食物最多同时存在20粒
+            if (foodPellets.length > 20) {
+                foodPellets.splice(0, 1);
+            }
+        }
+
+        // ----- 事件绑定 -----
+        canvas.addEventListener('click', (e) => {
+            addFood(e.clientX, e.clientY);
+        });
+        // 移动端兼容
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            if (touch) {
+                addFood(touch.clientX, touch.clientY);
+            }
+        }, { passive: false });
+
+        // ----- 启动 -----
+        initFishes();
+        animate();
+
+        // 窗口失焦时减少 CPU 消耗 (可选)
+        let interval;
+        document.addEventListener('visibilitychange', () => {
+            // 简单处理：不做复杂暂停，仅作为展示
+        });
+
+        console.log('🐟 水族箱已启动 — 点击投放鱼食！');
+    })();
+</script>
+</body>
+</html>
+```
+### 互动与视觉机制
+您可以点击水族箱任意位置投喂鱼食，鱼群会自然地追逐并吃掉食物。整个动画的视觉和交互逻辑都围绕“自然”与“精致”展开。
+
+-   **鱼群行为逻辑**：每条鱼都有自己的颜色、大小和游动节奏。当您点击投放鱼食后，每条鱼会通过算法计算并追逐离自己最近的那一粒。吃掉鱼食后，它们会恢复悠闲的漫游状态。
+-   **精致的视觉风格**：鱼身使用了渐变和半透明效果，并带有动态摆动的尾鳍和身体波浪。水族箱背景也绘制了柔和的光影和水纹，增强了沉浸感。
+-   **直观的交互反馈**：您点击的位置会生成一粒带有光晕的鱼食，鱼群会立刻做出反应。画布同时支持鼠标和触摸操作，方便在不同设备上使用。
+````

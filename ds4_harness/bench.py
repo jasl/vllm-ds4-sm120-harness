@@ -14,8 +14,19 @@ _METRIC_KEYS = {
     "Output token throughput (tok/s)": "output_token_throughput_tok_s",
     "Total Token throughput (tok/s)": "total_token_throughput_tok_s",
     "Mean TPOT (ms)": "mean_tpot_ms",
+    "Median TPOT (ms)": "median_tpot_ms",
+    "P99 TPOT (ms)": "p99_tpot_ms",
     "Mean ITL (ms)": "mean_itl_ms",
+    "Median ITL (ms)": "median_itl_ms",
+    "P99 ITL (ms)": "p99_itl_ms",
     "Mean TTFT (ms)": "mean_ttft_ms",
+    "Median TTFT (ms)": "median_ttft_ms",
+    "P99 TTFT (ms)": "p99_ttft_ms",
+    "Acceptance rate (%)": "spec_acceptance_rate_percent",
+    "Acceptance length": "spec_acceptance_length",
+    "Drafts": "spec_drafts",
+    "Draft tokens": "spec_draft_tokens",
+    "Accepted tokens": "spec_accepted_tokens",
 }
 
 
@@ -24,9 +35,18 @@ def _coerce_number(value: str) -> int | float:
     return int(number) if number.is_integer() else number
 
 
-def parse_bench_output(output: str) -> dict[str, int | float]:
-    report: dict[str, int | float] = {}
+def parse_bench_output(output: str) -> dict[str, Any]:
+    report: dict[str, Any] = {}
+    per_position_acceptance: dict[int, int | float] = {}
     for line in output.splitlines():
+        position_match = re.match(
+            r"^\s*Position\s+(\d+):\s+([-+]?\d[\d,.]*)\s*$",
+            line,
+        )
+        if position_match:
+            raw_position, raw_value = position_match.groups()
+            per_position_acceptance[int(raw_position)] = _coerce_number(raw_value)
+            continue
         match = re.match(r"^([^:]+):\s+([-+]?\d[\d,.]*)\s*$", line.strip())
         if not match:
             continue
@@ -34,6 +54,10 @@ def parse_bench_output(output: str) -> dict[str, int | float]:
         key = _METRIC_KEYS.get(raw_key.strip())
         if key is not None:
             report[key] = _coerce_number(raw_value)
+    if per_position_acceptance:
+        report["spec_per_position_acceptance_percent"] = [
+            value for _, value in sorted(per_position_acceptance.items())
+        ]
     return report
 
 

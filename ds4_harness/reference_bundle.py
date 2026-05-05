@@ -260,6 +260,10 @@ def _copy_oracle_summary(source_dir: Path, target_dir: Path) -> None:
     _write_json(target_dir / "oracle_export_summary.json", data)
 
 
+def _has_oracle_export(run_dir: Path) -> bool:
+    return any((run_dir / variant / "oracle_export").exists() for variant in VARIANTS)
+
+
 def _copy_smoke_and_toolcall(run_dir: Path, output_dir: Path) -> None:
     for variant in VARIANTS:
         source_dir = run_dir / variant / "acceptance"
@@ -448,6 +452,24 @@ def _write_manifest(
 ) -> None:
     env = _first_run_environment(run_dir)
     collect_env = _first_collect_env(run_dir)
+    contents = {
+        "report": "Readable baseline report with correctness, performance, and cost metrics.",
+        "generation": "Directory-driven writing, translation, and coding transcripts.",
+        "smoke": "no-MTP and MTP chat smoke request/response captures.",
+        "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
+        "kv_layout": "Synthetic packed KV byte-layout snapshots for indexer-cache regressions.",
+        "long_context": "Long-context sentinel retrieval probes for cache-layout regressions.",
+        "prefix_cache": "Concurrent long-prefix cache reuse probes with request-level timing plus KV/runtime telemetry.",
+        "streaming_pressure": "Optional short concurrent streaming-pressure soak with request timing plus KV/runtime telemetry.",
+        "evals": "Optional lm_eval accuracy summaries such as GSM8K exact match.",
+        "performance": "Benchmark, runtime, and GPU telemetry summaries.",
+    }
+    if _has_oracle_export(run_dir):
+        contents["oracle"] = (
+            "Deterministic /v1/completions logprobs oracle cases. The oracle root "
+            "is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp "
+            "keep variant-specific copies when present."
+        )
     manifest = {
         "schema_version": 1,
         "label": label,
@@ -462,19 +484,7 @@ def _write_manifest(
         "collect_env": collect_env,
         "serve_commands": _serve_commands(run_dir),
         "phase_exit_codes": _phase_exit_codes(run_dir),
-        "contents": {
-            "report": "Readable baseline report with correctness, performance, and cost metrics.",
-            "generation": "Directory-driven writing, translation, and coding transcripts.",
-            "oracle": "Deterministic /v1/completions logprobs oracle cases. The oracle root is the no-MTP compatibility entrypoint; oracle/nomtp and oracle/mtp keep variant-specific copies when present.",
-            "smoke": "no-MTP and MTP chat smoke request/response captures.",
-            "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
-            "kv_layout": "Synthetic packed KV byte-layout snapshots for indexer-cache regressions.",
-            "long_context": "Long-context sentinel retrieval probes for cache-layout regressions.",
-            "prefix_cache": "Concurrent long-prefix cache reuse probes with request-level timing plus KV/runtime telemetry.",
-            "streaming_pressure": "Optional short concurrent streaming-pressure soak with request timing plus KV/runtime telemetry.",
-            "evals": "Optional lm_eval accuracy summaries such as GSM8K exact match.",
-            "performance": "Benchmark, runtime, and GPU telemetry summaries.",
-        },
+        "contents": contents,
     }
     _write_json(output_dir / "manifest.json", _sanitize_json(manifest))
 
@@ -517,6 +527,43 @@ def _write_readme(output_dir: Path, label: str, run_dir: Path) -> None:
             + "\n".join(non_green_lines)
             + "\n\n"
         )
+    has_oracle = _has_oracle_export(run_dir)
+    oracle_bullet = (
+        "- `oracle/`: no-MTP deterministic `/v1/completions` compatibility entrypoint;\n"
+        "  `oracle/nomtp/` and `oracle/mtp/` contain variant-specific copies when\n"
+        "  present, including prompt token ids, generated tokens, token logprobs, top\n"
+        "  logprobs, and usage."
+        if has_oracle
+        else "- This bundle does not include an oracle export; use `generation/`,\n"
+        "  `toolcall15/`, and `performance/` as trajectory and performance references."
+    )
+    reuse_section = (
+        f"""Run token-level comparison against a new local server:
+
+```bash
+python -m ds4_harness.cli oracle-compare \\
+  --base-url http://127.0.0.1:8000 \\
+  --oracle-dir baselines/{label}/oracle \\
+  --top-n 20 \\
+  --require-prompt-ids \\
+  --low-margin-threshold 0.5 \\
+  --require-high-margin-token-match \\
+  --min-top1-match-rate 0.80 \\
+  --min-topk-overlap-mean 0.80 \\
+  --stability-json-output artifacts/manual/oracle_stability.json \\
+  --json-output artifacts/manual/oracle_compare.json
+```
+
+For MTP, use the smoke and ToolCall-15 data as trajectory and behavior
+references instead of requiring exact token equality.
+"""
+        if has_oracle
+        else """This bundle does not include an oracle export, so it is not a token-level
+correctness oracle. Use its generation transcripts, ToolCall-15 traces,
+performance rows, GPU telemetry, and runtime telemetry as the archived reference
+for this run.
+"""
+    )
 
     _write_text(
         output_dir / "README.md",
@@ -535,10 +582,7 @@ paths, server logs, tokens, and private connection details.
   runtime telemetry, and synthetic real-scenario OP cost metrics.
 - `generation/`: no-MTP and MTP directory-driven generation transcripts and
   JSON rows when the source run used `generation-matrix`.
-- `oracle/`: no-MTP deterministic `/v1/completions` compatibility entrypoint;
-  `oracle/nomtp/` and `oracle/mtp/` contain variant-specific copies when
-  present, including prompt token ids, generated tokens, token logprobs, top
-  logprobs, and usage.
+{oracle_bullet}
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
 - `toolcall15/`: no-MTP and MTP ToolCall-15 scores and traces.
 - `kv_layout/`: synthetic packed KV byte-layout snapshots for indexer-cache
@@ -555,24 +599,7 @@ paths, server logs, tokens, and private connection details.
 
 ## Reuse
 
-Run token-level comparison against a new local server:
-
-```bash
-python -m ds4_harness.cli oracle-compare \\
-  --base-url http://127.0.0.1:8000 \\
-  --oracle-dir baselines/{label}/oracle \\
-  --top-n 20 \\
-  --require-prompt-ids \\
-  --low-margin-threshold 0.5 \\
-  --require-high-margin-token-match \\
-  --min-top1-match-rate 0.80 \\
-  --min-topk-overlap-mean 0.80 \\
-  --stability-json-output artifacts/manual/oracle_stability.json \\
-  --json-output artifacts/manual/oracle_compare.json
-```
-
-For MTP, use the smoke and ToolCall-15 data as trajectory and behavior
-references instead of requiring exact token equality.
+{reuse_section}
 """,
     )
 
