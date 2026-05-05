@@ -38,6 +38,19 @@ For two-node DGX Spark bare-metal Ray/vLLM bring-up, see
 That document uses placeholders only; keep private hostnames, IP addresses, and
 local paths in ignored local notes.
 
+Machine-independent CUDA profile snippets live under `configs/`. Source the
+matching file before building or running GPU-path validation on the target host:
+
+```bash
+source configs/sm120_tp2_serve.env.example
+source configs/gb10_sm121_serve.env.example
+```
+
+The GB10 profile records the current SM121 shape: one `NVIDIA GB10` device,
+CUDA 13.2 tools under `/usr/local/cuda-13.2`, `CUDA_ARCH_LIST=121a`, and
+`TORCH_CUDA_ARCH_LIST=12.1a`. Keep private SSH targets and checkout paths in
+ignored local files, not in these public profile snippets.
+
 ## DeepSeek Official API Notes
 
 Use these docs as the reference behavior when comparing local vLLM output with

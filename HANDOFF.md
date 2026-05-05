@@ -89,6 +89,19 @@ export TORCH_CUDA_ARCH_LIST="12.0a"
 unset PYTORCH_CUDA_ALLOC_CONF
 ```
 
+For GB10 / SM121 hosts, source the public profile before building or running
+environment and log-comparison gates:
+
+```bash
+source configs/gb10_sm121_serve.env.example
+```
+
+That profile intentionally contains only machine-independent values: CUDA 13.2
+tool paths, `CUDA_ARCH_LIST=121a`, `TORCH_CUDA_ARCH_LIST=12.1a`, a
+`1x_nvidia_gb10` topology slug, and SM12x-safe FP4-indexer-cache defaults.
+Keep concrete GB10 SSH targets, checkout roots, and artifact paths in ignored
+local notes.
+
 Do not pass `--attention_config.use_fp4_indexer_cache=True` on SM12x hosts such
 as RTX PRO 6000, RTX 5090, or GB10. That flag is currently SM100/B200-specific;
 keep `SERVE_USE_FP4_INDEXER_CACHE=auto` or set it to `0` for SM12x runs.

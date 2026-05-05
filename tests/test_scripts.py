@@ -229,6 +229,23 @@ def test_env_sample_and_local_env_are_configured():
     assert ".env" in gitignore
 
 
+def test_gb10_sm121_profile_uses_public_machine_independent_settings():
+    profile = (
+        ROOT / "configs" / "gb10_sm121_serve.env.example"
+    ).read_text(encoding="utf-8")
+
+    assert 'CUDA_HOME="/usr/local/cuda-13.2"' in profile
+    assert 'TRITON_PTXAS_PATH="/usr/local/cuda-13.2/bin/ptxas"' in profile
+    assert 'CUDA_ARCH_LIST="121a"' in profile
+    assert 'TORCH_CUDA_ARCH_LIST="12.1a"' in profile
+    assert 'GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-1x_nvidia_gb10}"' in profile
+    assert 'SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-0}"' in profile
+    assert "PYTORCH_CUDA_ALLOC_CONF" in profile
+    assert "10.0.0." not in profile
+    assert "/home/" not in profile
+    assert "/Users/" not in profile
+
+
 def test_acceptance_script_writes_human_markdown_smoke_reports():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
 
