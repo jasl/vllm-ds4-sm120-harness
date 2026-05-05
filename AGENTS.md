@@ -9,6 +9,10 @@ DeepSeek V4 SM12x work. Keep rules here safe for public GitHub visibility.
 - When editing a vLLM checkout from this context, read and follow that vLLM
   checkout's own `AGENTS.md` first. For vLLM files, the vLLM repository's rules
   take precedence over this harness repository's rules.
+- vLLM pull requests require DCO sign-off on every commit. When creating,
+  amending, cherry-picking, rebasing, squashing, or force-pushing commits for a
+  vLLM branch, use `git commit -s` or otherwise ensure each resulting commit has
+  a valid `Signed-off-by: Name <email>` trailer before pushing.
 - Do not put private hostnames, IP addresses, usernames, local absolute paths,
   tokens, or oracle bundle locations in tracked files. Use ignored local notes
   such as `*.local.md` for machine-specific details.
