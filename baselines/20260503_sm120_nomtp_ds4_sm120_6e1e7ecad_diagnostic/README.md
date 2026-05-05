@@ -6,9 +6,16 @@ paths, server logs, tokens, and private connection details.
 
 ## Known Non-Green Gates
 
-This bundle is a current reference baseline, not necessarily a completely green acceptance run. Treat partial ToolCall-15 traces as current behavior references unless a later branch is explicitly trying to fix ToolCall policy quality.
+This bundle is a current no-MTP diagnostic reference, not a completely green
+acceptance run or a full no-MTP/MTP release baseline. Treat partial ToolCall-15
+traces as current behavior references unless a later branch is explicitly trying
+to fix ToolCall policy quality.
 
 - nomtp: `224/270`; failures `TC-06`, `TC-14`, `TC-06`, `TC-11`, `TC-12`, `TC-14`, `TC-06`, `TC-11`, `TC-14`, `TC-06`, `TC-11`, `TC-12`, `TC-06`, `TC-11`, `TC-14`, `TC-06`, `TC-11`, `TC-12`, `TC-06`, `TC-11`, `TC-14`, `TC-06`, `TC-11`, `TC-14`, `TC-06`, `TC-11`, `TC-14`.
+- generation: `313/315` rows passed; `clock_html` missed the required
+  `Asia/Shanghai` term for `en/non-thinking` and `zh/think-max`.
+- HF/MT-Bench: concurrency `4` exited non-zero and has no metrics row; other
+  captured concurrencies (`1`, `2`, `8`, `16`, `24`) completed `80/80`.
 
 ## Contents
 
@@ -16,14 +23,12 @@ This bundle is a current reference baseline, not necessarily a completely green 
   exit codes.
 - `report.md`: readable baseline report with throughput, latency, correctness,
   runtime telemetry, and synthetic real-scenario OP cost metrics.
-- `generation/`: no-MTP and MTP directory-driven generation transcripts and
-  JSON rows when the source run used `generation-matrix`.
+- `generation/`: no-MTP directory-driven generation transcripts and JSON rows.
 - `oracle/`: no-MTP deterministic `/v1/completions` compatibility entrypoint;
-  `oracle/nomtp/` and `oracle/mtp/` contain variant-specific copies when
-  present, including prompt token ids, generated tokens, token logprobs, top
-  logprobs, and usage.
-- `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
-- `toolcall15/`: no-MTP and MTP ToolCall-15 scores and traces.
+  `oracle/nomtp/` contains the variant-specific copies, including prompt token
+  ids, generated tokens, token logprobs, top logprobs, and usage.
+- `smoke/`: no-MTP chat smoke captures in JSON and Markdown.
+- `toolcall15/`: no-MTP ToolCall-15 scores and traces.
 - `kv_layout/`: synthetic packed KV byte-layout snapshots for indexer-cache
   regressions. Raw binary captures stay in the run artifact tree.
 - `long_context/`: long-context sentinel retrieval probes for cache-layout
@@ -50,5 +55,5 @@ python -m ds4_harness.cli oracle-compare \
   --json-output artifacts/manual/oracle_compare.json
 ```
 
-For MTP, use the smoke and ToolCall-15 data as trajectory and behavior
-references instead of requiring exact token equality.
+This bundle has no MTP variant. Use later MTP-specific bundles for MTP behavior
+references instead of treating this no-MTP token oracle as interchangeable.
