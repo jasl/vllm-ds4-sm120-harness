@@ -47,6 +47,10 @@ def _metric_name_matches(name: str, needles: tuple[str, ...]) -> bool:
     return any(needle in normalized for needle in needles)
 
 
+def _metric_name(name: str) -> str:
+    return name.casefold().replace(":", "_")
+
+
 def _parse_prometheus_metrics(text: str) -> tuple[MetricSeries, int]:
     series: MetricSeries = defaultdict(list)
     snapshots = 0
@@ -78,8 +82,24 @@ def _series_values(series: MetricSeries, needles: tuple[str, ...]) -> list[list[
     return [values for (name, _labels), values in series.items() if _metric_name_matches(name, needles)]
 
 
+def _series_values_exact(series: MetricSeries, names: tuple[str, ...]) -> list[list[float]]:
+    normalized_names = {_metric_name(name) for name in names}
+    return [
+        values
+        for (name, _labels), values in series.items()
+        if _metric_name(name) in normalized_names
+    ]
+
+
 def _counter_delta_sum(series: MetricSeries, needles: tuple[str, ...]) -> float | None:
     matches = _series_values(series, needles)
+    if not matches:
+        return None
+    return round(sum(_counter_delta(values) for values in matches), 2)
+
+
+def _counter_delta_sum_exact(series: MetricSeries, names: tuple[str, ...]) -> float | None:
+    matches = _series_values_exact(series, names)
     if not matches:
         return None
     return round(sum(_counter_delta(values) for values in matches), 2)
@@ -88,6 +108,13 @@ def _counter_delta_sum(series: MetricSeries, needles: tuple[str, ...]) -> float 
 def _flatten_values(series: MetricSeries, needles: tuple[str, ...]) -> list[float]:
     values: list[float] = []
     for matched in _series_values(series, needles):
+        values.extend(matched)
+    return values
+
+
+def _flatten_exact_values(series: MetricSeries, names: tuple[str, ...]) -> list[float]:
+    values: list[float] = []
+    for matched in _series_values_exact(series, names):
         values.extend(matched)
     return values
 
@@ -132,11 +159,61 @@ def summarize_metrics_file(path: Path | None) -> dict[str, Any]:
             summary[f"{output_key}_avg"] = average
 
     cache_values = _scale_percent(
-        _flatten_values(series, ("gpu_cache_usage_perc", "gpu_kv_cache_usage"))
+        _flatten_exact_values(
+            series,
+            (
+                "vllm:kv_cache_usage_perc",
+                "kv_cache_usage_perc",
+                "vllm:gpu_cache_usage_perc",
+                "gpu_cache_usage_perc",
+                "vllm:gpu_kv_cache_usage",
+                "gpu_kv_cache_usage",
+            ),
+        )
     )
     if cache_values:
         summary["gpu_kv_cache_usage_percent_max"] = _maximum(cache_values)
         summary["gpu_kv_cache_usage_percent_avg"] = _average(cache_values)
+
+    prefix_queries = _counter_delta_sum_exact(
+        series,
+        (
+            "vllm:prefix_cache_queries",
+            "prefix_cache_queries",
+            "vllm:prefix_cache_queries_total",
+            "prefix_cache_queries_total",
+        ),
+    )
+    prefix_hits = _counter_delta_sum_exact(
+        series,
+        (
+            "vllm:prefix_cache_hits",
+            "prefix_cache_hits",
+            "vllm:prefix_cache_hits_total",
+            "prefix_cache_hits_total",
+        ),
+    )
+    if prefix_queries is not None:
+        summary["prefix_cache_queries_delta"] = prefix_queries
+    if prefix_hits is not None:
+        summary["prefix_cache_hits_delta"] = prefix_hits
+    if prefix_queries and prefix_hits is not None:
+        summary["prefix_cache_hit_rate_percent_delta"] = round(
+            prefix_hits / prefix_queries * 100,
+            2,
+        )
+
+    preemptions = _counter_delta_sum_exact(
+        series,
+        (
+            "vllm:num_preemptions",
+            "num_preemptions",
+            "vllm:num_preemptions_total",
+            "num_preemptions_total",
+        ),
+    )
+    if preemptions is not None:
+        summary["preemptions_delta"] = preemptions
 
     return summary
 
@@ -301,6 +378,11 @@ def write_runtime_markdown(path: Path, summary: dict[str, Any]) -> None:
                     "- Max GPU KV cache usage: "
                     f"{_format_value(metrics.get('gpu_kv_cache_usage_percent_max'), '%')}"
                 ),
+                (
+                    "- Prefix cache hit rate: "
+                    f"{_format_value(metrics.get('prefix_cache_hit_rate_percent_delta'), '%')}"
+                ),
+                f"- Preemptions delta: {_format_value(metrics.get('preemptions_delta'))}",
                 "",
             ]
         )
@@ -327,6 +409,10 @@ def write_runtime_markdown(path: Path, summary: dict[str, Any]) -> None:
                 (
                     "- Max GPU KV cache usage: "
                     f"{_format_value(serve_log.get('gpu_kv_cache_usage_percent_max'), '%')}"
+                ),
+                (
+                    "- Prefix cache hit rate avg: "
+                    f"{_format_value(serve_log.get('prefix_cache_hit_rate_percent_avg'), '%')}"
                 ),
             ]
         )

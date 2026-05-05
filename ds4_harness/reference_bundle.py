@@ -158,8 +158,10 @@ def _first_run_environment(run_dir: Path) -> Json:
         [
             run_dir / "nomtp" / "bench_hf_mt_bench" / "run_environment.json",
             run_dir / "nomtp" / "acceptance" / "run_environment.json",
+            run_dir / "nomtp" / "streaming_pressure_soak" / "run_environment.json",
             run_dir / "mtp" / "bench_hf_mt_bench" / "run_environment.json",
             run_dir / "mtp" / "acceptance" / "run_environment.json",
+            run_dir / "mtp" / "streaming_pressure_soak" / "run_environment.json",
         ]
     )
     if path is None:
@@ -173,8 +175,10 @@ def _first_collect_env(run_dir: Path) -> Json:
         [
             run_dir / "nomtp" / "bench_hf_mt_bench" / "vllm_collect_env.txt",
             run_dir / "nomtp" / "acceptance" / "vllm_collect_env.txt",
+            run_dir / "nomtp" / "streaming_pressure_soak" / "vllm_collect_env.txt",
             run_dir / "mtp" / "bench_hf_mt_bench" / "vllm_collect_env.txt",
             run_dir / "mtp" / "acceptance" / "vllm_collect_env.txt",
+            run_dir / "mtp" / "streaming_pressure_soak" / "vllm_collect_env.txt",
         ]
     )
     if path is None:
@@ -315,6 +319,42 @@ def _copy_long_context_probes(run_dir: Path, output_dir: Path) -> None:
         )
 
 
+def _copy_prefix_cache_probes(run_dir: Path, output_dir: Path) -> None:
+    for variant in VARIANTS:
+        source_dir = run_dir / variant / "prefix_cache_probe"
+        if not source_dir.exists():
+            continue
+        target_dir = output_dir / "prefix_cache" / variant
+        _copy_json(source_dir / "prefix_cache_probe.json", target_dir / "probe.json")
+        _copy_text(source_dir / "prefix_cache_probe.md", target_dir / "probe.md")
+        _copy_json(
+            source_dir / "gpu_stats_summary.json",
+            target_dir / "gpu_stats_summary.json",
+        )
+        _copy_json(
+            source_dir / "runtime_stats_summary.json",
+            target_dir / "runtime_stats_summary.json",
+        )
+
+
+def _copy_streaming_pressure_soaks(run_dir: Path, output_dir: Path) -> None:
+    for variant in VARIANTS:
+        source_dir = run_dir / variant / "streaming_pressure_soak"
+        if not source_dir.exists():
+            continue
+        target_dir = output_dir / "streaming_pressure" / variant
+        _copy_json(source_dir / "streaming_pressure_soak.json", target_dir / "soak.json")
+        _copy_text(source_dir / "streaming_pressure_soak.md", target_dir / "soak.md")
+        _copy_json(
+            source_dir / "gpu_stats_summary.json",
+            target_dir / "gpu_stats_summary.json",
+        )
+        _copy_json(
+            source_dir / "runtime_stats_summary.json",
+            target_dir / "runtime_stats_summary.json",
+        )
+
+
 def _copy_kv_layout_probes(run_dir: Path, output_dir: Path) -> None:
     for variant in VARIANTS:
         source_dir = run_dir / variant / "kv_layout_probe"
@@ -430,6 +470,8 @@ def _write_manifest(
             "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
             "kv_layout": "Synthetic packed KV byte-layout snapshots for indexer-cache regressions.",
             "long_context": "Long-context sentinel retrieval probes for cache-layout regressions.",
+            "prefix_cache": "Concurrent long-prefix cache reuse probes with request-level timing plus KV/runtime telemetry.",
+            "streaming_pressure": "Optional short concurrent streaming-pressure soak with request timing plus KV/runtime telemetry.",
             "evals": "Optional lm_eval accuracy summaries such as GSM8K exact match.",
             "performance": "Benchmark, runtime, and GPU telemetry summaries.",
         },
@@ -503,6 +545,10 @@ paths, server logs, tokens, and private connection details.
   regressions. Raw binary captures stay in the run artifact tree.
 - `long_context/`: long-context sentinel retrieval probes for cache-layout
   regressions. These diagnostic references do not change accuracy scores.
+- `prefix_cache/`: concurrent long-prefix cache reuse probes with request-level
+  TTFT/elapsed timing plus KV cache, prefix hit, and preemption telemetry.
+- `streaming_pressure/`: optional short concurrent streaming-pressure soak
+  captures with request timing, chunk counts, and KV/runtime telemetry.
 - `evals/`: optional `lm_eval` accuracy summaries such as GSM8K exact match
   when the source run included an eval phase.
 - `performance/`: benchmark rows plus GPU/runtime telemetry summaries.
@@ -567,6 +613,8 @@ def build_reference_bundle(
     _copy_generation(run_dir, output_dir)
     _copy_kv_layout_probes(run_dir, output_dir)
     _copy_long_context_probes(run_dir, output_dir)
+    _copy_prefix_cache_probes(run_dir, output_dir)
+    _copy_streaming_pressure_soaks(run_dir, output_dir)
     _copy_smoke_and_toolcall(run_dir, output_dir)
     _copy_evals(run_dir, output_dir)
     _write_json(output_dir / "performance" / "primary.json", _performance_source("primary", run_dir))

@@ -103,10 +103,10 @@ tool-call turn.
   - stores raw logs per concurrency
 - vLLM runtime telemetry:
   - samples `/metrics` during wrapper runs
-  - summarizes prefill/decode token counters, request pressure, and KV-cache
-    usage
-  - can parse serve logs for prompt/generation throughput and MTP acceptance
-    metrics
+  - summarizes prefill/decode token counters, request pressure, KV-cache usage,
+    prefix-cache hit rate, and preemption counters
+  - can parse serve logs for prompt/generation throughput, prefix-cache hit
+    rate, KV-cache usage, and MTP acceptance metrics
 - Long-context KV/indexer probe:
   - sends a deterministic long prompt with early, middle, and late sentinel
     codes
@@ -114,6 +114,22 @@ tool-call turn.
     runtime stats, and GPU stats
   - is diagnostic evidence for cache-layout regressions; it does not change
     accuracy scores
+- Prefix-cache reuse probe:
+  - warms one deterministic long conversation, introduces a second long
+    conversation, checks sequential A-after-B reuse, then sends interleaved
+    warm A/B requests
+  - records streaming TTFT, elapsed time, prompt usage, cached prompt tokens,
+    runtime stats, and GPU stats
+  - is diagnostic evidence for concurrent prefix/KV reuse regressions; use
+    `runtime_stats_summary.json` for phase-local KV usage, prefix hit rate, and
+    preemption counters
+- Optional streaming-pressure soak:
+  - sends concurrent streaming chat completions over deterministic long
+    conversations that grow across several short rounds
+  - records request-level TTFT, elapsed time, chunk counts, cached prompt
+    tokens, runtime stats, and GPU stats
+  - is disabled by default; enable it with `RUN_STREAMING_PRESSURE_SOAK=1`
+    when you want a short release-gate check for streaming responsiveness
 
 ## Coverage Model
 
@@ -268,14 +284,15 @@ interval.
 The wrappers also sample vLLM runtime metrics from `/metrics` by default. Each
 run writes `vllm_metrics.prom`, `runtime_stats_summary.json`, and
 `runtime_stats_summary.md` when metrics are available. The summary includes
-prefill/decode token deltas, request pressure, and KV-cache usage. Set
-`RUNTIME_STATS=0` to disable sampling, or `RUNTIME_STATS_INTERVAL_SECONDS=10`
-to reduce polling. If you have the server log path, pass
-`SERVE_LOG=/path/to/serve.log`; the summary will also include vLLM log-derived
-prompt/generation throughput and speculative decoding acceptance metrics. The
-wrapper records `serve_log_offset.txt` when a phase starts and parses only the
-appended lines into `serve_log_phase.log`, so log-derived MTP acceptance metrics
-remain phase-local even when multiple harness phases share one vLLM server log.
+prefill/decode token deltas, request pressure, KV-cache usage, prefix-cache hit
+rate, and preemption deltas. Set `RUNTIME_STATS=0` to disable sampling, or
+`RUNTIME_STATS_INTERVAL_SECONDS=10` to reduce polling. If you have the server
+log path, pass `SERVE_LOG=/path/to/serve.log`; the summary will also include
+vLLM log-derived prompt/generation throughput, KV-cache usage, prefix-cache hit
+rate, and speculative decoding acceptance metrics. The wrapper records
+`serve_log_offset.txt` when a phase starts and parses only the appended lines
+into `serve_log_phase.log`, so log-derived MTP acceptance metrics remain
+phase-local even when multiple harness phases share one vLLM server log.
 
 Each wrapper also downloads and runs the official vLLM `collect_env.py` script
 by default. It stores `vllm_collect_env.py`, `vllm_collect_env.sha256`,
@@ -673,6 +690,24 @@ The default long-context probe uses `LONG_CONTEXT_LINE_COUNT=2400`,
 When changing the long-context probe to `think-high` or `think-max`, also set
 `LONG_CONTEXT_TEMPERATURE=1.0`; for `think-max`, keep
 `SERVE_MAX_MODEL_LEN=393216` or larger.
+The default prefix-cache probe uses `PREFIX_CACHE_LINE_COUNT=2400`,
+`PREFIX_CACHE_MAX_TOKENS=64`, `PREFIX_CACHE_TEMPERATURE=0.0`,
+`PREFIX_CACHE_TOP_P=1.0`, `PREFIX_CACHE_THINKING_MODE=non-thinking`, and
+`PREFIX_CACHE_FAIL_ON_REGRESSION=0`. It records a warning flag by default
+instead of failing the run on noisy TTFT ratios; set
+`PREFIX_CACHE_FAIL_ON_REGRESSION=1` when using a stable dedicated host and you
+want the probe to be a hard gate.
+The optional streaming-pressure soak is disabled by default with
+`RUN_STREAMING_PRESSURE_SOAK=0`. When enabled, it defaults to
+`STREAMING_PRESSURE_CONCURRENCY=4`, `STREAMING_PRESSURE_ROUND_COUNT=3`,
+`STREAMING_PRESSURE_LINE_COUNT=1200`,
+`STREAMING_PRESSURE_MAX_TOKENS=128`,
+`STREAMING_PRESSURE_TEMPERATURE=1.0`,
+`STREAMING_PRESSURE_TOP_P=1.0`,
+`STREAMING_PRESSURE_THINKING_MODE=non-thinking`, and
+`STREAMING_PRESSURE_FAIL_ON_SLOW=0`. It records slow-TTFT/elapsed warning
+flags by default; set `STREAMING_PRESSURE_FAIL_ON_SLOW=1` only on a stable
+host where you want those warnings to fail the gate.
 The default KV layout probe uses a synthetic packed FP8 indexer cache with
 `KV_LAYOUT_NUM_BLOCKS=2`, `KV_LAYOUT_BLOCK_SIZE=256`,
 `KV_LAYOUT_HEAD_DIM=448`, `KV_LAYOUT_SCALE_BYTES=8`, and
@@ -682,9 +717,11 @@ server starts.
 
 Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
 the requested server variant. Valid phase names are `kv_layout_probe`,
-`acceptance`, `long_context_probe`, `bench_hf_mt_bench`, `eval_gsm8k`,
-`bench_random_8192x512`, and `oracle_export`; the default is `all`. For
-example:
+`acceptance`, `long_context_probe`, `prefix_cache_probe`,
+`streaming_pressure_soak`, `bench_hf_mt_bench`, `eval_gsm8k`,
+`bench_random_8192x512`, and `oracle_export`; the default is `all`. The
+`streaming_pressure_soak` phase still requires `RUN_STREAMING_PRESSURE_SOAK=1`
+because it is intentionally opt-in. For example:
 
 ```bash
 B200_BASELINE_VARIANTS=mtp \
@@ -719,6 +756,8 @@ rental cost use the two-GPU denominator for each child service.
 
 The `RUN_ACCEPTANCE=0`, `RUN_BENCH_HF=0`, `RUN_RANDOM_LONG=0`, and
 `RUN_ORACLE_EXPORT=0` toggles disable phases inside the selected phase set.
+`RUN_STREAMING_PRESSURE_SOAK=1` enables the optional streaming-pressure soak in
+acceptance and baseline runs.
 The oracle export phase runs for each requested variant so
 no-MTP and MTP both produce logprobs reference material. Before creating a new
 managed run directory, the script moves existing sibling artifact directories
@@ -820,7 +859,24 @@ Before promoting an optimization:
 - `lm-eval --task gsm8k --num-fewshot 8` is captured for expensive reference
   baselines and before promoting a branch whose correctness could have changed.
 - `long-context-probe` passes when touching KV cache, FP4 indexer cache,
-  chunked prefill, scheduler, or long-context serving behavior.
+  chunked prefill, scheduler, or long-context serving behavior. For suspected
+  KV/prefix-cache reuse regressions, preserve phase-local
+  `runtime_stats_summary.json` and compare TTFT with
+  `gpu_kv_cache_usage_percent_*`, `prefix_cache_hit_rate_percent_delta`, and
+  `preemptions_delta`. Long-context probes and long-prefill random benchmarks
+  are the most useful workloads because short prompts barely move KV usage.
+- `prefix-cache-probe` is captured before promoting scheduler, prefix-cache, or
+  KV-cache changes. Compare `warm_a_after_b_vs_solo_ttft_ratio`,
+  `warm_a_interleaved_after_rebuild_vs_solo_ttft_ratio`,
+  `cached_prompt_tokens`, `prefix_cache_hit_rate_percent_delta`,
+  `gpu_kv_cache_usage_percent_max`, and `preemptions_delta`; a high ratio with
+  low prefix hit and no preemption is evidence of reuse drift rather than
+  capacity pressure.
+- Enable `streaming-pressure-soak` with `RUN_STREAMING_PRESSURE_SOAK=1` before
+  making streaming responsiveness a release gate. Compare `max_ttft_seconds`,
+  `max_elapsed_seconds`, chunk counts, `running_requests_max`,
+  `gpu_kv_cache_usage_percent_max`, prefix hit rate, and preemptions. Leave it
+  disabled for routine local harness edits.
 - `oracle-compare` has matching prompt token ids and no early token divergence
   on high-margin deterministic oracle cases. Low-margin divergence must be
   explained with top-k overlap, top-1 margin, and repeated-request stability

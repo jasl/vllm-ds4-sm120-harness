@@ -1,6 +1,6 @@
 # DeepSeek V4 SM12x Handoff Notes
 
-Last updated: 2026-05-02
+Last updated: 2026-05-05
 
 This directory is the repo-independent validation harness for the SM12x
 DeepSeek V4 work. It is meant to survive context switches and should be copied
@@ -195,10 +195,27 @@ set `GPU_STATS_INTERVAL_SECONDS` if one-second sampling is too noisy.
 The wrappers also sample vLLM runtime telemetry from `/metrics` by default.
 Preserve `vllm_metrics.prom`, `runtime_stats_summary.json`, and
 `runtime_stats_summary.md` with each run. These summarize prefill/decode token
-deltas, request pressure, and KV-cache usage. Set `RUNTIME_STATS=0` only when a
-run intentionally has no live server metrics. If a serve log exists, pass
-`SERVE_LOG=/path/to/serve.log` so the runtime summary can also include
-vLLM-reported prompt/generation throughput and MTP acceptance metrics.
+deltas, request pressure, KV-cache usage, prefix-cache hit rate, and preemption
+deltas. Set `RUNTIME_STATS=0` only when a run intentionally has no live server
+metrics. If a serve log exists, pass `SERVE_LOG=/path/to/serve.log` so the
+runtime summary can also include vLLM-reported prompt/generation throughput,
+KV-cache usage, prefix-cache hit rate, and MTP acceptance metrics.
+
+For suspected concurrent prefix/KV reuse regressions, run
+`scripts/run_prefix_cache_probe.sh`. It warms one long conversation, introduces
+a second long conversation, checks sequential A-after-B reuse, then sends
+interleaved warm A/B requests while recording streaming TTFT and cached prompt
+tokens. Use the sibling `runtime_stats_summary.json` to compare
+`gpu_kv_cache_usage_percent_*`, `prefix_cache_hit_rate_percent_delta`, and
+`preemptions_delta`.
+
+For a short optional streaming responsiveness gate, set
+`RUN_STREAMING_PRESSURE_SOAK=1` or run
+`scripts/run_streaming_pressure_soak.sh` directly. It sends concurrent
+streaming long-conversation requests across several short rounds and records
+TTFT, elapsed time, chunk counts, cached prompt tokens, GPU stats, and
+`runtime_stats_summary.json`. Keep it disabled for routine runs unless you are
+explicitly checking streaming-pressure behavior.
 
 The wrappers also download and run the official vLLM `collect_env.py` script by
 default. Preserve `vllm_collect_env.py`, `vllm_collect_env.sha256`,

@@ -155,6 +155,24 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         "Long context from /workspace/leak\n",
         encoding="utf-8",
     )
+    prefix_cache_dir = run_dir / "nomtp" / "prefix_cache_probe"
+    _write_json(
+        prefix_cache_dir / "prefix_cache_probe.json",
+        {
+            "case": "prefix_cache_interleaved_long_conversation",
+            "variant": "nomtp",
+            "ok": True,
+            "requests": [{"detail": "/workspace/leak"}],
+        },
+    )
+    (prefix_cache_dir / "prefix_cache_probe.md").write_text(
+        "Prefix cache from /workspace/leak\n",
+        encoding="utf-8",
+    )
+    _write_json(
+        prefix_cache_dir / "runtime_stats_summary.json",
+        {"metrics": {"prefix_cache_hit_rate_percent_delta": 75.0}},
+    )
     kv_layout_dir = run_dir / "nomtp" / "kv_layout_probe"
     _write_json(
         kv_layout_dir / "kv_layout_probe.json",
@@ -267,11 +285,20 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     assert (out_dir / "kv_layout" / "nomtp" / "probe.md").exists()
     assert (out_dir / "long_context" / "nomtp" / "probe.json").exists()
     assert (out_dir / "long_context" / "nomtp" / "probe.md").exists()
+    assert (out_dir / "prefix_cache" / "nomtp" / "probe.json").exists()
+    assert (out_dir / "prefix_cache" / "nomtp" / "probe.md").exists()
+    assert (
+        out_dir / "prefix_cache" / "nomtp" / "runtime_stats_summary.json"
+    ).exists()
     assert (out_dir / "evals" / "nomtp_gsm8k.json").exists()
     assert (out_dir / "performance" / "primary.json").exists()
 
     assert not scan_public_bundle(out_dir)
-    assert "Known Non-Green Gates" in (out_dir / "README.md").read_text()
+    readme = (out_dir / "README.md").read_text()
+    assert "Known Non-Green Gates" in readme
+    assert "`prefix_cache/`" in readme
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    assert "prefix_cache" in manifest["contents"]
     assert load_oracle_cases(out_dir / "oracle")[0].name == (
         "completion_short_math_logprobs20"
     )
@@ -298,6 +325,13 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     assert probe["prompt"]["excerpt"]["head"] == "<workspace>/leak"
     assert "<workspace>/leak" in (
         out_dir / "long_context" / "nomtp" / "probe.md"
+    ).read_text()
+    prefix_probe = json.loads(
+        (out_dir / "prefix_cache" / "nomtp" / "probe.json").read_text()
+    )
+    assert prefix_probe["requests"][0]["detail"] == "<workspace>/leak"
+    assert "<workspace>/leak" in (
+        out_dir / "prefix_cache" / "nomtp" / "probe.md"
     ).read_text()
     kv_probe = json.loads(
         (out_dir / "kv_layout" / "nomtp" / "probe.json").read_text()

@@ -133,11 +133,15 @@ def _write_fixture_phase(root, variant, phase, *, output_tok_s=1600.0):
                 "prefill_tokens_delta": 1234.0,
                 "decode_tokens_delta": 5678.0,
                 "running_requests_max": 24.0,
+                "gpu_kv_cache_usage_percent_max": 12.5,
+                "prefix_cache_hit_rate_percent_delta": 66.6,
+                "preemptions_delta": 0.0,
             },
             "serve_log": {
                 "available": True,
                 "prefill_throughput_tok_s_avg": 111.0,
                 "decode_throughput_tok_s_avg": 222.0,
+                "prefix_cache_hit_rate_percent_avg": 64.2,
                 "spec_decode": {
                     "samples": 4,
                     "mean_acceptance_length_avg": 2.1,
@@ -156,6 +160,7 @@ def _write_fixture_run(tmp_path):
     root = tmp_path / "baseline"
     eval_dir = root / "nomtp" / "eval_gsm8k"
     long_context_dir = root / "nomtp" / "long_context_probe"
+    prefix_cache_dir = root / "nomtp" / "prefix_cache_probe"
     _write_json(
         eval_dir / "lm_eval_summary.json",
         {
@@ -180,6 +185,7 @@ def _write_fixture_run(tmp_path):
         ("nomtp", "server_startup", 0, root / "nomtp" / "server_startup"),
         ("nomtp", "acceptance", 1, root / "nomtp" / "acceptance"),
         ("nomtp", "long_context_probe", 0, long_context_dir),
+        ("nomtp", "prefix_cache_probe", 0, prefix_cache_dir),
         ("nomtp", "bench_hf_mt_bench", 0, _write_fixture_phase(root, "nomtp", "bench_hf_mt_bench")),
         ("nomtp", "eval_gsm8k", 0, eval_dir),
         ("mtp", "server_startup", 0, root / "mtp" / "server_startup"),
@@ -247,6 +253,53 @@ def _write_fixture_run(tmp_path):
                 "sha256": "abc123",
             },
             "missing_terms": [],
+        },
+    )
+    _write_json(
+        prefix_cache_dir / "prefix_cache_probe.json",
+        {
+            "case": "prefix_cache_interleaved_long_conversation",
+            "variant": "nomtp",
+            "ok": True,
+            "summary": {
+                "request_count": 5,
+                "failure_count": 0,
+                "cached_tokens_total": 117000,
+                "warm_a_after_b_vs_solo_ttft_ratio": 1.25,
+                "suspect_prefix_reuse_regression": False,
+            },
+            "requests": [
+                {
+                    "phase": "warm_a_solo",
+                    "session": "a",
+                    "ok": True,
+                    "ttft_seconds": 0.2,
+                    "elapsed_seconds": 0.7,
+                    "prompt_tokens": 42000,
+                    "cached_prompt_tokens": 39000,
+                    "detail": "matched required session term",
+                }
+            ],
+        },
+    )
+    _write_json(
+        prefix_cache_dir / "runtime_stats_summary.json",
+        {
+            "metrics": {
+                "available": True,
+                "prefill_tokens_delta": 210000.0,
+                "decode_tokens_delta": 40.0,
+                "running_requests_max": 2.0,
+                "gpu_kv_cache_usage_percent_max": 18.0,
+                "prefix_cache_hit_rate_percent_delta": 74.0,
+                "preemptions_delta": 0.0,
+            },
+            "serve_log": {
+                "available": True,
+                "prefill_throughput_tok_s_avg": 1000.0,
+                "decode_throughput_tok_s_avg": 80.0,
+                "prefix_cache_hit_rate_percent_avg": 72.0,
+            },
         },
     )
     (acceptance_dir / "generation.jsonl").write_text(
@@ -465,6 +518,11 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
         "| `nomtp` | `kv_indexer_long_context` | yes | 2400 | 47000 | "
         "20 | 3.50 | matched long-context sentinel terms |"
     ) in report
+    assert "## Prefix Cache Probes" in report
+    assert (
+        "| `nomtp` | `prefix_cache_interleaved_long_conversation` | yes | "
+        "5 | 117000 | 1.25 | no |"
+    ) in report
     assert "## Accuracy Evals" in report
     assert "| `nomtp` | GSM8K | 3 | yes | 8 | 4 | 2048 | 94.39 | 94.31 | 0.0063 |" in report
 
@@ -491,8 +549,19 @@ def test_baseline_report_cli_writes_markdown_and_runtime_stats(tmp_path):
     report = output.read_text(encoding="utf-8")
     assert "# Unit Report" in report
     assert "### Runtime Prefill/Decode Averages" in report
-    assert "| Primary | `mtp` | HF/MT-Bench | 111.00 | 222.00 | 1234 | 5678 | 24 |" in report
+    assert (
+        "| Primary | `mtp` | HF/MT-Bench | 111.00 | 222.00 | 1234 | 5678 | "
+        "24 | 12.50 | 64.20 | 0 |"
+    ) in report
     assert "## Runtime Stats" in report
+    assert (
+        "| `mtp` | HF/MT-Bench | 1234 | 5678 | n/a | 24 | 12.50 | "
+        "66.60 | 0 | 111.00 | 222.00 |"
+    ) in report
+    assert (
+        "| `nomtp` | Prefix Cache Probe | 210000 | 40 | n/a | 2 | 18.00 | "
+        "74.00 | 0 | 1000.00 | 80.00 |"
+    ) in report
     assert "## MTP Speculative Decoding" in report
     assert "`[0.810, 0.540]`" in report
     assert str(tmp_path) not in report

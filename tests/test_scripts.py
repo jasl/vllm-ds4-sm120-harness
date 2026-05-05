@@ -50,6 +50,8 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_bench_matrix.sh",
         "run_lm_eval.sh",
         "run_kv_layout_probe.sh",
+        "run_prefix_cache_probe.sh",
+        "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
@@ -72,6 +74,47 @@ def test_bench_script_defaults_to_representative_hf_dataset():
     assert '--timeout "${BENCH_TIMEOUT}"' in script
     assert 'EXTRA_ARGS+=(--ignore-eos)' in script
     assert '${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}' in script
+
+
+def test_prefix_cache_probe_wrapper_records_kv_runtime_artifacts():
+    script = (ROOT / "scripts" / "run_prefix_cache_probe.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "prefix-cache-probe" in script
+    assert '--json-output "${OUT_DIR}/prefix_cache_probe.json"' in script
+    assert '--markdown-output "${OUT_DIR}/prefix_cache_probe.md"' in script
+    assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+    assert "start_gpu_stats" in script
+    assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+    assert "start_runtime_stats" in script
+    assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
+def test_streaming_pressure_soak_wrapper_records_kv_runtime_artifacts():
+    script = (ROOT / "scripts" / "run_streaming_pressure_soak.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "streaming-pressure-soak" in script
+    assert '--json-output "${OUT_DIR}/streaming_pressure_soak.json"' in script
+    assert '--markdown-output "${OUT_DIR}/streaming_pressure_soak.md"' in script
+    assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+    assert "start_gpu_stats" in script
+    assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+    assert "start_runtime_stats" in script
+    assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
+def test_acceptance_streaming_pressure_soak_is_opt_in():
+    script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
+    sample = (ROOT / "env.sample").read_text(encoding="utf-8")
+
+    assert "RUN_STREAMING_PRESSURE_SOAK=0" in sample
+    assert 'RUN_STREAMING_PRESSURE_SOAK="${RUN_STREAMING_PRESSURE_SOAK:-0}"' in script
+    assert 'if [[ "${RUN_STREAMING_PRESSURE_SOAK}" == "1"' in script
+    assert "streaming-pressure-soak" in script
+    assert '"${OUT_DIR}/streaming_pressure_soak.json"' in script
 
 
 def test_scripts_default_to_branch_timestamped_artifacts_dir():
@@ -136,6 +179,11 @@ def test_env_sample_and_local_env_are_configured():
         "B200_PARALLEL_GPU_GROUPS",
         "SERVE_MAX_MODEL_LEN",
         "SERVE_USE_FP4_INDEXER_CACHE",
+        "RUN_STREAMING_PRESSURE_SOAK",
+        "STREAMING_PRESSURE_CONCURRENCY",
+        "STREAMING_PRESSURE_ROUND_COUNT",
+        "STREAMING_PRESSURE_LINE_COUNT",
+        "STREAMING_PRESSURE_THINKING_MODE",
         "GENERATION_PROMPT_ROOT",
         "GENERATION_LANGUAGES",
         "GENERATION_THINKING_MODES",
@@ -172,6 +220,9 @@ def test_env_sample_and_local_env_are_configured():
         "TOOLCALL15_TOP_P": "1.0",
         "SERVE_MAX_MODEL_LEN": "393216",
         "SERVE_USE_FP4_INDEXER_CACHE": "auto",
+        "RUN_STREAMING_PRESSURE_SOAK": "0",
+        "STREAMING_PRESSURE_TEMPERATURE": "1.0",
+        "STREAMING_PRESSURE_TOP_P": "1.0",
     }.items() <= values.items()
     assert "B200_ARCHIVE_PREVIOUS" not in values
     assert "B200_ARCHIVE_PREFIX" not in values
@@ -253,6 +304,8 @@ def test_scripts_capture_gpu_stats_to_artifacts():
         "run_bench_matrix.sh",
         "run_oracle_export.sh",
         "run_lm_eval.sh",
+        "run_prefix_cache_probe.sh",
+        "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
@@ -279,6 +332,8 @@ def test_scripts_capture_vllm_runtime_stats_to_artifacts():
         "run_bench_matrix.sh",
         "run_oracle_export.sh",
         "run_lm_eval.sh",
+        "run_prefix_cache_probe.sh",
+        "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
@@ -304,6 +359,8 @@ def test_scripts_collect_vllm_official_env_to_artifacts():
         "run_oracle_export.sh",
         "run_lm_eval.sh",
         "run_kv_layout_probe.sh",
+        "run_prefix_cache_probe.sh",
+        "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
@@ -340,6 +397,8 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"' in script
     assert 'RUN_KV_LAYOUT_PROBE="${RUN_KV_LAYOUT_PROBE:-1}"' in script
     assert 'RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"' in script
+    assert 'RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-1}"' in script
+    assert 'RUN_STREAMING_PRESSURE_SOAK="${RUN_STREAMING_PRESSURE_SOAK:-0}"' in script
     assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
     assert 'TOOLCALL15_TEMPERATURE="${TOOLCALL15_TEMPERATURE:-1.0}"' in script
     assert 'TOOLCALL15_TOP_P="${TOOLCALL15_TOP_P:-1.0}"' in script
@@ -353,6 +412,8 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert '"${variant_dir}/acceptance"' in script
     assert '"${variant_dir}/kv_layout_probe"' in script
     assert '"${variant_dir}/long_context_probe"' in script
+    assert '"${variant_dir}/prefix_cache_probe"' in script
+    assert '"${variant_dir}/streaming_pressure_soak"' in script
     assert '"${variant_dir}/bench_hf_mt_bench"' in script
     assert '"${variant_dir}/bench_random_8192x512"' in script
     assert '"${variant_dir}/eval_gsm8k"' in script
@@ -362,6 +423,8 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert "run_acceptance.sh" in script
     assert "run_kv_layout_probe.sh" in script
     assert "run_long_context_probe.sh" in script
+    assert "run_prefix_cache_probe.sh" in script
+    assert "run_streaming_pressure_soak.sh" in script
     assert "run_bench_matrix.sh" in script
     assert "run_lm_eval.sh" in script
     assert "run_oracle_export.sh" in script
@@ -629,6 +692,8 @@ def test_scripts_have_valid_bash_syntax():
         "run_oracle_export.sh",
         "run_official_api_baseline.sh",
         "run_b200_baseline.sh",
+        "run_prefix_cache_probe.sh",
+        "run_streaming_pressure_soak.sh",
         "generate_baseline_bundle.sh",
         "gpu_stats.sh",
         "runtime_stats.sh",
@@ -810,12 +875,14 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
     assert "nomtp\tkv_layout_probe\t0" in phase_log
     assert "nomtp\tacceptance\t0" in phase_log
     assert "nomtp\tlong_context_probe\t0" in phase_log
+    assert "nomtp\tprefix_cache_probe\t0" in phase_log
     assert "nomtp\tbench_hf_mt_bench\t0" in phase_log
     assert "nomtp\teval_gsm8k\t0" in phase_log
     assert "nomtp\toracle_export\t0" in phase_log
     assert "mtp\tkv_layout_probe\t0" in phase_log
     assert "mtp\tacceptance\t0" in phase_log
     assert "mtp\tlong_context_probe\t0" in phase_log
+    assert "mtp\tprefix_cache_probe\t0" in phase_log
     assert "mtp\tbench_hf_mt_bench\t0" in phase_log
     assert "mtp\teval_gsm8k\t0" in phase_log
     assert "mtp\toracle_export\t0" in phase_log

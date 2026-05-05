@@ -63,11 +63,30 @@ from ds4_harness.oracle import (
 )
 from ds4_harness.oracle_export import export_completion_oracles
 from ds4_harness.official_baseline import build_official_api_baseline
+from ds4_harness.prefix_cache_probe import (
+    DEFAULT_CASE_NAME as DEFAULT_PREFIX_CACHE_CASE_NAME,
+    DEFAULT_LINE_COUNT as DEFAULT_PREFIX_CACHE_LINE_COUNT,
+    DEFAULT_MAX_TOKENS as DEFAULT_PREFIX_CACHE_MAX_TOKENS,
+    DEFAULT_REGRESSION_TTFT_RATIO as DEFAULT_PREFIX_CACHE_REGRESSION_TTFT_RATIO,
+    run_prefix_cache_probe,
+    write_prefix_cache_probe_markdown,
+)
 from ds4_harness.reference_bundle import build_reference_bundle
 from ds4_harness.runtime_stats import (
     summarize_runtime_stats,
     write_runtime_json,
     write_runtime_markdown,
+)
+from ds4_harness.streaming_pressure_soak import (
+    DEFAULT_CASE_NAME as DEFAULT_STREAMING_PRESSURE_CASE_NAME,
+    DEFAULT_CONCURRENCY as DEFAULT_STREAMING_PRESSURE_CONCURRENCY,
+    DEFAULT_LINE_COUNT as DEFAULT_STREAMING_PRESSURE_LINE_COUNT,
+    DEFAULT_MAX_ELAPSED_SECONDS as DEFAULT_STREAMING_PRESSURE_MAX_ELAPSED_SECONDS,
+    DEFAULT_MAX_TOKENS as DEFAULT_STREAMING_PRESSURE_MAX_TOKENS,
+    DEFAULT_MAX_TTFT_SECONDS as DEFAULT_STREAMING_PRESSURE_MAX_TTFT_SECONDS,
+    DEFAULT_ROUND_COUNT as DEFAULT_STREAMING_PRESSURE_ROUND_COUNT,
+    run_streaming_pressure_soak,
+    write_streaming_pressure_soak_markdown,
 )
 from ds4_harness.run_environment import (
     summarize_run_environment,
@@ -771,6 +790,113 @@ def _cmd_long_context_probe(args: argparse.Namespace) -> int:
     return 0 if row.get("ok") else 1
 
 
+def _cmd_prefix_cache_probe(args: argparse.Namespace) -> int:
+    if not _validate_request_retries(args.request_retries):
+        print("--request-retries must be >= 0", file=sys.stderr)
+        return 2
+
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+        row = run_prefix_cache_probe(
+            base_url=args.base_url,
+            model=args.model,
+            variant=args.variant,
+            case_name=args.case_name,
+            line_count=args.line_count,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            thinking_mode=args.thinking_mode,
+            timeout=args.timeout,
+            request_retries=args.request_retries,
+            headers=headers,
+            extra_body=extra_body,
+            regression_ttft_ratio=args.regression_ttft_ratio,
+            fail_on_regression=args.fail_on_regression,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_prefix_cache_probe_markdown(args.markdown_output, row)
+
+    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    status = "PASS" if row.get("ok") else "FAIL"
+    detail = (
+        "requests={requests} failures={failures} suspect_prefix_reuse_regression={suspect}"
+    ).format(
+        requests=summary.get("request_count", "n/a"),
+        failures=summary.get("failure_count", "n/a"),
+        suspect=summary.get("suspect_prefix_reuse_regression", "n/a"),
+    )
+    print(f"{status} {row.get('case')} variant={args.variant}: {detail}")
+    return 0 if row.get("ok") else 1
+
+
+def _cmd_streaming_pressure_soak(args: argparse.Namespace) -> int:
+    if not _validate_request_retries(args.request_retries):
+        print("--request-retries must be >= 0", file=sys.stderr)
+        return 2
+
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+        row = run_streaming_pressure_soak(
+            base_url=args.base_url,
+            model=args.model,
+            variant=args.variant,
+            case_name=args.case_name,
+            concurrency=args.concurrency,
+            round_count=args.round_count,
+            line_count=args.line_count,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            thinking_mode=args.thinking_mode,
+            timeout=args.timeout,
+            request_retries=args.request_retries,
+            headers=headers,
+            extra_body=extra_body,
+            max_ttft_seconds=args.max_ttft_seconds,
+            max_elapsed_seconds=args.max_elapsed_seconds,
+            fail_on_slow=args.fail_on_slow,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_streaming_pressure_soak_markdown(args.markdown_output, row)
+
+    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    status = "PASS" if row.get("ok") else "FAIL"
+    detail = (
+        "requests={requests} failures={failures} "
+        "max_ttft={max_ttft} max_elapsed={max_elapsed}"
+    ).format(
+        requests=summary.get("request_count", "n/a"),
+        failures=summary.get("failure_count", "n/a"),
+        max_ttft=summary.get("max_ttft_seconds", "n/a"),
+        max_elapsed=summary.get("max_elapsed_seconds", "n/a"),
+    )
+    print(f"{status} {row.get('case')} variant={args.variant}: {detail}")
+    return 0 if row.get("ok") else 1
+
+
 def _cmd_kv_layout_probe(args: argparse.Namespace) -> int:
     try:
         row = run_kv_layout_probe(
@@ -1435,6 +1561,75 @@ def build_parser() -> argparse.ArgumentParser:
     long_context.add_argument("--json-output", type=Path)
     long_context.add_argument("--markdown-output", type=Path)
     long_context.set_defaults(func=_cmd_long_context_probe)
+
+    prefix_cache = subparsers.add_parser("prefix-cache-probe")
+    prefix_cache.add_argument("--base-url", default="http://127.0.0.1:8000")
+    prefix_cache.add_argument("--model", default=DEFAULT_MODEL)
+    prefix_cache.add_argument("--variant", default="manual")
+    prefix_cache.add_argument("--case-name", default=DEFAULT_PREFIX_CACHE_CASE_NAME)
+    prefix_cache.add_argument(
+        "--line-count", type=int, default=DEFAULT_PREFIX_CACHE_LINE_COUNT
+    )
+    prefix_cache.add_argument(
+        "--max-tokens", type=int, default=DEFAULT_PREFIX_CACHE_MAX_TOKENS
+    )
+    prefix_cache.add_argument("--temperature", type=float, default=0.0)
+    prefix_cache.add_argument("--top-p", type=float, default=1.0)
+    prefix_cache.add_argument("--thinking-mode", default="non-thinking")
+    prefix_cache.add_argument("--timeout", type=float, default=1800.0)
+    prefix_cache.add_argument("--request-retries", type=int, default=1)
+    prefix_cache.add_argument(
+        "--regression-ttft-ratio",
+        type=float,
+        default=DEFAULT_PREFIX_CACHE_REGRESSION_TTFT_RATIO,
+    )
+    prefix_cache.add_argument("--fail-on-regression", action="store_true")
+    prefix_cache.add_argument("--api-key-env")
+    prefix_cache.add_argument("--extra-body-json")
+    prefix_cache.add_argument("--json-output", type=Path)
+    prefix_cache.add_argument("--markdown-output", type=Path)
+    prefix_cache.set_defaults(func=_cmd_prefix_cache_probe)
+
+    streaming_soak = subparsers.add_parser("streaming-pressure-soak")
+    streaming_soak.add_argument("--base-url", default="http://127.0.0.1:8000")
+    streaming_soak.add_argument("--model", default=DEFAULT_MODEL)
+    streaming_soak.add_argument("--variant", default="manual")
+    streaming_soak.add_argument(
+        "--case-name", default=DEFAULT_STREAMING_PRESSURE_CASE_NAME
+    )
+    streaming_soak.add_argument(
+        "--concurrency", type=int, default=DEFAULT_STREAMING_PRESSURE_CONCURRENCY
+    )
+    streaming_soak.add_argument(
+        "--round-count", type=int, default=DEFAULT_STREAMING_PRESSURE_ROUND_COUNT
+    )
+    streaming_soak.add_argument(
+        "--line-count", type=int, default=DEFAULT_STREAMING_PRESSURE_LINE_COUNT
+    )
+    streaming_soak.add_argument(
+        "--max-tokens", type=int, default=DEFAULT_STREAMING_PRESSURE_MAX_TOKENS
+    )
+    streaming_soak.add_argument("--temperature", type=float, default=1.0)
+    streaming_soak.add_argument("--top-p", type=float, default=1.0)
+    streaming_soak.add_argument("--thinking-mode", default="non-thinking")
+    streaming_soak.add_argument("--timeout", type=float, default=900.0)
+    streaming_soak.add_argument("--request-retries", type=int, default=1)
+    streaming_soak.add_argument(
+        "--max-ttft-seconds",
+        type=float,
+        default=DEFAULT_STREAMING_PRESSURE_MAX_TTFT_SECONDS,
+    )
+    streaming_soak.add_argument(
+        "--max-elapsed-seconds",
+        type=float,
+        default=DEFAULT_STREAMING_PRESSURE_MAX_ELAPSED_SECONDS,
+    )
+    streaming_soak.add_argument("--fail-on-slow", action="store_true")
+    streaming_soak.add_argument("--api-key-env")
+    streaming_soak.add_argument("--extra-body-json")
+    streaming_soak.add_argument("--json-output", type=Path)
+    streaming_soak.add_argument("--markdown-output", type=Path)
+    streaming_soak.set_defaults(func=_cmd_streaming_pressure_soak)
 
     kv_layout = subparsers.add_parser("kv-layout-probe")
     kv_layout.add_argument("--target-python", default=sys.executable)

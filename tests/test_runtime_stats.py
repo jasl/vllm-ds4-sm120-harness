@@ -13,12 +13,18 @@ def test_summarize_runtime_stats_reads_vllm_metrics_and_serve_log(tmp_path):
                 "vllm:prompt_tokens_total{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 100",
                 "vllm:generation_tokens_total{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 25",
                 "vllm:num_requests_running{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 1",
-                "vllm:gpu_cache_usage_perc{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 0.12",
+                "vllm:kv_cache_usage_perc{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 0.12",
+                "vllm:prefix_cache_queries{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 100",
+                "vllm:prefix_cache_hits{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 20",
+                "vllm:num_preemptions{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 0",
                 "# DS4_HARNESS_SNAPSHOT 2026-05-01T22:00:05Z status=200",
                 "vllm:prompt_tokens_total{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 340",
                 "vllm:generation_tokens_total{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 145",
                 "vllm:num_requests_running{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 3",
-                "vllm:gpu_cache_usage_perc{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 0.35",
+                "vllm:kv_cache_usage_perc{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 0.35",
+                "vllm:prefix_cache_queries{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 500",
+                "vllm:prefix_cache_hits{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 270",
+                "vllm:num_preemptions{model_name=\"deepseek-ai/DeepSeek-V4-Flash\"} 2",
             ]
         )
         + "\n",
@@ -52,8 +58,13 @@ def test_summarize_runtime_stats_reads_vllm_metrics_and_serve_log(tmp_path):
     assert summary["metrics"]["decode_tokens_delta"] == 120.0
     assert summary["metrics"]["running_requests_max"] == 3.0
     assert summary["metrics"]["gpu_kv_cache_usage_percent_max"] == 35.0
+    assert summary["metrics"]["prefix_cache_queries_delta"] == 400.0
+    assert summary["metrics"]["prefix_cache_hits_delta"] == 250.0
+    assert summary["metrics"]["prefix_cache_hit_rate_percent_delta"] == 62.5
+    assert summary["metrics"]["preemptions_delta"] == 2.0
     assert summary["serve_log"]["prefill_throughput_tok_s_avg"] == 35.3
     assert summary["serve_log"]["decode_throughput_tok_s_avg"] == 96.0
+    assert summary["serve_log"]["prefix_cache_hit_rate_percent_avg"] == 0.0
     assert summary["serve_log"]["spec_decode"]["mean_acceptance_length_avg"] == 2.37
     assert summary["serve_log"]["spec_decode"]["per_position_acceptance_rate_avg"] == [
         0.854,
@@ -98,6 +109,7 @@ def test_runtime_summary_cli_writes_json_and_markdown(tmp_path):
     assert "# vLLM Runtime Stats Summary" in report
     assert "Prefill tokens delta" in report
     assert "Decode tokens delta" in report
+    assert "Prefix cache hit rate" in report
 
 
 def test_write_runtime_markdown_reports_unavailable_inputs(tmp_path):

@@ -12,6 +12,15 @@ BENCH_PHASE_LABELS = {
     "bench_hf_mt_bench": "HF/MT-Bench",
     "bench_random_8192x512": "Random 8192/512",
 }
+PHASE_LABELS = {
+    **BENCH_PHASE_LABELS,
+    "acceptance": "Acceptance",
+    "long_context_probe": "Long Context Probe",
+    "prefix_cache_probe": "Prefix Cache Probe",
+    "streaming_pressure_soak": "Streaming Pressure Soak",
+    "oracle_export": "Oracle Export",
+    "eval_gsm8k": "GSM8K",
+}
 VARIANT_ORDER = {"nomtp": 0, "mtp": 1}
 REAL_WORKLOAD_ORDER = {
     "translation": 0,
@@ -599,7 +608,7 @@ def _bench_rows(
                 {
                     "variant": record.variant,
                     "phase": record.phase,
-                    "phase_label": BENCH_PHASE_LABELS.get(record.phase, record.phase),
+                    "phase_label": PHASE_LABELS.get(record.phase, record.phase),
                     "concurrency": item.get("concurrency"),
                     "ok": item.get("ok"),
                     "requests": _requests_label(item, metrics),
@@ -957,6 +966,63 @@ def _long_context_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: _variant_sort_key(row["variant"]))
 
 
+def _prefix_cache_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
+    rows = []
+    for record in records:
+        if record.phase != "prefix_cache_probe":
+            continue
+        data = _load_json(record.artifact_dir / "prefix_cache_probe.json")
+        if not isinstance(data, dict):
+            continue
+        summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+        rows.append(
+            {
+                "variant": record.variant,
+                "case": data.get("case"),
+                "ok": data.get("ok"),
+                "request_count": summary.get("request_count"),
+                "failure_count": summary.get("failure_count"),
+                "cached_tokens_total": summary.get("cached_tokens_total"),
+                "warm_a_after_b_vs_solo_ttft_ratio": summary.get(
+                    "warm_a_after_b_vs_solo_ttft_ratio"
+                ),
+                "suspect_prefix_reuse_regression": summary.get(
+                    "suspect_prefix_reuse_regression"
+                ),
+            }
+        )
+    return sorted(rows, key=lambda row: _variant_sort_key(row["variant"]))
+
+
+def _streaming_pressure_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
+    rows = []
+    for record in records:
+        if record.phase != "streaming_pressure_soak":
+            continue
+        data = _load_json(record.artifact_dir / "streaming_pressure_soak.json")
+        if not isinstance(data, dict):
+            continue
+        summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+        rows.append(
+            {
+                "variant": record.variant,
+                "case": data.get("case"),
+                "ok": data.get("ok"),
+                "concurrency": data.get("concurrency"),
+                "round_count": data.get("round_count"),
+                "request_count": summary.get("request_count"),
+                "failure_count": summary.get("failure_count"),
+                "cached_tokens_total": summary.get("cached_tokens_total"),
+                "max_ttft_seconds": summary.get("max_ttft_seconds"),
+                "max_elapsed_seconds": summary.get("max_elapsed_seconds"),
+                "total_chunks": summary.get("total_chunks"),
+                "suspect_slow_ttft": summary.get("suspect_slow_ttft"),
+                "suspect_slow_elapsed": summary.get("suspect_slow_elapsed"),
+            }
+        )
+    return sorted(rows, key=lambda row: _variant_sort_key(row["variant"]))
+
+
 def _task_label(task: Any) -> str:
     value = str(task or "n/a")
     if value.casefold() == "gsm8k":
@@ -1013,8 +1079,6 @@ def _eval_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
 def _runtime_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
     rows = []
     for record in records:
-        if not record.phase.startswith("bench_"):
-            continue
         data = _load_json(record.artifact_dir / "runtime_stats_summary.json")
         if not isinstance(data, dict):
             continue
@@ -1024,7 +1088,7 @@ def _runtime_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
             {
                 "variant": record.variant,
                 "phase": record.phase,
-                "phase_label": BENCH_PHASE_LABELS.get(record.phase, record.phase),
+                "phase_label": PHASE_LABELS.get(record.phase, record.phase),
                 "metrics": metrics,
                 "serve_log": serve_log,
             }
@@ -1165,8 +1229,8 @@ def _append_quick_performance_summary(
                 "",
                 "These are phase-local averages parsed from vLLM server logs.",
                 "",
-                "| Source | Variant | Phase | Prefill avg tok/s | Decode avg tok/s | Prefill tokens | Decode tokens | Max running |",
-                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
+                "| Source | Variant | Phase | Prefill avg tok/s | Decode avg tok/s | Prefill tokens | Decode tokens | Max running | Max KV % | Prefix hit avg % | Preemptions |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for row in runtime_rows:
@@ -1178,7 +1242,10 @@ def _append_quick_performance_summary(
                 f"{_fmt(serve_log.get('decode_throughput_tok_s_avg'))} | "
                 f"{_fmt_int(metrics.get('prefill_tokens_delta'))} | "
                 f"{_fmt_int(metrics.get('decode_tokens_delta'))} | "
-                f"{_fmt_int(metrics.get('running_requests_max'))} |"
+                f"{_fmt_int(metrics.get('running_requests_max'))} | "
+                f"{_fmt(metrics.get('gpu_kv_cache_usage_percent_max'))} | "
+                f"{_fmt(serve_log.get('prefix_cache_hit_rate_percent_avg'))} | "
+                f"{_fmt_int(metrics.get('preemptions_delta'))} |"
             )
         lines.append("")
 
@@ -1590,6 +1657,80 @@ def _append_long_context(lines: list[str], rows: list[dict[str, Any]]) -> None:
     lines.append("")
 
 
+def _append_prefix_cache(lines: list[str], rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    lines.extend(
+        [
+            "## Prefix Cache Probes",
+            "",
+            (
+                "These rows exercise two deterministic long conversations with "
+                "solo warm reuse, sequential A-after-B reuse, and interleaved "
+                "A/B warm requests. "
+                "Use the Runtime Stats table for phase-local KV usage, prefix "
+                "hit rate, and preemption counters."
+            ),
+            "",
+            "| Variant | Case | OK | Requests | Cached prompt tokens | A-after-B / A-solo TTFT | Suspect reuse regression |",
+            "| --- | --- | --- | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            f"| `{row['variant']}` | `{row.get('case', 'n/a')}` | "
+            f"{_yes_no(row.get('ok'))} | "
+            f"{_fmt_int(row.get('request_count'))} | "
+            f"{_fmt_int(row.get('cached_tokens_total'))} | "
+            f"{_fmt(row.get('warm_a_after_b_vs_solo_ttft_ratio'))} | "
+            f"{_yes_no(row.get('suspect_prefix_reuse_regression'))} |"
+        )
+    lines.append("")
+
+
+def _append_streaming_pressure(
+    lines: list[str],
+    rows: list[dict[str, Any]],
+) -> None:
+    if not rows:
+        return
+    lines.extend(
+        [
+            "## Streaming Pressure Soak",
+            "",
+            (
+                "This optional gate sends concurrent streaming long-context "
+                "chat requests across several short rounds. Use the Runtime "
+                "Stats table for phase-local request pressure, KV usage, "
+                "prefix hit rate, and preemption counters."
+            ),
+            "",
+            "| Variant | Case | OK | Concurrency | Rounds | Requests | Failures | Cached prompt tokens | Max TTFT s | Max elapsed s | Chunks | Slow flag |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in rows:
+        slow_flags = []
+        if row.get("suspect_slow_ttft"):
+            slow_flags.append("ttft")
+        if row.get("suspect_slow_elapsed"):
+            slow_flags.append("elapsed")
+        lines.append(
+            f"| `{row['variant']}` | `{row.get('case', 'n/a')}` | "
+            f"{_yes_no(row.get('ok'))} | "
+            f"{_fmt_int(row.get('concurrency'))} | "
+            f"{_fmt_int(row.get('round_count'))} | "
+            f"{_fmt_int(row.get('request_count'))} | "
+            f"{_fmt_int(row.get('failure_count'))} | "
+            f"{_fmt_int(row.get('cached_tokens_total'))} | "
+            f"{_fmt(row.get('max_ttft_seconds'))} | "
+            f"{_fmt(row.get('max_elapsed_seconds'))} | "
+            f"{_fmt_int(row.get('total_chunks'))} | "
+            f"{', '.join(slow_flags) or 'none'} |"
+        )
+    lines.append("")
+
+
 def _append_evals(lines: list[str], rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
@@ -1627,8 +1768,8 @@ def _append_runtime(lines: list[str], rows: list[dict[str, Any]], title: str) ->
         [
             f"## {title}",
             "",
-            "| Variant | Phase | Prefill delta | Decode delta | Successful delta | Max running | Log prefill tok/s | Log decode tok/s |",
-            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| Variant | Phase | Prefill delta | Decode delta | Successful delta | Max running | Max KV % | Prefix hit % | Preemptions | Log prefill tok/s | Log decode tok/s |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for row in rows:
@@ -1640,6 +1781,9 @@ def _append_runtime(lines: list[str], rows: list[dict[str, Any]], title: str) ->
             f"{_fmt_int(metrics.get('decode_tokens_delta'))} | "
             f"{_fmt_int(metrics.get('successful_requests_delta'))} | "
             f"{_fmt_int(metrics.get('running_requests_max'))} | "
+            f"{_fmt(metrics.get('gpu_kv_cache_usage_percent_max'))} | "
+            f"{_fmt(metrics.get('prefix_cache_hit_rate_percent_delta'))} | "
+            f"{_fmt_int(metrics.get('preemptions_delta'))} | "
             f"{_fmt(serve_log.get('prefill_throughput_tok_s_avg'))} | "
             f"{_fmt(serve_log.get('decode_throughput_tok_s_avg'))} |"
         )
@@ -1692,6 +1836,8 @@ def build_baseline_report(
     acceptance_gate_rows = _acceptance_gate_rows(records)
     toolcall_rows = _toolcall_rows(records)
     long_context_rows = _long_context_rows(records)
+    prefix_cache_rows = _prefix_cache_rows(records)
+    streaming_pressure_rows = _streaming_pressure_rows(records)
     oracle_rows = _oracle_rows(records)
     eval_rows = _eval_rows(records)
     collect_env_total, collect_env_ok, collect_env_failed = _collect_env_status(records)
@@ -1745,6 +1891,8 @@ def build_baseline_report(
     _append_benchmark_tables(lines, bench_rows)
     _append_toolcall(lines, toolcall_rows)
     _append_long_context(lines, long_context_rows)
+    _append_prefix_cache(lines, prefix_cache_rows)
+    _append_streaming_pressure(lines, streaming_pressure_rows)
     _append_oracle(lines, oracle_rows)
     _append_evals(lines, eval_rows)
     if runtime_rows:
