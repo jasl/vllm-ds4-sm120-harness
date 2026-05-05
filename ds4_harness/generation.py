@@ -26,6 +26,17 @@ THINKING_MODE_EXTRA_BODY: dict[str, Json] = {
 
 DEFAULT_THINKING_MODES = tuple(THINKING_MODE_EXTRA_BODY)
 
+CODE_LANGUAGE_ALIASES: dict[str, tuple[str, ...]] = {
+    "html": ("html", "htm"),
+    "py": ("python", "python3", "py"),
+    "js": ("javascript", "js", "node", "nodejs", "typescript", "ts"),
+}
+
+CODE_FENCE_PATTERN = re.compile(
+    r"(?P<fence>`{3,}|~{3,})(?P<label>[^\n`]*)\n(?P<body>.*?)(?P=fence)",
+    re.DOTALL,
+)
+
 
 @dataclass(frozen=True)
 class GenerationPrompt:
@@ -245,9 +256,120 @@ def transcript_filename(
     return f"{prompt.name}.{round_index}.{safe_mode}.{safe_variant}.md"
 
 
+def transcript_filename_for_row(row: Json) -> str:
+    safe_case = _safe_slug(str(row.get("case") or "unknown"))
+    safe_round = _safe_slug(str(row.get("round") or "unknown"))
+    safe_mode = _safe_slug(str(row.get("thinking_mode") or "unknown"))
+    safe_variant = _safe_slug(str(row.get("variant") or "unknown"))
+    return f"{safe_case}.{safe_round}.{safe_mode}.{safe_variant}.md"
+
+
+def generation_code_artifact_filename(row: Json) -> str | None:
+    extension = generation_code_artifact_extension(row)
+    if extension is None:
+        return None
+    return Path(transcript_filename_for_row(row)).with_suffix(f".{extension}").name
+
+
 def _safe_slug(value: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip())
     return slug.strip("-") or "unknown"
+
+
+def _row_tags(row: Json) -> set[str]:
+    tags = row.get("tags")
+    if not isinstance(tags, list):
+        return set()
+    return {str(tag).strip().casefold() for tag in tags if str(tag).strip()}
+
+
+def _row_prompt_text(row: Json) -> str:
+    payload = row.get("payload")
+    if not isinstance(payload, dict):
+        return ""
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return ""
+    first = messages[0]
+    if not isinstance(first, dict):
+        return ""
+    return _content_text(first.get("content"))
+
+
+def generation_code_artifact_extension(row: Json) -> str | None:
+    tags = _row_tags(row)
+    workload = str(row.get("workload") or "").casefold()
+    case_name = str(row.get("case") or "").casefold()
+    prompt_text = _row_prompt_text(row).casefold()
+    if workload != "coding" and "coding" not in tags and "html" not in tags:
+        return None
+    if (
+        "html" in tags
+        or "frontend_single_file" in tags
+        or "_html" in case_name
+        or "index.html" in prompt_text
+        or "<html" in prompt_text
+    ):
+        return "html"
+    if (
+        "algorithm_single_file" in tags
+        or "python" in prompt_text
+        or ".py" in prompt_text
+    ):
+        return "py"
+    if (
+        "javascript" in prompt_text
+        or "node.js" in prompt_text
+        or "nodejs" in prompt_text
+        or ".js" in prompt_text
+        or "backend_single_file" in tags
+    ):
+        return "js"
+    return None
+
+
+def _code_block_label(label: str) -> str:
+    return label.strip().casefold().split(maxsplit=1)[0]
+
+
+def _extract_code_text(text: str, extension: str) -> str:
+    blocks = [
+        (_code_block_label(match.group("label")), match.group("body").strip())
+        for match in CODE_FENCE_PATTERN.finditer(text)
+    ]
+    aliases = set(CODE_LANGUAGE_ALIASES.get(extension, (extension,)))
+    for label, body in blocks:
+        if label in aliases:
+            return _normalize_code_artifact_text(body)
+    if len(blocks) == 1:
+        return _normalize_code_artifact_text(blocks[0][1])
+    return _normalize_code_artifact_text(text.strip())
+
+
+def _normalize_code_artifact_text(text: str) -> str:
+    return "\n".join(line.rstrip() for line in text.rstrip().splitlines()) + "\n"
+
+
+def generation_code_artifact(row: Json) -> tuple[str, str] | None:
+    extension = generation_code_artifact_extension(row)
+    if extension is None:
+        return None
+    response = row.get("response") if isinstance(row.get("response"), dict) else {}
+    text = assistant_text(response)
+    if not text.strip():
+        return None
+    return extension, _extract_code_text(text, extension)
+
+
+def write_generation_code_artifact(transcript_path: Path, row: Json) -> Path | None:
+    artifact = generation_code_artifact(row)
+    if artifact is None:
+        return None
+    extension, code = artifact
+    path = transcript_path.with_suffix(f".{extension}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(code, encoding="utf-8")
+    return path
 
 
 def generation_result_row(

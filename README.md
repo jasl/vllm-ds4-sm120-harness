@@ -257,6 +257,9 @@ Transcript filenames use
 the prompt, assistant answer, `OK`, detail, model, finish reason, full usage
 JSON, thinking mode, thinking strength, `temperature`, and `top_p` so
 subjective review can be tied back to the exact request shape. Generation
+coding cases also write the assistant's code next to the transcript with the
+same basename and the inferred source extension, such as `.html`, `.py`, or
+`.js`, so reviewers can open runnable artifacts directly.
 defaults use `temperature=1.0` and `top_p=1.0`, matching the DeepSeek V4
 sampling recommendation used for quality-oriented comparisons.
 
@@ -404,6 +407,8 @@ For runs that intentionally did not include an oracle export, set
 `BASELINE_REQUIRE_ORACLE=0`; the bundle still archives sanitized generation,
 smoke, ToolCall-15, performance, telemetry, manifest, README, and report data,
 but it must not be used as a token-level correctness oracle.
+Coding generation rows keep the same sidecar source files as live artifacts,
+with transcript basenames converted from `.md` to the target language extension.
 For archival runs, set `BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT` to the
 number of prompt files selected by the run. With the checked-in `en,zh` prompt
 suite today, that value is `35`, so each no-MTP/MTP variant must contain

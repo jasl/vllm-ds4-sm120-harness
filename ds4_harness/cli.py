@@ -26,6 +26,7 @@ from ds4_harness.generation import (
     load_generation_prompts,
     thinking_extra_body,
     transcript_filename,
+    write_generation_code_artifact,
     write_generation_transcript,
 )
 from ds4_harness.generation_alignment import (
@@ -539,7 +540,7 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
                 )
                 _write_jsonl(args.jsonl_output, row)
                 if args.markdown_output_dir is not None:
-                    write_generation_transcript(
+                    transcript_path = (
                         args.markdown_output_dir
                         / prompt.language
                         / transcript_filename(
@@ -547,9 +548,10 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
                             round_index=round_index,
                             thinking_mode=thinking_mode,
                             variant=args.variant,
-                        ),
-                        row,
+                        )
                     )
+                    write_generation_transcript(transcript_path, row)
+                    write_generation_code_artifact(transcript_path, row)
                 failures += 0 if result.ok else 1
 
     return 1 if failures else 0

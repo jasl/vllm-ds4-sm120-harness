@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>minimalist · shanghai clock</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', 'Helvetica Neue', 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #e3e9f2; /* soft neutral backdrop */
+        }
+
+        /* ----- CLOCK DIAL (outer ring + inner face) ----- */
+        .clock-dial {
+            position: relative;
+            width: 360px;
+            height: 360px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow:
+                0 20px 40px rgba(0, 0, 0, 0.15),
+                0 6px 12px rgba(0, 0, 0, 0.1),
+                inset 0 -3px 6px rgba(0, 0, 0, 0.02);
+            border: 2px solid #2c2f33;
+            padding: 12px; /* creates subtle inner “bezel” */
+        }
+
+        /* inner face where scales & hands sit */
+        .clock-face {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: #fcfcfc;
+            box-shadow: inset 0 0 0 1px rgba(44, 47, 51, 0.1);
+            overflow: hidden;  /* clean edges */
+        }
+
+        /* ----- GENERATE 60 SCALES (ticks) via transform rotate ----- */
+        .scale-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            border-radius: 50%;
+        }
+
+        .tick {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 2px;
+            height: 12px;
+            background: #b0b5bd;
+            transform-origin: 50% 170px;  /* 170px = radius of face (approx) */
+            margin-left: -1px;
+            border-radius: 1px;
+            transition: background 0.1s ease;
+            pointer-events: none;
+        }
+
+        /* thick & dark ticks for exact hours (every 5th tick) */
+        .tick.thick {
+            width: 3px;
+            height: 20px;
+            background: #1e2024;
+            margin-left: -1.5px;
+            transform-origin: 50% 170px;
+            box-shadow: 0 0 0 0.2px rgba(0,0,0,0.08);
+        }
+
+        /* Numbers: classic roman-numeral style subtlety — but we use clean digits */
+        .hour-number {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 500;
+            color: #1f2329;
+            letter-spacing: 0.3px;
+            background: transparent;
+            pointer-events: none;
+            font-variant-numeric: tabular-nums;
+            transform: translate(-50%, -50%);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.02);
+        }
+
+        /* ----- HANDS ----- */
+        .hand {
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: 50% 100%;
+            border-radius: 4px 4px 2px 2px;
+            transition: none; /* controlled by JS with smooth steps */
+            pointer-events: none;
+            will-change: transform;
+        }
+
+        .hour-hand {
+            width: 6px;
+            height: 90px;
+            margin-left: -3px;
+            background: #1b1e22;
+            border-radius: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+            z-index: 10;
+        }
+
+        .minute-hand {
+            width: 4px;
+            height: 130px;
+            margin-left: -2px;
+            background: #1b1e22;
+            border-radius: 3px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            z-index: 11;
+        }
+
+        .second-hand {
+            width: 2px;
+            height: 140px;
+            margin-left: -1px;
+            background: #d32f2f;
+            border-radius: 2px;
+            box-shadow: 0 0 6px rgba(211, 47, 47, 0.25);
+            z-index: 12;
+        }
+
+        /* center cap */
+        .center-cap {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 14px;
+            height: 14px;
+            background: #1b1e22;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            box-shadow: 0 0 0 3px rgba(255,255,255,0.9);
+        }
+
+        /* ----- TEXT INFO (upper half time, lower half date) ----- */
+        .text-info {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            text-align: center;
+            pointer-events: none;
+            line-height: 1.3;
+        }
+
+        .time-text {
+            top: 28%;
+            font-size: 34px;
+            font-weight: 450;
+            letter-spacing: 2px;
+            color: #121417;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.04);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .date-text {
+            bottom: 27%;
+            font-size: 16px;
+            font-weight: 380;
+            color: #2a2e34;
+            letter-spacing: 0.6px;
+            background: rgba(255,255,255,0.3);
+            backdrop-filter: blur(1px);
+            padding: 4px 12px;
+            border-radius: 30px;
+            display: inline-block;
+            width: auto;
+            margin-left: auto;
+            margin-right: auto;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.02);
+        }
+
+        /* helper to make date container inline */
+        .lower-text-wrapper {
+            position: absolute;
+            bottom: 24%;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        /* ----- RESPONSIVE & CLEAN ----- */
+        @media (max-width: 420px) {
+            .clock-dial {
+                width: 290px;
+                height: 290px;
+                padding: 10px;
+            }
+            .tick {
+                transform-origin: 50% 135px;
+                height: 10px;
+            }
+            .tick.thick {
+                height: 16px;
+                transform-origin: 50% 135px;
+            }
+            .hour-number {
+                font-size: 13px;
+                width: 26px;
+                height: 26px;
+            }
+            .hour-hand { height: 70px; width: 5px; margin-left: -2.5px; }
+            .minute-hand { height: 105px; width: 3px; margin-left: -1.5px; }
+            .second-hand { height: 115px; width: 2px; }
+            .time-text { font-size: 28px; top: 26%; }
+            .date-text { font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+<div class="clock-dial">
+    <div class="clock-face" id="clockFace">
+        <!-- scale container (ticks) and numbers will be injected by JS -->
+        <div class="scale-container" id="scaleContainer"></div>
+
+        <!-- hands -->
+        <div class="hand hour-hand" id="hourHand"></div>
+        <div class="hand minute-hand" id="minuteHand"></div>
+        <div class="hand second-hand" id="secondHand"></div>
+        <div class="center-cap"></div>
+
+        <!-- text: upper half & lower half -->
+        <div class="text-info time-text" id="timeDisplay">--:--:--</div>
+        <div class="lower-text-wrapper">
+            <span class="text-info date-text" id="dateDisplay">---- --- ----</span>
+        </div>
+    </div>
+</div>
+<script>
+    (function() {
+        'use strict';
+
+        // ----- BUILD SCALES (60 ticks) & HOUR NUMBERS (1–12) -----
+        const scaleContainer = document.getElementById('scaleContainer');
+        const face = document.getElementById('clockFace');
+        // Use face dimensions for dynamic calibration (but fixed 360px works)
+        // we compute based on element size to support responsiveness
+        let radius = 0;
+
+        function renderScalesAndNumbers() {
+            // clear previous (if any)
+            scaleContainer.innerHTML = '';
+            // also remove any old number elements if needed (we recreate)
+            const oldNumbers = document.querySelectorAll('.hour-number');
+            oldNumbers.forEach(el => el.remove());
+
+            // get actual radius (half of clock-face width)
+            const faceWidth = face.offsetWidth;
+            const faceHeight = face.offsetHeight;
+            const dialRadius = Math.min(faceWidth, faceHeight) / 2;
+            // tick length from center: 170px for 360px dial, but we need to scale
+            // scaling factor relative to 180px radius (since 360/2=180)
+            const baseRadius = 170;  // distance from center to tick base in original 360px design
+            const scaleFactor = dialRadius / 180;
+            const tickDistance = baseRadius * scaleFactor;   // from center to tick base
+
+            // we set transform-origin for each tick dynamically
+            // but easier: we can set CSS variable or recalc in style
+            // Because the .tick class uses transform-origin: 50% 170px; we need to update.
+            // we will use inline style per tick for reliability.
+
+            for (let i = 0; i < 60; i++) {
+                const tick = document.createElement('div');
+                tick.className = 'tick';
+                const angle = i * 6; // 6 degrees per tick
+                // decide if it's exact hour (i % 5 === 0)
+                if (i % 5 === 0) {
+                    tick.classList.add('thick');
+                }
+                // set transform-origin: bottom of tick aligned to center distance
+                // we set length based on thick/thin
+                const tickHeight = (i % 5 === 0) ? 20 * scaleFactor : 12 * scaleFactor;
+                tick.style.height = tickHeight + 'px';
+                // position top: 50% - (tickDistance) to align inner end at center
+                // simpler: set top: 50%, left: 50%, and use translate + rotate
+                // better: place top at center then rotate around center
+                // to keep tick pointing outward, we set origin at bottom of tick
+                // We'll set top: calc(50% - tickDistance) so that the bottom of tick is at center distance.
+                // but easier: using known relative approach:
+                // let tick bottom be at distance from center = tickDistance
+                // we set top: calc(50% - tickDistance) and then transform-origin: 50% tickDistance?
+                // Let's use clean method: place tick at center, translateY(-tickDistance), rotate, then translate back.
+                // but simpler: we use polar coordinates via transform: rotate(angle) translateY(-tickDistance)
+                // Set left: 50%, top: 50%, transform-origin: 0 0? Actually, easier:
+                tick.style.position = 'absolute';
+                tick.style.left = '50%';
+                tick.style.top = '50%';
+                tick.style.width = (i % 5 === 0) ? '3px' : '2px';
+                tick.style.marginLeft = (i % 5 === 0) ? '-1.5px' : '-1px';
+                tick.style.height = tickHeight + 'px';
+                tick.style.background = (i % 5 === 0) ? '#1e2024' : '#b0b5bd';
+                tick.style.borderRadius = '1px';
+                tick.style.transformOrigin = '50% 0%';  // top of tick? Actually we want tick extending outward from center.
+                // we want tick to point outward from center, so we rotate around center point.
+                // approach: set top at 50%, left 50%, origin at 50% 0%, then translateY(-tickDistance) and rotate.
+                // But easier: we can set top: calc(50% - tickDistance), left: 50%, transformOrigin: 50% 100% (bottom)
+                // then rotate. Let's use bottom origin.
+                // Re-calc: set top: calc(50% - tickDistance); bottom of tick will be at Y = top + height.
+                // To rotate around the outer point? Actually we want the tick to be radial from center.
+                // The center of rotation should be at the inner end of the tick (the side closer to center).
+                // So we set transform-origin: 50% 0% (top of tick) and place top exactly at center?
+                // Then translateY(0) and rotate. Let's do:
+                tick.style.top = '50%';
+                tick.style.left = '50%';
+                tick.style.transformOrigin = '50% 0%';
+                // translateY(0) is at center; shift down by? Actually we want the tick to point outward from center.
+                // If origin is top (0%), then the tick extends downward from the center point.
+                // So we want the tick to point outward in the direction of rotation. We'll rotate the div, and the tick will extend toward the edge.
+                // Then we need to shift it outward so that its top (origin) sits at the inner radius distance? Wait.
+                // Simpler: origin at 50% 100% (bottom), then the tick points upward from bottom.
+                // Let's use method: set top: calc(50% - tickDistance), left: 50%, height: tickHeight, origin: 50% 100% (bottom).
+                // Then rotate around bottom. The bottom will be at distance tickDistance from center.
+                // That gives correct radial alignment.
+                const bottomDist = tickDistance;
+                tick.style.top = `calc(50% - ${bottomDist}px)`;
+                tick.style.left = '50%';
+                tick.style.width = (i % 5 === 0) ? '3px' : '2px';
+                tick.style.marginLeft = (i % 5 === 0) ? '-1.5px' : '-1px';
+                tick.style.height = tickHeight + 'px';
+                tick.style.background = (i % 5 === 0) ? '#1e2024' : '#b0b5bd';
+                tick.style.transformOrigin = '50% 100%';  // bottom
+                tick.style.transform = `rotate(${angle}deg)`;
+                scaleContainer.appendChild(tick);
+            }
+
+            // Add hour numbers (1 to 12)
+            for (let h = 1; h <= 12; h++) {
+                const num = document.createElement('div');
+                num.className = 'hour-number';
+                // angle for number: each hour = 30 degrees, but offset -90 so that 12 is at top
+                const angleDeg = h * 30;
+                const rad = (angleDeg - 90) * Math.PI / 180;
+                const numberRadius = dialRadius * 0.80;  // distance from center
+                const cx = dialRadius;
+                const cy = dialRadius;
+                const x = cx + numberRadius * Math.cos(rad);
+                const y = cy + numberRadius * Math.sin(rad);
+                num.style.left = x + 'px';
+                num.style.top = y + 'px';
+                num.textContent = h;
+                // ensure it's inside clock-face
+                face.appendChild(num);
+            }
+        }
+
+        // initial render & on resize re-render
+        renderScalesAndNumbers();
+        window.addEventListener('resize', () => {
+            renderScalesAndNumbers();
+        });
+
+        // ----- CLOCK UPDATE (CST / UTC+8) -----
+        const hourHand = document.getElementById('hourHand');
+        const minuteHand = document.getElementById('minuteHand');
+        const secondHand = document.getElementById('secondHand');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const dateDisplay = document.getElementById('dateDisplay');
+
+        function getCSTDate() {
+            // Use toLocaleString to get Beijing time components
+            const now = new Date();
+            const timeStr = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            // also get date parts
+            const dateParts = now.toLocaleDateString('en-US', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'long' });
+            // dateParts example: "Thursday, 04/17/2025" (depends on locale, but we want structured)
+            // better: use separate options
+            const weekday = now.toLocaleDateString('en-US', { timeZone: 'Asia/Shanghai', weekday: 'long' });
+            const month = now.toLocaleDateString('en-US', { timeZone: 'Asia/Shanghai', month: 'long' });
+            const day = now.toLocaleDateString('en-US', { timeZone: 'Asia/Shanghai', day: 'numeric' });
+            const year = now.toLocaleDateString('en-US', { timeZone: 'Asia/Shanghai', year: 'numeric' });
+            const dateStr = `${weekday}, ${month} ${day}, ${year}`;
+            // parse time components
+            const parts = timeStr.split(':');
+            let hours = parseInt(parts[0], 10);
+            const minutes = parseInt(parts[1], 10);
+            const seconds = parseInt(parts[2], 10);
+            // handle 24-hour format
+            return { hours, minutes, seconds, dateStr, timeStr: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` };
+        }
+
+        function updateClock() {
+            const { hours, minutes, seconds, dateStr, timeStr } = getCSTDate();
+
+            // angles: hour hand (0.5 deg per minute + 30 deg per hour)
+            const hourAngle = (hours % 12) * 30 + minutes * 0.5;
+            const minuteAngle = minutes * 6 + seconds * 0.1;  // smooth sweep
+            const secondAngle = seconds * 6;   // smooth movement via continuous rotation? but we want smooth second hand
+            // for smooth second hand, we need milliseconds: compute sub-second
+            const nowMs = new Date();
+            const msInShanghai = new Date(nowMs.toLocaleString('en-US', {timeZone: 'Asia/Shanghai'}));
+            // actually better: get milliseconds from current time object and adjust timezone offset correctly
+            // simpler: use getMilliseconds but it's local. We'll compute smooth via performance or Date.
+            // Use real second including milliseconds for smooth sweep:
+            const localNow = new Date();
+            const localMs = localNow.getMilliseconds();
+            // but we need Shanghai time ms. However, difference is constant offset; ms is same across zones.
+            const smoothSecond = seconds + localMs / 1000;
+            const secondSmoothAngle = smoothSecond * 6;  // continuous
+
+            // Apply rotations
+            hourHand.style.transform = `rotate(${hourAngle}deg)`;
+            minuteHand.style.transform = `rotate(${minuteAngle}deg)`;
+            secondHand.style.transform = `rotate(${secondSmoothAngle}deg)`;
+
+            // Update text
+            timeDisplay.textContent = timeStr;
+            dateDisplay.textContent = dateStr;
+        }
+
+        // initial update
+        updateClock();
+
+        // continuously update (smooth second requires ~60 fps)
+        let lastTimestamp = 0;
+        function tickLoop(timestamp) {
+            if (timestamp - lastTimestamp >= 16) {  // ~60fps
+                updateClock();
+                lastTimestamp = timestamp;
+            }
+            requestAnimationFrame(tickLoop);
+        }
+        requestAnimationFrame(tickLoop);
+
+        // additionally run setInterval as fallback (but RAF covers)
+        setInterval(updateClock, 1000);
+    })();
+</script>
+</body>
+</html>

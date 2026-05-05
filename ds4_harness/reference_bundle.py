@@ -6,6 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ds4_harness.generation import (
+    generation_code_artifact_filename,
+    write_generation_code_artifact,
+)
+
 
 Json = dict[str, Any]
 
@@ -288,10 +293,23 @@ def _copy_generation(run_dir: Path, output_dir: Path) -> None:
     for variant in VARIANTS:
         source_dir = run_dir / variant / "acceptance"
         jsonl_path = source_dir / "generation.jsonl"
+        rows = []
         if jsonl_path.exists():
+            rows = _read_jsonl(jsonl_path)
             _write_json(
                 output_dir / "generation" / f"{variant}.json",
-                _read_jsonl(jsonl_path),
+                rows,
+            )
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            filename = generation_code_artifact_filename(row)
+            language = str(row.get("language") or "").strip()
+            if not filename or not language:
+                continue
+            write_generation_code_artifact(
+                output_dir / "generation" / language / filename,
+                row,
             )
 
         markdown_root = source_dir / "generation"
@@ -454,7 +472,7 @@ def _write_manifest(
     collect_env = _first_collect_env(run_dir)
     contents = {
         "report": "Readable baseline report with correctness, performance, and cost metrics.",
-        "generation": "Directory-driven writing, translation, and coding transcripts.",
+        "generation": "Directory-driven writing, translation, and coding transcripts plus coding source sidecars.",
         "smoke": "no-MTP and MTP chat smoke request/response captures.",
         "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
         "kv_layout": "Synthetic packed KV byte-layout snapshots for indexer-cache regressions.",
@@ -581,7 +599,8 @@ paths, server logs, tokens, and private connection details.
 - `report.md`: readable baseline report with throughput, latency, correctness,
   runtime telemetry, and synthetic real-scenario OP cost metrics.
 - `generation/`: no-MTP and MTP directory-driven generation transcripts and
-  JSON rows when the source run used `generation-matrix`.
+  JSON rows when the source run used `generation-matrix`; coding cases also
+  include same-basename `.html`, `.py`, or `.js` source sidecars.
 {oracle_bullet}
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
 - `toolcall15/`: no-MTP and MTP ToolCall-15 scores and traces.

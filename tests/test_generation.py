@@ -141,6 +141,69 @@ Translate this sentence into English: 隐私和延迟都很重要。
     assert all(line == line.rstrip() for line in lines)
 
 
+def test_generation_matrix_writes_code_artifacts_for_coding_prompts(
+    monkeypatch,
+    tmp_path,
+):
+    prompt_root = tmp_path / "prompts"
+    _write_prompt(
+        prompt_root / "en" / "html_probe.md",
+        """---
+tags: coding, frontend_single_file
+min_chars: 20
+require_html_artifact: true
+---
+Output only a complete index.html file.
+""",
+    )
+
+    def fake_post_json(base_url, path, payload, timeout):
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": (
+                            "```html\n<!doctype html><html><head><style>body{color:#111}</style>   \n"
+                            "</head><body>ok<script>console.log('ok')</script></body></html>  \n```"
+                        ),
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 8, "total_tokens": 12},
+        }
+
+    monkeypatch.setattr(cli, "post_json", fake_post_json)
+    transcript_dir = tmp_path / "generation"
+
+    rc = cli.main(
+        [
+            "generation-matrix",
+            "--prompt-root",
+            str(prompt_root),
+            "--thinking-mode",
+            "non-thinking",
+            "--variant",
+            "mtp",
+            "--repeat-count",
+            "1",
+            "--markdown-output-dir",
+            str(transcript_dir),
+        ]
+    )
+
+    assert rc == 0
+    assert (transcript_dir / "en" / "html_probe.1.non-thinking.mtp.md").exists()
+    html = (transcript_dir / "en" / "html_probe.1.non-thinking.mtp.html").read_text(
+        encoding="utf-8"
+    )
+    assert html == (
+        "<!doctype html><html><head><style>body{color:#111}</style>\n"
+        "</head><body>ok<script>console.log('ok')</script></body></html>\n"
+    )
+
+
 def test_generation_matrix_can_override_prompt_sampling(monkeypatch, tmp_path):
     prompt_root = tmp_path / "prompts"
     _write_prompt(

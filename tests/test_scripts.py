@@ -615,22 +615,39 @@ def test_baseline_bundle_script_can_archive_runs_without_oracle(tmp_path):
     generation_dir = acceptance_dir / "generation" / "en"
     generation_dir.mkdir(parents=True)
     generation_row = {
-        "case": "en_sum_tech_001",
+        "case": "en_code_fe_001",
         "language": "en",
+        "workload": "coding",
+        "tags": ["coding", "frontend_single_file"],
         "thinking_mode": "non-thinking",
         "variant": "mtp",
         "round": 1,
         "temperature": 1.0,
         "top_p": 1.0,
         "ok": True,
-        "response": {"usage": {"prompt_tokens": 8, "completion_tokens": 13}},
+        "payload": {
+            "messages": [{"role": "user", "content": "Output only index.html"}],
+        },
+        "response": {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            "```html\n<!doctype html><html><head><style>body{color:#111}</style>"
+                            "</head><body>ok<script>console.log('ok')</script></body></html>\n```"
+                        ),
+                    }
+                }
+            ]
+        },
+        "usage": {"prompt_tokens": 8, "completion_tokens": 13},
     }
     (acceptance_dir / "generation.jsonl").write_text(
         json.dumps(generation_row, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    (generation_dir / "en_sum_tech_001.1.non-thinking.mtp.md").write_text(
-        "# en_sum_tech_001\n\nok\n",
+    (generation_dir / "en_code_fe_001.1.non-thinking.mtp.md").write_text(
+        "# en_code_fe_001\n\nok\n",
         encoding="utf-8",
     )
     (acceptance_dir / "toolcall15.json").write_text(
@@ -683,8 +700,14 @@ def test_baseline_bundle_script_can_archive_runs_without_oracle(tmp_path):
     assert (output_dir / "manifest.json").exists()
     assert (output_dir / "generation" / "mtp.json").exists()
     assert (
-        output_dir / "generation" / "en" / "en_sum_tech_001.1.non-thinking.mtp.md"
+        output_dir / "generation" / "en" / "en_code_fe_001.1.non-thinking.mtp.md"
     ).exists()
+    assert (
+        output_dir / "generation" / "en" / "en_code_fe_001.1.non-thinking.mtp.html"
+    ).read_text(encoding="utf-8") == (
+        "<!doctype html><html><head><style>body{color:#111}</style></head>"
+        "<body>ok<script>console.log('ok')</script></body></html>\n"
+    )
     assert (output_dir / "toolcall15" / "mtp.json").exists()
     assert (output_dir / "performance" / "primary.json").exists()
     assert not (output_dir / "oracle").exists()

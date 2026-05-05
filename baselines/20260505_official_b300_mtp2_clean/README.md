@@ -17,7 +17,8 @@ This bundle is a current reference baseline, not necessarily a completely green 
 - `report.md`: readable baseline report with throughput, latency, correctness,
   runtime telemetry, and synthetic real-scenario OP cost metrics.
 - `generation/`: no-MTP and MTP directory-driven generation transcripts and
-  JSON rows when the source run used `generation-matrix`.
+  JSON rows when the source run used `generation-matrix`; coding cases also
+  include same-basename `.html`, `.py`, or `.js` source sidecars.
 - This bundle does not include an oracle export; use `generation/`,
   `toolcall15/`, and `performance/` as trajectory and performance references.
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>aquarium · fish & food</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: #0b1a2f;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    }
+    .aquarium-wrapper {
+      background: #152b44;
+      padding: 20px 20px 25px;
+      border-radius: 48px 48px 24px 24px;
+      box-shadow: 0 20px 30px rgba(0,0,0,0.7), inset 0 2px 6px rgba(255,255,255,0.1);
+      border: 1px solid #3e6d8c;
+    }
+    canvas {
+      display: block;
+      width: 900px;
+      height: 550px;
+      border-radius: 28px;
+      box-shadow: inset 0 0 0 1px #7fb0d0, 0 12px 20px -6px black;
+      cursor: pointer;
+      background: radial-gradient(circle at 20% 30%, #1f4d6a, #0c3045);
+      transition: filter 0.2s;
+    }
+    canvas:active {
+      filter: brightness(1.04);
+    }
+    .info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 14px;
+      padding: 0 8px 0 12px;
+      color: #b3d6f0;
+      font-weight: 400;
+      text-shadow: 0 2px 3px #02101c;
+      letter-spacing: 0.3px;
+    }
+    .food-counter {
+      background: #1c3b52;
+      padding: 6px 18px;
+      border-radius: 40px;
+      font-size: 0.9rem;
+      border: 1px solid #4d7b9a;
+      box-shadow: inset 0 1px 2px #2e5777;
+      backdrop-filter: blur(1px);
+    }
+    .hint {
+      display: flex;
+      gap: 12px;
+      font-size: 0.9rem;
+    }
+    .hint i {
+      font-style: normal;
+      background: #1f405a;
+      padding: 4px 14px;
+      border-radius: 40px;
+      border: 1px solid #5982a3;
+    }
+    @media (max-width: 940px) {
+      canvas { width: 100%; height: auto; aspect-ratio: 900/550; }
+      .aquarium-wrapper { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+<div class="aquarium-wrapper">
+  <canvas id="aquariumCanvas" width="900" height="550"></canvas>
+  <div class="info">
+    <span class="food-counter">🍕 food: 0</span>
+    <span class="hint"><i>🖱 left click</i> to place food</span>
+  </div>
+</div>
+<script>
+  (function() {
+    const canvas = document.getElementById('aquariumCanvas');
+    const ctx = canvas.getContext('2d');
+    const foodCounter = document.querySelector('.food-counter');
+
+    // ----- aquarium dimensions -----
+    const W = 900, H = 550;
+
+    // ----- fish & food arrays -----
+    let fishes = [];
+    let foodPellets = [];
+
+    // ----- fish generation -----
+    const FISH_COUNT = 12;
+
+    // helper: random between min/max
+    function rand(min, max) { return Math.random() * (max - min) + min; }
+
+    // Color palette: vibrant, varied
+    const colorPalettes = [
+      { body: '#f47a4a', fin: '#d95c2b', eye: '#222' },  // clownfish orange
+      { body: '#3f9ed6', fin: '#1d6fa0', eye: '#0a1f2e' }, // blue tang
+      { body: '#f1d86a', fin: '#d9b546', eye: '#4a3e1f' }, // yellow tang
+      { body: '#e06b8b', fin: '#b54264', eye: '#2e1220' }, // pink
+      { body: '#6ac46a', fin: '#3f943f', eye: '#153015' }, // green
+      { body: '#b484d4', fin: '#8f5db0', eye: '#2a1b3a' }, // purple
+      { body: '#e08050', fin: '#b85f33', eye: '#2e1a0c' }, // gold
+      { body: '#5fb0b0', fin: '#3d8282', eye: '#153030' }, // teal
+      { body: '#d96c6c', fin: '#b24444', eye: '#2f1212' }, // red
+      { body: '#b8b84d', fin: '#8f8f30', eye: '#2f2f14' }, // olive
+    ];
+
+    function createFish(overrides = {}) {
+      const palette = colorPalettes[Math.floor(Math.random() * colorPalettes.length)];
+      const bodyColor = overrides.bodyColor || palette.body;
+      const finColor = overrides.finColor || palette.fin;
+      const eyeColor = overrides.eyeColor || palette.eye;
+      const size = rand(0.7, 1.6);   // size multiplier
+      return {
+        x: rand(80, W - 80),
+        y: rand(50, H - 50),
+        vx: rand(0.6, 2.2) * (Math.random() > 0.5 ? 1 : -1),
+        vy: rand(-0.3, 0.3),
+        size: size,
+        baseSpeed: rand(0.9, 1.8),
+        bodyColor: bodyColor,
+        finColor: finColor,
+        eyeColor: eyeColor,
+        // oscillation for tail & fin wiggle
+        phase: rand(0, 6.28),
+        wiggleSpeed: rand(0.02, 0.06),
+        // target for idle wandering
+        targetX: rand(80, W - 80),
+        targetY: rand(50, H - 50),
+        changeTargetCounter: rand(100, 300),
+        // personality: how strongly they turn toward food
+        foodBias: rand(0.03, 0.10),
+      };
+    }
+
+    // initialise fishes
+    for (let i = 0; i < FISH_COUNT; i++) {
+      fishes.push(createFish());
+    }
+
+    // ----- helper: distance -----
+    function dist(x1, y1, x2, y2) {
+      return Math.hypot(x2 - x1, y2 - y1);
+    }
+
+    // ----- each fish finds closest food pellet (if any) -----
+    function getClosestFood(fish) {
+      let closest = null;
+      let minDist = Infinity;
+      for (let i = 0; i < foodPellets.length; i++) {
+        const f = foodPellets[i];
+        const d = dist(fish.x, fish.y, f.x, f.y);
+        if (d < minDist) {
+          minDist = d;
+          closest = f;
+        }
+      }
+      return closest;
+    }
+
+    // ----- update fish movement (food chasing / free swim) -----
+    function updateFishes() {
+      for (let fish of fishes) {
+        const foodTarget = getClosestFood(fish);
+        let targetX, targetY;
+        let isChasing = false;
+
+        if (foodTarget) {
+          // chase food
+          targetX = foodTarget.x;
+          targetY = foodTarget.y;
+          isChasing = true;
+        } else {
+          // free swim (wandering toward personal target)
+          targetX = fish.targetX;
+          targetY = fish.targetY;
+          // occasionally update wander target
+          fish.changeTargetCounter -= 1;
+          if (fish.changeTargetCounter <= 0) {
+            fish.targetX = rand(80, W - 80);
+            fish.targetY = rand(40, H - 40);
+            fish.changeTargetCounter = rand(120, 320);
+          }
+        }
+
+        // direction to target
+        let dx = targetX - fish.x;
+        let dy = targetY - fish.y;
+        let distance = Math.hypot(dx, dy);
+        if (distance < 0.01) distance = 0.01;
+
+        // normalise
+        let normX = dx / distance;
+        let normY = dy / distance;
+
+        // desired speed: fast toward food, leisurely idle
+        let desiredSpeed = isChasing ? fish.baseSpeed * 1.8 : fish.baseSpeed * 0.75;
+        // if very close to food, slow down (to eat)
+        if (isChasing && distance < 8) {
+          desiredSpeed = 0.4;
+        }
+
+        // smooth steering (inertia)
+        const steerFactor = isChasing ? fish.foodBias * 0.9 : 0.02;
+        fish.vx += (normX * desiredSpeed - fish.vx) * steerFactor;
+        fish.vy += (normY * desiredSpeed - fish.vy) * steerFactor;
+
+        // limit speed
+        const maxSpeed = isChasing ? 3.2 : 1.6;
+        let spd = Math.hypot(fish.vx, fish.vy);
+        if (spd > maxSpeed) {
+          fish.vx = (fish.vx / spd) * maxSpeed;
+          fish.vy = (fish.vy / spd) * maxSpeed;
+        }
+
+        // move
+        fish.x += fish.vx;
+        fish.y += fish.vy;
+
+        // gently keep inside aquarium (soft boundary)
+        const margin = 25;
+        if (fish.x < margin) fish.x += 1.8;
+        if (fish.x > W - margin) fish.x -= 1.8;
+        if (fish.y < margin) fish.y += 1.8;
+        if (fish.y > H - margin) fish.y -= 1.8;
+
+        // update phase for fin animation
+        fish.phase += fish.wiggleSpeed;
+      }
+    }
+
+    // ----- handle food eating (pellet disappears if fish is close) -----
+    function handleEating() {
+      const eatenIndices = new Set();
+      for (let i = 0; i < fishes.length; i++) {
+        const fish = fishes[i];
+        for (let j = 0; j < foodPellets.length; j++) {
+          const pellet = foodPellets[j];
+          const d = dist(fish.x, fish.y, pellet.x, pellet.y);
+          if (d < 20) {   // fish eats
+            eatenIndices.add(j);
+          }
+        }
+      }
+      // remove eaten pellets (in reverse order to preserve index)
+      if (eatenIndices.size > 0) {
+        const sorted = Array.from(eatenIndices).sort((a,b) => b - a);
+        for (let idx of sorted) {
+          foodPellets.splice(idx, 1);
+        }
+      }
+    }
+
+    // ----- add food on click -----
+    function addFood(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mouseX = (e.clientX - rect.left) * scaleX;
+      const mouseY = (e.clientY - rect.top) * scaleY;
+      // clamp inside canvas
+      const x = Math.min(W - 6, Math.max(6, mouseX));
+      const y = Math.min(H - 6, Math.max(6, mouseY));
+      foodPellets.push({ x, y, size: 5 + rand(0, 3) });
+      updateFoodCounter();
+    }
+
+    // ----- update UI counter -----
+    function updateFoodCounter() {
+      foodCounter.textContent = `🍕 food: ${foodPellets.length}`;
+    }
+
+    // ----- draw everything -----
+    function drawAquarium() {
+      ctx.clearRect(0, 0, W, H);
+
+      // water background gradient (gentle)
+      const waterGrad = ctx.createRadialGradient(200, 150, 30, 400, 280, 600);
+      waterGrad.addColorStop(0, '#256380');
+      waterGrad.addColorStop(0.7, '#103a52');
+      waterGrad.addColorStop(1, '#0a2538');
+      ctx.fillStyle = waterGrad;
+      ctx.fillRect(0, 0, W, H);
+
+      // light rays (subtle)
+      ctx.save();
+      ctx.globalAlpha = 0.05;
+      for (let i = 0; i < 7; i++) {
+        ctx.beginPath();
+        ctx.moveTo(120 + i * 130, 0);
+        ctx.lineTo(60 + i * 140, H);
+        ctx.lineTo(160 + i * 140, H);
+        ctx.fillStyle = '#cdeeff';
+        ctx.fill();
+      }
+      ctx.restore();
+
+      // bubbles
+      ctx.fillStyle = 'rgba(200, 235, 255, 0.2)';
+      for (let i = 0; i < 30; i++) {
+        const bx = (i * 37 + 13) % W;
+        const by = (i * 23 + 7 + Date.now() * 0.01) % H;
+        const rad = 2 + (i % 5);
+        ctx.beginPath();
+        ctx.arc(bx, by, rad, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // draw food pellets
+      for (let p of foodPellets) {
+        ctx.shadowColor = '#fbe68a';
+        ctx.shadowBlur = 20;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * 0.9, 0, Math.PI * 2);
+        ctx.fillStyle = '#f6c35c';
+        ctx.fill();
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(p.x-2, p.y-2, p.size*0.3, 0, Math.PI*2);
+        ctx.fillStyle = '#ebac3c';
+        ctx.fill();
+        // highlight
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(p.x-1, p.y-3, p.size*0.2, 0, Math.PI*2);
+        ctx.fillStyle = '#ffefc0';
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+
+      // draw fishes
+      for (let fish of fishes) {
+        const angle = Math.atan2(fish.vy, fish.vx);
+        const size = fish.size;
+        const wiggle = Math.sin(fish.phase) * 0.25;
+
+        ctx.save();
+        ctx.translate(fish.x, fish.y);
+        ctx.rotate(angle);
+
+        // body (ellipse)
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 24 * size, 11 * size, 0, 0, Math.PI * 2);
+        ctx.fillStyle = fish.bodyColor;
+        ctx.shadowColor = 'rgba(0,0,0,0.2)';
+        ctx.shadowBlur = 6;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // fin top
+        ctx.save();
+        ctx.translate(-6 * size, -8 * size);
+        ctx.rotate(0.2 + wiggle * 0.3);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-12 * size, -2 * size);
+        ctx.lineTo(6 * size, -8 * size);
+        ctx.closePath();
+        ctx.fillStyle = fish.finColor;
+        ctx.globalAlpha = 0.8;
+        ctx.fill();
+        ctx.restore();
+
+        // fin bottom
+        ctx.save();
+        ctx.translate(-6 * size, 8 * size);
+        ctx.rotate(-0.2 - wiggle * 0.3);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-12 * size, 2 * size);
+        ctx.lineTo(6 * size, 8 * size);
+        ctx.closePath();
+        ctx.fillStyle = fish.finColor;
+        ctx.globalAlpha = 0.8;
+        ctx.fill();
+        ctx.restore();
+
+        // tail with wiggle
+        ctx.save();
+        ctx.translate(-22 * size, 0);
+        ctx.rotate(0.3 * wiggle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-14 * size, -10 * size);
+        ctx.lineTo(-16 * size, 0);
+        ctx.lineTo(-14 * size, 10 * size);
+        ctx.closePath();
+        ctx.fillStyle = fish.finColor;
+        ctx.globalAlpha = 0.9;
+        ctx.fill();
+        ctx.restore();
+
+        // eye
+        ctx.beginPath();
+        ctx.arc(12 * size, -2 * size, 4.5 * size, 0, Math.PI * 2);
+        ctx.fillStyle = '#f0f8ff';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(13 * size, -3 * size, 2.2 * size, 0, Math.PI * 2);
+        ctx.fillStyle = fish.eyeColor;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(14.5 * size, -4.5 * size, 0.8 * size, 0, Math.PI * 2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      // glass reflection
+      ctx.fillStyle = 'rgba(255,255,255,0.02)';
+      ctx.fillRect(0, 0, W, H);
+
+      // subtle vignette
+      const grad = ctx.createRadialGradient(W/2, H/2, 200, W/2, H/2, 500);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.2)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,W,H);
+    }
+
+    // ----- animation loop -----
+    function loop() {
+      updateFishes();
+      handleEating();
+      updateFoodCounter();
+      drawAquarium();
+      requestAnimationFrame(loop);
+    }
+
+    // ----- attach click event -----
+    canvas.addEventListener('click', addFood);
+
+    // ----- start animation -----
+    loop();
+
+    // optionally add 2 food pieces as welcome
+    setTimeout(() => {
+      foodPellets.push({ x: 220, y: 200, size: 6 });
+      foodPellets.push({ x: 650, y: 300, size: 5 });
+      updateFoodCounter();
+    }, 300);
+
+  })();
+</script>
+</body>
+</html>

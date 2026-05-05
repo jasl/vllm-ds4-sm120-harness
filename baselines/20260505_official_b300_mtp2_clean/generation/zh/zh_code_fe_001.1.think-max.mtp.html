@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
+    <title>轻量看板 · 任务管理</title>
+    <style>
+        /* ---- reset & 全局 ---- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f1f5f9;
+            min-height: 100vh;
+            padding: 1.2rem;
+            display: flex;
+            flex-direction: column;
+            color: #0b1b2b;
+        }
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+        h1 small {
+            font-size: 0.8rem;
+            font-weight: 400;
+            background: #d9e2ec;
+            padding: 0.2rem 0.6rem;
+            border-radius: 30px;
+            color: #1e3a5f;
+        }
+        /* ---- 控制栏 ---- */
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.8rem 1.2rem;
+            background: white;
+            padding: 0.9rem 1.4rem;
+            border-radius: 24px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.02);
+            margin-bottom: 1.8rem;
+            align-items: center;
+            border: 1px solid #e6edf5;
+        }
+        .search-box {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex: 2 1 200px;
+        }
+        .search-box label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #1e3a5f;
+        }
+        .search-box input {
+            flex: 1;
+            padding: 0.5rem 0.9rem;
+            border: 1px solid #ccdae8;
+            border-radius: 100px;
+            font-size: 0.9rem;
+            background: #f8fafc;
+            transition: 0.15s;
+        }
+        .search-box input:focus {
+            outline: 2px solid #2b6c9e;
+            border-color: transparent;
+            background: white;
+        }
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+        .filter-group label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #1e3a5f;
+        }
+        .filter-group select {
+            padding: 0.45rem 1.8rem 0.45rem 0.9rem;
+            border: 1px solid #ccdae8;
+            border-radius: 100px;
+            background: #f8fafc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23344e6c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 0.8rem center;
+            appearance: none;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .btn-add {
+            background: #1e3a5f;
+            color: white;
+            border: none;
+            padding: 0.5rem 1.6rem;
+            border-radius: 100px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: 0.1s;
+            margin-left: auto;
+            white-space: nowrap;
+            box-shadow: 0 2px 6px rgba(0,20,40,0.1);
+        }
+        .btn-add:hover {
+            background: #2b6c9e;
+            transform: scale(0.97);
+        }
+        /* ---- 三列网格 ---- */
+        .board {
+            display: flex;
+            gap: 1.4rem;
+            flex: 1;
+            flex-wrap: wrap;
+        }
+        .column {
+            flex: 1 1 240px;
+            min-width: 200px;
+            background: #e9eef3;
+            border-radius: 28px;
+            padding: 1.2rem 0.8rem 0.8rem;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.02);
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(2px);
+            transition: 0.1s;
+        }
+        .column-header {
+            font-weight: 600;
+            font-size: 1.1rem;
+            padding: 0 0.4rem 0.8rem 0.4rem;
+            border-bottom: 2px solid #cbd5e1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .column-header span:first-child {
+            background: #cbd5e1;
+            padding: 0 0.5rem;
+            border-radius: 30px;
+            font-size: 0.7rem;
+            color: #1e293b;
+        }
+        .task-list {
+            flex: 1;
+            min-height: 180px;
+            padding: 0.4rem 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+        /* ---- 卡片 ---- */
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 0.9rem 1rem 0.8rem;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.02), 0 1px 3px rgba(0,0,0,0.03);
+            border: 1px solid #dce5ef;
+            transition: 0.1s;
+            position: relative;
+            cursor: grab;
+            word-break: break-word;
+        }
+        .card:active { cursor: grabbing; }
+        .card.dragging {
+            opacity: 0.4;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.1);
+        }
+        .card-title {
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 0.2rem;
+            padding-right: 0.5rem;
+        }
+        .card-meta {
+            font-size: 0.7rem;
+            color: #4b5e72;
+            margin: 0.2rem 0 0.4rem;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+        }
+        .card-desc {
+            font-size: 0.85rem;
+            color: #1e293b;
+            margin: 0.3rem 0 0.5rem;
+            background: #f6f9fc;
+            padding: 0.2rem 0.5rem;
+            border-radius: 12px;
+            display: inline-block;
+            max-width: 100%;
+        }
+        .card-priority {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 0.15rem 0.6rem;
+            border-radius: 20px;
+            background: #e2e8f0;
+            color: #1e293b;
+        }
+        .pri-low { background: #dcfce7; color: #166534; }
+        .pri-medium { background: #fef9c3; color: #854d0e; }
+        .pri-high { background: #fee2e2; color: #991b1b; }
+        .card-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.4rem;
+            margin-top: 0.6rem;
+            flex-wrap: wrap;
+        }
+        .card-actions button {
+            background: transparent;
+            border: none;
+            font-size: 0.7rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 30px;
+            cursor: pointer;
+            background: #edf2f7;
+            color: #1e3a5f;
+            font-weight: 500;
+            transition: 0.08s;
+            border: 1px solid transparent;
+        }
+        .card-actions button:hover {
+            background: #d9e2ec;
+            border-color: #b1c8db;
+        }
+        .card-actions .delete-btn {
+            color: #b91c1c;
+            background: #fce8e8;
+        }
+        .card-actions .delete-btn:hover {
+            background: #f5c2c2;
+        }
+        /* 按钮移动 (无障碍) */
+        .move-group {
+            display: flex;
+            gap: 0.2rem;
+            margin-left: 0;
+        }
+        .move-group button {
+            background: #e9eef3;
+            padding: 0.1rem 0.45rem;
+            font-size: 0.65rem;
+        }
+        /* ---- 新增/编辑 模态 ---- */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.3);
+            backdrop-filter: blur(4px);
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+        .modal.active {
+            display: flex;
+        }
+        .modal-panel {
+            background: white;
+            max-width: 420px;
+            width: 90%;
+            padding: 1.8rem 1.8rem 1.5rem;
+            border-radius: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .modal-panel h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+        .modal-panel label {
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+        .modal-panel input, .modal-panel textarea, .modal-panel select {
+            width: 100%;
+            padding: 0.6rem 1rem;
+            border: 1px solid #ccdae8;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            background: #f8fafc;
+            font-family: inherit;
+        }
+        .modal-panel textarea {
+            border-radius: 18px;
+            resize: vertical;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.8rem;
+            margin-top: 0.5rem;
+        }
+        .modal-actions button {
+            padding: 0.5rem 1.8rem;
+            border-radius: 60px;
+            border: none;
+            font-weight: 500;
+            cursor: pointer;
+            background: #e2e8f0;
+        }
+        .modal-actions .primary {
+            background: #1e3a5f;
+            color: white;
+        }
+        /* ---- 响应式: 窄屏三列纵向 (每列满宽) ---- */
+        @media (max-width: 640px) {
+            body { padding: 0.8rem; }
+            .board {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            .column {
+                flex: 1 1 auto;
+                min-width: unset;
+                width: 100%;
+            }
+            .toolbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .btn-add {
+                margin-left: 0;
+                text-align: center;
+            }
+        }
+        /* ---- 辅助 ---- */
+        .sr-only {
+            position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📋 轻量看板 <small>拖拽 · 无障碍</small></h1>
+    </header>
+
+    <!-- 工具栏 -->
+    <div class="toolbar">
+        <div class="search-box">
+            <label for="searchInput">🔍</label>
+            <input type="search" id="searchInput" placeholder="搜索标题或备注..." aria-label="搜索任务">
+        </div>
+        <div class="filter-group">
+            <label for="priorityFilter">⚡</label>
+            <select id="priorityFilter" aria-label="筛选优先级">
+                <option value="all">全部</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+            </select>
+        </div>
+        <button class="btn-add" id="addTaskBtn" aria-label="新增任务">+ 新增任务</button>
+    </div>
+
+    <!-- 三列看板 -->
+    <div class="board" role="listbox" aria-label="任务看板">
+        <!-- 待办 -->
+        <div class="column" data-status="todo" role="region" aria-label="待办">
+            <div class="column-header">📌 待办 <span>0</span></div>
+            <div class="task-list" id="todoList" data-status="todo"></div>
+        </div>
+        <!-- 进行中 -->
+        <div class="column" data-status="in-progress" role="region" aria-label="进行中">
+            <div class="column-header">⏳ 进行中 <span>0</span></div>
+            <div class="task-list" id="inProgressList" data-status="in-progress"></div>
+        </div>
+        <!-- 已完成 -->
+        <div class="column" data-status="done" role="region" aria-label="已完成">
+            <div class="column-header">✅ 已完成 <span>0</span></div>
+            <div class="task-list" id="doneList" data-status="done"></div>
+        </div>
+    </div>
+
+    <!-- 新增/编辑模态框 (动态复用) -->
+    <div class="modal" id="taskModal" role="dialog" aria-modal="true">
+        <div class="modal-panel">
+            <h2 id="modalTitle">新增任务</h2>
+            <div>
+                <label for="taskTitleInput">标题 *</label>
+                <input type="text" id="taskTitleInput" placeholder="任务标题" maxlength="80" required>
+            </div>
+            <div>
+                <label for="taskDescInput">备注 (可选)</label>
+                <textarea id="taskDescInput" rows="2" placeholder="详细描述..." maxlength="200"></textarea>
+            </div>
+            <div>
+                <label for="taskPriorityInput">优先级</label>
+                <select id="taskPriorityInput">
+                    <option value="low">低</option>
+                    <option value="medium" selected>中</option>
+                    <option value="high">高</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button id="cancelModalBtn">取消</button>
+                <button id="saveModalBtn" class="primary">保存</button>
+            </div>
+            <input type="hidden" id="editId" value="">
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            "use strict";
+
+            // ----- 数据层 -----
+            const STORAGE_KEY = 'kanban_tasks';
+            let tasks = [];                 // { id, title, desc, priority, status, createdAt }
+            let currentFilter = { keyword: '', priority: 'all' };
+
+            // 生成短id
+            function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+            // 加载或初始化
+            function loadTasks() {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (stored) {
+                    try { tasks = JSON.parse(stored); } catch(e) { tasks = []; }
+                } else {
+                    // 插入示例
+                    tasks = [
+                        { id: uid(), title: '设计看板布局', desc: '使用CSS flex', priority: 'high', status: 'todo', createdAt: Date.now() - 3600000 },
+                        { id: uid(), title: '实现拖拽交互', desc: '原生 drag 事件', priority: 'medium', status: 'in-progress', createdAt: Date.now() - 1800000 },
+                        { id: uid(), title: '测试持久化', desc: '刷新检查', priority: 'low', status: 'done', createdAt: Date.now() - 7200000 },
+                    ];
+                }
+                // 兼容旧数据
+                tasks = tasks.filter(t => t && t.id && t.title);
+                tasks.forEach(t => { if (!t.createdAt) t.createdAt = Date.now(); });
+                saveTasks();
+            }
+
+            function saveTasks() {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+            }
+
+            // ----- 渲染引擎 -----
+            function renderBoard() {
+                const keyword = currentFilter.keyword.trim().toLowerCase();
+                const priorityFilter = currentFilter.priority;
+
+                const filtered = tasks.filter(task => {
+                    // 搜索匹配
+                    if (keyword) {
+                        const inTitle = task.title.toLowerCase().includes(keyword);
+                        const inDesc = (task.desc || '').toLowerCase().includes(keyword);
+                        if (!inTitle && !inDesc) return false;
+                    }
+                    // 优先级筛选
+                    if (priorityFilter !== 'all' && task.priority !== priorityFilter) return false;
+                    return true;
+                });
+
+                // 按状态分组
+                const todoEl = document.getElementById('todoList');
+                const progressEl = document.getElementById('inProgressList');
+                const doneEl = document.getElementById('doneList');
+                const counts = { todo: 0, 'in-progress': 0, done: 0 };
+
+                // 清空(保留父节点)
+                [todoEl, progressEl, doneEl].forEach(el => el.innerHTML = '');
+
+                filtered.forEach(task => {
+                    const card = createCardElement(task);
+                    const status = task.status || 'todo';
+                    if (status === 'todo') { todoEl.appendChild(card); counts.todo++; }
+                    else if (status === 'in-progress') { progressEl.appendChild(card); counts['in-progress']++; }
+                    else if (status === 'done') { doneEl.appendChild(card); counts.done++; }
+                });
+
+                // 更新计数
+                document.querySelector('.column[data-status="todo"] .column-header span').textContent = counts.todo;
+                document.querySelector('.column[data-status="in-progress"] .column-header span').textContent = counts['in-progress'];
+                document.querySelector('.column[data-status="done"] .column-header span').textContent = counts.done;
+            }
+
+            // 创建单个卡片 (DOM)
+            function createCardElement(task) {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.draggable = true;
+                card.dataset.taskId = task.id;
+
+                // 拖拽事件 (HTML5 drag)
+                card.addEventListener('dragstart', handleDragStart);
+                card.addEventListener('dragend', handleDragEnd);
+
+                // 标题
+                const titleDiv = document.createElement('div');
+                titleDiv.className = 'card-title';
+                titleDiv.textContent = task.title || '(无标题)';
+                card.appendChild(titleDiv);
+
+                // 元数据: 创建时间 + 优先级
+                const metaDiv = document.createElement('div');
+                metaDiv.className = 'card-meta';
+                const timeSpan = document.createElement('span');
+                const date = new Date(task.createdAt);
+                timeSpan.textContent = `🕒 ${date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' })}`;
+                metaDiv.appendChild(timeSpan);
+
+                const prioritySpan = document.createElement('span');
+                prioritySpan.className = `card-priority pri-${task.priority || 'medium'}`;
+                const pMap = { low: '低', medium: '中', high: '高' };
+                prioritySpan.textContent = pMap[task.priority] || '中';
+                metaDiv.appendChild(prioritySpan);
+                card.appendChild(metaDiv);
+
+                // 备注
+                if (task.desc) {
+                    const descDiv = document.createElement('div');
+                    descDiv.className = 'card-desc';
+                    descDiv.textContent = task.desc;
+                    card.appendChild(descDiv);
+                }
+
+                // 操作区
+                const actions = document.createElement('div');
+                actions.className = 'card-actions';
+
+                // 移动按钮组（无障碍）
+                const moveGroup = document.createElement('div');
+                moveGroup.className = 'move-group';
+                const statuses = ['todo', 'in-progress', 'done'];
+                const currentIdx = statuses.indexOf(task.status);
+                const labels = ['待办', '进行中', '已完成'];
+
+                statuses.forEach((s, idx) => {
+                    if (s === task.status) return; // 不显示当前状态按钮
+                    const btn = document.createElement('button');
+                    btn.textContent = `→ ${labels[idx]}`;
+                    btn.setAttribute('aria-label', `移动到${labels[idx]}`);
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        moveTask(task.id, s);
+                    });
+                    moveGroup.appendChild(btn);
+                });
+                if (moveGroup.children.length > 0) actions.appendChild(moveGroup);
+
+                // 编辑 / 删除
+                const editBtn = document.createElement('button');
+                editBtn.textContent = '✎ 编辑';
+                editBtn.setAttribute('aria-label', '编辑任务');
+                editBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openEditModal(task.id);
+                });
+                actions.appendChild(editBtn);
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'delete-btn';
+                delBtn.textContent = '🗑 删除';
+                delBtn.setAttribute('aria-label', '删除任务');
+                delBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (confirm(`删除「${task.title}」?`)) {
+                        deleteTask(task.id);
+                    }
+                });
+                actions.appendChild(delBtn);
+
+                card.appendChild(actions);
+
+                // 让卡片点击也可聚焦 (辅助)
+                card.setAttribute('tabindex', '0');
+                card.setAttribute('role', 'listitem');
+                card.setAttribute('aria-label', `任务: ${task.title}, 优先级: ${pMap[task.priority]}`);
+
+                return card;
+            }
+
+            // ----- 拖拽处理 -----
+            let dragSourceId = null;
+
+            function handleDragStart(e) {
+                const card = e.currentTarget;
+                dragSourceId = card.dataset.taskId;
+                card.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                // 设置拖拽数据
+                e.dataTransfer.setData('text/plain', dragSourceId);
+                // 让拖拽时显示光标
+                if (e.dataTransfer.setDragImage) {
+                    const ghost = card.cloneNode(true);
+                    ghost.style.position = 'absolute'; ghost.style.top = '-1000px';
+                    document.body.appendChild(ghost);
+                    e.dataTransfer.setDragImage(ghost, 20, 20);
+                    setTimeout(() => ghost.remove(), 0);
+                }
+            }
+
+            function handleDragEnd(e) {
+                const card = e.currentTarget;
+                card.classList.remove('dragging');
+                dragSourceId = null;
+                // 清除所有高亮 (如果有)
+                document.querySelectorAll('.task-list').forEach(el => el.style.background = '');
+            }
+
+            // 给所有列添加 drop 监听 (拖放目标)
+            function initDropTargets() {
+                const lists = document.querySelectorAll('.task-list');
+                lists.forEach(list => {
+                    list.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        list.style.background = '#d3e2f7';
+                    });
+                    list.addEventListener('dragleave', () => {
+                        list.style.background = '';
+                    });
+                    list.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        list.style.background = '';
+                        const taskId = e.dataTransfer.getData('text/plain');
+                        if (!taskId) return;
+                        const targetStatus = list.dataset.status;
+                        if (!targetStatus) return;
+                        const task = tasks.find(t => t.id === taskId);
+                        if (task && task.status !== targetStatus) {
+                            task.status = targetStatus;
+                            saveTasks();
+                            renderBoard();
+                        }
+                    });
+                });
+            }
+
+            // ----- 操作函数 -----
+            function moveTask(id, newStatus) {
+                const task = tasks.find(t => t.id === id);
+                if (task && task.status !== newStatus) {
+                    task.status = newStatus;
+                    saveTasks();
+                    renderBoard();
+                }
+            }
+
+            function deleteTask(id) {
+                tasks = tasks.filter(t => t.id !== id);
+                saveTasks();
+                renderBoard();
+            }
+
+            // ----- 模态框 (新增/编辑) -----
+            const modal = document.getElementById('taskModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const titleInput = document.getElementById('taskTitleInput');
+            const descInput = document.getElementById('taskDescInput');
+            const priorityInput = document.getElementById('taskPriorityInput');
+            const editIdInput = document.getElementById('editId');
+            const saveBtn = document.getElementById('saveModalBtn');
+            const cancelBtn = document.getElementById('cancelModalBtn');
+
+            function openAddModal() {
+                modalTitle.textContent = '📝 新建任务';
+                titleInput.value = '';
+                descInput.value = '';
+                priorityInput.value = 'medium';
+                editIdInput.value = '';
+                modal.classList.add('active');
+                titleInput.focus();
+            }
+
+            function openEditModal(id) {
+                const task = tasks.find(t => t.id === id);
+                if (!task) return;
+                modalTitle.textContent = '✏️ 编辑任务';
+                titleInput.value = task.title;
+                descInput.value = task.desc || '';
+                priorityInput.value = task.priority || 'medium';
+                editIdInput.value = task.id;
+                modal.classList.add('active');
+                titleInput.focus();
+            }
+
+            function closeModal() {
+                modal.classList.remove('active');
+                editIdInput.value = '';
+            }
+
+            function saveFromModal() {
+                const title = titleInput.value.trim();
+                if (!title) {
+                    alert('标题不能为空');
+                    titleInput.focus();
+                    return;
+                }
+                const desc = descInput.value.trim();
+                const priority = priorityInput.value;
+                const editId = editIdInput.value;
+
+                if (editId) {
+                    // 编辑模式
+                    const task = tasks.find(t => t.id === editId);
+                    if (task) {
+                        task.title = title;
+                        task.desc = desc;
+                        task.priority = priority;
+                    }
+                } else {
+                    // 新增
+                    tasks.push({
+                        id: uid(),
+                        title: title,
+                        desc: desc,
+                        priority: priority,
+                        status: 'todo',
+                        createdAt: Date.now(),
+                    });
+                }
+                saveTasks();
+                renderBoard();
+                closeModal();
+            }
+
+            // 事件绑定
+            document.getElementById('addTaskBtn').addEventListener('click', openAddModal);
+            cancelBtn.addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+            saveBtn.addEventListener('click', saveFromModal);
+
+            // 回车快捷保存 (在输入框内)
+            titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveFromModal(); } });
+            // 防止回车换行
+            descInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+
+            // ----- 搜索 & 筛选 -----
+            const searchInput = document.getElementById('searchInput');
+            const priorityFilter = document.getElementById('priorityFilter');
+
+            function applyFilter() {
+                currentFilter.keyword = searchInput.value;
+                currentFilter.priority = priorityFilter.value;
+                renderBoard();
+            }
+
+            searchInput.addEventListener('input', applyFilter);
+            priorityFilter.addEventListener('change', applyFilter);
+
+            // ----- 初始化 -----
+            loadTasks();
+            renderBoard();
+            initDropTargets();
+
+            // 当窗口resize不用特殊处理，响应式纯css
+
+            // 额外: 卡片拖拽时避免误触
+            window.addEventListener('dragenter', (e) => e.preventDefault());
+            window.addEventListener('dragover', (e) => e.preventDefault());
+            window.addEventListener('drop', (e) => {
+                // 防止意外的文件drop
+                if (!e.target.closest('.task-list')) e.preventDefault();
+            });
+
+        })();
+    </script>
+</body>
+</html>

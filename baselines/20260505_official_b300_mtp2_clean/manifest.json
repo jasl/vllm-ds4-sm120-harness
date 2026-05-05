@@ -2,7 +2,7 @@
   "schema_version": 1,
   "label": "20260505_official_b300_mtp2_clean",
   "date": "20260505",
-  "generated_at_utc": "2026-05-05T19:34:06.551221+00:00",
+  "generated_at_utc": "2026-05-05T19:49:58.052855+00:00",
   "source": {
     "primary_run": "20260505184836",
     "raw_artifacts_are_not_required": true
@@ -114,7 +114,7 @@
   ],
   "contents": {
     "report": "Readable baseline report with correctness, performance, and cost metrics.",
-    "generation": "Directory-driven writing, translation, and coding transcripts.",
+    "generation": "Directory-driven writing, translation, and coding transcripts plus coding source sidecars.",
     "smoke": "no-MTP and MTP chat smoke request/response captures.",
     "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
     "kv_layout": "Synthetic packed KV byte-layout snapshots for indexer-cache regressions.",
