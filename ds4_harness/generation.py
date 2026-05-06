@@ -329,7 +329,8 @@ def generation_code_artifact_extension(row: Json) -> str | None:
 
 
 def _code_block_label(label: str) -> str:
-    return label.strip().casefold().split(maxsplit=1)[0]
+    parts = label.strip().casefold().split(maxsplit=1)
+    return parts[0] if parts else ""
 
 
 def _extract_code_text(text: str, extension: str) -> str:
