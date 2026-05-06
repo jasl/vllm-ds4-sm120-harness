@@ -247,6 +247,85 @@ def test_gb10_sm121_profile_uses_public_machine_independent_settings():
     assert "/Users/" not in profile
 
 
+def test_dgx_spark_ray_start_helper_uses_vllm_python_and_fail_closed_guards():
+    script = (
+        ROOT / "scripts" / "dgx_spark_start_ray_cluster.sh"
+    ).read_text(encoding="utf-8")
+    docs = (
+        ROOT / "docs" / "dgx_spark_bare_metal_cluster.md"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        "HEAD_HOST",
+        "WORKER_HOST",
+        "HEAD_ROCE_IP",
+        "WORKER_ROCE_IP",
+        "VLLM_ROOT",
+        "VLLM_VENV",
+    ):
+        assert required in script
+
+    assert '"${VLLM_VENV}/bin/python" -m ray.scripts.scripts start' in script
+    assert '"${VLLM_VENV}/bin/python" -m ray.scripts.scripts status' in script
+    assert "import torch" in script
+    assert "import ray" in script
+    assert "import vllm" in script
+    assert 'PYTHONPATH="${VLLM_ROOT}:${PYTHONPATH:-}"' in script
+    assert "MIN_AVAILABLE_MEM_GIB" in script
+    assert "RAY_STATUS_TIMEOUT" in script
+    assert "cluster_ready nodes=" in script
+    assert "NV_ERR_NO_MEMORY" in script
+    assert "drop_caches" in script
+    assert "10.0.0." not in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+
+    assert "scripts/dgx_spark_start_ray_cluster.sh" in docs
+    assert "RAY_BIN" not in docs
+    assert "$VLLM_VENV/bin/python -m ray.scripts.scripts" in docs
+
+
+def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
+    script = (
+        ROOT / "scripts" / "dgx_spark_start_mp_serve.sh"
+    ).read_text(encoding="utf-8")
+    docs = (
+        ROOT / "docs" / "dgx_spark_bare_metal_cluster.md"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        "HEAD_HOST",
+        "WORKER_HOST",
+        "HEAD_ROCE_IP",
+        "WORKER_ROCE_IP",
+        "ROCE_IFACE",
+        "NCCL_IB_HCA",
+        "VLLM_ROOT",
+        "VLLM_VENV",
+    ):
+        assert required in script
+
+    assert "--distributed-executor-backend" in script
+    assert "mp" in script
+    assert "--nnodes" in script
+    assert "--node-rank" in script
+    assert "--pipeline-parallel-size" in script
+    assert 'MAX_MODEL_LEN="${MAX_MODEL_LEN:-393216}"' in script
+    assert 'GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.70}"' in script
+    assert 'MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-4176}"' in script
+    assert 'PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}"' in script
+    assert "ninja" in script
+    assert "drop_caches" in script
+    assert "NV_ERR_NO_MEMORY" in script
+    assert "long-context-probe" in docs
+    assert "scripts/dgx_spark_start_mp_serve.sh" in docs
+    assert "safetensors" in docs
+    assert "MXFP4" in docs
+    assert "10.0.0." not in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+
+
 def test_acceptance_script_writes_human_markdown_smoke_reports():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
 

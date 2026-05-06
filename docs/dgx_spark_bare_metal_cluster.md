@@ -1,4 +1,4 @@
-# DGX Spark Bare-Metal Ray/vLLM Cluster
+# DGX Spark Bare-Metal vLLM Cluster
 
 This note captures the public, machine-independent procedure for bringing up a
 two-node DGX Spark cluster for DeepSeek V4 Flash on vLLM. It intentionally uses
@@ -6,8 +6,10 @@ placeholders for hostnames, IP addresses, usernames, and local paths. Keep
 site-specific values in ignored files such as `HANDOFF.local.md` or `.env`.
 
 The expected topology is two DGX Spark nodes connected by the high-speed RoCE
-link, one GPU per node, with a Ray cgraph-capable Ray installation available to
-vLLM.
+link, one GPU per node. The preferred large-context bring-up path is vLLM's
+multi-process distributed executor (`--distributed-executor-backend mp`) with
+`TP=1 PP=2`. Ray cgraph is still useful for Ray-specific validation, but do not
+make Ray part of the critical path when debugging bare-metal memory pressure.
 
 ## Placeholders
 
@@ -23,13 +25,25 @@ export NCCL_IB_HCA="<comma-separated-roce-hca-list>"
 
 export VLLM_ROOT="<path-to-target-vllm-checkout>"
 export VLLM_VENV="<path-to-vllm-venv>"
-export RAY_BIN="<path-to-ray-cgraph-venv>/bin/ray"
+export RAY_PYTHON="$VLLM_VENV/bin/python"
 export MODEL_ID="deepseek-ai/DeepSeek-V4-Flash"
 ```
 
-The vLLM venv must import the Ray cgraph build. A simple way is to install Ray
-cgraph in the vLLM venv. Another workable setup is a `.pth` file in the vLLM
-venv site-packages pointing at the Ray cgraph venv site-packages.
+The vLLM venv must import the Ray cgraph build and must also contain the CUDA
+runtime packages that vLLM workers need, including `torch`. A simple setup is to
+install Ray cgraph in the vLLM venv. Another workable setup is a `.pth` file in
+the vLLM venv site-packages pointing at the Ray cgraph venv site-packages.
+
+Start Ray through the vLLM Python executable, not through a standalone Ray
+venv. Ray workers inherit the Python executable used by `ray start`; if that
+executable cannot import `torch`, the remote actor can fail with
+`No module named 'torch'` even though the vLLM API server was launched from the
+right venv.
+
+For no-Ray `mp` runs, also keep `$VLLM_VENV/bin` at the front of `PATH`.
+FlashInfer and sampling JIT paths may invoke `ninja` during startup or first
+generation; a venv with `ninja` installed can still fail if the launch
+environment hides that directory.
 
 ## Preflight
 
@@ -41,6 +55,12 @@ ssh "$WORKER_HOST" "ping -c 3 $HEAD_ROCE_IP"
 
 ssh "$HEAD_HOST" "test -d '$VLLM_ROOT' && test -x '$VLLM_VENV/bin/vllm'"
 ssh "$WORKER_HOST" "test -d '$VLLM_ROOT' && test -x '$VLLM_VENV/bin/python'"
+
+ssh "$HEAD_HOST" "'$RAY_PYTHON' -c 'import ray, torch, vllm; print(\"ray\", ray.__version__, ray.__file__); print(\"torch\", torch.__version__, torch.__file__); print(\"vllm\", vllm.__file__)'"
+ssh "$WORKER_HOST" "'$RAY_PYTHON' -c 'import ray, torch, vllm; print(\"ray\", ray.__version__, ray.__file__); print(\"torch\", torch.__version__, torch.__file__); print(\"vllm\", vllm.__file__)'"
+
+ssh "$HEAD_HOST" "PATH='$VLLM_VENV/bin:'\"\$PATH\" command -v ninja"
+ssh "$WORKER_HOST" "PATH='$VLLM_VENV/bin:'\"\$PATH\" command -v ninja"
 ```
 
 If the RoCE path supports jumbo frames, set MTU consistently on both nodes:
@@ -79,6 +99,91 @@ sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'
 Use this before relaunching after checkpoint copies, failed model loads, or
 CUDA memory-guard failures.
 
+For large-context runs, also fail closed if the current boot already contains
+NVIDIA driver OOM messages:
+
+```bash
+ssh "$HEAD_HOST" "journalctl -b -k --no-pager | grep -E 'NVRM:.*(Out of memory|NV_ERR_NO_MEMORY)'"
+ssh "$WORKER_HOST" "journalctl -b -k --no-pager | grep -E 'NVRM:.*(Out of memory|NV_ERR_NO_MEMORY)'"
+```
+
+If either command finds a match after a failed launch, reboot both nodes before
+retrying. `drop_caches` can reclaim file cache, but it does not prove that CUDA
+driver or unified-memory state recovered after an `NV_ERR_NO_MEMORY` storm.
+
+For a reusable guarded startup, run the harness helper from the control machine
+after exporting the placeholders above. Use the no-Ray helper for the standard
+GB10 long-context path:
+
+```bash
+MAX_MODEL_LEN=393216 \
+GPU_MEMORY_UTILIZATION=0.70 \
+MAX_NUM_SEQS=2 \
+MAX_NUM_BATCHED_TOKENS=4176 \
+MIN_AVAILABLE_MEM_GIB=96 \
+scripts/dgx_spark_start_mp_serve.sh
+```
+
+The helper stops stale drop-cache loops, refuses to continue if vLLM is already
+running unless `ALLOW_EXISTING_VLLM=1`, reclaims file cache when passwordless
+sudo is available, checks `torch`/`vllm`/`ninja` imports through the vLLM Python
+executable, rejects a current boot with NVIDIA driver OOM by default, verifies
+`MemAvailable`, starts a headless worker and API head with
+`--distributed-executor-backend mp --nnodes 2`, and polls `/health`.
+
+Use the Ray helper only when validating the Ray path:
+
+```bash
+MIN_AVAILABLE_MEM_GIB=96 \
+scripts/dgx_spark_start_ray_cluster.sh
+```
+
+The helper stops Ray, reclaims file cache when passwordless sudo is available,
+checks imports through the vLLM Python executable on both nodes, rejects a
+current boot with NVIDIA driver OOM by default, checks `MemAvailable`, starts
+Ray through `$VLLM_VENV/bin/python -m ray.scripts.scripts`, and prints
+`ray status`.
+
+## Start vLLM: No-Ray MP PP=2 Topology
+
+For two one-GPU Spark nodes, the most useful production-like bring-up shape is
+tensor parallel size 1 and pipeline parallel size 2. With DeepSeek V4 Flash,
+the 384K quality context is reachable on two GB10 nodes only if the vLLM branch
+does not materialize weights that the local PP rank will later skip.
+
+A clean passing startup should show:
+
+- each node reports one rank, with PP ranks `0` and `1`
+- hidden layers partitioned as `[22,21]` unless explicitly overridden
+- checkpoint loading completes before MoE prepare/finalize
+- `Available KV cache memory` is logged on both nodes
+- `GPU KV cache size` is greater than the requested `MAX_MODEL_LEN`
+- `/health` returns HTTP `200`, even though the body may be empty
+
+After startup, run at least one generation smoke and the harness long-context
+sentinel probe:
+
+```bash
+curl -fsS http://127.0.0.1:8000/v1/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"deepseek-ai/DeepSeek-V4-Flash","prompt":"Write one short sentence about distributed inference.","max_tokens":24,"temperature":0}'
+
+PYTHON="$VLLM_VENV/bin/python" \
+BASE_URL=http://127.0.0.1:8000 \
+MODEL="$MODEL_ID" \
+LONG_CONTEXT_VARIANT=nomtp \
+LONG_CONTEXT_LINE_COUNT=2400 \
+LONG_CONTEXT_MAX_TOKENS=128 \
+LONG_CONTEXT_THINKING_MODE=non-thinking \
+scripts/run_long_context_probe.sh
+```
+
+The 2400-line probe is a stability gate, not a full 384K prompt. It still
+exercises long-prefill scheduling and sentinel retrieval, and is cheap enough
+to run before a full generation baseline. The wrapper invokes the
+`long-context-probe` CLI command and records GPU/runtime telemetry beside the
+probe JSON and Markdown outputs.
+
 ## Start A Clean Ray Cluster
 
 Start Ray on the RoCE IPs and make sure each node advertises one GPU. Run this
@@ -87,7 +192,7 @@ from the control machine:
 ```bash
 ssh "$HEAD_HOST" "
   set -euo pipefail
-  '$RAY_BIN' stop --force || true
+  '$RAY_PYTHON' -m ray.scripts.scripts stop --force || true
   env \
     PATH='/usr/local/cuda/bin:'\"\$PATH\" \
     CUDA_HOME='/usr/local/cuda' \
@@ -104,7 +209,7 @@ ssh "$HEAD_HOST" "
     RAY_memory_monitor_refresh_ms='0' \
     RAY_num_prestart_python_workers='0' \
     RAY_object_store_memory='1073741824' \
-    '$RAY_BIN' start \
+    '$RAY_PYTHON' -m ray.scripts.scripts start \
       --head \
       --node-ip-address='$HEAD_ROCE_IP' \
       --port=6379 \
@@ -116,7 +221,7 @@ ssh "$HEAD_HOST" "
 
 ssh "$WORKER_HOST" "
   set -euo pipefail
-  '$RAY_BIN' stop --force || true
+  '$RAY_PYTHON' -m ray.scripts.scripts stop --force || true
   env \
     PATH='/usr/local/cuda/bin:'\"\$PATH\" \
     CUDA_HOME='/usr/local/cuda' \
@@ -133,7 +238,7 @@ ssh "$WORKER_HOST" "
     RAY_memory_monitor_refresh_ms='0' \
     RAY_num_prestart_python_workers='0' \
     RAY_object_store_memory='1073741824' \
-    '$RAY_BIN' start \
+    '$RAY_PYTHON' -m ray.scripts.scripts start \
       --address='$HEAD_ROCE_IP:6379' \
       --node-ip-address='$WORKER_ROCE_IP' \
       --num-cpus=2 \
@@ -146,7 +251,7 @@ ssh "$WORKER_HOST" "
 Check that Ray sees two nodes and two GPUs:
 
 ```bash
-ssh "$HEAD_HOST" "'$RAY_BIN' status --address='$HEAD_ROCE_IP:6379'"
+ssh "$HEAD_HOST" "'$RAY_PYTHON' -m ray.scripts.scripts status --address='$HEAD_ROCE_IP:6379'"
 ```
 
 The expected status is two active nodes, no pending nodes, no recent failures,
@@ -154,8 +259,8 @@ and total resources including `2.0 GPU`.
 
 ## Start vLLM: Recommended PP=2 Topology
 
-For two one-GPU Spark nodes, the most useful bring-up shape is tensor parallel
-size 1 and pipeline parallel size 2. Start the API server on the head node:
+For Ray-specific testing, start the API server on the head node after the Ray
+cluster is healthy:
 
 ```bash
 ssh "$HEAD_HOST" "
@@ -245,6 +350,28 @@ quality and API semantics.
 
 - CUDA memory guard fails immediately after file copies or failed launches:
   reclaim page cache on both nodes with `drop_caches`, then retry.
+- Kernel logs contain `NVRM: GPU0 ... Out of memory [NV_ERR_NO_MEMORY]`:
+  treat the current boot as contaminated and reboot both nodes before retrying.
+- `max_model_len=393216` dies during safetensors load or MXFP4 MoE
+  prepare/finalize even though rebooted hosts show enough `MemAvailable`:
+  check whether the vLLM branch includes the DeepSeek V4 PP load-memory fix.
+  The fixed path skips PP-missing and `mtp.*` safetensors before tensor
+  materialization, and releases MXFP4 setup tensors immediately after
+  `_setup_kernel`. Without both pieces, host/unified-memory peaks can look like
+  a platform capacity problem.
+- Startup reaches CUDA graph profiling but the first sampling path raises
+  `FileNotFoundError: 'ninja'`: the vLLM venv has `ninja`, but the launch
+  `PATH` does not include `$VLLM_VENV/bin`. Use
+  `PATH="$VLLM_VENV/bin:$CUDA_HOME/bin:$PATH"` in both head and worker
+  environments.
+- Remote Ray actor fails with `No module named 'torch'`: Ray was likely started
+  with a Python executable outside the vLLM venv. Start Ray with
+  `$VLLM_VENV/bin/python -m ray.scripts.scripts`, or use the guarded helper
+  script above.
+- Raylet or GCS exits while loading safetensors: inspect available host memory
+  on both nodes and the current boot's NVIDIA driver log before retrying. Large
+  DeepSeek V4 checkpoints can drive host/unified-memory pressure before vLLM
+  reaches CUDA graph capture or KV-cache profiling.
 - `Python.h` is missing during Triton runtime compilation: install Python
   development headers on the affected node.
 - Ray status shows one node or one GPU: check RoCE reachability, Ray node IP
