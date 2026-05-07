@@ -51,7 +51,10 @@ CUDA 13.2 tools under `/usr/local/cuda-13.2`, `CUDA_ARCH_LIST=121a`, and
 `TORCH_CUDA_ARCH_LIST=12.1a`. It also narrows required GB10 acceptance to the
 no-MTP `non-thinking` matrix with a 128K-class long-context sentinel. Treat
 `think-high` and MTP as exploratory on GB10, and do not use `think-max` as a
-GB10 gate until a 384K+ prompt is reliable. It defaults
+GB10 gate until a 384K+ prompt is reliable. It sets
+`GENERATION_MAX_CASE_TOKENS=32768` so the required generation gate can complete
+the checked-in code and HTML prompts; smaller caps such as 4096 are quick-smoke
+diagnostics, not quality-baseline settings. It defaults
 `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0` because GB10 ToolCall-15 smoke has
 hit `sample_tokens` RPC timeouts with graph capture enabled on the Triton
 sparse MLA path; MTP can still hit `sample_tokens` RPC timeouts on longer
@@ -943,6 +946,8 @@ Before promoting an optimization:
   recorded as an allowed-failure exploratory run, MTP is also exploratory, and
   `think-max` is disabled as a GB10 gate until the platform reliably satisfies
   the 384K+ context premise.
+  Keep `GENERATION_MAX_CASE_TOKENS=32768` or higher for quality runs so long
+  code/HTML prompts are not truncated.
   Keep `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0` for routine GB10 validation;
   opt back in only for dedicated graph-safety experiments.
 - Keep the server responsiveness guard enabled for MTP C>1 benchmark and eval

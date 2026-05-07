@@ -202,6 +202,12 @@ and MTP can be recorded as exploratory allowed-failure runs on GB10, but
 invokes the `long-context-probe` CLI command and records GPU/runtime telemetry
 beside the probe JSON and Markdown outputs.
 
+For generation quality gates, keep `GENERATION_MAX_CASE_TOKENS=32768` or
+higher on GB10. The checked-in frontend and code prompts can legitimately need
+more than 4096 completion tokens; a 4096 cap is useful only for quick smoke and
+turns `finish_reason=length` into a budget diagnostic, not model-quality
+evidence.
+
 ## Start A Clean Ray Cluster
 
 Start Ray on the RoCE IPs and make sure each node advertises one GPU. Run this

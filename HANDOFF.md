@@ -102,7 +102,10 @@ tool paths, `CUDA_ARCH_LIST=121a`, `TORCH_CUDA_ARCH_LIST=12.1a`, a
 current GB10 acceptance policy. Required GB10 gates should use no-thinking
 no-MTP only with the 128K-class long-context sentinel. Run `think-high` and MTP
 as exploratory evidence that is allowed to fail, and do not run `think-max` as
-a GB10 gate until 384K+ context is reliable. The profile also defaults
+a GB10 gate until 384K+ context is reliable. The profile sets
+`GENERATION_MAX_CASE_TOKENS=32768` so code and HTML generation prompts can
+finish; smaller values such as 4096 are quick-smoke caps, not quality-baseline
+settings. The profile also defaults
 `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0`; keep that for routine GB10
 validation because graph-captured Triton sparse MLA has failed ToolCall-15 with
 `sample_tokens` RPC timeouts. MTP can still fail longer generation with
@@ -209,8 +212,9 @@ python -m ds4_harness.cli toolcall15 \
 On GB10, source `configs/gb10_sm121_serve.env.example` before using wrapper
 scripts. That profile disables `think-max` in required harness matrices and
 sets the long-context probe to the current 128K-class no-thinking gate. It also
-keeps sparse MLA CUDA graph capture disabled unless a graph-safety experiment
-opts back in explicitly.
+uses a 32768-token generation cap so frontend/code cases are not judged from
+truncated artifacts, and keeps sparse MLA CUDA graph capture disabled unless a
+graph-safety experiment opts back in explicitly.
 
 The wrapper scripts default to `artifacts/<branch>/<gpu-topology>/<timestamp>/`
 under this repo. The GPU topology segment is derived from `nvidia-smi`, for

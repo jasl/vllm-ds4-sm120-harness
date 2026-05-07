@@ -242,6 +242,7 @@ def test_gb10_sm121_profile_uses_public_machine_independent_settings():
     assert 'GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-1x_nvidia_gb10}"' in profile
     assert 'SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-0}"' in profile
     assert 'GENERATION_THINKING_MODES="${GENERATION_THINKING_MODES:-non-thinking}"' in profile
+    assert 'GENERATION_MAX_CASE_TOKENS="${GENERATION_MAX_CASE_TOKENS:-32768}"' in profile
     assert 'TOOLCALL15_THINKING_MODES="${TOOLCALL15_THINKING_MODES:-non-thinking}"' in profile
     assert 'LONG_CONTEXT_LINE_COUNT="${LONG_CONTEXT_LINE_COUNT:-4226}"' in profile
     assert 'LONG_CONTEXT_THINKING_MODE="${LONG_CONTEXT_THINKING_MODE:-non-thinking}"' in profile
