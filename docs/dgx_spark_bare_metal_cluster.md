@@ -6,10 +6,12 @@ placeholders for hostnames, IP addresses, usernames, and local paths. Keep
 site-specific values in ignored files such as `HANDOFF.local.md` or `.env`.
 
 The expected topology is two DGX Spark nodes connected by the high-speed RoCE
-link, one GPU per node. The preferred large-context bring-up path is vLLM's
+link, one GPU per node. The current preferred bring-up path is vLLM's
 multi-process distributed executor (`--distributed-executor-backend mp`) with
-`TP=1 PP=2`. Ray cgraph is still useful for Ray-specific validation, but do not
-make Ray part of the critical path when debugging bare-metal memory pressure.
+`TP=2 PP=1`. Pipeline parallelism is not a recommended path for DeepSeek V4
+here until upstream vLLM support lands. Ray is still useful for Ray-specific
+validation, but do not make Ray part of the critical path when debugging
+bare-metal memory pressure.
 
 ## Placeholders
 
@@ -113,9 +115,11 @@ driver or unified-memory state recovered after an `NV_ERR_NO_MEMORY` storm.
 
 For a reusable guarded startup, run the harness helper from the control machine
 after exporting the placeholders above. Use the no-Ray helper for the standard
-GB10 long-context path:
+GB10 path:
 
 ```bash
+TP_SIZE=2 \
+PP_SIZE=1 \
 MAX_MODEL_LEN=393216 \
 GPU_MEMORY_UTILIZATION=0.70 \
 MAX_NUM_SEQS=2 \
@@ -144,21 +148,30 @@ current boot with NVIDIA driver OOM by default, checks `MemAvailable`, starts
 Ray through `$VLLM_VENV/bin/python -m ray.scripts.scripts`, and prints
 `ray status`.
 
-## Start vLLM: No-Ray MP PP=2 Topology
+## Start vLLM: No-Ray MP TP=2 Topology
 
 For two one-GPU Spark nodes, the most useful production-like bring-up shape is
-tensor parallel size 1 and pipeline parallel size 2. With DeepSeek V4 Flash,
-the 384K quality context is reachable on two GB10 nodes only if the vLLM branch
-does not materialize weights that the local PP rank will later skip.
+tensor parallel size 2 and pipeline parallel size 1. It spreads TP workers
+across the two nodes. vLLM may warn that cross-node TP can degrade performance
+unless the interconnect is fast; that warning is informational after the RoCE
+path has been validated.
 
 A clean passing startup should show:
 
-- each node reports one rank, with PP ranks `0` and `1`
-- hidden layers partitioned as `[22,21]` unless explicitly overridden
+- each node reports one rank, with TP ranks `0` and `1`
+- both ranks are in PP rank `0`
 - checkpoint loading completes before MoE prepare/finalize
 - `Available KV cache memory` is logged on both nodes
 - `GPU KV cache size` is greater than the requested `MAX_MODEL_LEN`
 - `/health` returns HTTP `200`, even though the body may be empty
+
+For no-MTP runs, CUDA graph capture may be enabled by normal vLLM settings. For
+MTP runs on the SM12x Triton sparse MLA path, current vLLM code keeps
+`torch.compile` enabled but disables CUDA graph capture by default. This is the
+reliable GB10 MTP path. `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` is an
+experimental opt-in: it can start and capture, but current testing has shown
+FULL graph replay can make the server unresponsive under concurrent streaming
+pressure.
 
 After startup, run at least one generation smoke and the harness long-context
 sentinel probe:
@@ -257,7 +270,7 @@ ssh "$HEAD_HOST" "'$RAY_PYTHON' -m ray.scripts.scripts status --address='$HEAD_R
 The expected status is two active nodes, no pending nodes, no recent failures,
 and total resources including `2.0 GPU`.
 
-## Start vLLM: Recommended PP=2 Topology
+## Start vLLM: Ray-Specific TP=2 Topology
 
 For Ray-specific testing, start the API server on the head node after the Ray
 cluster is healthy:
@@ -285,8 +298,8 @@ ssh "$HEAD_HOST" "
       --trust-remote-code \
       --kv-cache-dtype fp8 \
       --block-size 256 \
-      --tensor-parallel-size 1 \
-      --pipeline-parallel-size 2 \
+      --tensor-parallel-size 2 \
+      --pipeline-parallel-size 1 \
       --distributed-executor-backend ray \
       --gpu-memory-utilization 0.90 \
       --max-model-len 65536 \
@@ -304,19 +317,14 @@ ssh "$HEAD_HOST" "
 "
 ```
 
-## Start vLLM: TP=2 Diagnostic Topology
+## Avoid PP=2 For Now
 
-Tensor parallel size 2 and pipeline parallel size 1 can also be useful as a
-cluster diagnostic. It spreads TP workers across nodes. Expect vLLM to warn that
-cross-node TP can degrade performance unless the interconnect is fast; that
-warning is informational when the RoCE path has already been validated.
-
-Use the same command as above, changing only:
-
-```bash
---tensor-parallel-size 2
---pipeline-parallel-size 1
-```
+Older harness notes used `TP=1 PP=2` because it reduced per-rank model memory
+before the SM12x work was reorganized. That path is no longer the default:
+DeepSeek V4 pipeline parallelism still depends on upstream vLLM support, and
+the minimal SM12x branch should be validated with `TP=2 PP=1` instead. If a
+branch needs PP-specific experiments, keep them separate from the minimal GB10
+bring-up path and document the exact upstream dependency.
 
 ## Health Checks
 
@@ -341,10 +349,12 @@ For startup evidence, grep the serve log for:
 grep -E 'Application startup complete|GPU KV cache size|Model loading took|Graph capturing finished|CUDA graph pool memory' <serve-log>
 ```
 
-`/health`, `/v1/models`, and a completion response prove that Ray placement,
-weight loading, CUDA graph capture, and the HTTP serving path came up. They do
-not prove generation quality; run the harness acceptance matrix separately for
-quality and API semantics.
+`/health`, `/v1/models`, and a completion response prove that placement, weight
+loading, and the HTTP serving path came up. They do not prove generation
+quality; run the harness acceptance matrix separately for quality and API
+semantics. For MTP, also run a guarded C>1 streaming pressure probe so the
+report captures scheduler or CUDA graph replay stalls instead of relying on a
+single smoke request.
 
 ## Common Failure Modes
 
@@ -354,16 +364,23 @@ quality and API semantics.
   treat the current boot as contaminated and reboot both nodes before retrying.
 - `max_model_len=393216` dies during safetensors load or MXFP4 MoE
   prepare/finalize even though rebooted hosts show enough `MemAvailable`:
-  check whether the vLLM branch includes the DeepSeek V4 PP load-memory fix.
-  The fixed path skips PP-missing and `mtp.*` safetensors before tensor
-  materialization, and releases MXFP4 setup tensors immediately after
-  `_setup_kernel`. Without both pieces, host/unified-memory peaks can look like
-  a platform capacity problem.
+  first verify the current `TP=2 PP=1` path and preserve the serve log. Do not
+  reintroduce PP-specific weight-loading workarounds unless the branch is
+  explicitly testing pipeline parallelism.
+- `TP=1 PP=2` fails with missing-layer, missing-parameter, or rank-local weight
+  issues: treat this as out of scope for the current minimal GB10 path. Use
+  `TP=2 PP=1` until upstream vLLM PP support for DeepSeek V4 is available.
 - Startup reaches CUDA graph profiling but the first sampling path raises
   `FileNotFoundError: 'ninja'`: the vLLM venv has `ninja`, but the launch
   `PATH` does not include `$VLLM_VENV/bin`. Use
   `PATH="$VLLM_VENV/bin:$CUDA_HOME/bin:$PATH"` in both head and worker
   environments.
+- MTP starts and captures CUDA graphs with
+  `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1`, then stalls or becomes
+  unresponsive under concurrent streaming: rerun the same shape with the
+  default MTP path, which keeps compile enabled and disables CUDA graph capture.
+  Preserve the failing artifacts as a graph-safety reproduction instead of
+  treating it as a general GB10 startup failure.
 - Remote Ray actor fails with `No module named 'torch'`: Ray was likely started
   with a Python executable outside the vLLM venv. Start Ray with
   `$VLLM_VENV/bin/python -m ray.scripts.scripts`, or use the guarded helper

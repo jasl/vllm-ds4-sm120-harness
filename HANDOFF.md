@@ -123,8 +123,19 @@ assistant `reasoning_content` in all later requests after a tool call, including
 empty-string values, because clients that filter that field can trigger
 official API errors on the next tool-call turn.
 
+For GB10 / SM121 two-node bring-up, use `TP=2 PP=1` as the default shape.
+`TP=1 PP=2` is no longer the minimal path and should be reserved for explicit
+pipeline-parallel experiments that track upstream vLLM support.
+
+For MTP on the SM12x Triton sparse MLA path, the current reliable default is
+`torch.compile` enabled with CUDA graph capture disabled by vLLM's graph-safety
+gate. Do not set `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` for routine GB10
+validation; it is an experimental reproduction knob for FULL CUDA graph replay
+issues.
+
 Do not set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for TP=2 CUDA
-graph runs. It has caused custom all-reduce graph registration failures.
+graph runs unless the specific experiment requires it. It has caused custom
+all-reduce graph registration failures on some TP=2 graph paths.
 
 If using a vLLM console script from a checkout that is not installed into the
 venv, set:

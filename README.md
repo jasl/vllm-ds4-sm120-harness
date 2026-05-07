@@ -925,6 +925,12 @@ Before promoting an optimization:
   decode path. High-concurrency MTP failures can also be plain capacity limits;
   distinguish OOM/KV-cache/CUDA-graph reservation failures from correctness or
   scheduler bugs before treating them as regressions.
+- On two-node GB10, use `TP=2 PP=1` as the default DeepSeek V4 bring-up shape.
+  The current MTP-safe path keeps `torch.compile` enabled and disables CUDA
+  graph capture by default for the SM12x Triton sparse MLA path.
+  `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` is only for graph-safety
+  experiments; preserve C>1 streaming-pressure artifacts if that path stalls or
+  makes the server unresponsive.
 - Keep the server responsiveness guard enabled for MTP C>1 benchmark and eval
   shapes. If a serving process becomes unresponsive, preserve the marker
   artifacts and record the observed tier instead of special-casing the platform
