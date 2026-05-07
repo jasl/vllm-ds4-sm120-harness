@@ -134,6 +134,8 @@ sudo is available, checks `torch`/`vllm`/`ninja` imports through the vLLM Python
 executable, rejects a current boot with NVIDIA driver OOM by default, verifies
 `MemAvailable`, starts a headless worker and API head with
 `--distributed-executor-backend mp --nnodes 2`, and polls `/health`.
+It does not set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` by default;
+export allocator settings only for a dedicated diagnostic experiment.
 
 Use the Ray helper only when validating the Ray path:
 
@@ -165,16 +167,18 @@ A clean passing startup should show:
 - `GPU KV cache size` is greater than the requested `MAX_MODEL_LEN`
 - `/health` returns HTTP `200`, even though the body may be empty
 
-For no-MTP runs, CUDA graph capture may be enabled by normal vLLM settings. For
-MTP runs on the SM12x Triton sparse MLA path, current vLLM code keeps
-`torch.compile` enabled but disables CUDA graph capture by default. This is the
-reliable GB10 MTP path. `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` is an
-experimental opt-in: it can start and capture, but current testing has shown
-FULL graph replay can make the server unresponsive under concurrent streaming
-pressure.
+For routine GB10 validation, keep
+`VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0`. Graph-captured Triton sparse MLA has
+failed ToolCall-15 with a `sample_tokens` RPC timeout. MTP should also remain an
+exploratory GB10 variant for now: it can start and pass short chat smoke with
+CUDA graph capture disabled, but longer generation has still hit
+`sample_tokens` RPC timeouts. `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` is an
+experimental opt-in for graph-safety reproduction only.
 
 After startup, run at least one generation smoke and the harness long-context
-sentinel probe:
+sentinel probe. For the current GB10 acceptance gate, source
+`configs/gb10_sm121_serve.env.example` from the harness checkout first, or pass
+the equivalent no-thinking 128K-class settings explicitly:
 
 ```bash
 curl -fsS http://127.0.0.1:8000/v1/completions \
@@ -185,17 +189,18 @@ PYTHON="$VLLM_VENV/bin/python" \
 BASE_URL=http://127.0.0.1:8000 \
 MODEL="$MODEL_ID" \
 LONG_CONTEXT_VARIANT=nomtp \
-LONG_CONTEXT_LINE_COUNT=2400 \
+LONG_CONTEXT_LINE_COUNT=4226 \
 LONG_CONTEXT_MAX_TOKENS=128 \
 LONG_CONTEXT_THINKING_MODE=non-thinking \
+LONG_CONTEXT_TIMEOUT=2400 \
 scripts/run_long_context_probe.sh
 ```
 
-The 2400-line probe is a stability gate, not a full 384K prompt. It still
-exercises long-prefill scheduling and sentinel retrieval, and is cheap enough
-to run before a full generation baseline. The wrapper invokes the
-`long-context-probe` CLI command and records GPU/runtime telemetry beside the
-probe JSON and Markdown outputs.
+The 4226-line probe is the current GB10 128K-class no-MTP gate. `think-high`
+and MTP can be recorded as exploratory allowed-failure runs on GB10, but
+`think-max` is not a GB10 gate until a 384K+ prompt is reliable. The wrapper
+invokes the `long-context-probe` CLI command and records GPU/runtime telemetry
+beside the probe JSON and Markdown outputs.
 
 ## Start A Clean Ray Cluster
 

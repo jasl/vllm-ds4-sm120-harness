@@ -72,7 +72,9 @@ Use this harness to capture behavior around the vLLM-side tests:
   `393216`, `temperature=1.0`, `top_p=1.0`, and enough request `max_tokens` for
   reasoning plus final content. Short-window or low-output-cap failures should
   be labeled as budget diagnostics before they are used as correctness
-  evidence.
+  evidence. This `think-max` gate does not apply to the current GB10 profile:
+  GB10 required acceptance is no-thinking with the 128K-class sentinel until
+  384K+ context is reliable.
 - `toolcall15` for OpenAI-compatible tool-call loop behavior. When running the
   thinking-mode matrix, keep `temperature=1.0` and `top_p=1.0`; treat those
   model-card sampling settings as part of the baseline contract.

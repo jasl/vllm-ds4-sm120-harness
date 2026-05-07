@@ -98,9 +98,16 @@ source configs/gb10_sm121_serve.env.example
 
 That profile intentionally contains only machine-independent values: CUDA 13.2
 tool paths, `CUDA_ARCH_LIST=121a`, `TORCH_CUDA_ARCH_LIST=12.1a`, a
-`1x_nvidia_gb10` topology slug, and SM12x-safe FP4-indexer-cache defaults.
-Keep concrete GB10 SSH targets, checkout roots, and artifact paths in ignored
-local notes.
+`1x_nvidia_gb10` topology slug, SM12x-safe FP4-indexer-cache defaults, and the
+current GB10 acceptance policy. Required GB10 gates should use no-thinking
+no-MTP only with the 128K-class long-context sentinel. Run `think-high` and MTP
+as exploratory evidence that is allowed to fail, and do not run `think-max` as
+a GB10 gate until 384K+ context is reliable. The profile also defaults
+`VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0`; keep that for routine GB10
+validation because graph-captured Triton sparse MLA has failed ToolCall-15 with
+`sample_tokens` RPC timeouts. MTP can still fail longer generation with
+`sample_tokens` RPC timeouts even with graph capture disabled. Keep concrete
+GB10 SSH targets, checkout roots, and artifact paths in ignored local notes.
 
 Do not pass `--attention_config.use_fp4_indexer_cache=True` on SM12x hosts such
 as RTX PRO 6000, RTX 5090, or GB10. That flag is currently SM100/B200-specific;
@@ -127,11 +134,10 @@ For GB10 / SM121 two-node bring-up, use `TP=2 PP=1` as the default shape.
 `TP=1 PP=2` is no longer the minimal path and should be reserved for explicit
 pipeline-parallel experiments that track upstream vLLM support.
 
-For MTP on the SM12x Triton sparse MLA path, the current reliable default is
-`torch.compile` enabled with CUDA graph capture disabled by vLLM's graph-safety
-gate. Do not set `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` for routine GB10
-validation; it is an experimental reproduction knob for FULL CUDA graph replay
-issues.
+For MTP on GB10, treat startup/chat smoke as exploratory only until longer
+generation survives without `sample_tokens` RPC timeouts. Do not set
+`VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` for routine GB10 validation; it is
+an experimental reproduction knob for FULL CUDA graph replay issues.
 
 Do not set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for TP=2 CUDA
 graph runs unless the specific experiment requires it. It has caused custom
@@ -199,6 +205,12 @@ python -m ds4_harness.cli generation-matrix \
 python -m ds4_harness.cli toolcall15 \
   --json-output artifacts/manual/toolcall15.json
 ```
+
+On GB10, source `configs/gb10_sm121_serve.env.example` before using wrapper
+scripts. That profile disables `think-max` in required harness matrices and
+sets the long-context probe to the current 128K-class no-thinking gate. It also
+keeps sparse MLA CUDA graph capture disabled unless a graph-safety experiment
+opts back in explicitly.
 
 The wrapper scripts default to `artifacts/<branch>/<gpu-topology>/<timestamp>/`
 under this repo. The GPU topology segment is derived from `nvidia-smi`, for

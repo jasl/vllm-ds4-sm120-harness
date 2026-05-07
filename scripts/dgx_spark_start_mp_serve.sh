@@ -39,9 +39,20 @@ RUN_DIR="${RUN_DIR:-/tmp/dgx_spark_mp_serve_$(date +%Y%m%d%H%M%S)}"
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-600}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-5}"
 SSH_OPTS="${SSH_OPTS:-}"
+SERVE_ENABLE_EXPERT_PARALLEL="${SERVE_ENABLE_EXPERT_PARALLEL:-0}"
+SERVE_DISABLE_FLASHINFER_AUTOTUNE="${SERVE_DISABLE_FLASHINFER_AUTOTUNE:-0}"
+SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG:-}"
+SERVE_SPECULATIVE_CONFIG="${SERVE_SPECULATIVE_CONFIG:-}"
 
 shell_quote() {
   printf '%q' "$1"
+}
+
+remote_env_optional() {
+  local var="$1"
+  if [[ -n "${!var:-}" ]]; then
+    printf '%s=%s ' "${var}" "$(shell_quote "${!var}")"
+  fi
 }
 
 remote_env_prefix() {
@@ -70,6 +81,15 @@ remote_env_prefix() {
   printf 'RUN_DIR=%s ' "$(shell_quote "${RUN_DIR}")"
   printf 'STARTUP_TIMEOUT=%s ' "$(shell_quote "${STARTUP_TIMEOUT}")"
   printf 'HEALTH_TIMEOUT=%s ' "$(shell_quote "${HEALTH_TIMEOUT}")"
+  printf 'SERVE_ENABLE_EXPERT_PARALLEL=%s ' "$(shell_quote "${SERVE_ENABLE_EXPERT_PARALLEL}")"
+  printf 'SERVE_DISABLE_FLASHINFER_AUTOTUNE=%s ' "$(shell_quote "${SERVE_DISABLE_FLASHINFER_AUTOTUNE}")"
+  printf 'SERVE_COMPILATION_CONFIG=%s ' "$(shell_quote "${SERVE_COMPILATION_CONFIG}")"
+  printf 'SERVE_SPECULATIVE_CONFIG=%s ' "$(shell_quote "${SERVE_SPECULATIVE_CONFIG}")"
+  remote_env_optional PYTORCH_CUDA_ALLOC_CONF
+  remote_env_optional CUDA_ARCH_LIST
+  remote_env_optional TORCH_CUDA_ARCH_LIST
+  remote_env_optional CCACHE_NOHASHDIR
+  remote_env_optional VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH
 }
 
 run_remote_script() {
@@ -159,6 +179,40 @@ start_worker() {
 set -euo pipefail
 mkdir -p "${RUN_DIR}"
 cd "${VLLM_ROOT}"
+serve_args=(
+  serve "${MODEL_ID}"
+  --trust-remote-code
+  --kv-cache-dtype "${KV_CACHE_DTYPE}"
+  --block-size "${BLOCK_SIZE}"
+  --tensor-parallel-size "${TP_SIZE}"
+  --pipeline-parallel-size "${PP_SIZE}"
+  --distributed-executor-backend mp
+  --nnodes 2
+  --master-addr "${HEAD_ROCE_IP}"
+  --master-port "${MASTER_PORT}"
+  --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}"
+  --max-model-len "${MAX_MODEL_LEN}"
+  --max-num-seqs "${MAX_NUM_SEQS}"
+  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}"
+  --tokenizer-mode deepseek_v4
+  --tool-call-parser deepseek_v4
+  --enable-auto-tool-choice
+  --reasoning-parser deepseek_v4
+  --node-rank "${NODE_RANK}"
+  --headless
+)
+if [[ "${SERVE_ENABLE_EXPERT_PARALLEL}" == "1" ]]; then
+  serve_args+=(--enable-expert-parallel)
+fi
+if [[ "${SERVE_DISABLE_FLASHINFER_AUTOTUNE}" == "1" ]]; then
+  serve_args+=(--no-enable-flashinfer-autotune)
+fi
+if [[ -n "${SERVE_COMPILATION_CONFIG}" ]]; then
+  serve_args+=(--compilation-config "${SERVE_COMPILATION_CONFIG}")
+fi
+if [[ -n "${SERVE_SPECULATIVE_CONFIG}" ]]; then
+  serve_args+=(--speculative_config "${SERVE_SPECULATIVE_CONFIG}")
+fi
 nohup env \
   PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}" \
   CUDA_HOME="${CUDA_HOME_REMOTE}" \
@@ -171,29 +225,8 @@ nohup env \
   NCCL_IB_HCA="${NCCL_IB_HCA}" \
   NCCL_IB_DISABLE="0" \
   NCCL_DEBUG="WARN" \
-  PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
   VLLM_MARLIN_USE_ATOMIC_ADD="1" \
-  "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main \
-    serve "${MODEL_ID}" \
-    --trust-remote-code \
-    --kv-cache-dtype "${KV_CACHE_DTYPE}" \
-    --block-size "${BLOCK_SIZE}" \
-    --tensor-parallel-size "${TP_SIZE}" \
-    --pipeline-parallel-size "${PP_SIZE}" \
-    --distributed-executor-backend mp \
-    --nnodes 2 \
-    --master-addr "${HEAD_ROCE_IP}" \
-    --master-port "${MASTER_PORT}" \
-    --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
-    --max-model-len "${MAX_MODEL_LEN}" \
-    --max-num-seqs "${MAX_NUM_SEQS}" \
-    --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
-    --tokenizer-mode deepseek_v4 \
-    --tool-call-parser deepseek_v4 \
-    --enable-auto-tool-choice \
-    --reasoning-parser deepseek_v4 \
-    --node-rank "${NODE_RANK}" \
-    --headless \
+  "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main "${serve_args[@]}" \
   > "${RUN_DIR}/worker.log" 2>&1 < /dev/null &
 echo "$!" > "${RUN_DIR}/worker.pid"
 printf 'worker_run_dir=%s\nworker_pid=%s\n' "${RUN_DIR}" "$(cat "${RUN_DIR}/worker.pid")"
@@ -206,6 +239,41 @@ start_head() {
 set -euo pipefail
 mkdir -p "${RUN_DIR}"
 cd "${VLLM_ROOT}"
+serve_args=(
+  serve "${MODEL_ID}"
+  --trust-remote-code
+  --kv-cache-dtype "${KV_CACHE_DTYPE}"
+  --block-size "${BLOCK_SIZE}"
+  --tensor-parallel-size "${TP_SIZE}"
+  --pipeline-parallel-size "${PP_SIZE}"
+  --distributed-executor-backend mp
+  --nnodes 2
+  --master-addr "${HEAD_ROCE_IP}"
+  --master-port "${MASTER_PORT}"
+  --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}"
+  --max-model-len "${MAX_MODEL_LEN}"
+  --max-num-seqs "${MAX_NUM_SEQS}"
+  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}"
+  --tokenizer-mode deepseek_v4
+  --tool-call-parser deepseek_v4
+  --enable-auto-tool-choice
+  --reasoning-parser deepseek_v4
+  --node-rank "${NODE_RANK}"
+  --host "${API_HOST}"
+  --port "${API_PORT}"
+)
+if [[ "${SERVE_ENABLE_EXPERT_PARALLEL}" == "1" ]]; then
+  serve_args+=(--enable-expert-parallel)
+fi
+if [[ "${SERVE_DISABLE_FLASHINFER_AUTOTUNE}" == "1" ]]; then
+  serve_args+=(--no-enable-flashinfer-autotune)
+fi
+if [[ -n "${SERVE_COMPILATION_CONFIG}" ]]; then
+  serve_args+=(--compilation-config "${SERVE_COMPILATION_CONFIG}")
+fi
+if [[ -n "${SERVE_SPECULATIVE_CONFIG}" ]]; then
+  serve_args+=(--speculative_config "${SERVE_SPECULATIVE_CONFIG}")
+fi
 nohup env \
   PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}" \
   CUDA_HOME="${CUDA_HOME_REMOTE}" \
@@ -218,30 +286,8 @@ nohup env \
   NCCL_IB_HCA="${NCCL_IB_HCA}" \
   NCCL_IB_DISABLE="0" \
   NCCL_DEBUG="WARN" \
-  PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" \
   VLLM_MARLIN_USE_ATOMIC_ADD="1" \
-  "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main \
-    serve "${MODEL_ID}" \
-    --trust-remote-code \
-    --kv-cache-dtype "${KV_CACHE_DTYPE}" \
-    --block-size "${BLOCK_SIZE}" \
-    --tensor-parallel-size "${TP_SIZE}" \
-    --pipeline-parallel-size "${PP_SIZE}" \
-    --distributed-executor-backend mp \
-    --nnodes 2 \
-    --master-addr "${HEAD_ROCE_IP}" \
-    --master-port "${MASTER_PORT}" \
-    --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
-    --max-model-len "${MAX_MODEL_LEN}" \
-    --max-num-seqs "${MAX_NUM_SEQS}" \
-    --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
-    --tokenizer-mode deepseek_v4 \
-    --tool-call-parser deepseek_v4 \
-    --enable-auto-tool-choice \
-    --reasoning-parser deepseek_v4 \
-    --node-rank "${NODE_RANK}" \
-    --host "${API_HOST}" \
-    --port "${API_PORT}" \
+  "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main "${serve_args[@]}" \
   > "${RUN_DIR}/head.log" 2>&1 < /dev/null &
 echo "$!" > "${RUN_DIR}/head.pid"
 printf 'head_run_dir=%s\nhead_pid=%s\n' "${RUN_DIR}" "$(cat "${RUN_DIR}/head.pid")"

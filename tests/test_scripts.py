@@ -241,6 +241,11 @@ def test_gb10_sm121_profile_uses_public_machine_independent_settings():
     assert 'TORCH_CUDA_ARCH_LIST="12.1a"' in profile
     assert 'GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-1x_nvidia_gb10}"' in profile
     assert 'SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-0}"' in profile
+    assert 'GENERATION_THINKING_MODES="${GENERATION_THINKING_MODES:-non-thinking}"' in profile
+    assert 'TOOLCALL15_THINKING_MODES="${TOOLCALL15_THINKING_MODES:-non-thinking}"' in profile
+    assert 'LONG_CONTEXT_LINE_COUNT="${LONG_CONTEXT_LINE_COUNT:-4226}"' in profile
+    assert 'LONG_CONTEXT_THINKING_MODE="${LONG_CONTEXT_THINKING_MODE:-non-thinking}"' in profile
+    assert 'VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH="${VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH:-0}"' in profile
     assert "PYTORCH_CUDA_ALLOC_CONF" in profile
     assert "10.0.0." not in profile
     assert "/home/" not in profile
@@ -317,6 +322,18 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "ninja" in script
     assert "drop_caches" in script
     assert "NV_ERR_NO_MEMORY" in script
+    assert 'PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"' not in script
+    assert "SERVE_ENABLE_EXPERT_PARALLEL" in script
+    assert "--enable-expert-parallel" in script
+    assert "SERVE_DISABLE_FLASHINFER_AUTOTUNE" in script
+    assert "--no-enable-flashinfer-autotune" in script
+    assert "SERVE_COMPILATION_CONFIG" in script
+    assert "--compilation-config" in script
+    assert "SERVE_SPECULATIVE_CONFIG" in script
+    assert "--speculative_config" in script
+    assert "VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH" in script
+    assert "TORCH_CUDA_ARCH_LIST" in script
+    assert "CCACHE_NOHASHDIR" in script
     assert "long-context-probe" in docs
     assert "scripts/dgx_spark_start_mp_serve.sh" in docs
     assert "safetensors" in docs

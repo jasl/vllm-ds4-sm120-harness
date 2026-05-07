@@ -48,8 +48,15 @@ source configs/gb10_sm121_serve.env.example
 
 The GB10 profile records the current SM121 shape: one `NVIDIA GB10` device,
 CUDA 13.2 tools under `/usr/local/cuda-13.2`, `CUDA_ARCH_LIST=121a`, and
-`TORCH_CUDA_ARCH_LIST=12.1a`. Keep private SSH targets and checkout paths in
-ignored local files, not in these public profile snippets.
+`TORCH_CUDA_ARCH_LIST=12.1a`. It also narrows required GB10 acceptance to the
+no-MTP `non-thinking` matrix with a 128K-class long-context sentinel. Treat
+`think-high` and MTP as exploratory on GB10, and do not use `think-max` as a
+GB10 gate until a 384K+ prompt is reliable. It defaults
+`VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0` because GB10 ToolCall-15 smoke has
+hit `sample_tokens` RPC timeouts with graph capture enabled on the Triton
+sparse MLA path; MTP can still hit `sample_tokens` RPC timeouts on longer
+generation even with graph capture disabled. Keep private SSH targets and
+checkout paths in ignored local files, not in these public profile snippets.
 
 ## DeepSeek Official API Notes
 
@@ -714,6 +721,8 @@ RANDOM_LONG_CONCURRENCY=1,2`.
 The default long-context probe uses `LONG_CONTEXT_LINE_COUNT=2400`,
 `LONG_CONTEXT_MAX_TOKENS=128`, `LONG_CONTEXT_TEMPERATURE=0.0`,
 `LONG_CONTEXT_TOP_P=1.0`, and `LONG_CONTEXT_THINKING_MODE=non-thinking`.
+The GB10 profile overrides this to `LONG_CONTEXT_LINE_COUNT=4226`, which is the
+current required 128K-class GB10 sentinel.
 When changing the long-context probe to `think-high` or `think-max`, also set
 `LONG_CONTEXT_TEMPERATURE=1.0`; for `think-max`, keep
 `SERVE_MAX_MODEL_LEN=393216` or larger.
@@ -926,11 +935,16 @@ Before promoting an optimization:
   distinguish OOM/KV-cache/CUDA-graph reservation failures from correctness or
   scheduler bugs before treating them as regressions.
 - On two-node GB10, use `TP=2 PP=1` as the default DeepSeek V4 bring-up shape.
-  The current MTP-safe path keeps `torch.compile` enabled and disables CUDA
-  graph capture by default for the SM12x Triton sparse MLA path.
-  `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` is only for graph-safety
-  experiments; preserve C>1 streaming-pressure artifacts if that path stalls or
-  makes the server unresponsive.
+  Keep MTP as exploratory until longer generation survives without
+  `sample_tokens` RPC timeouts. `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` is
+  only for graph-safety experiments; preserve responsiveness artifacts if that
+  path stalls or makes the server unresponsive.
+- The GB10 required acceptance path is `non-thinking` only. `think-high` can be
+  recorded as an allowed-failure exploratory run, MTP is also exploratory, and
+  `think-max` is disabled as a GB10 gate until the platform reliably satisfies
+  the 384K+ context premise.
+  Keep `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0` for routine GB10 validation;
+  opt back in only for dedicated graph-safety experiments.
 - Keep the server responsiveness guard enabled for MTP C>1 benchmark and eval
   shapes. If a serving process becomes unresponsive, preserve the marker
   artifacts and record the observed tier instead of special-casing the platform
