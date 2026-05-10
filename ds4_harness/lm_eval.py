@@ -29,6 +29,7 @@ def build_lm_eval_command(
     tokenizer_backend: str,
     batch_size: str,
     output_path: Path,
+    limit: str | None = None,
     extra_args: list[str] | None = None,
 ) -> list[str]:
     model_args = ",".join(
@@ -58,6 +59,8 @@ def build_lm_eval_command(
         "--output_path",
         str(output_path),
     ]
+    if limit:
+        command.extend(["--limit", limit])
     command.extend(extra_args or [])
     return command
 

@@ -197,6 +197,7 @@ def test_env_sample_and_local_env_are_configured():
         "RUN_LM_EVAL",
         "LM_EVAL_BIN",
         "LM_EVAL_TASKS",
+        "LM_EVAL_LIMIT",
         "SERVER_GUARD",
         "SERVER_STARTUP_TIMEOUT",
         "SERVER_HEALTH_TIMEOUT",
@@ -246,7 +247,7 @@ def test_gb10_sm121_profile_uses_public_machine_independent_settings():
     assert 'TOOLCALL15_THINKING_MODES="${TOOLCALL15_THINKING_MODES:-non-thinking}"' in profile
     assert 'LONG_CONTEXT_LINE_COUNT="${LONG_CONTEXT_LINE_COUNT:-4226}"' in profile
     assert 'LONG_CONTEXT_THINKING_MODE="${LONG_CONTEXT_THINKING_MODE:-non-thinking}"' in profile
-    assert 'VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH="${VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH:-0}"' in profile
+    assert "VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH" not in profile
     assert "PYTORCH_CUDA_ALLOC_CONF" in profile
     assert "10.0.0." not in profile
     assert "/home/" not in profile
@@ -332,7 +333,14 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "--compilation-config" in script
     assert "SERVE_SPECULATIVE_CONFIG" in script
     assert "--speculative_config" in script
-    assert "VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH" in script
+    assert "SERVE_EXTRA_ARGS" in script
+    assert "VLLM_USE_FLASHINFER_SAMPLER" in script
+    assert "VLLM_TRITON_MLA_SPARSE" in script
+    assert "VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH" not in script
+    assert "NCCL_GRAPH_MIXING_SUPPORT" not in script
+    assert "CUDA_DEVICE_MAX_CONNECTIONS" not in script
+    assert 'NCCL_DEBUG="${NCCL_DEBUG:-WARN}"' in script
+    assert "NCCL_DEBUG_SUBSYS" in script
     assert "TORCH_CUDA_ARCH_LIST" in script
     assert "CCACHE_NOHASHDIR" in script
     assert "long-context-probe" in docs
@@ -1078,7 +1086,7 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
         "RANDOM_LONG_CONCURRENCY": "1",
         "RANDOM_LONG_NUM_PROMPTS": "1",
         "RUN_ORACLE_EXPORT": "1",
-        "LM_EVAL_EXTRA_ARGS": "--limit 1",
+        "LM_EVAL_LIMIT": "200",
         "SERVER_STARTUP_TIMEOUT": "5",
         "SERVER_STARTUP_INTERVAL_SECONDS": "0",
     }
@@ -1112,9 +1120,11 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
     nomtp_lm_eval_args = (out_dir / "nomtp" / "eval_gsm8k" / "lm_eval_args.txt").read_text(
         encoding="utf-8"
     )
-    assert "--extra-lm-eval-arg=--limit" in nomtp_lm_eval_args
-    assert "--extra-lm-eval-arg=1" in nomtp_lm_eval_args
+    assert "--limit\n200" in nomtp_lm_eval_args
     assert (out_dir / "baseline_summary.md").exists()
+    assert "limit `200`" in (out_dir / "baseline_summary.md").read_text(
+        encoding="utf-8"
+    )
     assert "--speculative_config" in (out_dir / "mtp" / "serve_command.sh").read_text(
         encoding="utf-8"
     )
@@ -1507,7 +1517,7 @@ def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
         "VLLM_COLLECT_ENV": "0",
         "GPU_TOPOLOGY_SLUG": "test_gpu",
         "LM_EVAL_TASKS": "gsm8k",
-        "LM_EVAL_EXTRA_ARGS": "--limit 1",
+        "LM_EVAL_LIMIT": "200",
         "SERVER_STARTUP_INTERVAL_SECONDS": "0",
         "SERVE_LOG": "",
     }
@@ -1525,8 +1535,7 @@ def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
     assert (out_dir / "lm_eval.exit_code").read_text(encoding="utf-8").strip() == "0"
     assert (out_dir / "lm_eval_summary.json").exists()
     args = (out_dir / "lm_eval_args.txt").read_text(encoding="utf-8")
-    assert "--extra-lm-eval-arg=--limit" in args
-    assert "--extra-lm-eval-arg=1" in args
+    assert "--limit\n200" in args
     assert "--tokenizer-backend" in args
     assert "none" in args
     assert f"wrote {out_dir}" in result.stdout

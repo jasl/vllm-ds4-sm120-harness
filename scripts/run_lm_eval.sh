@@ -18,6 +18,7 @@ LM_EVAL_MAX_GEN_TOKS="${LM_EVAL_MAX_GEN_TOKS:-2048}"
 LM_EVAL_TIMEOUT_MS="${LM_EVAL_TIMEOUT_MS:-60000}"
 LM_EVAL_TOKENIZER_BACKEND="${LM_EVAL_TOKENIZER_BACKEND:-none}"
 LM_EVAL_BATCH_SIZE="${LM_EVAL_BATCH_SIZE:-auto}"
+LM_EVAL_LIMIT="${LM_EVAL_LIMIT:-}"
 LM_EVAL_COMMAND_TIMEOUT="${LM_EVAL_COMMAND_TIMEOUT:-7200}"
 LM_EVAL_EXTRA_ARGS="${LM_EVAL_EXTRA_ARGS:-}"
 SERVER_GUARD="${SERVER_GUARD:-1}"
@@ -36,6 +37,7 @@ OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${RUN_T
 export BASE_URL MODEL PYTHON LM_EVAL_BIN LM_EVAL_TASKS
 export LM_EVAL_NUM_FEWSHOT LM_EVAL_NUM_CONCURRENT LM_EVAL_MAX_RETRIES
 export LM_EVAL_MAX_GEN_TOKS LM_EVAL_TIMEOUT_MS LM_EVAL_TOKENIZER_BACKEND LM_EVAL_BATCH_SIZE
+export LM_EVAL_LIMIT
 export LM_EVAL_COMMAND_TIMEOUT LM_EVAL_EXTRA_ARGS
 export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
@@ -72,16 +74,22 @@ if [[ -n "${LM_EVAL_EXTRA_ARGS}" ]]; then
   extra_args=(${LM_EVAL_EXTRA_ARGS})
 fi
 cli_extra_args=()
-for arg in "${extra_args[@]}"; do
-  cli_extra_args+=("--extra-lm-eval-arg=${arg}")
-done
+if ((${#extra_args[@]})); then
+  for arg in "${extra_args[@]}"; do
+    cli_extra_args+=("--extra-lm-eval-arg=${arg}")
+  done
+fi
+limit_args=()
+if [[ -n "${LM_EVAL_LIMIT}" ]]; then
+  limit_args+=(--limit "${LM_EVAL_LIMIT}")
+fi
 
 set +e
 "${PYTHON}" -m ds4_harness.cli lm-eval \
   --lm-eval-bin "${LM_EVAL_BIN}" \
   --base-url "${BASE_URL}" \
   --model "${MODEL}" \
-  "${task_args[@]}" \
+  ${task_args[@]+"${task_args[@]}"} \
   --num-fewshot "${LM_EVAL_NUM_FEWSHOT}" \
   --num-concurrent "${LM_EVAL_NUM_CONCURRENT}" \
   --max-retries "${LM_EVAL_MAX_RETRIES}" \
@@ -89,10 +97,11 @@ set +e
   --eval-timeout-ms "${LM_EVAL_TIMEOUT_MS}" \
   --tokenizer-backend "${LM_EVAL_TOKENIZER_BACKEND}" \
   --batch-size "${LM_EVAL_BATCH_SIZE}" \
+  ${limit_args[@]+"${limit_args[@]}"} \
   --command-timeout "${LM_EVAL_COMMAND_TIMEOUT}" \
   --output-dir "${OUT_DIR}" \
   --json-output "${OUT_DIR}/lm_eval_summary.json" \
-  "${cli_extra_args[@]}"
+  ${cli_extra_args[@]+"${cli_extra_args[@]}"}
 code="$?"
 set -e
 printf '%s\n' "${code}" > "${OUT_DIR}/lm_eval.exit_code"

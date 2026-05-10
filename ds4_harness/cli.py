@@ -15,7 +15,12 @@ from ds4_harness.attention_dump import (
     write_attention_dump_markdown,
 )
 from ds4_harness.baseline_report import build_baseline_report, write_baseline_report
-from ds4_harness.bench import run_bench_command
+from ds4_harness.bench import (
+    compare_bench_rows,
+    load_bench_json,
+    run_bench_command,
+    write_bench_comparison_markdown,
+)
 from ds4_harness.cases import SmokeCase, build_cases, select_cases
 from ds4_harness.checks import CheckResult, assistant_text, check_chat_response, tool_call_names
 from ds4_harness.client import get_json, get_status, post_json, post_json_with_retries
@@ -1155,6 +1160,32 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def _cmd_bench_compare(args: argparse.Namespace) -> int:
+    try:
+        baseline_rows = load_bench_json(args.baseline_json)
+        candidate_rows = load_bench_json(args.candidate_json)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    comparison = compare_bench_rows(
+        baseline_rows,
+        candidate_rows,
+        baseline_label=args.baseline_label,
+        candidate_label=args.candidate_label,
+    )
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(comparison, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_bench_comparison_markdown(args.markdown_output, comparison)
+    print(json.dumps(comparison, ensure_ascii=False))
+    return 0
+
+
 def _cmd_lm_eval(args: argparse.Namespace) -> int:
     if not args.task:
         print("at least one --task is required", file=sys.stderr)
@@ -1184,6 +1215,7 @@ def _cmd_lm_eval(args: argparse.Namespace) -> int:
         tokenizer_backend=args.tokenizer_backend,
         batch_size=args.batch_size,
         output_path=raw_output_dir,
+        limit=args.limit,
         extra_args=args.extra_lm_eval_arg,
     )
     command_result = run_lm_eval_command(command, timeout=args.command_timeout)
@@ -1213,6 +1245,7 @@ def _cmd_lm_eval(args: argparse.Namespace) -> int:
             "eval_timeout_ms": args.eval_timeout_ms,
             "tokenizer_backend": args.tokenizer_backend,
             "batch_size": args.batch_size,
+            "limit": args.limit,
         },
     )
     output_path = args.json_output or (args.output_dir / "lm_eval_summary.json")
@@ -1679,6 +1712,15 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--extra-bench-arg", action="append")
     bench.set_defaults(func=_cmd_bench_matrix)
 
+    bench_compare = subparsers.add_parser("bench-compare")
+    bench_compare.add_argument("--baseline-json", type=Path, required=True)
+    bench_compare.add_argument("--candidate-json", type=Path, required=True)
+    bench_compare.add_argument("--baseline-label", default="baseline")
+    bench_compare.add_argument("--candidate-label", default="candidate")
+    bench_compare.add_argument("--json-output", type=Path)
+    bench_compare.add_argument("--markdown-output", type=Path)
+    bench_compare.set_defaults(func=_cmd_bench_compare)
+
     lm_eval = subparsers.add_parser("lm-eval")
     lm_eval.add_argument("--lm-eval-bin", default="lm_eval")
     lm_eval.add_argument("--base-url", default="http://127.0.0.1:8000")
@@ -1691,6 +1733,7 @@ def build_parser() -> argparse.ArgumentParser:
     lm_eval.add_argument("--eval-timeout-ms", type=int, default=60000)
     lm_eval.add_argument("--tokenizer-backend", default="none")
     lm_eval.add_argument("--batch-size", default="auto")
+    lm_eval.add_argument("--limit")
     lm_eval.add_argument("--command-timeout", type=float, default=7200.0)
     lm_eval.add_argument("--output-dir", type=Path, required=True)
     lm_eval.add_argument("--json-output", type=Path)

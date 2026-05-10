@@ -105,12 +105,8 @@ as exploratory evidence that is allowed to fail, and do not run `think-max` as
 a GB10 gate until 384K+ context is reliable. The profile sets
 `GENERATION_MAX_CASE_TOKENS=32768` so code and HTML generation prompts can
 finish; smaller values such as 4096 are quick-smoke caps, not quality-baseline
-settings. The profile also defaults
-`VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0`; keep that for routine GB10
-validation because graph-captured Triton sparse MLA has failed ToolCall-15 with
-`sample_tokens` RPC timeouts. MTP can still fail longer generation with
-`sample_tokens` RPC timeouts even with graph capture disabled. Keep concrete
-GB10 SSH targets, checkout roots, and artifact paths in ignored local notes.
+settings. Keep concrete GB10 SSH targets, checkout roots, and artifact paths in
+ignored local notes.
 
 Do not pass `--attention_config.use_fp4_indexer_cache=True` on SM12x hosts such
 as RTX PRO 6000, RTX 5090, or GB10. That flag is currently SM100/B200-specific;
@@ -138,13 +134,11 @@ For GB10 / SM121 two-node bring-up, use `TP=2 PP=1` as the default shape.
 pipeline-parallel experiments that track upstream vLLM support.
 
 For MTP on GB10, treat startup/chat smoke as exploratory only until longer
-generation survives without `sample_tokens` RPC timeouts. Do not set
-`VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` for routine GB10 validation; it is
-an experimental reproduction knob for FULL CUDA graph replay issues.
+generation survives without `sample_tokens` RPC timeouts.
 
-Do not set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for TP=2 CUDA
-graph runs unless the specific experiment requires it. It has caused custom
-all-reduce graph registration failures on some TP=2 graph paths.
+Do not add default graph-disabling or NCCL graph workaround switches to the
+public GB10/SM12x profiles. If a graph-safety experiment needs a private
+workaround, keep it in ignored local notes or explicit one-off shell exports.
 
 If using a vLLM console script from a checkout that is not installed into the
 venv, set:
@@ -213,8 +207,7 @@ On GB10, source `configs/gb10_sm121_serve.env.example` before using wrapper
 scripts. That profile disables `think-max` in required harness matrices and
 sets the long-context probe to the current 128K-class no-thinking gate. It also
 uses a 32768-token generation cap so frontend/code cases are not judged from
-truncated artifacts, and keeps sparse MLA CUDA graph capture disabled unless a
-graph-safety experiment opts back in explicitly.
+truncated artifacts.
 
 The wrapper scripts default to `artifacts/<branch>/<gpu-topology>/<timestamp>/`
 under this repo. The GPU topology segment is derived from `nvidia-smi`, for
@@ -244,6 +237,12 @@ deltas. Set `RUNTIME_STATS=0` only when a run intentionally has no live server
 metrics. If a serve log exists, pass `SERVE_LOG=/path/to/serve.log` so the
 runtime summary can also include vLLM-reported prompt/generation throughput,
 KV-cache usage, prefix-cache hit rate, and MTP acceptance metrics.
+
+For public scalar accuracy evidence, run GSM8K with `lm-eval` on both 0-shot and
+5-shot 200-question slices when runtime budget allows. Use
+`LM_EVAL_NUM_FEWSHOT=0 LM_EVAL_LIMIT=200 scripts/run_lm_eval.sh` and then
+`LM_EVAL_NUM_FEWSHOT=5 LM_EVAL_LIMIT=200 scripts/run_lm_eval.sh` against the
+same serving route.
 
 For suspected concurrent prefix/KV reuse regressions, run
 `scripts/run_prefix_cache_probe.sh`. It warms one long conversation, introduces
@@ -366,6 +365,22 @@ memory pressure; preserve the highest passing concurrency and the failure
 snippet, and continue optimizing only if the change is likely to reduce real
 memory use.
 
+After two comparable `bench.json` captures, use `bench-compare` for a compact
+TPOT/tok/s table:
+
+```bash
+python -m ds4_harness.cli bench-compare \
+  --baseline-json artifacts/no_graph/bench.json \
+  --candidate-json artifacts/with_graph/bench.json \
+  --baseline-label "No Graph" \
+  --candidate-label "With Graph" \
+  --json-output artifacts/bench_compare.json \
+  --markdown-output artifacts/bench_compare.md
+```
+
+This comparison is generic for SM100 and SM12x routes because it consumes
+`bench-matrix` output instead of kernel-specific counters.
+
 Use random prompts for controlled shape tests rather than final user-visible
 throughput claims. For long-prefill stability, use smaller concurrency first:
 
@@ -393,6 +408,10 @@ The harness currently includes:
 - deterministic B200/H100 `/v1/completions` oracle export
 - logprobs oracle comparison for completion-style B200/H100 bundles
 - vLLM `bench serve` matrix wrapper for both HF datasets and random shapes
+- vLLM `bench serve` comparison reports with batch/concurrency, output tok/s,
+  TPOT, TTFT, and speedups
+- optional GSM8K 0-shot and 5-shot public accuracy captures with
+  `LM_EVAL_LIMIT=200`
 - GPU and vLLM runtime telemetry summaries, including prefill/decode and MTP
   acceptance metrics when available
 

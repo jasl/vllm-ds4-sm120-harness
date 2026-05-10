@@ -54,7 +54,9 @@ def test_lm_eval_cli_builds_local_completions_command_and_summarizes_results(
             "--task",
             "gsm8k",
             "--num-fewshot",
-            "8",
+            "5",
+            "--limit",
+            "200",
             "--num-concurrent",
             "4",
             "--max-retries",
@@ -89,13 +91,16 @@ def test_lm_eval_cli_builds_local_completions_command_and_summarizes_results(
     assert "max_gen_toks=2048" in model_args
     assert "timeout=60000" in model_args
     assert command[command.index("--tasks") + 1] == "gsm8k"
-    assert command[command.index("--num_fewshot") + 1] == "8"
+    assert command[command.index("--num_fewshot") + 1] == "5"
+    assert command[command.index("--limit") + 1] == "200"
     assert command[command.index("--batch_size") + 1] == "auto"
     assert (output_dir / "stdout.log").read_text(encoding="utf-8") == "lm_eval ok\n"
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["ok"] is True
     assert summary["tasks"][0]["task"] == "gsm8k"
+    assert summary["config"]["limit"] == "200"
+    assert summary["config"]["num_fewshot"] == 5
     assert summary["tasks"][0]["exact_match_flexible"] == 0.9439
     assert summary["tasks"][0]["exact_match_strict"] == 0.9431
     assert summary["tasks"][0]["exact_match_flexible_stderr"] == 0.0063

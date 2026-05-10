@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+import json
 import subprocess
+from pathlib import Path
 from typing import Any
 
 
@@ -99,3 +101,139 @@ def run_bench_command(command: list[str], timeout: float | None = None) -> dict[
         "stdout": stdout,
         "command": command,
     }
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _round_or_none(value: float | None, digits: int = 2) -> float | None:
+    return None if value is None else round(value, digits)
+
+
+def _safe_divide(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator is None or denominator <= 0:
+        return None
+    return numerator / denominator
+
+
+def _rows_by_concurrency(rows: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    indexed: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        try:
+            concurrency = int(row.get("concurrency"))
+        except (TypeError, ValueError):
+            continue
+        indexed[concurrency] = row
+    return indexed
+
+
+def compare_bench_rows(
+    baseline_rows: list[dict[str, Any]],
+    candidate_rows: list[dict[str, Any]],
+    *,
+    baseline_label: str,
+    candidate_label: str,
+) -> dict[str, Any]:
+    """Build a concurrency-aligned TPOT/tok/s comparison.
+
+    The naming is intentionally generic: callers can compare CUDA graph off/on,
+    two branches, two kernels, or two hardware routes. The `batch_size` field is
+    the vLLM `bench serve` max-concurrency value, matching the common serving
+    benchmark shorthand used in SM120 reports.
+    """
+    baseline_by_c = _rows_by_concurrency(baseline_rows)
+    candidate_by_c = _rows_by_concurrency(candidate_rows)
+    rows = []
+    for concurrency in sorted(set(baseline_by_c) | set(candidate_by_c)):
+        baseline = baseline_by_c.get(concurrency, {})
+        candidate = candidate_by_c.get(concurrency, {})
+        baseline_metrics = baseline.get("metrics") or {}
+        candidate_metrics = candidate.get("metrics") or {}
+        baseline_tpot = _to_float(baseline_metrics.get("mean_tpot_ms"))
+        candidate_tpot = _to_float(candidate_metrics.get("mean_tpot_ms"))
+        baseline_output = _to_float(
+            baseline_metrics.get("output_token_throughput_tok_s")
+        )
+        candidate_output = _to_float(
+            candidate_metrics.get("output_token_throughput_tok_s")
+        )
+        rows.append(
+            {
+                "batch_size": concurrency,
+                "concurrency": concurrency,
+                "baseline_ok": baseline.get("ok"),
+                "candidate_ok": candidate.get("ok"),
+                "baseline_output_token_throughput_tok_s": baseline_output,
+                "candidate_output_token_throughput_tok_s": candidate_output,
+                "output_tok_s_speedup": _round_or_none(
+                    _safe_divide(candidate_output, baseline_output)
+                ),
+                "baseline_mean_tpot_ms": baseline_tpot,
+                "candidate_mean_tpot_ms": candidate_tpot,
+                "tpot_speedup": _round_or_none(
+                    _safe_divide(baseline_tpot, candidate_tpot)
+                ),
+                "baseline_mean_ttft_ms": _to_float(
+                    baseline_metrics.get("mean_ttft_ms")
+                ),
+                "candidate_mean_ttft_ms": _to_float(
+                    candidate_metrics.get("mean_ttft_ms")
+                ),
+            }
+        )
+    return {
+        "baseline_label": baseline_label,
+        "candidate_label": candidate_label,
+        "rows": rows,
+    }
+
+
+def load_bench_json(path: Path) -> list[dict[str, Any]]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError(f"bench JSON must be a list: {path}")
+    return [row for row in data if isinstance(row, dict)]
+
+
+def write_bench_comparison_markdown(path: Path, comparison: dict[str, Any]) -> None:
+    baseline_label = str(comparison.get("baseline_label") or "baseline")
+    candidate_label = str(comparison.get("candidate_label") or "candidate")
+    lines = [
+        "# Bench Comparison",
+        "",
+        (
+            "Concurrency is reported as batch size for compatibility with "
+            "serving benchmark summaries."
+        ),
+        "",
+        "| BS/C | "
+        f"{baseline_label} tok/s | {candidate_label} tok/s | tok/s speedup | "
+        f"{baseline_label} TPOT ms | {candidate_label} TPOT ms | TPOT speedup | "
+        f"{baseline_label} TTFT ms | {candidate_label} TTFT ms |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in comparison.get("rows", []):
+        lines.append(
+            f"| {row.get('batch_size')} | "
+            f"{_format_number(row.get('baseline_output_token_throughput_tok_s'))} | "
+            f"{_format_number(row.get('candidate_output_token_throughput_tok_s'))} | "
+            f"{_format_number(row.get('output_tok_s_speedup'))} | "
+            f"{_format_number(row.get('baseline_mean_tpot_ms'))} | "
+            f"{_format_number(row.get('candidate_mean_tpot_ms'))} | "
+            f"{_format_number(row.get('tpot_speedup'))} | "
+            f"{_format_number(row.get('baseline_mean_ttft_ms'))} | "
+            f"{_format_number(row.get('candidate_mean_ttft_ms'))} |"
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def _format_number(value: Any) -> str:
+    number = _to_float(value)
+    if number is None:
+        return "n/a"
+    return f"{number:.2f}"

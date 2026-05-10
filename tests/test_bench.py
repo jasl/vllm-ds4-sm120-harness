@@ -1,6 +1,7 @@
 import json
 
 from ds4_harness import cli
+from ds4_harness.bench import compare_bench_rows
 from ds4_harness.bench import parse_bench_output
 from ds4_harness.bench import run_bench_command
 
@@ -72,6 +73,118 @@ def test_run_bench_command_records_launch_errors():
     assert result["returncode"] == -2
     assert result["metrics"] == {}
     assert "FileNotFoundError" in result["stdout"]
+
+
+def test_compare_bench_rows_builds_graph_style_tpot_summary():
+    comparison = compare_bench_rows(
+        [
+            {
+                "concurrency": 1,
+                "ok": True,
+                "metrics": {
+                    "output_token_throughput_tok_s": 7.33,
+                    "mean_tpot_ms": 136.5,
+                },
+            },
+            {
+                "concurrency": 4,
+                "ok": True,
+                "metrics": {
+                    "output_token_throughput_tok_s": 20.11,
+                    "mean_tpot_ms": 186.5,
+                },
+            },
+        ],
+        [
+            {
+                "concurrency": 1,
+                "ok": True,
+                "metrics": {
+                    "output_token_throughput_tok_s": 10.26,
+                    "mean_tpot_ms": 92.3,
+                },
+            },
+            {
+                "concurrency": 4,
+                "ok": True,
+                "metrics": {
+                    "output_token_throughput_tok_s": 22.3,
+                    "mean_tpot_ms": 168.3,
+                },
+            },
+        ],
+        baseline_label="no_graph",
+        candidate_label="with_graph",
+    )
+
+    assert comparison["rows"][0]["batch_size"] == 1
+    assert comparison["rows"][0]["baseline_mean_tpot_ms"] == 136.5
+    assert comparison["rows"][0]["candidate_mean_tpot_ms"] == 92.3
+    assert comparison["rows"][0]["tpot_speedup"] == 1.48
+    assert comparison["rows"][0]["output_tok_s_speedup"] == 1.4
+
+
+def test_bench_compare_cli_writes_sglang_style_markdown(tmp_path):
+    baseline = tmp_path / "no_graph.json"
+    candidate = tmp_path / "with_graph.json"
+    baseline.write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 7.33,
+                        "mean_tpot_ms": 136.5,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 10.26,
+                        "mean_tpot_ms": 92.3,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    json_output = tmp_path / "comparison.json"
+    markdown_output = tmp_path / "comparison.md"
+
+    rc = cli.main(
+        [
+            "bench-compare",
+            "--baseline-json",
+            str(baseline),
+            "--candidate-json",
+            str(candidate),
+            "--baseline-label",
+            "No Graph",
+            "--candidate-label",
+            "With Graph",
+            "--json-output",
+            str(json_output),
+            "--markdown-output",
+            str(markdown_output),
+        ]
+    )
+
+    assert rc == 0
+    data = json.loads(json_output.read_text(encoding="utf-8"))
+    assert data["rows"][0]["tpot_speedup"] == 1.48
+    report = markdown_output.read_text(encoding="utf-8")
+    assert "No Graph TPOT ms" in report
+    assert "With Graph TPOT ms" in report
+    assert "TPOT speedup" in report
 
 
 def test_bench_matrix_builds_hf_dataset_commands(monkeypatch, tmp_path):

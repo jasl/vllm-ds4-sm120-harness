@@ -54,11 +54,7 @@ no-MTP `non-thinking` matrix with a 128K-class long-context sentinel. Treat
 GB10 gate until a 384K+ prompt is reliable. It sets
 `GENERATION_MAX_CASE_TOKENS=32768` so the required generation gate can complete
 the checked-in code and HTML prompts; smaller caps such as 4096 are quick-smoke
-diagnostics, not quality-baseline settings. It defaults
-`VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0` because GB10 ToolCall-15 smoke has
-hit `sample_tokens` RPC timeouts with graph capture enabled on the Triton
-sparse MLA path; MTP can still hit `sample_tokens` RPC timeouts on longer
-generation even with graph capture disabled. Keep private SSH targets and
+diagnostics, not quality-baseline settings. Keep private SSH targets and
 checkout paths in ignored local files, not in these public profile snippets.
 
 ## DeepSeek Official API Notes
@@ -129,6 +125,12 @@ tool-call turn.
   - keeps random synthetic prompts for controlled short/long context pressure
   - parses common throughput and latency metrics
   - stores raw logs per concurrency
+- vLLM `bench serve` comparison:
+  - compares two `bench.json` files, such as CUDA graph off/on or branch A/B
+  - reports SGLang-style batch/concurrency rows with output tok/s, TPOT, TTFT,
+    and speedups
+  - is generic for SM100 and SM12x routes because it consumes public vLLM
+    benchmark output rather than kernel-specific counters
 - vLLM runtime telemetry:
   - samples `/metrics` during wrapper runs
   - summarizes prefill/decode token counters, request pressure, KV-cache usage,
@@ -179,7 +181,9 @@ Use the harness as a layered gate, not as one monolithic command:
 - Public accuracy: run the optional `lm_eval` GSM8K phase on reference hosts
   and promotion candidates. This provides a public scalar correctness signal
   similar to the ROCm DeepSeek V4 support PRs, while oracle comparison remains
-  the stricter token-level kernel gate.
+  the stricter token-level kernel gate. For public preview claims, capture both
+  `--num-fewshot 0 --limit 200` and `--num-fewshot 5 --limit 200` when runtime
+  budget allows, matching the common DeepSeek V4 SM120 comparison format.
 - Serving variants: run no-MTP and MTP as separate server configurations. MTP
   changes generation trajectories, so compare it against a no-MTP baseline
   with the same harness profile.
@@ -585,7 +589,8 @@ python -m ds4_harness.cli lm-eval \
   --base-url http://127.0.0.1:8000 \
   --model deepseek-ai/DeepSeek-V4-Flash \
   --task gsm8k \
-  --num-fewshot 8 \
+  --num-fewshot 5 \
+  --limit 200 \
   --num-concurrent 4 \
   --max-retries 10 \
   --max-gen-toks 2048 \
@@ -616,6 +621,11 @@ API-capable lm-evaluation-harness extra installed, for example
 `scripts/run_lm_eval.sh` adds the same artifact layout, GPU/runtime telemetry,
 `collect_env.py`, server responsiveness guard, and unresponsive-server marker
 behavior used by the benchmark wrapper.
+
+For public DeepSeek V4 preview claims, capture GSM8K twice when runtime budget
+allows: once with `--num-fewshot 0 --limit 200`, and once with
+`--num-fewshot 5 --limit 200`. The `--limit` option is deliberately generic and
+can be used for either SM100 reference routes or SM12x candidate routes.
 
 Use the B200/SM100 or H100 HTTP oracle bundle when you need stricter kernel
 correctness checks. Chat exports are covered by `chat-smoke`; `oracle-compare`
@@ -714,7 +724,8 @@ Run this script on the reference host, not on a laptop. It defaults to
 `TOOLCALL15_THINKING_MODES=non-thinking,think-high,think-max`,
 `TOOLCALL15_TEMPERATURE=1.0`, `TOOLCALL15_TOP_P=1.0`,
 `TOOLCALL15_SCENARIO_SET=en`, `RUN_LM_EVAL=1`,
-`LM_EVAL_TASKS=gsm8k`, `LM_EVAL_NUM_FEWSHOT=8`,
+`LM_EVAL_TASKS=gsm8k`, `LM_EVAL_NUM_FEWSHOT=8`, `LM_EVAL_LIMIT=` (unset by
+default),
 `LM_EVAL_NUM_CONCURRENT=4`, `MTP_LM_EVAL_NUM_CONCURRENT=1`,
 `LM_EVAL_MAX_GEN_TOKS=2048`, `LM_EVAL_TOKENIZER_BACKEND=none`,
 `LM_EVAL_COMMAND_TIMEOUT=7200`, and a controlled random
@@ -866,6 +877,22 @@ IGNORE_EOS=1 \
 scripts/run_bench_matrix.sh
 ```
 
+After two comparable `bench.json` captures, create a compact serving comparison
+table with SGLang-style batch/concurrency rows:
+
+```bash
+python -m ds4_harness.cli bench-compare \
+  --baseline-json artifacts/no_graph/bench.json \
+  --candidate-json artifacts/with_graph/bench.json \
+  --baseline-label "No Graph" \
+  --candidate-label "With Graph" \
+  --json-output artifacts/bench_compare.json \
+  --markdown-output artifacts/bench_compare.md
+```
+
+The comparison command is route-agnostic: use it for graph off/on, branch A/B,
+or SM100-vs-SM12x evidence as long as both inputs are `bench-matrix` JSON rows.
+
 ## Recommended Gates
 
 Before promoting an optimization:
@@ -895,8 +922,9 @@ Before promoting an optimization:
   think-high --thinking-mode think-max --repeat-count 3 --temperature 1.0
   --top-p 1.0` passes, or any
   partial/fail scenario is explained with trace evidence.
-- `lm-eval --task gsm8k --num-fewshot 8` is captured for expensive reference
-  baselines and before promoting a branch whose correctness could have changed.
+- `lm-eval --task gsm8k --num-fewshot 0 --limit 200` and
+  `lm-eval --task gsm8k --num-fewshot 5 --limit 200` are captured for expensive
+  public preview baselines when the venv has `lm-eval[api]`.
 - `long-context-probe` passes when touching KV cache, FP4 indexer cache,
   chunked prefill, scheduler, or long-context serving behavior. For suspected
   KV/prefix-cache reuse regressions, preserve phase-local
@@ -926,8 +954,9 @@ Before promoting an optimization:
 
 ## Notes
 
-- Do not set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for TP=2
-  CUDA graph runs; it has caused custom all-reduce graph registration failures.
+- Do not add default graph-disabling or NCCL graph workaround switches to the
+  public GB10/SM12x profiles. If a graph-safety experiment needs a private
+  workaround, keep it in ignored local notes or explicit one-off shell exports.
 - For agent-like tests, prefer production-like serving flags:
   `--enable-auto-tool-choice`, `--tool-call-parser deepseek_v4`,
   `--reasoning-parser deepseek_v4`, and prefix cache when testing production
@@ -939,17 +968,14 @@ Before promoting an optimization:
   scheduler bugs before treating them as regressions.
 - On two-node GB10, use `TP=2 PP=1` as the default DeepSeek V4 bring-up shape.
   Keep MTP as exploratory until longer generation survives without
-  `sample_tokens` RPC timeouts. `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` is
-  only for graph-safety experiments; preserve responsiveness artifacts if that
-  path stalls or makes the server unresponsive.
+  `sample_tokens` RPC timeouts. Preserve responsiveness artifacts if that path
+  stalls or makes the server unresponsive.
 - The GB10 required acceptance path is `non-thinking` only. `think-high` can be
   recorded as an allowed-failure exploratory run, MTP is also exploratory, and
   `think-max` is disabled as a GB10 gate until the platform reliably satisfies
   the 384K+ context premise.
   Keep `GENERATION_MAX_CASE_TOKENS=32768` or higher for quality runs so long
   code/HTML prompts are not truncated.
-  Keep `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0` for routine GB10 validation;
-  opt back in only for dedicated graph-safety experiments.
 - Keep the server responsiveness guard enabled for MTP C>1 benchmark and eval
   shapes. If a serving process becomes unresponsive, preserve the marker
   artifacts and record the observed tier instead of special-casing the platform

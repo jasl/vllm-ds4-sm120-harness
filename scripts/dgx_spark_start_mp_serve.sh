@@ -43,6 +43,7 @@ SERVE_ENABLE_EXPERT_PARALLEL="${SERVE_ENABLE_EXPERT_PARALLEL:-0}"
 SERVE_DISABLE_FLASHINFER_AUTOTUNE="${SERVE_DISABLE_FLASHINFER_AUTOTUNE:-0}"
 SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG:-}"
 SERVE_SPECULATIVE_CONFIG="${SERVE_SPECULATIVE_CONFIG:-}"
+SERVE_EXTRA_ARGS="${SERVE_EXTRA_ARGS:-}"
 
 shell_quote() {
   printf '%q' "$1"
@@ -85,11 +86,16 @@ remote_env_prefix() {
   printf 'SERVE_DISABLE_FLASHINFER_AUTOTUNE=%s ' "$(shell_quote "${SERVE_DISABLE_FLASHINFER_AUTOTUNE}")"
   printf 'SERVE_COMPILATION_CONFIG=%s ' "$(shell_quote "${SERVE_COMPILATION_CONFIG}")"
   printf 'SERVE_SPECULATIVE_CONFIG=%s ' "$(shell_quote "${SERVE_SPECULATIVE_CONFIG}")"
+  printf 'SERVE_EXTRA_ARGS=%s ' "$(shell_quote "${SERVE_EXTRA_ARGS}")"
   remote_env_optional PYTORCH_CUDA_ALLOC_CONF
   remote_env_optional CUDA_ARCH_LIST
   remote_env_optional TORCH_CUDA_ARCH_LIST
   remote_env_optional CCACHE_NOHASHDIR
-  remote_env_optional VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH
+  remote_env_optional VLLM_USE_FLASHINFER_SAMPLER
+  remote_env_optional VLLM_TRITON_MLA_SPARSE
+  remote_env_optional VLLM_DISABLE_COMPILE_CACHE
+  remote_env_optional NCCL_DEBUG
+  remote_env_optional NCCL_DEBUG_SUBSYS
 }
 
 run_remote_script() {
@@ -213,6 +219,12 @@ fi
 if [[ -n "${SERVE_SPECULATIVE_CONFIG}" ]]; then
   serve_args+=(--speculative_config "${SERVE_SPECULATIVE_CONFIG}")
 fi
+if [[ -n "${SERVE_EXTRA_ARGS}" ]]; then
+  extra_args=()
+  # shellcheck disable=SC2206
+  extra_args=(${SERVE_EXTRA_ARGS})
+  serve_args+=("${extra_args[@]}")
+fi
 nohup env \
   PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}" \
   CUDA_HOME="${CUDA_HOME_REMOTE}" \
@@ -224,7 +236,8 @@ nohup env \
   GLOO_SOCKET_IFNAME="${ROCE_IFACE}" \
   NCCL_IB_HCA="${NCCL_IB_HCA}" \
   NCCL_IB_DISABLE="0" \
-  NCCL_DEBUG="WARN" \
+  NCCL_DEBUG="${NCCL_DEBUG:-WARN}" \
+  NCCL_DEBUG_SUBSYS="${NCCL_DEBUG_SUBSYS:-}" \
   VLLM_MARLIN_USE_ATOMIC_ADD="1" \
   "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main "${serve_args[@]}" \
   > "${RUN_DIR}/worker.log" 2>&1 < /dev/null &
@@ -274,6 +287,12 @@ fi
 if [[ -n "${SERVE_SPECULATIVE_CONFIG}" ]]; then
   serve_args+=(--speculative_config "${SERVE_SPECULATIVE_CONFIG}")
 fi
+if [[ -n "${SERVE_EXTRA_ARGS}" ]]; then
+  extra_args=()
+  # shellcheck disable=SC2206
+  extra_args=(${SERVE_EXTRA_ARGS})
+  serve_args+=("${extra_args[@]}")
+fi
 nohup env \
   PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}" \
   CUDA_HOME="${CUDA_HOME_REMOTE}" \
@@ -285,7 +304,8 @@ nohup env \
   GLOO_SOCKET_IFNAME="${ROCE_IFACE}" \
   NCCL_IB_HCA="${NCCL_IB_HCA}" \
   NCCL_IB_DISABLE="0" \
-  NCCL_DEBUG="WARN" \
+  NCCL_DEBUG="${NCCL_DEBUG:-WARN}" \
+  NCCL_DEBUG_SUBSYS="${NCCL_DEBUG_SUBSYS:-}" \
   VLLM_MARLIN_USE_ATOMIC_ADD="1" \
   "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main "${serve_args[@]}" \
   > "${RUN_DIR}/head.log" 2>&1 < /dev/null &
