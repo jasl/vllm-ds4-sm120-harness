@@ -15,6 +15,9 @@ dist/
 build/
 *.egg-info/
 
+# vLLM repo
+vllm
+
 # Local environment and secrets
 .env
 .env.*
