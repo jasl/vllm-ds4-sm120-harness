@@ -167,13 +167,12 @@ A clean passing startup should show:
 - `GPU KV cache size` is greater than the requested `MAX_MODEL_LEN`
 - `/health` returns HTTP `200`, even though the body may be empty
 
-For routine GB10 validation, keep
-`VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=0`. Graph-captured Triton sparse MLA has
-failed ToolCall-15 with a `sample_tokens` RPC timeout. MTP should also remain an
-exploratory GB10 variant for now: it can start and pass short chat smoke with
-CUDA graph capture disabled, but longer generation has still hit
-`sample_tokens` RPC timeouts. `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1` is an
-experimental opt-in for graph-safety reproduction only.
+For routine GB10 validation, keep the public profile free of graph-disabling or
+NCCL graph workaround switches. MTP should remain an exploratory GB10 variant
+until longer generation survives without `sample_tokens` RPC timeouts. If a
+graph-safety experiment needs private knobs, keep them in ignored local notes or
+one-off shell exports and preserve the failing artifacts separately from routine
+startup evidence.
 
 After startup, run at least one generation smoke and the harness long-context
 sentinel probe. For the current GB10 acceptance gate, source
@@ -386,12 +385,10 @@ single smoke request.
   `PATH` does not include `$VLLM_VENV/bin`. Use
   `PATH="$VLLM_VENV/bin:$CUDA_HOME/bin:$PATH"` in both head and worker
   environments.
-- MTP starts and captures CUDA graphs with
-  `VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH=1`, then stalls or becomes
-  unresponsive under concurrent streaming: rerun the same shape with the
-  default MTP path, which keeps compile enabled and disables CUDA graph capture.
-  Preserve the failing artifacts as a graph-safety reproduction instead of
-  treating it as a general GB10 startup failure.
+- MTP starts, then stalls or becomes unresponsive under concurrent streaming:
+  rerun the same shape without MTP and preserve the failing artifacts as an MTP
+  liveness reproduction instead of treating it as a general GB10 startup
+  failure.
 - Remote Ray actor fails with `No module named 'torch'`: Ray was likely started
   with a Python executable outside the vLLM venv. Start Ray with
   `$VLLM_VENV/bin/python -m ray.scripts.scripts`, or use the guarded helper

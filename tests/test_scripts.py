@@ -347,9 +347,21 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "scripts/dgx_spark_start_mp_serve.sh" in docs
     assert "safetensors" in docs
     assert "MXFP4" in docs
+    assert "VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH" not in docs
     assert "10.0.0." not in script
     assert "/home/" not in script
     assert "/Users/" not in script
+
+
+def test_vllm_correctness_gate_docs_use_public_gsm8k_slice():
+    docs = (ROOT / "docs" / "vllm_correctness_gates.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "LM_EVAL_NUM_FEWSHOT=0" in docs
+    assert "LM_EVAL_NUM_FEWSHOT=5" in docs
+    assert "LM_EVAL_LIMIT=200" in docs
+    assert "LM_EVAL_NUM_FEWSHOT=8" not in docs
 
 
 def test_acceptance_script_writes_human_markdown_smoke_reports():

@@ -20,12 +20,25 @@ the API-capable harness extra installed:
 python -m pip install "lm-eval[api]"
 ```
 
+For public preview claims, capture both 0-shot and 5-shot 200-question slices:
+
 ```bash
 VLLM_VENV=<vllm-venv> \
 PYTHON="${VLLM_VENV}/bin/python" \
 LM_EVAL_BIN="${VLLM_VENV}/bin/lm_eval" \
 LM_EVAL_TASKS=gsm8k \
-LM_EVAL_NUM_FEWSHOT=8 \
+LM_EVAL_NUM_FEWSHOT=0 \
+LM_EVAL_LIMIT=200 \
+LM_EVAL_TOKENIZER_BACKEND=none \
+LM_EVAL_NUM_CONCURRENT=4 \
+scripts/run_lm_eval.sh
+
+VLLM_VENV=<vllm-venv> \
+PYTHON="${VLLM_VENV}/bin/python" \
+LM_EVAL_BIN="${VLLM_VENV}/bin/lm_eval" \
+LM_EVAL_TASKS=gsm8k \
+LM_EVAL_NUM_FEWSHOT=5 \
+LM_EVAL_LIMIT=200 \
 LM_EVAL_TOKENIZER_BACKEND=none \
 LM_EVAL_NUM_CONCURRENT=4 \
 scripts/run_lm_eval.sh
