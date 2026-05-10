@@ -36,6 +36,28 @@ runtime packages that vLLM workers need, including `torch`. A simple setup is to
 install Ray cgraph in the vLLM venv. Another workable setup is a `.pth` file in
 the vLLM venv site-packages pointing at the Ray cgraph venv site-packages.
 
+Before using a fresh GB10/DGX Spark environment for DeepSeek V4, upgrade NCCL to
+the latest NVIDIA build that matches the CUDA runtime. Do this as part of
+environment bootstrap, before debugging vLLM scheduler, CUDA graph, or sparse MLA
+behavior. On 2026-05-11 the current NVIDIA download page lists NCCL `2.30.4`
+for CUDA 13.2, with Ubuntu/Deb packages `2.30.4-1+cuda13.2`; recheck the NVIDIA
+NCCL download page for newer builds when creating the next environment.
+
+For Ubuntu/Debian DGX Spark nodes using CUDA 13.2, install from the NVIDIA CUDA
+repository for the node architecture, then pin the matching NCCL package on both
+nodes:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libnccl2=2.30.4-1+cuda13.2 libnccl-dev=2.30.4-1+cuda13.2
+```
+
+If the environment uses NCCL4PY or other NCCL Python bindings, update those in
+the vLLM venv as well. NCCL 2.30.x release notes include NCCL4PY v0.2.0; keep
+the binding and NCCL runtime from the same current release family when possible.
+Record the installed NCCL package version and `torch.cuda.nccl.version()` in the
+run artifact or local handoff note before running the MTP/TP=2 gates.
+
 Start Ray through the vLLM Python executable, not through a standalone Ray
 venv. Ray workers inherit the Python executable used by `ray start`; if that
 executable cannot import `torch`, the remote actor can fail with
@@ -173,6 +195,16 @@ until longer generation survives without `sample_tokens` RPC timeouts. If a
 graph-safety experiment needs private knobs, keep them in ignored local notes or
 one-off shell exports and preserve the failing artifacts separately from routine
 startup evidence.
+
+Known NCCL-sensitive failure symptoms observed on GB10 were intermittent MTP or
+TP=2 generation stalls where vLLM stopped making decode progress, logs repeated
+`No available shared memory broadcast block found in 60 seconds`, and EngineCore
+later timed out in `sample_tokens` or returned HTTP 500 / connection refused
+after shutdown. Treat those as distributed-runtime liveness failures first:
+capture NCCL version, NCCL debug logs when enabled, serve logs, `/metrics`, and
+the exact bench/eval concurrency shape before changing model code. If the node is
+not already on the current NCCL build, upgrade NCCL and rerun the same repro
+before adding CUDA graph or scheduler workarounds.
 
 After startup, run at least one generation smoke and the harness long-context
 sentinel probe. For the current GB10 acceptance gate, source

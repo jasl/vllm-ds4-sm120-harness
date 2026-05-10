@@ -347,6 +347,11 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "scripts/dgx_spark_start_mp_serve.sh" in docs
     assert "safetensors" in docs
     assert "MXFP4" in docs
+    assert "upgrade NCCL to" in docs
+    assert "2.30.4-1+cuda13.2" in docs
+    assert "NCCL4PY v0.2.0" in docs
+    assert "No available shared memory broadcast block found in 60 seconds" in docs
+    assert "sample_tokens" in docs
     assert "VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH" not in docs
     assert "10.0.0." not in script
     assert "/home/" not in script
