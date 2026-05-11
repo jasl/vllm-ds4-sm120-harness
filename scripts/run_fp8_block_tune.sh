@@ -54,6 +54,16 @@ NO_AUTO_ITERS="${NO_AUTO_ITERS:-0}"
 ABORT_SECONDS="${ABORT_SECONDS:-600}"
 DRY_RUN="${DRY_RUN:-0}"
 
+# Default Python is the vLLM venv if it exists (driver needs torch + vllm
+# imports). Honors a user-provided PYTHON env override.
+if [[ -z "${PYTHON:-}" ]]; then
+  if [[ -x "${VLLM_REPO}/.venv/bin/python" ]]; then
+    PYTHON="${VLLM_REPO}/.venv/bin/python"
+  else
+    PYTHON="python3"
+  fi
+fi
+
 mkdir -p "${OUT_DIR}"
 
 # Sanity: make sure we're on an SM12x GPU.
@@ -92,11 +102,12 @@ echo "[harness] OUT_DIR=${OUT_DIR}"
 echo "[harness] VLLM_REPO=${VLLM_REPO}"
 echo "[harness] GPU_ID=${GPU_ID} BATCH_SIZES=${BATCH_SIZES} BLOCK=(${BLOCK_N},${BLOCK_K}) OUT_DTYPE=${OUT_DTYPE}"
 echo "[harness] NUM_ITERS=${NUM_ITERS} NO_AUTO_ITERS=${NO_AUTO_ITERS} ABORT_SECONDS=${ABORT_SECONDS}"
+echo "[harness] PYTHON=${PYTHON}"
 [[ -n "${SHAPES}" ]] && echo "[harness] SHAPES=${SHAPES}"
 
 log="${OUT_DIR}/tune.log"
 echo "[harness] streaming log to ${log}"
-python3 "${SCRIPT_DIR}/_fp8_block_tune_driver.py" "${driver_args[@]}" 2>&1 | tee "${log}"
+"${PYTHON}" "${SCRIPT_DIR}/_fp8_block_tune_driver.py" "${driver_args[@]}" 2>&1 | tee "${log}"
 
 echo "[harness] tuning complete. JSON outputs in ${OUT_DIR}:"
 ls -la "${OUT_DIR}" | grep -E '\.json$|tuning_summary' || true
