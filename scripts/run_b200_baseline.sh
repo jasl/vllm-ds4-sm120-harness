@@ -19,6 +19,12 @@ B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"
 B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"
 SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-393216}"
 SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-auto}"
+# vLLM requires explicit reasoning_start_str / reasoning_end_str to enable
+# ``thinking_token_budget`` requests; the DeepSeek V4 parser defaults to
+# IdentityReasoningParser at server startup (no request context) so the
+# auto-init can't infer them. Provide the R1/V4 ``<think>`` delimiters.
+_DEFAULT_SERVE_REASONING_CONFIG='{"reasoning_parser":"deepseek_v4","reasoning_start_str":"<think>","reasoning_end_str":"</think>"}'
+SERVE_REASONING_CONFIG="${SERVE_REASONING_CONFIG:-${_DEFAULT_SERVE_REASONING_CONFIG}}"
 B200_BASELINE_LABEL="${B200_BASELINE_LABEL:-b200_tp4_main}"
 B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-nomtp,mtp}"
 B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-all}"
@@ -119,6 +125,7 @@ export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_PROBE_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT
 export SERVER_FAILURE_GRACE_INTERVAL_SECONDS ARTIFACT_ROOT GPU_TOPOLOGY_SLUG
 export VLLM_ENGINE_READY_TIMEOUT_S SERVE_MAX_MODEL_LEN SERVE_USE_FP4_INDEXER_CACHE
+export SERVE_REASONING_CONFIG
 export REAL_SCENARIO_REPEAT_COUNT GENERATION_PROMPT_ROOT GENERATION_LANGUAGES
 export GENERATION_THINKING_MODES GENERATION_REPEAT_COUNT GENERATION_TIMEOUT
 export GENERATION_MAX_CASE_TOKENS GENERATION_THINK_HIGH_TOKEN_BUDGET
@@ -324,6 +331,7 @@ official_serve_args() {
     --tokenizer-mode deepseek_v4
     --tool-call-parser deepseek_v4
     --enable-auto-tool-choice
+    --reasoning-config "${SERVE_REASONING_CONFIG}"
   )
 
   if fp4_indexer_cache_enabled; then
