@@ -335,9 +335,11 @@ official_serve_args() {
   fi
 
   if [[ -n "${B200_EXTRA_SERVE_ARGS:-}" ]]; then
+    # ``eval`` lets B200_EXTRA_SERVE_ARGS pass single-quoted tokens such as
+    # ``--compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE"}'`` without
+    # triggering bash brace expansion on the embedded JSON commas.
     local extra_args=()
-    # shellcheck disable=SC2206
-    extra_args=(${B200_EXTRA_SERVE_ARGS})
+    eval "extra_args=(${B200_EXTRA_SERVE_ARGS})"
     OFFICIAL_SERVE_ARGS+=("${extra_args[@]}")
   fi
 }
