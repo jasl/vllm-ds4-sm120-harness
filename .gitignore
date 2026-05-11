@@ -15,6 +15,9 @@ dist/
 build/
 *.egg-info/
 
+# Claude
+.claude/
+
 # vLLM repo
 vllm
 
