@@ -78,18 +78,42 @@ distribution (M = 1, N = 1536/4096/8192, K matching DeepSeek V4 hidden).
 
 Risk: low. Worst case the new configs are equal; you keep the old ones.
 
-**T1-B. Adopt PR #40392 `fuse_rope_kvcache_cat_mla`** *(est. −0.5 to −1.0 ms TPOT)*
+**T1-B. ~~Adopt PR #40392 `fuse_rope_kvcache_cat_mla`~~ Status: Not applicable to DSv4-Flash** *(2026-05-12)*
 
-Upstream merged a compile pass that fuses RoPE + KV-cache update + q_concat
-for MLA. The flag is `enable_qk_norm_rope_fusion`-adjacent. Currently it's
-auto-enabled on `current_platform.is_cuda_alike()`, which includes SM120, but
-no one has confirmed it actually fires there. Verify by:
-1. Run `run_decode_profile.sh` again with `VLLM_LOG_LEVEL=INFO` and look for
-   the pass-application log line.
-2. Compare elementwise-copy time before/after — direct_copy at #8 (2.93%) is
-   exactly the kind of op this pass should eliminate.
+**Tested** (2026-05-12 on SM120 TP=2): enabled via
+`--compilation-config '{"pass_config":{"fuse_rope_kvcache_cat_mla":true}}'`.
+Pass registers successfully (`Enabled custom fusions: norm_quant, act_quant,
+rope_kvcache_cat_mla` in serve log) but produces **null result** on decode
+profile:
 
-Risk: low. Pass is upstream-default.
+| Metric | T1-A (no pass) | T1-B (pass on) | Delta |
+|---|---|---|---|
+| Throughput (single-stream decode) | 81.34 tok/s | 80.99 tok/s | noise |
+| Total kernel time / token | 28.28 ms | 28.52 ms | +0.85% (noise) |
+| Per-kernel µs/call (top 7) | — | — | all within ±1% |
+| Diff > 0.05 ms/tok normalized | — | — | only 1 kernel (cross_device_reduce, +0.2 ms/tok from per-call slowdown 7.27→8.39 µs) |
+
+**Root cause**: DSv4-Flash's MLA path **already source-level-fuses**
+RoPE + KV-compress + norm + insert into custom kernels — visible in the
+profile as `_fused_kv_compress_norm_rope_insert_sparse_attn`,
+`_fused_q_kv_rmsnorm_kernel`, `_fused_kv_compress_norm_rope_insert_indexer_attn`,
+`_fused_inv_rope_fp8_quant_per_head`, `_fused_indexer_q_rope_quant_kernel`.
+The vLLM compiler pass is designed for **vanilla DSv2/V3** RoPE where these
+are separate ops; on DSv4-Flash the pattern matcher finds nothing to fuse
+because the pre-fused kernels don't expose the matched sub-graph.
+
+The "Enabled custom fusions" log line registers the pass but does **not**
+imply it matched anything. To see actual fusion counts you'd need to add
+debug logging to `MLARoPEKVCacheCatFusionPass.__call__()`.
+
+**Lesson**: Future stack ports should verify pass matched-count, not just
+pass-enabled, when adapting from upstream-level fusion to source-level fusion
+codebases. DSv4-Flash gets this benefit "for free" from our existing
+`csrc/attention/deepseek_v4/...` and `vllm/v1/attention/ops/deepseek_v4_ops/`
+custom kernels.
+
+Risk now moot. Decision: **keep default OFF** for DSv4-Flash (avoids the
++0.2 ms/tok cross_device_reduce penalty seen in T1-B).
 
 **T1-C. ~~Investigate~~ Status: Marlin is the only viable MXFP4 MoE backend on SM12x DSv4** *(estimated upside reduced; see below)*
 
@@ -161,19 +185,49 @@ Risk re-assessed: **medium-low** (no longer a free correctness fix). Recommend
 deprioritising vs T1-A (autotune `_w8a8_triton_block_scaled_mm`, 23.33% — much
 larger absolute hotspot) and T1-D (kernel-launch overhead).
 
-**T1-D. Reduce decode-step kernel-launch count** *(est. −0.3 to −0.8 ms TPOT)*
+**T1-D. ~~Reduce decode-step kernel-launch count~~ Implemented as: adaptive BLOCK_M for `_fp8_paged_mqa_logits_kernel`** *(2026-05-12)*
 
-The profile shows several **30 k+-instance** kernels at ≤ 2 μs avg:
-- `direct_copy_kernel_cuda` (#8): 36 522 inst × 1.50 μs = launch-overhead bound
-- `vectorized_elementwise_kernel<BUnaryFunctor<...>>` (#14): 35 712 inst × 0.95 μs
-- `per_token_group_quant_8bit_kernel` (#10): 30 208 inst × 1.61 μs
+**Implemented and validated** (2026-05-12, commit `c802ae27a`). The original
+T1-D framing was "fuse the 30 k+-instance launch-bound kernels". We pivoted
+to a higher-ROI target — the **#3 kernel `_fp8_paged_mqa_logits_kernel`** in
+the T1-A profile (12.61%, 84.87 µs/call) had a hardcoded `BLOCK_M=4`
+regardless of `num_rows`. For the single-stream decode path
+(num_rows = batch_size × next_n = 1) that wastes 75% of the M-axis work
+(3 of every 4 rows masked off and discarded).
 
-The 30 208 count exactly matches the FP8 GEMM count — so quant happens once
-per GEMM per layer. Fusing the per-token quant into the GEMM prologue (or
-pulling more layers into the same cudagraph) would amortise launch overhead.
+Fix: `vllm/v1/attention/ops/deepseek_v4_ops/sm12x_mqa.py:fp8_paged_mqa_logits_triton`
+picks the smallest power-of-2 tile that still covers `num_rows`:
 
-Risk: low-medium. cudagraph_mode is already `FULL_AND_PIECEWISE`; gain is from
-adding more graph shapes or fewer split points.
+```
+num_rows == 1  → BLOCK_M=1   (no-MTP decode, batch=1)
+num_rows == 2  → BLOCK_M=2
+num_rows ≤ 4   → BLOCK_M=4   (MTP=2 decode, batch=1, num_rows=3)
+num_rows > 4   → BLOCK_M=8
+```
+
+Cost: 4 Triton specializations instead of 1 — cudagraph capture exercises
+each; first-load Triton JIT adds a few seconds, then cache-hit.
+
+**Measured impact** (SM120 TP=2 single-stream decode, no-MTP, 64-token
+profile window):
+
+| Metric | T1-A | T1-D | Delta |
+|---|---|---|---|
+| `_fp8_paged_mqa_logits_kernel` µs/call | 84.87 | 36.17 | **−57% (2.35× faster)** |
+| That kernel's share of decode time | 12.61% | 5.81% | **−6.8 pp** |
+| Total kernel time / token | 28.28 ms | 26.14 ms | **−7.6%** |
+| Single-stream decode throughput | 81.34 tok/s | **89.44 tok/s** | **+10.0%** |
+
+For MTP=2 (`num_rows=3`) the picked `BLOCK_M=4` is unchanged from baseline
+(1 of 4 rows masked, same as before) — no regression on the MTP path.
+Prefill (`num_rows ≥ 4`) picks `BLOCK_M=4` or `8` and benefits when
+`num_rows == 4`/`8` exactly (no waste).
+
+Remaining items from the original T1-D framing — the 30 k-instance launch-
+overhead kernels (`direct_copy_kernel_cuda`, `vectorized_elementwise_kernel`,
+`per_token_group_quant_8bit_kernel`) — are still candidates but deferred to
+**T1-D'** (a follow-up): fusing `per_token_group_quant_8bit` into the GEMM
+prologue is a multi-day Triton kernel project, not a small surgical change.
 
 ### Tier 2 — medium-confidence, may not all stack (target: 100 → 115 tok/s)
 
