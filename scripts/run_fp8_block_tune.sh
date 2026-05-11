@@ -10,13 +10,18 @@
 # Optional env:
 #   VLLM_REPO           Path to local vllm checkout (default
 #                       /home/jasl/Workspace/vllm).
-#   BATCH_SIZES         Comma-separated M values (default 1,2,4,8,16,32,64,128).
+#   BATCH_SIZES         Comma-separated M values
+#                       (default 1,2,4,8,16,32,64,128,256,512).
 #   SHAPES              Override shapes spec, e.g. "1536,4096:16384,1024"
 #                       (default: 6 SM12x DSv4 shapes from
 #                       tests/quantization/test_sm12x_tuned_config_lookup.py).
 #   GPU_ID              CUDA device index (default 0).
 #   BLOCK_N, BLOCK_K    FP8 block shape (defaults 128, 128).
 #   OUT_DTYPE           bfloat16 (default) or float16.
+#   NUM_ITERS           Base timing iterations per config (default 10).
+#                       Auto-reduced for large M (M>=256→5, M>=64→7).
+#   NO_AUTO_ITERS       1 to disable M-aware iter reduction (always use NUM_ITERS).
+#   ABORT_SECONDS       Per-(M, N, K) wall-clock cap (default 600). 0 disables.
 #   DRY_RUN             1 to print plan and exit.
 #
 # Two-GPU parallel split: launch two instances with different GPU_ID and
@@ -38,12 +43,15 @@ load_harness_env
 
 OUT_DIR="${OUT_DIR:?set OUT_DIR}"
 VLLM_REPO="${VLLM_REPO:-/home/jasl/Workspace/vllm}"
-BATCH_SIZES="${BATCH_SIZES:-1,2,4,8,16,32,64,128}"
+BATCH_SIZES="${BATCH_SIZES:-1,2,4,8,16,32,64,128,256,512}"
 SHAPES="${SHAPES:-}"
 GPU_ID="${GPU_ID:-0}"
 BLOCK_N="${BLOCK_N:-128}"
 BLOCK_K="${BLOCK_K:-128}"
 OUT_DTYPE="${OUT_DTYPE:-bfloat16}"
+NUM_ITERS="${NUM_ITERS:-10}"
+NO_AUTO_ITERS="${NO_AUTO_ITERS:-0}"
+ABORT_SECONDS="${ABORT_SECONDS:-600}"
 DRY_RUN="${DRY_RUN:-0}"
 
 mkdir -p "${OUT_DIR}"
@@ -67,9 +75,14 @@ driver_args=(
   --block-k "${BLOCK_K}"
   --out-dtype "${OUT_DTYPE}"
   --gpu-id "${GPU_ID}"
+  --num-iters "${NUM_ITERS}"
+  --abort-seconds "${ABORT_SECONDS}"
 )
 if [[ -n "${SHAPES}" ]]; then
   driver_args+=(--shapes "${SHAPES}")
+fi
+if [[ "${NO_AUTO_ITERS}" == "1" ]]; then
+  driver_args+=(--no-auto-iters)
 fi
 if [[ "${DRY_RUN}" == "1" ]]; then
   driver_args+=(--dry-run)
@@ -78,6 +91,7 @@ fi
 echo "[harness] OUT_DIR=${OUT_DIR}"
 echo "[harness] VLLM_REPO=${VLLM_REPO}"
 echo "[harness] GPU_ID=${GPU_ID} BATCH_SIZES=${BATCH_SIZES} BLOCK=(${BLOCK_N},${BLOCK_K}) OUT_DTYPE=${OUT_DTYPE}"
+echo "[harness] NUM_ITERS=${NUM_ITERS} NO_AUTO_ITERS=${NO_AUTO_ITERS} ABORT_SECONDS=${ABORT_SECONDS}"
 [[ -n "${SHAPES}" ]] && echo "[harness] SHAPES=${SHAPES}"
 
 log="${OUT_DIR}/tune.log"

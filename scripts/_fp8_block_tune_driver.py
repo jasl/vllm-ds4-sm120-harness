@@ -4,19 +4,31 @@ SM12x DeepSeek V4 Flash dense FP8 block GEMM autotuning driver.
 
 Wraps vLLM's `benchmarks/kernels/benchmark_w8a8_block_fp8.py` to tune the six
 (N, K) shapes that DSv4-Flash dense linear layers hit at TP=2 on SM12x
-(RTX PRO 6000 Blackwell / GB10). Reuses vLLM's `tune()` and `save_configs()`
-without modifying the upstream script.
+(RTX PRO 6000 Blackwell / GB10). Reuses vLLM's `benchmark_config()` and
+`save_configs()` without modifying the upstream script, but reimplements the
+inner `tune()` loop so we can:
+
+  * filter the search space per-M — at large M, configs with
+    `BLOCK_SIZE_M << M` are catastrophic (the kernel iterates
+    `cdiv(M, BLOCK_SIZE_M)` times along the M dimension); a single
+    BLOCK_M=16 / M=512 config can take seconds, hanging the tuner.
+  * cap the per-(M, N, K) tuning wall clock (`--abort-seconds`) so a single
+    slow shape can't stall the run.
+  * use shorter `num_iters` for large M (kernel run-time dominates timing
+    noise; default 10 iters wastes budget).
 
 Shape source: `tests/quantization/test_sm12x_tuned_config_lookup.py` —
-the assertions there are what we ship as ground truth.
+the assertions there are what we ship as ground truth. Same shapes apply to
+both SM120 (RTX PRO 6000) and SM121 (GB10).
 
 Usage:
   python3 scripts/_fp8_block_tune_driver.py \
       --vllm-repo /path/to/vllm \
       --out-dir /path/to/tuning_out \
-      --batch-sizes 1,2,4,8,16,32,64,128 \
+      --batch-sizes 1,2,4,8,16,32,64,128,256,512 \
       [--shapes "1536,4096:16384,1024:..." ]
       [--gpu-id 0]
+      [--num-iters 10] [--abort-seconds 600]
       [--dry-run]
 
 Output:
@@ -28,9 +40,6 @@ After tuning:
   1. Copy each JSON into `vllm/model_executor/layers/quantization/utils/configs/`
   2. Restart vLLM serve
   3. Re-run `scripts/run_decode_profile.sh` to compare top-kernel times
-
-Estimated runtime: ~5 min per (N, K) × num_batch_sizes on RTX PRO 6000.
-For 6 shapes × 8 batch_sizes = ~4 hours single-GPU; ~2 hours two-GPU split.
 """
 
 import argparse
@@ -52,9 +61,11 @@ SM12X_DSV4_DENSE_FP8_SHAPES: tuple[tuple[int, int], ...] = (
     (16384, 1024),
 )
 
-# Default batch sizes to tune. Decode hot range is small (1..64); we add a
-# few prefill-side anchors so the configs don't degrade for chunked prefill.
-DEFAULT_BATCH_SIZES: tuple[int, ...] = (1, 2, 4, 8, 16, 32, 64, 128)
+# Default batch sizes to tune. Covers decode hot range (1..32), short-prefill
+# transition (64..128), and long-prefill anchors (256, 512). At M >= 256 the
+# placeholder configs (BLOCK_SIZE_M=16) collapse — these are exactly the
+# shapes we most need real configs for.
+DEFAULT_BATCH_SIZES: tuple[int, ...] = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
 
 
 def _import_vllm_benchmark(vllm_repo: Path):
@@ -93,6 +104,108 @@ def _parse_batch_sizes(spec: str) -> list[int]:
     return [int(v) for v in spec.split(",") if v.strip()]
 
 
+def filter_search_space_for_M(search_space: list[dict], M: int) -> list[dict]:
+    """Filter out configs that would be catastrophically slow for this M.
+
+    Rule of thumb: when BLOCK_SIZE_M << M, the kernel runs cdiv(M, BLOCK_M)
+    iterations along M. With many iterations and small M-tiles, each
+    iteration is short and SM occupancy is low → very slow. A single bad
+    config at M=512 with BLOCK_M=16 can take seconds (32 M-iterations,
+    cold cache each), which stalls the tuner.
+
+    Heuristic: require BLOCK_SIZE_M >= M / 8 (cap at 64) so we never have
+    more than 8 M-iterations. For M < 64 we keep the full space because
+    BLOCK_M=16 is the right answer for decode shapes.
+    """
+    if M < 64:
+        return search_space
+    min_block_m = min(64, max(16, M // 8))
+    return [c for c in search_space if c["BLOCK_SIZE_M"] >= min_block_m]
+
+
+def auto_num_iters(M: int, default: int) -> int:
+    """Reduce num_iters for large M where kernel runtime dominates noise."""
+    if M >= 256:
+        return max(3, min(default, 5))
+    if M >= 64:
+        return max(5, min(default, 7))
+    return default
+
+
+def _tune_one(
+    bench,
+    torch,
+    triton,
+    M: int,
+    N: int,
+    K: int,
+    block_size: list[int],
+    out_dtype,
+    search_space: list[dict],
+    num_iters: int,
+    abort_seconds: float,
+):
+    """Mirror of vLLM's tune() with custom num_iters + abort timeout.
+
+    Returns (best_config, best_time_us, configs_tried, aborted).
+    """
+    from tqdm import tqdm
+
+    factor_for_scale = 1e-2
+    fp8_info = torch.finfo(torch.float8_e4m3fn)
+    fp8_max, fp8_min = fp8_info.max, fp8_info.min
+    A_fp32 = (
+        (torch.rand(M, K, dtype=torch.float32, device="cuda") - 0.5)
+        * 2
+        * fp8_max
+    )
+    A = A_fp32.clamp(min=fp8_min, max=fp8_max).to(torch.float8_e4m3fn)
+    B_fp32 = (
+        (torch.rand(N, K, dtype=torch.float32, device="cuda") - 0.5)
+        * 2
+        * fp8_max
+    )
+    B = B_fp32.clamp(min=fp8_min, max=fp8_max).to(torch.float8_e4m3fn)
+
+    block_n, block_k = block_size[0], block_size[1]
+    n_tiles = (N + block_n - 1) // block_n
+    k_tiles = (K + block_k - 1) // block_k
+    As = (
+        torch.rand(M, k_tiles, dtype=torch.float32, device="cuda")
+        * factor_for_scale
+    )
+    Bs = (
+        torch.rand(n_tiles, k_tiles, dtype=torch.float32, device="cuda")
+        * factor_for_scale
+    )
+
+    best_config = None
+    best_time = float("inf")
+    tried = 0
+    aborted = False
+    t0 = time.time()
+    for cfg in tqdm(search_space, desc=f"M={M}", leave=False):
+        if abort_seconds and (time.time() - t0) > abort_seconds:
+            aborted = True
+            break
+        try:
+            kt = bench.benchmark_config(
+                A, B, As, Bs, block_size, cfg, out_dtype, num_iters=num_iters
+            )
+        except triton.runtime.autotuner.OutOfResources:
+            continue
+        except Exception as e:
+            # Some configs can crash on certain GPUs (e.g., LDS overflow on
+            # ROCm, register pressure on small SMs). Skip and continue.
+            print(f"   [WARN] M={M} cfg={cfg}: {type(e).__name__}: {e}")
+            continue
+        tried += 1
+        if kt < best_time:
+            best_time = kt
+            best_config = cfg
+    return best_config, best_time, tried, aborted
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -112,7 +225,10 @@ def main() -> int:
         "--batch-sizes",
         type=str,
         default=",".join(str(b) for b in DEFAULT_BATCH_SIZES),
-        help=f"Comma-separated batch sizes (default: {','.join(str(b) for b in DEFAULT_BATCH_SIZES)}).",
+        help=(
+            f"Comma-separated batch sizes "
+            f"(default: {','.join(str(b) for b in DEFAULT_BATCH_SIZES)})."
+        ),
     )
     parser.add_argument(
         "--shapes",
@@ -140,6 +256,25 @@ def main() -> int:
         help="CUDA device index for this driver (default 0).",
     )
     parser.add_argument(
+        "--num-iters",
+        type=int,
+        default=10,
+        help="Timing iterations per config (default 10). Auto-reduced for "
+        "large M (M>=256 → 5, M>=64 → 7) unless --no-auto-iters.",
+    )
+    parser.add_argument(
+        "--no-auto-iters",
+        action="store_true",
+        help="Disable M-aware num_iters reduction; always use --num-iters.",
+    )
+    parser.add_argument(
+        "--abort-seconds",
+        type=float,
+        default=600.0,
+        help="Per-(M, N, K) tuning wall-clock cap in seconds (default 600). "
+        "Set 0 to disable.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the tuning plan and exit without launching kernels.",
@@ -158,30 +293,72 @@ def main() -> int:
     print(f"[driver] shapes (N,K): {shapes}")
     print(f"[driver] block_shape=[{args.block_n}, {args.block_k}]")
     print(f"[driver] out_dtype={args.out_dtype}")
+    print(
+        f"[driver] num_iters={args.num_iters} "
+        f"auto_iters_by_M={'off' if args.no_auto_iters else 'on'}"
+    )
+    print(f"[driver] abort_seconds={args.abort_seconds}")
 
     if args.dry_run:
         n_tune = len(shapes) * len(batch_sizes)
-        # ~5-10s per (M,N,K) in practice; first invocation slower due to JIT.
-        est_min = n_tune * 7.0 / 60.0
+        # Rough estimate: small-M tunings ~20s each, M=256 ~30-60s, M=512
+        # ~60-180s (with filter). JIT amortises across same-shape, different-M.
+        est_sec = 0.0
+        for M in batch_sizes:
+            base = 20 if M < 64 else (30 if M < 256 else (90 if M < 512 else 150))
+            est_sec += base * len(shapes)
         print(
             f"[driver] dry-run: would tune {n_tune} (M, N, K) combos; "
-            f"est {est_min:.1f} min."
+            f"est {est_sec/60:.1f} min (highly variable based on JIT cache)."
         )
+        # Show per-M filtered search-space sizes (without invoking GPU).
+        # Use a faked search space matching get_configs_compute_bound shape.
+        # Total = 4*5*2*4*2*4 = 1280
+        proto = [
+            {
+                "BLOCK_SIZE_M": m,
+                "BLOCK_SIZE_N": n,
+                "BLOCK_SIZE_K": k,
+                "GROUP_SIZE_M": g,
+                "num_warps": w,
+                "num_stages": s,
+            }
+            for s in [2, 3, 4, 5]
+            for m in [16, 32, 64, 128, 256]
+            for k in [64, 128]
+            for n in [32, 64, 128, 256]
+            for w in [4, 8]
+            for g in [1, 16, 32, 64]
+            if args.block_k % k == 0
+        ]
+        print(f"[driver] base search space size: {len(proto)} configs")
+        for M in batch_sizes:
+            filt = filter_search_space_for_M(proto, M)
+            iters = (
+                args.num_iters
+                if args.no_auto_iters
+                else auto_num_iters(M, args.num_iters)
+            )
+            print(
+                f"[driver]   M={M:>4}: filtered={len(filt):>4} configs, "
+                f"num_iters={iters}"
+            )
         return 0
 
     bench = _import_vllm_benchmark(args.vllm_repo)
     import torch  # noqa: E402  (imported after sys ready)
     from vllm.platforms import current_platform  # noqa: E402
+    from vllm.triton_utils import triton  # noqa: E402
 
     torch.accelerator.set_device_index(args.gpu_id)
     device_name = current_platform.get_device_name().replace(" ", "_")
     print(f"[driver] device_name={device_name}")
 
-    search_space = bench.get_configs_compute_bound()
-    search_space = [
-        cfg for cfg in search_space if args.block_k % cfg["BLOCK_SIZE_K"] == 0
+    base_search_space = bench.get_configs_compute_bound()
+    base_search_space = [
+        cfg for cfg in base_search_space if args.block_k % cfg["BLOCK_SIZE_K"] == 0
     ]
-    print(f"[driver] search_space size: {len(search_space)} configs")
+    print(f"[driver] base search_space size: {len(base_search_space)} configs")
 
     out_dtype = {"float16": torch.float16, "bfloat16": torch.bfloat16}[
         args.out_dtype
@@ -196,20 +373,49 @@ def main() -> int:
         )
         best_configs: dict[int, dict] = {}
         for M in batch_sizes:
+            space = filter_search_space_for_M(base_search_space, M)
+            iters = (
+                args.num_iters
+                if args.no_auto_iters
+                else auto_num_iters(M, args.num_iters)
+            )
             tic = time.time()
-            cfg = bench.tune(
+            cfg, best_us, tried, aborted = _tune_one(
+                bench,
+                torch,
+                triton,
                 M,
                 N,
                 K,
                 [args.block_n, args.block_k],
                 out_dtype,
-                search_space,
-                "fp8",
+                space,
+                iters,
+                args.abort_seconds,
             )
             elapsed = time.time() - tic
-            print(
-                f"[driver]   M={M:>4}: best={cfg}  ({elapsed:.1f}s)"
-            )
+            if cfg is None:
+                print(
+                    f"[driver]   M={M:>4}: !! NO VALID CONFIG !! "
+                    f"tried={tried}/{len(space)} aborted={aborted} "
+                    f"({elapsed:.1f}s)"
+                )
+                # Fall back to a sane default so we still write a JSON entry.
+                cfg = {
+                    "BLOCK_SIZE_M": 16 if M < 64 else 64,
+                    "BLOCK_SIZE_N": args.block_n,
+                    "BLOCK_SIZE_K": args.block_k,
+                    "GROUP_SIZE_M": 32,
+                    "num_warps": 4,
+                    "num_stages": 3,
+                }
+            else:
+                ab = " [ABORTED]" if aborted else ""
+                print(
+                    f"[driver]   M={M:>4}: best={cfg} "
+                    f"t={best_us:.1f}us tried={tried}/{len(space)} "
+                    f"iters={iters} ({elapsed:.1f}s){ab}"
+                )
             best_configs[M] = cfg
         bench.save_configs(
             N,
