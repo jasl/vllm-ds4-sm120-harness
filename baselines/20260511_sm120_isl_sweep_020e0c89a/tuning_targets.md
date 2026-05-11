@@ -91,17 +91,75 @@ no one has confirmed it actually fires there. Verify by:
 
 Risk: low. Pass is upstream-default.
 
-**T1-C. Investigate why Marlin MoE WNA16 (#2) is running** *(est. up to −1.5 ms if avoidable)*
+**T1-C. ~~Investigate~~ Status: Marlin is the only viable MXFP4 MoE backend on SM12x DSv4** *(estimated upside reduced; see below)*
 
-DSv4 Flash uses FP8 weights — `marlin_moe_wna16` is a WNA16 (4-bit weight,
-16-bit activation) kernel. Either:
-- A subset of experts (shared experts, gate, e_proj?) is unintentionally on
-  the WNA16 path. → Force them onto the FP8 path.
-- It's the gating/router. → Check that the gating layer isn't accidentally
-  routed through a quantized path.
+**Diagnostic complete** (2026-05-12). The profile entry
+`marlin_moe_wna16::Marlin<1125899906909960l, 562949953487106l, 1125899906909960l, 2814749767106568l, 128, 1, 8, 4, true, 4, 2, false>`
+decodes via `vllm::ScalarType::id()` to:
 
-The 562949953487106 / 1125899906909960 template literals encode shape — they
-should reveal which projection. Risk: medium (correctness must be preserved).
+| template arg | decoded value |
+|---|---|
+| a_type_id (activation) | `BFloat16` (e=8, m=7, signed, IEEE 754) |
+| b_type_id (weight)     | `float4_e2m1f` / **MXFP4** (e=2, m=1, finite-only, no NaN) |
+| c_type_id (output)     | `BFloat16` |
+| s_type_id (B scale)    | **E8M0** (e=8, m=0, unsigned, finite-only, extended-NaN) — MXFP4 block scale |
+| threads / m_blocks / n_blocks / k_blocks | 128 / 1 / 8 / 4 |
+| m_block_size_8         | `true` → M tile = 8 (decode small-batch path) |
+| stages / group_blocks  | 4 / 2 (group span 32 == MXFP4 sf_block_size ✓) |
+
+So this is the **MoE expert w13/w2 GEMM in MXFP4** (BF16 act + MXFP4 weight + E8M0 scale)
+— **not** the FP8 path, **not** a misrouted dense projection. DSv4-Flash's experts
+are MXFP4 (`expert_dtype="fp4"` in HF config), and `Mxfp4MoEMethod` is the active
+quant method.
+
+**Why Marlin wins**: vLLM's `select_deepseek_v4_mxfp4_moe_backend` priority list for
+non-ROCm platforms is:
+
+```
+[FLASHINFER_TRTLLM_MXFP4_MXFP8,   # rejected: is_device_capability_family(100) — SM10x only
+ DEEPGEMM_MXFP4,                   # rejected: our SM12x DeepGEMM guards
+ MARLIN,                           # accepted ✓
+ BATCHED_MARLIN]
+```
+
+The Triton/CUTLASS MXFP4 alternatives are also unreachable on SM12x DSv4:
+
+| Candidate | Blocker on SM12x DSv4 |
+|---|---|
+| `OAITritonMxfp4ExpertsMonolithic` (TRITON) | device cap range `(9,0) ≤ cap < (11,0)` excludes SM12x; routing limited to `Renormalize{,Naive}` (DSv4 uses `DeepseekV4`) |
+| `UnfusedOAITritonExperts` (TRITON_UNFUSED) | same device-cap range; also flagged "bug with MTP support" in oracle comment |
+| `FlashInferExperts` w/ `(kMxfp4Static, None)` (CUTLASS BF16) | `_supports_quant_scheme` allows BF16 act only on `is_device_capability(90)` — Hopper-strict, excludes SM12x |
+| `FlashInferExperts` w/ `(kMxfp4Static, kMxfp8Dynamic)` (CUTLASS MXFP8) | **viable** on SM12x (`is_device_capability_family(120)` ✓, `has_device_capability(100)` ✓), but **not in the DSv4 priority list** |
+| `TrtLlmMxfp4ExpertsMonolithic` (TRTLLM) | `is_device_capability_family(100)` only |
+
+**Conclusion**: Marlin's 12.89% is **not a misrouting**; it is the only working
+MXFP4 MoE kernel on SM12x DSv4 today. The "−1.5 ms if avoidable" estimate in
+the original note assumed a routing bug — there is none. Downgrading expected
+saving from "free fix" to "requires kernel/oracle work".
+
+**Possible follow-up paths** (none cheap):
+
+1. **T1-C(a). Enable `FLASHINFER_CUTLASS_MXFP4_MXFP8` for SM12x DSv4** —
+   one-line oracle patch to add this backend to `_get_priority_backends()`,
+   plus thread `kMxfp8Dynamic` activation key through. Adds an MXFP8 activation
+   quantization pass per MoE call (extra kernel launches) but the CUTLASS GEMM
+   should map better to SM120 5th-gen tensor cores than Marlin's pre-Blackwell
+   layout. **Verdict**: experimental, uncertain win (could be net-positive or
+   net-negative).
+2. **T1-C(b). Tune Marlin compile-time variants** — the chosen tuple
+   `(threads=128, m_blocks=1, n_blocks=8, k_blocks=4, stages=4)` is one of
+   ~dozen pre-instantiated variants in `csrc/moe/marlin_moe_wna16/`. Marlin's
+   dispatch (`marlin_moe.py:fused_marlin_moe`) picks per shape; check if a
+   different `(n_blocks, k_blocks, stages)` variant is faster for the
+   (M=8, N=∗, K=∗) decode shape. **Verdict**: low-medium win, requires
+   recompile if no variant matches.
+3. **T1-C(c). Write a Triton MXFP4 W4A16 MoE kernel for SM12x** — full control
+   but ~2-3 weeks of work, and Marlin already does what we need. **Verdict**:
+   defer — only if T1-A/B/D + T1-C(a/b) don't reach 120 tok/s.
+
+Risk re-assessed: **medium-low** (no longer a free correctness fix). Recommend
+deprioritising vs T1-A (autotune `_w8a8_triton_block_scaled_mm`, 23.33% — much
+larger absolute hotspot) and T1-D (kernel-launch overhead).
 
 **T1-D. Reduce decode-step kernel-launch count** *(est. −0.3 to −0.8 ms TPOT)*
 
@@ -187,17 +245,24 @@ decode-rate goal.
 
 ## Recommended execution order
 
-1. **T1-A** (autotune w8a8 fp8 block GEMM): mostly mechanical, low risk, biggest
-   single-kernel surface. Re-run `run_decode_profile.sh` after to confirm.
-2. **T1-C** (investigate Marlin WNA16): cheap to investigate, possibly free
-   win if a routing bug.
+1. ~~**T1-C** (investigate Marlin WNA16)~~ **DONE 2026-05-12**. Marlin is the
+   only viable MXFP4 MoE backend on SM12x DSv4 — not a misrouting, not a free
+   fix. See T1-C section for full diagnostic + downstream options
+   T1-C(a/b/c). Expected savings revised down from "−1.5 ms" to "uncertain
+   (medium-low)"; deprioritised vs T1-A.
+2. **T1-A** (autotune w8a8 fp8 block GEMM): mostly mechanical, low risk, biggest
+   single-kernel surface (23.33% — largest absolute hotspot). Re-run
+   `run_decode_profile.sh` after to confirm.
 3. **T1-B** (verify fuse_rope_kvcache_cat_mla actually fires): cheap diagnostic.
 4. **T1-D** (cudagraph deeper coverage): may bundle naturally with T1-A
    verification.
 5. **T2-A / T2-B** (tune our SM12x kernels): take MoE / sparse MLA delta from
-   step 1 then iterate.
+   step 2 then iterate.
 6. **T2-C** (Cutlass FP8 batch invariance): try last — high risk of
    compatibility issues on SM12x but huge potential upside.
+7. (Optional) **T1-C(a)** — patch oracle to try `FLASHINFER_CUTLASS_MXFP4_MXFP8`
+   on SM12x DSv4. Run only after T1-A/B/D land; needs MXFP8 activation
+   quantization plumbing. Could be a 1-2% win or a regression.
 
 After each step, re-run `scripts/run_decode_profile.sh` with the same config
 to verify TPOT delta against this baseline.
