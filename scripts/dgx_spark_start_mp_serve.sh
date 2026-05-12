@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# Start a 2-node vLLM mp cluster on DGX Spark with RoCE.
+#
+# NCCL_IB_DISABLE default is 0 (IB verbs over the RoCE HCA). Measured on the
+# 2x GB10 cluster (SM121, RoCE iface enp1s0f1np1, vLLM 2760932cf):
+#   IB=0  c=1 21.94 tok/s  (mt-bench HF, num-prompts=80)
+#   IB=1  c=1 15.12 tok/s  (-31%)
+# Override with `NCCL_IB_DISABLE=1` only when the IB stack is unavailable.
+
 set -euo pipefail
 
 required_vars=(
@@ -43,6 +51,7 @@ SERVE_ENABLE_EXPERT_PARALLEL="${SERVE_ENABLE_EXPERT_PARALLEL:-0}"
 SERVE_DISABLE_FLASHINFER_AUTOTUNE="${SERVE_DISABLE_FLASHINFER_AUTOTUNE:-0}"
 SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG:-}"
 SERVE_SPECULATIVE_CONFIG="${SERVE_SPECULATIVE_CONFIG:-}"
+SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS="${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS:-}"
 SERVE_EXTRA_ARGS="${SERVE_EXTRA_ARGS:-}"
 
 shell_quote() {
@@ -86,6 +95,7 @@ remote_env_prefix() {
   printf 'SERVE_DISABLE_FLASHINFER_AUTOTUNE=%s ' "$(shell_quote "${SERVE_DISABLE_FLASHINFER_AUTOTUNE}")"
   printf 'SERVE_COMPILATION_CONFIG=%s ' "$(shell_quote "${SERVE_COMPILATION_CONFIG}")"
   printf 'SERVE_SPECULATIVE_CONFIG=%s ' "$(shell_quote "${SERVE_SPECULATIVE_CONFIG}")"
+  printf 'SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS=%s ' "$(shell_quote "${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS}")"
   printf 'SERVE_EXTRA_ARGS=%s ' "$(shell_quote "${SERVE_EXTRA_ARGS}")"
   remote_env_optional PYTORCH_CUDA_ALLOC_CONF
   remote_env_optional CUDA_ARCH_LIST
@@ -96,6 +106,7 @@ remote_env_prefix() {
   remote_env_optional VLLM_DISABLE_COMPILE_CACHE
   remote_env_optional NCCL_DEBUG
   remote_env_optional NCCL_DEBUG_SUBSYS
+  remote_env_optional NCCL_IB_DISABLE
 }
 
 run_remote_script() {
@@ -219,6 +230,9 @@ fi
 if [[ -n "${SERVE_SPECULATIVE_CONFIG}" ]]; then
   serve_args+=(--speculative_config "${SERVE_SPECULATIVE_CONFIG}")
 fi
+if [[ -n "${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS}" ]]; then
+  serve_args+=(--default-chat-template-kwargs "${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS}")
+fi
 if [[ -n "${SERVE_EXTRA_ARGS}" ]]; then
   extra_args=()
   # shellcheck disable=SC2206
@@ -286,6 +300,9 @@ if [[ -n "${SERVE_COMPILATION_CONFIG}" ]]; then
 fi
 if [[ -n "${SERVE_SPECULATIVE_CONFIG}" ]]; then
   serve_args+=(--speculative_config "${SERVE_SPECULATIVE_CONFIG}")
+fi
+if [[ -n "${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS}" ]]; then
+  serve_args+=(--default-chat-template-kwargs "${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS}")
 fi
 if [[ -n "${SERVE_EXTRA_ARGS}" ]]; then
   extra_args=()
