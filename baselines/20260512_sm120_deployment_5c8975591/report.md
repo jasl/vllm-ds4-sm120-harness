@@ -1,11 +1,15 @@
 # SM12x Deployment Baseline — 2026-05-12
 
-DeepSeek V4 Flash on SM12x hardware, vLLM `jasl/vllm` @ `5c8975591`
-(head of `ds4-sm120-preview-dev` / PR #41834, 16 commits ahead of
-`upstream/main`). This baseline measures the **recommended deployment
-profiles** for two use cases — short-prompt chat (Conversation) and
-long-context agentic work (Agent) — on both supported targets, and is
-the reference point for the next round of optimisation.
+DeepSeek V4 Flash on SM12x hardware, vLLM `jasl/vllm` @ `1c20f1a6d`
+(head of `ds4-sm120-preview-dev` / PR #41834, 17 commits ahead of
+`upstream/main`). Data was originally collected at `8f0d8b630`; that
+commit and four predecessors were rebased onto upstream with
+`Signed-off-by` trailers added, producing the current `1c20f1a6d`
+without any code changes. This baseline measures the **recommended
+deployment profiles** for two use cases — short-prompt chat
+(Conversation) and long-context agentic work (Agent) — on both
+supported targets, and is the reference point for the next round of
+optimisation.
 
 ## TL;DR
 
@@ -185,7 +189,8 @@ runs with ≈ 1 max-context stream of safety margin.
 
 ## Cold-start considerations
 
-After commit `5c8975591` extended prefill warmup to
+After commit `c2d12dc32` (post-rebase ID for the warmup commit
+originally at `5c8975591`) extended prefill warmup to
 `max_num_batched_tokens=8192`, the first request in each new serve
 still incurs Triton JIT for any kernel shape *not* covered by the
 warmup hook. The TTFT p99 columns in the raw bench JSONs reflect this
@@ -199,7 +204,24 @@ the first 1–2 requests.
 See `repro_recipe.md` next to this file. Bench JSONs and `lm_eval`
 result trees are checked in under `performance/` and `evals/`.
 
+## Generation references
+
+Three representative prompts are run on each platform's MTP=2 Conv
+serve (`max_model_len=16,384` on Workstation, `32,768` on Spark) with
+non-thinking mode. The transcripts (plus raw `.html` artifacts for the
+coding demo) live under `generation/`:
+
+- `aquarium_html` — coding HTML/JS animation, ~4 K-token output. Both
+  EN and ZH versions are run.
+- `en2zh_news_001` — EN→ZH news translation.
+- `zh_sum_tech_001` — Chinese technical summarisation.
+
+`results.jsonl` next to each platform's transcripts has the full
+metadata (latency, token counts, finish reason).
+
 ## Source SHAs
 
-- vLLM: `5c8975591` on `jasl/vllm` `ds4-sm120-preview-dev` (PR #41834)
+- vLLM: `1c20f1a6d` on `jasl/vllm` `ds4-sm120-preview-dev` (PR #41834;
+  rebased from collection-time `8f0d8b630` to add Signed-off-by
+  trailers; code is unchanged)
 - Harness: this commit
