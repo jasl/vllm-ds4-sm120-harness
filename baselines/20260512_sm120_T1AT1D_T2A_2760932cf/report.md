@@ -3,13 +3,14 @@
 DeepSeek V4 Flash on SM12x hardware, vLLM `jasl/vllm` @ `2760932cf` (head of
 `ds4-sm120-preview-dev` / PR #41834), 15 commits ahead of `upstream/main`.
 
-Three optimisations land on top of the 2026-05-11 baseline (`020e0c89a`):
+Four optimisations land on top of the 2026-05-11 baseline (`020e0c89a`):
 
 | Commit | Topic |
 |---|---|
 | `26564419f` | Tune dense FP8 block-scaled GEMM configs for SM12x DSv4 |
 | `c802ae27a` | Adaptive `BLOCK_M` for `_fp8_paged_mqa_logits_kernel` |
 | `2760932cf` | Clamp `BLOCK_D` in sparse MLA finish kernel to `head_dim` |
+| `5c8975591` | Extend DeepSeek V4 prefill warmup to max single-chunk size |
 
 ## TL;DR
 
@@ -177,6 +178,31 @@ ISL=8,192 drops from 13.3 s to 0.82 s (-94 %). Beyond 8,192 tokens the
 prefill cost is dominated by cross-node KV attention over RoCE TP, not
 GEMM, so the curve follows the chunk-count rather than the autotune
 gains.
+
+## Cold-start service quality (warmup coverage)
+
+The original 2026-05-11 baseline warmed prefill kernels only up to 1,024
+tokens, so the first user request with a single-chunk prefill larger
+than 1,024 tokens had to JIT-compile the dense FP8 GEMM at the full
+M=max_num_batched_tokens=8,192. The T1-A autotuned config space made
+this cold-compile cost larger, not smaller, on the first long-context
+request.
+
+Commit `5c8975591` lifts the prefill warmup to the scheduler's
+`max_num_batched_tokens` cap (clamped at 8,192). Measured impact on a
+fresh-restart Workstation no-MTP serve, cold random ISL=8,192 OSL=512
+num-prompts=4 c=1:
+
+| Metric | Before `5c8975591` | After `5c8975591` |
+|---|---|---|
+| Startup time to `/health=200` | 71 s | 80 s (+9 s, one-time) |
+| TTFT mean (ms) | dominated by req-1 JIT spike | **3,172** |
+| TTFT p99 (ms) | — | **3,176** (mean ≈ p99, variance gone) |
+| Output throughput tok/s | — | 61.16 (+13 % vs 020e0c89a 54.20) |
+
+The +9 s startup cost buys deterministic first-request latency on
+the first 8,192-token prefill — directly relevant for K8s / Ray Serve
+auto-scale events and for edge users restarting a Spark deployment.
 
 ## Max-input recommendation
 

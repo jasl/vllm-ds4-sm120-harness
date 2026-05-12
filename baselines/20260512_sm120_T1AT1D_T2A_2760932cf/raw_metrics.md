@@ -126,6 +126,23 @@ dominates and the curve flattens around 200–700 tok/s.
 | Spark ISL=4 K TTFT (ms) (was no-MTP) | 7,169 | 763 (MTP=2) | −89 % |
 | Spark ISL=8 K TTFT (ms) (was no-MTP) | 13,253 | 820 (MTP=2) | **−94 %** |
 
+## Cold-start warmup verification (`5c8975591`)
+
+Cold random ISL=8,192 OSL=512 num-prompts=4 c=1 against a freshly
+restarted Workstation no-MTP serve:
+
+| Metric | Value |
+|---|---|
+| Startup to `/health=200` | 80 s (vs 71 s without the warmup change, +9 s) |
+| out tok/s | 61.16 |
+| TTFT mean | 3,171.89 ms |
+| TTFT p99 | 3,175.90 ms |
+| TPOT mean | 10.17 ms |
+| benchmark duration | 33.49 s |
+
+TTFT mean ≈ p99 confirms the first-request JIT spike is absorbed by
+the extended warmup; the 4 prompts complete with near-identical TTFT.
+
 The new SHA's optimisations are concentrated on the no-MTP single-stream
 decode path (T1-A autotuned dense FP8 GEMM configs, T1-D adaptive
 `BLOCK_M` for the paged-MQA logits kernel, T2-A defensive `BLOCK_D`
