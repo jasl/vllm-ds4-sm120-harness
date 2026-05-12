@@ -143,6 +143,37 @@ restarted Workstation no-MTP serve:
 TTFT mean ≈ p99 confirms the first-request JIT spike is absorbed by
 the extended warmup; the 4 prompts complete with near-identical TTFT.
 
+## Spark MTP=2 random 8K, cold vs warm (vLLM 5c8975591)
+
+Same Spark MTP=2 serve, two consecutive identical bench rounds. The
+first round is "cold" (Triton JIT cache empty for several inference
+kernels not covered by the 8,192-token single-prefill warmup); the
+second is "warm" (all kernels JIT-cached after the cold round).
+
+`performance/gb10_spark/random/mtp2_random_isl8192_cold_warmupfix_bench.json`
+`performance/gb10_spark/random/mtp2_random_isl8192_warm_bench.json`
+
+| c | Cold tok/s | Cold TTFT mean | Cold TTFT p99 | Warm tok/s | Warm TTFT mean | Warm TTFT p99 |
+|---|---|---|---|---|---|---|
+| 1 | 13.63 | 17,535 ms | 18,024 ms | **26.19** | **829 ms** | 856 ms |
+| 2 | 36.98 | 1,494 ms | 1,652 ms | **40.38** | **1,358 ms** | 1,632 ms |
+| 4 | 30.22 | 2,855 ms | 3,519 ms | **34.84** | **3,998 ms** | 3,999 ms |
+
+JIT-monitor warnings observed only during the cold round; the warm
+round produced none.
+
+Comparison to 020e0c89a baseline at the same shape:
+
+| c | 020e0c89a (cold, MTP=2) | 2760932cf cold (warmup fix) | 2760932cf warm |
+|---|---|---|---|
+| 1 | 18.43 tok/s | 13.63 (-26 %) | **26.19 (+42 %)** |
+| 2 | 41.65 tok/s | 36.98 (-11 %) | 40.38 (-3 %) |
+| 4 | 27.00 tok/s | 30.22 (+12 %) | **34.84 (+29 %)** |
+
+The cold delta is dominated by uncovered-kernel JIT spikes; the warm
+row is the steady-state delta the T1-A optimisations actually
+deliver on this random workload.
+
 The new SHA's optimisations are concentrated on the no-MTP single-stream
 decode path (T1-A autotuned dense FP8 GEMM configs, T1-D adaptive
 `BLOCK_M` for the paged-MQA logits kernel, T2-A defensive `BLOCK_D`

@@ -201,8 +201,48 @@ num-prompts=4 c=1:
 | Output throughput tok/s | — | 61.16 (+13 % vs 020e0c89a 54.20) |
 
 The +9 s startup cost buys deterministic first-request latency on
-the first 8,192-token prefill — directly relevant for K8s / Ray Serve
-auto-scale events and for edge users restarting a Spark deployment.
+the first 8,192-token prefill on the no-MTP path — directly relevant
+for K8s / Ray Serve auto-scale events and for edge users restarting
+a Spark deployment.
+
+### Remaining warmup gap on Spark MTP=2 + random 8K
+
+The single-prefill warmup at 8,192 tokens does **not** cover everything
+that the Spark MTP=2 path JITs. vLLM's `jit_monitor` flagged these
+kernels compiling during the first cold bench (after the new warmup):
+
+```
+JIT: eagle_prepare_next_token_padded_kernel        (MTP draft)
+JIT: eagle_step_slot_mapping_metadata_kernel       (MTP draft)
+JIT: _build_prefill_chunk_metadata_kernel          (chunked-prefill metadata)
+JIT: _compute_prefill_metadata_kernel
+JIT: _combine_topk_swa_indices_kernel
+JIT: _deepseek_v4_sm12x_fp8_einsum_kernel          (DSv4 einsum)
+JIT: _tf32_hc_prenorm_gemm_kernel
+JIT: _w8a8_triton_block_scaled_mm                  (T1-A's main GEMM, alt shape)
+JIT: _fp8_paged_mqa_logits_kernel                  (T1-D's kernel)
+```
+
+Two-pass measurement on a single Spark MTP=2 serve, random ISL=8,192
+OSL=512 num-prompts=4 (same shape as the 020e0c89a baseline 18.43
+tok/s c=1):
+
+| c | Cold (1st bench, JIT during inference) | Warm (2nd bench, all kernels cached) | Δ |
+|---|---|---|---|
+| 1 | 13.63 tok/s, TTFT 17,535 ms | **26.19 tok/s, TTFT 829 ms** | **+92 % tok/s, −95 % TTFT** |
+| 2 | 36.98 tok/s, TTFT 1,494 ms | 40.38 tok/s, TTFT 1,358 ms | +9 % |
+| 4 | 30.22 tok/s, TTFT 2,855 ms | 34.84 tok/s, TTFT 3,998 ms | +15 % |
+
+Compared to the 020e0c89a baseline (18.43 tok/s c=1, 41.65 c=2,
+27.00 c=4) the warm new SHA delivers **+42 % at c=1** and **+29 % at
+c=4** — T1-A's real benefits, hidden in the first-bench cold readings
+by the JIT spikes on the kernels listed above.
+
+Operational implication: production deployments of DSv4-Flash MTP=2
+on SM12x should issue 5–10 representative long-prefill warm-up
+requests before opening to real traffic, until the upstream warmup
+hook is extended to cover the MTP draft path and chunked-prefill
+metadata. Tracked as a follow-up for the next iteration.
 
 ## Max-input recommendation
 
