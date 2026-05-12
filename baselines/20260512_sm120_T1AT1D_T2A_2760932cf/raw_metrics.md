@@ -60,6 +60,55 @@ Per-position MTP acceptance: position 0 ≈ 84 %, position 1 ≈ 51 %.
 | Spark no-MTP | 0.965 | 0.965 |
 | Spark MTP=2 | 0.955 | 0.955 |
 
+## Random ISL=8192 OSL=512 num-prompts=4 (Spark MTP=2, IB=0)
+
+`performance/gb10_spark/random/mtp2_random_isl8192_osl512_bench.json`
+
+| c | out tok/s | TTFT mean (ms) | TPOT mean (ms) | accept % | accept len |
+|---|---|---|---|---|---|
+| 1 | 13.91 | 17,641 | 37.49 | 48.32 | 1.97 |
+| 2 | 36.46 | 2,105 | 49.12 | 49.13 | 1.98 |
+| 4 | 23.67 | 4,833 | 155.51 | 50.54 | 2.01 |
+
+MTP acceptance falls from 67–68 % on mt-bench prose to 48–51 % on
+synthetic random tokens, an expected effect of the unpredictable
+distribution. The c=4 TPOT of 155 ms reflects the cluster
+saturating at four concurrent ISL=8,192 contexts (32 K-token KV slab
+in flight, paged across both nodes).
+
+## Long prefill sweep (random ISL, c=1, num-prompts=1, OSL=8)
+
+### Workstation no-MTP
+
+`performance/sm120_workstation/prefill_sweep/isl_*.json`
+
+| ISL | TTFT mean (ms) | duration (s) | prefill rate (tok/s) |
+|---|---|---|---|
+| 1,024 | 300.30 | 0.37 | 3,410 |
+| 4,096 | 1,406.26 | 1.48 | 2,913 |
+| 8,192 | 1,789.18 | 1.86 | 4,579 |
+| 16,384 | 3,788.12 | 3.85 | 4,326 |
+| 32,768 | 8,874.31 | 8.93 | 3,692 |
+| 65,000 | 22,962.74 | 23.00 | 2,830 |
+
+### Spark MTP=2 (same serve also used for the random 8K bench above)
+
+`performance/gb10_spark/prefill_sweep/isl_*.json`
+
+| ISL | TTFT mean (ms) | duration (s) | prefill rate (tok/s) |
+|---|---|---|---|
+| 1,024 | 632.14 | 0.84 | 1,620 |
+| 4,096 | 762.89 | 1.06 | 5,369 |
+| 8,192 | 820.50 | 1.11 | 9,990 |
+| 16,384 | 23,007.60 | 23.28 | 712 |
+| 32,768 | 57,564.43 | 57.83 | 569 |
+| 65,536 | 160,819.10 | 161.06 | 408 |
+| 131,000 | 505,323.72 | 505.51 | 259 |
+
+Single-chunk prefill rate peaks at 5–10 K tok/s; once ISL > 8,192 the
+multi-chunk path (cross-node TP attention over the prior KV slab)
+dominates and the curve flattens around 200–700 tok/s.
+
 ## Comparison to 020e0c89a baseline (single-row deltas)
 
 | Cell | 020e0c89a | 2760932cf | Δ |
@@ -71,6 +120,11 @@ Per-position MTP acceptance: position 0 ≈ 84 %, position 1 ≈ 51 %.
 | Workstation MTP=2 c=4 mt-bench tok/s | 282.91 | 275.97 | −2.5 % |
 | Spark no-MTP c=1 mt-bench tok/s | 19.13 | 21.94 | **+14.7 %** |
 | Spark MTP=2 c=1 mt-bench tok/s | 29.43 | 30.22 | +2.7 % |
+| Workstation no-MTP ISL=4 K TTFT (ms) | 1,497 | 1,406 | −6 % |
+| Workstation no-MTP ISL=8 K TTFT (ms) | 3,360 | 1,789 | **−47 %** |
+| Spark ISL=1 K TTFT (ms) (was no-MTP) | 1,506 | 632 (MTP=2) | −58 % |
+| Spark ISL=4 K TTFT (ms) (was no-MTP) | 7,169 | 763 (MTP=2) | −89 % |
+| Spark ISL=8 K TTFT (ms) (was no-MTP) | 13,253 | 820 (MTP=2) | **−94 %** |
 
 The new SHA's optimisations are concentrated on the no-MTP single-stream
 decode path (T1-A autotuned dense FP8 GEMM configs, T1-D adaptive

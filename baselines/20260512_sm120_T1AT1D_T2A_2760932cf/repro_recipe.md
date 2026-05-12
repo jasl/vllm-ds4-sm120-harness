@@ -95,16 +95,54 @@ Override only if the IB stack on the host is unavailable.
 Run the same `vllm bench serve` and `lm_eval` blocks as the Workstation
 recipe, on the head node, against `http://127.0.0.1:8000`.
 
+## Long prefill sweep (TTFT vs ISL, c=1, OSL=8, num-prompts=1)
+
+Same serve as the mt-bench runs; switch the dataset and shape:
+
+```bash
+for ISL in 1024 4096 8192 16384 32768 65536 131000; do
+  /path/to/vllm/.venv/bin/vllm bench serve \
+    --model deepseek-ai/DeepSeek-V4-Flash \
+    --tokenizer-mode deepseek_v4 \
+    --dataset-name random \
+    --random-input-len "${ISL}" --random-output-len 8 \
+    --num-prompts 1 --max-concurrency 1 \
+    --base-url http://127.0.0.1:8000 \
+    --temperature 1.0 --ignore-eos
+done
+```
+
+The Workstation serve uses `max-model-len 65536`, so cap ISL at 65,000;
+Spark uses `max-model-len 131072` and runs the full sweep.
+
+## Random ISL=8,192 OSL=512 bench (Spark MTP=2)
+
+Same Spark MTP=2 serve as the mt-bench runs; swap dataset:
+
+```bash
+/path/to/vllm/.venv/bin/vllm bench serve \
+  --model deepseek-ai/DeepSeek-V4-Flash \
+  --tokenizer-mode deepseek_v4 \
+  --dataset-name random \
+  --random-input-len 8192 --random-output-len 512 \
+  --num-prompts 4 --max-concurrency "${c}" \
+  --base-url http://127.0.0.1:8000 \
+  --temperature 1.0 --ignore-eos
+```
+
 ## Data files in this bundle
 
 ```
 performance/
   sm120_workstation/
-    nomtp_bench.json       # c=1,2,4 mt-bench, no-MTP
-    mtp2_bench.json        # c=1,2,4 mt-bench, MTP=2
+    nomtp_bench.json                       # c=1,2,4 mt-bench, no-MTP
+    mtp2_bench.json                        # c=1,2,4 mt-bench, MTP=2
+    prefill_sweep/isl_{1024,4096,8192,16384,32768,65000}.json
   gb10_spark/
-    nomtp_ib0_bench.json   # c=1,2,4 mt-bench, no-MTP, NCCL_IB_DISABLE=0
-    mtp2_ib0_bench.json    # c=1,2,4 mt-bench, MTP=2, NCCL_IB_DISABLE=0
+    nomtp_ib0_bench.json                   # c=1,2,4 mt-bench, no-MTP
+    mtp2_ib0_bench.json                    # c=1,2,4 mt-bench, MTP=2
+    random/mtp2_random_isl8192_osl512_bench.json
+    prefill_sweep/isl_{1024,4096,8192,16384,32768,65536,131000}.json
 evals/
   gsm8k/
     sm120_workstation_nomtp.json

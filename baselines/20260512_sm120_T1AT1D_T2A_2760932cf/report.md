@@ -137,6 +137,75 @@ the DeepSeek Official API. Workstation MTP=2 actually nudges strict match
 above its no-MTP score; Spark MTP=2 sits comfortably inside the band,
 consistent with sampling variance on a 200-question sweep.
 
+## Long prefill (random ISL sweep, c=1, OSL=8, num-prompts=1)
+
+Both serves use `max_num_batched_tokens=8192`, so requests with
+`ISL > 8192` go through chunked prefill (`ceil(ISL / 8192)` chunks).
+
+### Workstation SM120 (no-MTP, max-model-len 65,536)
+
+| ISL | TTFT mean (ms) | prefill rate (tok/s) | 020e0c89a TTFT (ms) | Δ |
+|---|---|---|---|---|
+| 1,024 | 300 | 3,410 | — | — |
+| 4,096 | 1,406 | 2,913 | 1,497 | -6 % |
+| 8,192 | 1,789 | 4,579 | 3,360 | **-47 %** |
+| 16,384 | 3,788 | 4,326 | — | — |
+| 32,768 | 8,874 | 3,692 | — | — |
+| 65,000 | 22,963 | 2,830 | — | — |
+
+Single-chunk prefill (ISL ≤ 8,192) is what T1-A targets: the autotuned
+FP8 W8A8 block-scaled GEMM configs cut TTFT roughly in half at the
+largest single-chunk size. Above 8,192 tokens chunked prefill kicks in,
+and the second-and-later chunks pay attention over the prior KV slab,
+which (at SM120 sparse-MLA bandwidth) is the new dominant term — not
+GEMM time.
+
+### DGX Spark cluster (MTP=2, max-model-len 131,072)
+
+| ISL | TTFT mean (ms) | prefill rate (tok/s) | 020e0c89a TTFT (ms, no-MTP) | Δ |
+|---|---|---|---|---|
+| 1,024 | 632 | 1,620 | 1,506 | -58 % |
+| 4,096 | 763 | 5,369 | 7,169 | -89 % |
+| 8,192 | 820 | 9,990 | 13,253 | **-94 %** |
+| 16,384 | 23,008 | 712 | — | — |
+| 32,768 | 57,564 | 569 | — | — |
+| 65,536 | 160,819 | 408 | — | — |
+| 131,000 | 505,324 | 259 | — | — |
+
+T1-A is even more impactful on Spark — single-chunk prefill at
+ISL=8,192 drops from 13.3 s to 0.82 s (-94 %). Beyond 8,192 tokens the
+prefill cost is dominated by cross-node KV attention over RoCE TP, not
+GEMM, so the curve follows the chunk-count rather than the autotune
+gains.
+
+## Max-input recommendation
+
+KV cache sizes reported by the worker at startup (block-size 256, fp8
+KV, model weights occupy 74–76 GiB / GPU):
+
+| Cell | KV cache GiB | KV tokens | max-model-len |
+|---|---|---|---|
+| Workstation no-MTP (TP=2, gpu-mem 0.95) | 7.36 | 152,775 | 65,536 |
+| Workstation MTP=2 | 3.65 | 75,599 | 65,536 |
+| Spark cluster no-MTP (TP=2, gpu-mem 0.85) | 22.52 | 839,711 | 131,072 |
+| Spark cluster MTP=2 | 20.30 | 770,865 | 131,072 |
+
+Practical recommendations (input + output ≤ max-model-len; the KV
+budget is shared across all in-flight sequences):
+
+| Hardware | Variant | Recommended max input | Notes |
+|---|---|---|---|
+| Workstation | no-MTP | 32,768 (1–4 concurrent) | KV fits 4 × 32 K + headroom; single-user can go to 64 K |
+| Workstation | MTP=2 | 32,768 (single-user) | KV only 75 K tokens; MTP drafter doubles the slot cost |
+| Spark cluster | no-MTP | 65,536 (1–4 concurrent) | KV 839 K; cluster max-num-seqs=4 anyway |
+| Spark cluster | MTP=2 | 65,536 (1–4 concurrent) | KV 770 K; same envelope as no-MTP |
+
+Pushing the input above 32 K on Spark is technically supported by the
+serve (max-model-len 131,072) and KV (839 K tokens), but the
+multi-chunk prefill cost grows superlinearly in the cross-node TP
+regime, so latency-sensitive users should pre-summarise rather than
+feed raw 131 K-token contexts.
+
 ## Reproduction
 
 See `repro_recipe.md` next to this file. Harness commit pins both the
