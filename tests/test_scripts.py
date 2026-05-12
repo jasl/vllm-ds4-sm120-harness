@@ -932,6 +932,38 @@ def test_sm12x_env_examples_use_requested_cuda_arch_family():
     assert 'TORCH_CUDA_ARCH_LIST="12.0a"' in env_example
 
 
+def test_tokenspeed_poc_profile_uses_sm12x_family_arch_and_source_controls():
+    handoff = (ROOT / "HANDOFF.md").read_text(encoding="utf-8")
+    env_example = (
+        ROOT / "configs" / "tokenspeed_sm12x_poc_serve.env.example"
+    ).read_text(encoding="utf-8")
+    script = (
+        ROOT / "scripts" / "tokenspeed_start_sm12x_poc_serve.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "TokenSpeed SM12x PoC" in handoff
+    assert "`TOKENSPEED_CUDA_ARCH_LIST=120f`" in handoff
+    assert "GENERATION_VARIANT=tokenspeed-nomtp" in handoff
+    assert 'TOKENSPEED_CUDA_ARCH_LIST="${TOKENSPEED_CUDA_ARCH_LIST:-120f}"' in env_example
+    assert 'TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-12.0a}"' in env_example
+    assert 'TOKENSPEED_USE_SOURCE_PATH="${TOKENSPEED_USE_SOURCE_PATH:-0}"' in env_example
+    assert (
+        'TOKENSPEED_USE_KERNEL_SOURCE_PATH="${TOKENSPEED_USE_KERNEL_SOURCE_PATH:-0}"'
+        in env_example
+    )
+    assert 'TOKENSPEED_DISABLE_KVSTORE="${TOKENSPEED_DISABLE_KVSTORE:-1}"' in env_example
+    assert 'TOKENSPEED_CUDA_ARCH_LIST="${TOKENSPEED_CUDA_ARCH_LIST:-120f}"' in script
+    assert 'TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-12.0a}"' in script
+    assert "TOKENSPEED_USE_SOURCE_PATH" in script
+    assert "TOKENSPEED_USE_KERNEL_SOURCE_PATH" in script
+    assert "tokenspeed.cli" in script
+    assert "--enable-expert-parallel" in script
+    assert "--disable-kvstore" in script
+    for private_fragment in ("10.0.0.", "/home/", "/Users/"):
+        assert private_fragment not in env_example
+        assert private_fragment not in script
+
+
 def test_scripts_have_valid_bash_syntax():
     for script_name in (
         "run_acceptance.sh",
@@ -947,6 +979,7 @@ def test_scripts_have_valid_bash_syntax():
         "runtime_stats.sh",
         "run_context.sh",
         "vllm_collect_env.sh",
+        "tokenspeed_start_sm12x_poc_serve.sh",
     ):
         subprocess.run(
             ["bash", "-n", str(ROOT / "scripts" / script_name)],

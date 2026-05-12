@@ -172,9 +172,59 @@ MTP variant:
 --speculative-config '{"method":"mtp","num_speculative_tokens":2}'
 ```
 
+## TokenSpeed SM12x PoC Serve Command
+
+TokenSpeed currently has no DeepSeek V4 NextN/MTP model class in this PoC, and
+no pipeline-parallel mode. Use attention TP=2 plus expert parallelism for the
+first SM12x correctness run:
+
+```bash
+cd /path/to/ds4-sm120-harness
+source configs/tokenspeed_sm12x_poc_serve.env.example
+export TOKENSPEED_ROOT=/path/to/tokenspeed
+export TOKENSPEED_VENV=/path/to/tokenspeed/.venv
+
+scripts/tokenspeed_start_sm12x_poc_serve.sh
+```
+
+The launcher defaults to installed wheels. `TOKENSPEED_USE_SOURCE_PATH=1` only
+shadows the runtime Python package so local runtime edits can be smoke-tested
+without reinstalling. Keep `TOKENSPEED_USE_KERNEL_SOURCE_PATH=0` unless you are
+explicitly debugging pure-Python kernel package code; the installed kernel wheel
+carries CUDA extensions and must stay visible for DeepSeek V4 fused ops. The
+scheduler source path must not shadow the installed extension wheel.
+
+The launcher also defaults `TOKENSPEED_DISABLE_KVSTORE=1` because TokenSpeed's
+DeepSeek V4 baseline currently raises at startup when hierarchical cache is
+enabled.
+
+Current TokenSpeed PoC notes:
+
+- Build/install has been verified on the primary SM120 workstation with
+  `TOKENSPEED_CUDA_ARCH_LIST=120f` after installing the latest upstream
+  dependencies and rebuilding the scheduler extension.
+- TP=2 plus expert parallelism is the intended first correctness route. Treat
+  full DeepSeek V4 Flash serve as a PoC target until a live acceptance run has
+  passed through this launcher.
+- Keep failed route details, machine paths, and private hostnames in ignored
+  local notes instead of this public handoff file.
+- TokenSpeed DeepSeek V4 NextN/MTP is not implemented in this PoC; use
+  `GENERATION_VARIANT=tokenspeed-nomtp` if a server becomes runnable.
+
+Run acceptance against the started OpenAI-compatible server with the existing
+gates:
+
+```bash
+BASE_URL=http://127.0.0.1:8000 \
+MODEL=deepseek-ai/DeepSeek-V4-Flash \
+GENERATION_VARIANT=tokenspeed-nomtp \
+scripts/run_acceptance.sh
+```
+
 ## Acceptance Gates
 
-Run from the harness directory against an already-started vLLM server:
+Run from the harness directory against an already-started OpenAI-compatible
+server:
 
 ```bash
 cd /path/to/ds4-sm120-harness
