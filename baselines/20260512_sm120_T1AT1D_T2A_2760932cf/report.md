@@ -17,8 +17,13 @@ Four optimisations land on top of the 2026-05-11 baseline (`020e0c89a`):
 - **Workstation SM120** (2x RTX PRO 6000 Blackwell Workstation Edition, TP=2 EP)
   - no-MTP c=1 mt-bench: **97.79 tok/s** (+16 % vs 020e0c89a baseline 84.36)
   - MTP=2 c=1 mt-bench: **148.86 tok/s** (1.52× over no-MTP, +55 %)
+  - MTP=2 c=24 mt-bench: **692.23 tok/s** at gpu-mem 0.98
   - MTP=2 acceptance 68 %, accept-length 2.36–2.37
   - gsm8k 5-shot 200q: 0.945 no-MTP, 0.950 MTP=2 (no regression)
+  - **Recommended `--gpu-memory-utilization 0.985`** on dedicated SM120 cards
+    (no display attached); raises KV capacity from 7.36 GiB (at 0.95) to
+    10.69 GiB and max-concurrency from 2.33× to **3.38×** the
+    `max_model_len`
 - **DGX Spark cluster** (2 nodes × 1 GB10, TP=2 PP=1 mp over RoCE)
   - no-MTP c=1 mt-bench: **21.94 tok/s** (+15 % vs 020e0c89a baseline 19.13)
   - MTP=2 c=1 mt-bench: **30.22 tok/s** (1.38× over no-MTP, +38 %)
@@ -43,10 +48,17 @@ vllm serve deepseek-ai/DeepSeek-V4-Flash \
   --reasoning-parser deepseek_v4 \
   --tool-call-parser deepseek_v4 --enable-auto-tool-choice \
   --enable-expert-parallel \
-  --gpu-memory-utilization 0.95
+  --gpu-memory-utilization 0.985
 ```
 
 MTP=2 adds: `--speculative_config '{"method":"deepseek_mtp","num_speculative_tokens":2}'`.
+
+`0.985` is the recommended setting for two RTX PRO 6000 cards with no
+display attached. `0.99` fails the static startup check (free memory
+≈ 93.94 GiB vs 0.99 × 94.97 = 94.02 GiB demanded); `0.985` lands
+≈ 400 MB inside the headroom and reclaims an additional 1.8 GiB
+(no-MTP) / 1.8 GiB (MTP=2) of KV vs 0.95. Drop back to `0.95` if the
+host also drives a display or runs other CUDA work.
 
 ### DGX Spark cluster (TP=2 nnodes=2 mp, IB=0)
 
@@ -78,21 +90,50 @@ Bench client: `vllm bench serve`, `--temperature 1.0`, mt-bench
 
 ### no-MTP
 
-| c | out tok/s | TPOT mean (ms) | TPOT p99 (ms) | TTFT mean (ms) |
-|---|---|---|---|---|
-| 1 | 97.79 | 9.97 | 10.08 | 56.13 |
-| 2 | 156.27 | 12.37 | 12.93 | 66.26 |
-| 4 | 247.35 | 15.46 | 16.29 | 78.74 |
+Two utilization tiers below: `0.95` matches the earlier baseline; `0.98`
+is the high-water bench that confirms the recommended `0.985` keeps
+perf parity while expanding KV.
+
+| c | 0.95 tok/s | 0.95 TPOT mean (ms) | 0.98 tok/s | 0.98 TPOT mean (ms) | 0.98 TPOT p99 (ms) |
+|---|---|---|---|---|---|
+| 1 | 97.79 | 9.97 | 97.69 | 9.99 | 10.07 |
+| 2 | 156.27 | 12.37 | 155.80 | 12.38 | 12.99 |
+| 4 | 247.35 | 15.46 | 247.52 | 15.48 | 16.38 |
+| 8 | — | — | 355.54 | 20.91 | 22.42 |
+| 16 | — | — | 480.86 | 29.78 | 33.51 |
+| 24 | — | — | **554.52** | 37.22 | 40.04 |
 
 ### MTP=2 (`deepseek_mtp`, `num_speculative_tokens=2`)
 
-| c | out tok/s | TPOT mean (ms) | acceptance % | accept len |
-|---|---|---|---|---|
-| 1 | 148.86 | 6.49 | 68.22 | 2.36 |
-| 2 | 227.08 | 8.38 | 68.27 | 2.37 |
-| 4 | 275.97 | 13.69 | 68.68 | 2.37 |
+| c | 0.95 tok/s | 0.95 TPOT mean (ms) | 0.98 tok/s | 0.98 TPOT mean (ms) | 0.98 accept % |
+|---|---|---|---|---|---|
+| 1 | 148.86 | 6.49 | 150.16 | 6.34 | 68.25 |
+| 2 | 227.08 | 8.38 | 232.08 | 8.13 | 68.11 |
+| 4 | 275.97 | 13.69 | 275.04 | 13.67 | 68.39 |
+| 8 | — | — | 469.87 | 15.71 | 68.80 |
+| 16 | — | — | 610.63 | 22.63 | 68.36 |
+| 24 | — | — | **692.23** | 28.72 | 68.18 |
 
-MTP=2 gains over no-MTP: +52 % at c=1, +45 % at c=2, +12 % at c=4.
+Throughput at low concurrency is identical between 0.95 and 0.98 (the
+util change only grows the KV pool, not compute headroom); the c=8…24
+rows are only reachable with 0.98+ because the smaller KV at 0.95 can
+hold at most ≈ 2.33 max-context requests for no-MTP and ≈ 1.15 for
+MTP=2. MTP=2 gains over no-MTP: +54 % at c=1, +49 % at c=2, +11 % at
+c=4, +32 % at c=8, +27 % at c=16, +25 % at c=24.
+
+### KV capacity vs `gpu_memory_utilization`
+
+| util | KV cache (GiB) | KV tokens | max concurrency (max_model_len=65,536) |
+|---|---|---|---|
+| 0.95 (no-MTP) | 7.36 | 152,775 | 2.33× |
+| 0.98 (no-MTP) | 10.21 | 211,889 | 3.23× |
+| 0.985 (no-MTP) | 10.69 | 221,745 | **3.38×** |
+| 0.95 (MTP=2) | 3.65 | 75,599 | 1.15× |
+| 0.98 (MTP=2) | 6.59 | 136,590 | **2.08×** |
+
+`0.99` is the absolute static-check ceiling (94.02 GiB demanded against
+93.94 GiB free) and fails to start. `0.985` clears the check with
+≈ 400 MB headroom and is the recommended setting for dedicated cards.
 
 ## DGX Spark cluster — mt-bench (philschmid/mt-bench, num-prompts=80)
 

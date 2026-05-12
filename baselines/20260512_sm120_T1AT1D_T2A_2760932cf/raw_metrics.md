@@ -6,7 +6,7 @@ All numbers from `vllm bench serve` against a clean serve restart per
 
 ## Workstation SM120 (2x RTX PRO 6000 Blackwell Workstation Edition, TP=2 EP)
 
-### no-MTP (`performance/sm120_workstation/nomtp_bench.json`)
+### no-MTP @ `--gpu-memory-utilization 0.95` (`performance/sm120_workstation/nomtp_bench.json`)
 
 | c | out tok/s | TTFT mean (ms) | TTFT p99 (ms) | TPOT mean (ms) | TPOT p99 (ms) | ITL mean (ms) | duration (s) |
 |---|---|---|---|---|---|---|---|
@@ -14,7 +14,22 @@ All numbers from `vllm bench serve` against a clean serve restart per
 | 2 | 156.27 | 66.26 | 99.50 | 12.37 | 12.93 | 17.65 | 96.48 |
 | 4 | 247.35 | 78.74 | 135.43 | 15.46 | 16.29 | 28.81 | 60.20 |
 
-### MTP=2 (`performance/sm120_workstation/mtp2_bench.json`)
+KV cache 7.36 GiB / 152,775 tokens / max_concurrency 2.33×.
+
+### no-MTP @ `--gpu-memory-utilization 0.98`, c=1..24 (`performance/sm120_workstation/nomtp_098_c1-24_bench.json`)
+
+| c | out tok/s | TTFT mean (ms) | TTFT p99 (ms) | TPOT mean (ms) | TPOT p99 (ms) |
+|---|---|---|---|---|---|
+| 1 | 97.69 | 55.87 | 119.30 | 9.99 | 10.07 |
+| 2 | 155.80 | 66.37 | 100.01 | 12.38 | 12.99 |
+| 4 | 247.52 | 76.24 | 154.59 | 15.48 | 16.38 |
+| 8 | 355.54 | 125.15 | 489.04 | 20.91 | 22.42 |
+| 16 | 480.86 | 217.06 | 604.03 | 29.78 | 33.51 |
+| 24 | 554.52 | 323.79 | 561.34 | 37.22 | 40.04 |
+
+KV cache 10.21 GiB / 211,889 tokens / max_concurrency 3.23×.
+
+### MTP=2 @ `--gpu-memory-utilization 0.95` (`performance/sm120_workstation/mtp2_bench.json`)
 
 | c | out tok/s | TTFT mean (ms) | TTFT p99 (ms) | TPOT mean (ms) | TPOT p99 (ms) | ITL mean (ms) | duration (s) | accept % | accept len |
 |---|---|---|---|---|---|---|---|---|---|
@@ -22,7 +37,33 @@ All numbers from `vllm bench serve` against a clean serve restart per
 | 2 | 227.08 | 105.51 | 558.85 | 8.38 | 16.64 | 19.25 | 66.44 | 68.27 | 2.37 |
 | 4 | 275.97 | 103.35 | 184.96 | 13.69 | 17.60 | 32.54 | 53.97 | 68.68 | 2.37 |
 
+KV cache 3.65 GiB / 75,599 tokens / max_concurrency 1.15×.
+
+### MTP=2 @ `--gpu-memory-utilization 0.98`, c=1..24 (`performance/sm120_workstation/mtp2_098_c1-24_bench.json`)
+
+| c | out tok/s | TTFT mean (ms) | TTFT p99 (ms) | TPOT mean (ms) | TPOT p99 (ms) | accept % | accept len |
+|---|---|---|---|---|---|---|---|
+| 1 | 150.16 | 64.81 | 131.28 | 6.34 | 8.72 | 68.25 | 2.37 |
+| 2 | 232.08 | 82.74 | 149.35 | 8.13 | 11.30 | 68.11 | 2.36 |
+| 4 | 275.04 | 102.99 | 161.91 | 13.67 | 17.16 | 68.39 | 2.37 |
+| 8 | 469.87 | 134.57 | 253.94 | 15.71 | 23.06 | 68.80 | 2.38 |
+| 16 | 610.63 | 273.28 | 640.02 | 22.63 | 29.36 | 68.36 | 2.37 |
+| 24 | 692.23 | 355.97 | 633.45 | 28.72 | 37.82 | 68.18 | 2.36 |
+
+KV cache 6.59 GiB / 136,590 tokens / max_concurrency 2.08×.
+
 Per-position MTP acceptance: position 0 ≈ 84 %, position 1 ≈ 52 %.
+
+### KV capacity sweep on Workstation
+
+| util | KV (GiB) | KV tokens | max_concurrency (65,536-token req) | startup health=200 |
+|---|---|---|---|---|
+| 0.95 no-MTP | 7.36 | 152,775 | 2.33× | yes |
+| 0.98 no-MTP | 10.21 | 211,889 | 3.23× | yes |
+| 0.985 no-MTP | 10.69 | 221,745 | 3.38× | yes (75 s) |
+| 0.99 no-MTP | — | — | — | **fails static check** (94.02 GiB demanded vs 93.94 GiB free) |
+| 0.95 MTP=2 | 3.65 | 75,599 | 1.15× | yes |
+| 0.98 MTP=2 | 6.59 | 136,590 | 2.08× | yes |
 
 ## DGX Spark cluster (2 nodes × GB10, TP=2 PP=1 mp, NCCL_IB_DISABLE=0)
 
