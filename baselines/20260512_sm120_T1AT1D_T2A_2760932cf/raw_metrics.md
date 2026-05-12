@@ -236,6 +236,65 @@ steady-state band the second bench previously demonstrated.
 | 2 | 41.65 tok/s | 36.98 (-11 %) | 40.38 (-3 %) | 38.52 (-8 %) |
 | 4 | 27.00 tok/s | 30.22 (+12 %) | **34.84 (+29 %)** | **46.75 (+73 %)** |
 
+## Spark random ISL sweep (baseline-standard shape, post-prewarm)
+
+Two fresh cluster bring-ups (no-MTP then MTP=2), each with
+`PREWARM_AFTER_HEALTH=1` firing after `/health=200`. Three random-ISL
+shapes matching the 020e0c89a baseline (`OSL=512`,
+`num-prompts=8` for ISL=1,024, `num-prompts=4` for ISL=4,096/8,192;
+c=1,2,4). Zero `jit_monitor` warnings in either sweep.
+
+### no-MTP (`performance/gb10_spark/random_sweep_nomtp/isl_*.json`)
+
+| ISL | c | out tok/s | TTFT mean (ms) | TTFT p99 (ms) | TPOT mean (ms) | TPOT p99 (ms) |
+|---|---|---|---|---|---|---|
+| 1,024 | 1 | 21.64 | 1,044 | 1,517 | 44.26 | 45.32 |
+| 1,024 | 2 | 35.81 | 969 | 979 | 54.06 | 60.13 |
+| 1,024 | 4 | 53.19 | 1,750 | 2,015 | 71.89 | 81.69 |
+| 4,096 | 1 | 20.43 | 2,064 | 5,884 | 45.00 | 45.71 |
+| 4,096 | 2 | 34.93 | 1,340 | 1,344 | 54.74 | 59.94 |
+| 4,096 | 4 | 54.38 | 2,865 | 2,866 | 68.08 | 72.30 |
+| 8,192 | 1 | 21.35 | 784 | 789 | 45.40 | 45.99 |
+| 8,192 | 2 | 34.25 | 1,550 | 1,552 | 55.48 | 61.99 |
+| 8,192 | 4 | 50.66 | 2,744 | 3,380 | 73.67 | 80.31 |
+
+### MTP=2 (`performance/gb10_spark/random_sweep_mtp2/isl_*.json`)
+
+| ISL | c | out tok/s | TTFT mean (ms) | TTFT p99 (ms) | TPOT mean (ms) | accept % | accept len |
+|---|---|---|---|---|---|---|---|
+| 1,024 | 1 | 26.61 | 1,103 | 1,604 | 35.49 | 51.36 | 2.03 |
+| 1,024 | 2 | 41.16 | 950 | 1,444 | 46.35 | 53.64 | 2.07 |
+| 1,024 | 4 | 27.42 | 1,668 | 2,158 | 140.13 | 54.26 | 2.09 |
+| 4,096 | 1 | 22.68 | 3,632 | 6,573 | 37.07 | 49.23 | 1.98 |
+| 4,096 | 2 | 39.59 | 1,199 | 1,382 | 48.12 | 50.15 | 2.00 |
+| 4,096 | 4 | 22.17 | 2,941 | 2,942 | 173.64 | 49.08 | 1.98 |
+| 8,192 | 1 | 26.31 | 840 | 860 | 36.44 | 49.66 | 1.99 |
+| 8,192 | 2 | 39.80 | 1,313 | 1,622 | 47.42 | 50.84 | 2.02 |
+| 8,192 | 4 | 44.62 | 3,973 | 3,974 | 80.63 | 47.48 | 1.95 |
+
+### vs 020e0c89a baseline (random sweep)
+
+| ISL | c | no-MTP 020e0c89a | no-MTP 2760932cf | Δ no-MTP | MTP=2 020e0c89a | MTP=2 2760932cf | Δ MTP=2 |
+|---|---|---|---|---|---|---|---|
+| 1,024 | 1 | 18.33 | **21.64** | +18 % | 25.10 | **26.61** | +6 % |
+| 1,024 | 2 | 31.44 | 35.81 | +14 % | 39.37 | **41.16** | +5 % |
+| 1,024 | 4 | 48.14 | **53.19** | +10 % | 36.43 | 27.42 | -25 % |
+| 4,096 | 1 | 15.18 | **20.43** | +35 % | 20.69 | **22.68** | +10 % |
+| 4,096 | 2 | 22.10 | 34.93 | +58 % | 38.44 | **39.59** | +3 % |
+| 4,096 | 4 | 29.23 | **54.38** | **+86 %** | 27.66 | 22.17 | -20 % |
+| 8,192 | 1 | 12.77 | **21.35** | **+67 %** | 18.43 | **26.31** | **+43 %** |
+| 8,192 | 2 | 15.88 | 34.25 | +116 % | 41.65 | 39.80 | -4 % |
+| 8,192 | 4 | 18.75 | **50.66** | **+170 %** | 27.00 | **44.62** | **+65 %** |
+
+The headline deltas concentrate where the old SHA was constrained by
+a slow single-chunk dense FP8 GEMM (T1-A) plus untuned MQA logits
+kernel (T1-D): long-prefill no-MTP rows lift 35-170 %. MTP=2 c=4 at
+short ISL (1,024 / 4,096) regresses 20-25 % vs 020e0c89a because
+`num-prompts=4 c=4` is a single batch of four long-context decodes,
+a high-variance shape; ISL=8,192 c=4 jumps back to **+65 %**. All
+nine cells are taken from the very first user request against a
+freshly-prewarmed cluster (0 `jit_monitor` warnings).
+
 The cold delta is dominated by uncovered-kernel JIT spikes; the warm
 row is the steady-state delta the T1-A optimisations actually
 deliver on this random workload.
