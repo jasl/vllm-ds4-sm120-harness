@@ -3,7 +3,7 @@
 DeepSeek V4 Flash on SM12x hardware, vLLM `jasl/vllm` @ `2760932cf` (head of
 `ds4-sm120-preview-dev` / PR #41834), 15 commits ahead of `upstream/main`.
 
-Four optimisations land on top of the 2026-05-11 baseline (`020e0c89a`):
+Five optimisations land on top of the 2026-05-11 baseline (`020e0c89a`):
 
 | Commit | Topic |
 |---|---|
@@ -11,6 +11,7 @@ Four optimisations land on top of the 2026-05-11 baseline (`020e0c89a`):
 | `c802ae27a` | Adaptive `BLOCK_M` for `_fp8_paged_mqa_logits_kernel` |
 | `2760932cf` | Clamp `BLOCK_D` in sparse MLA finish kernel to `head_dim` |
 | `5c8975591` | Extend DeepSeek V4 prefill warmup to max single-chunk size |
+| `8f0d8b630` | Extend DeepSeek V4 warmup coverage to multi-request shapes |
 
 ## TL;DR
 
@@ -246,11 +247,17 @@ the first 8,192-token prefill on the no-MTP path — directly relevant
 for K8s / Ray Serve auto-scale events and for edge users restarting
 a Spark deployment.
 
-### Remaining warmup gap on Spark MTP=2 + random 8K
+### MTP=2 cold-start gap and prewarm fix
 
-The single-prefill warmup at 8,192 tokens does **not** cover everything
-that the Spark MTP=2 path JITs. vLLM's `jit_monitor` flagged these
-kernels compiling during the first cold bench (after the new warmup):
+vLLM commit `8f0d8b630` extends the in-process warmup further (chunked
+prefill, multi-request prefill, and `max_num_seqs` in the MTP uniform
+decode warmup; cost +35 s startup on Spark, init engine 61 → 97 s).
+This recovers c=4 cold from 23.67 → 42.82 tok/s (+81 %), driven by
+the `_fp8_paged_mqa_logits_kernel` adaptive `BLOCK_M=8` path that the
+hardcoded `(1, 2)` MTP-decode warmup tier missed.
+
+Even after that, vLLM's `jit_monitor` still flags nine kernels JIT-compiling
+during the first cold bench on Spark MTP=2 + random ISL=8,192:
 
 ```
 JIT: eagle_prepare_next_token_padded_kernel        (MTP draft)
@@ -264,9 +271,38 @@ JIT: _w8a8_triton_block_scaled_mm                  (T1-A's main GEMM, alt shape)
 JIT: _fp8_paged_mqa_logits_kernel                  (T1-D's kernel)
 ```
 
+These kernels are already invoked from
+`_run_deepseek_v4_mtp_spec_decode_warmup_kernels` and the dummy-run
+attention warmup, but Triton's specialization key includes pointer
+16-byte alignment. The warmup helper allocates fresh tensors via
+`torch.arange` / `torch.empty`; the real inference path receives
+slices into the sampler / spec-decode buffers. The two cache keys
+differ → the warmed kernel gets compiled again on the first user
+request. Closing this from `kernel_warmup.py` alone requires routing
+warmup through the actual scheduler / sampler pipeline, which is a
+larger upstream change tracked as a follow-up.
+
+To absorb the remaining cost on the deployment side, the harness ships
+a real-pipeline prewarm:
+
+- `scripts/prewarm_serve.sh` — standalone, points at any `vllm serve`
+  on `/v1/completions`. Runs two `vllm bench serve` rounds (c=1
+  single-stream then `c=max_num_seqs` multi-stream) at random
+  ISL=`max_num_batched_tokens` OSL=8 with `--ignore-eos`. Because
+  `vllm bench serve` walks the real OpenAI-style request pipeline,
+  the kernels JIT against the same buffer alignment that real users
+  hit; the second user request finds a fully warm cache.
+- `scripts/dgx_spark_start_mp_serve.sh` — auto-invokes the prewarm
+  block after `/health=200` (toggle via `PREWARM_AFTER_HEALTH=1`,
+  default on; tune via `PREWARM_ISL`, `PREWARM_OSL`,
+  `PREWARM_PROMPTS`, `PREWARM_C_HIGH`).
+
 Two-pass measurement on a single Spark MTP=2 serve, random ISL=8,192
 OSL=512 num-prompts=4 (same shape as the 020e0c89a baseline 18.43
-tok/s c=1):
+tok/s c=1) verifies the prewarm mechanism. The "warm" column is the
+second bench round (Triton cache populated by the first round and
+therefore representative of the steady-state the prewarm script will
+produce):
 
 | c | Cold (1st bench, JIT during inference) | Warm (2nd bench, all kernels cached) | Δ |
 |---|---|---|---|
@@ -278,12 +314,6 @@ Compared to the 020e0c89a baseline (18.43 tok/s c=1, 41.65 c=2,
 27.00 c=4) the warm new SHA delivers **+42 % at c=1** and **+29 % at
 c=4** — T1-A's real benefits, hidden in the first-bench cold readings
 by the JIT spikes on the kernels listed above.
-
-Operational implication: production deployments of DSv4-Flash MTP=2
-on SM12x should issue 5–10 representative long-prefill warm-up
-requests before opening to real traffic, until the upstream warmup
-hook is extended to cover the MTP draft path and chunked-prefill
-metadata. Tracked as a follow-up for the next iteration.
 
 ## Max-input recommendation
 
@@ -318,8 +348,13 @@ feed raw 131 K-token contexts.
 See `repro_recipe.md` next to this file. Harness commit pins both the
 serve commands and the bench / `lm_eval` invocations. The Spark cluster
 launcher (`scripts/dgx_spark_start_mp_serve.sh`) accepts
-`NCCL_IB_DISABLE`, `SERVE_SPECULATIVE_CONFIG`, and
-`SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS` env overrides.
+`NCCL_IB_DISABLE`, `SERVE_SPECULATIVE_CONFIG`,
+`SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS`, and (for cold-start mitigation)
+`PREWARM_AFTER_HEALTH` (default 1) plus `PREWARM_ISL`,
+`PREWARM_OSL`, `PREWARM_PROMPTS`, `PREWARM_C_HIGH`, `PREWARM_TIMEOUT`
+env overrides. For non-cluster serves (e.g. the single-host
+Workstation deploy) call `scripts/prewarm_serve.sh` against the local
+API once `/health=200` returns.
 
 ## Source SHAs
 

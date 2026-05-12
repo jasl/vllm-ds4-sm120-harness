@@ -47,6 +47,12 @@ RUN_DIR="${RUN_DIR:-/tmp/dgx_spark_mp_serve_$(date +%Y%m%d%H%M%S)}"
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-600}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-5}"
 SSH_OPTS="${SSH_OPTS:-}"
+PREWARM_AFTER_HEALTH="${PREWARM_AFTER_HEALTH:-1}"
+PREWARM_ISL="${PREWARM_ISL:-${MAX_NUM_BATCHED_TOKENS:-8192}}"
+PREWARM_OSL="${PREWARM_OSL:-8}"
+PREWARM_PROMPTS="${PREWARM_PROMPTS:-4}"
+PREWARM_C_HIGH="${PREWARM_C_HIGH:-${MAX_NUM_SEQS:-4}}"
+PREWARM_TIMEOUT="${PREWARM_TIMEOUT:-600}"
 SERVE_ENABLE_EXPERT_PARALLEL="${SERVE_ENABLE_EXPERT_PARALLEL:-0}"
 SERVE_DISABLE_FLASHINFER_AUTOTUNE="${SERVE_DISABLE_FLASHINFER_AUTOTUNE:-0}"
 SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG:-}"
@@ -358,6 +364,60 @@ grep -E 'GPU KV cache size|Available KV cache memory|Model loading took|Applicat
 REMOTE
 }
 
+prewarm_serve() {
+  if [[ "${PREWARM_AFTER_HEALTH}" != "1" ]]; then
+    printf 'skipping post-health prewarm (PREWARM_AFTER_HEALTH=%s)\n' "${PREWARM_AFTER_HEALTH}"
+    return
+  fi
+
+  printf 'prewarming serve (random ISL=%s OSL=%s prompts=%s c=1+%s)...\n' \
+    "${PREWARM_ISL}" "${PREWARM_OSL}" "${PREWARM_PROMPTS}" "${PREWARM_C_HIGH}"
+  run_remote_script "${HEAD_HOST}" \
+    "PREWARM_ISL=$(shell_quote "${PREWARM_ISL}") \
+     PREWARM_OSL=$(shell_quote "${PREWARM_OSL}") \
+     PREWARM_PROMPTS=$(shell_quote "${PREWARM_PROMPTS}") \
+     PREWARM_C_HIGH=$(shell_quote "${PREWARM_C_HIGH}") \
+     PREWARM_TIMEOUT=$(shell_quote "${PREWARM_TIMEOUT}")" <<'REMOTE'
+set -euo pipefail
+
+# Inline prewarm: runs `vllm bench serve` against the local API to
+# populate Triton kernel cache for shapes the in-process kernel_warmup
+# does not cover (eagle MTP draft kernels, alt-shape dense FP8 GEMM,
+# chunked-prefill metadata, etc.). vLLM ships a `jit_monitor` that
+# logs every uncovered Triton specialization as a warning in head.log
+# during the first real request; this prewarm ensures those JITs
+# happen before user traffic instead of on a user's first request.
+PREWARM_LOG="${RUN_DIR}/prewarm.log"
+: > "${PREWARM_LOG}"
+
+bench_round() {
+  local label="$1"
+  local concurrency="$2"
+  printf '[prewarm] %s c=%s ISL=%s OSL=%s prompts=%s\n' \
+    "${label}" "${concurrency}" "${PREWARM_ISL}" "${PREWARM_OSL}" "${PREWARM_PROMPTS}" \
+    | tee -a "${PREWARM_LOG}"
+  PATH="${VLLM_VENV}/bin:${PATH}" timeout "${PREWARM_TIMEOUT}" \
+    "${VLLM_VENV}/bin/vllm" bench serve \
+      --model "${MODEL_ID}" \
+      --tokenizer-mode deepseek_v4 \
+      --dataset-name random \
+      --num-prompts "${PREWARM_PROMPTS}" \
+      --max-concurrency "${concurrency}" \
+      --base-url "http://127.0.0.1:${API_PORT}" \
+      --random-input-len "${PREWARM_ISL}" \
+      --random-output-len "${PREWARM_OSL}" \
+      --temperature 1.0 \
+      --ignore-eos >> "${PREWARM_LOG}" 2>&1
+}
+
+t0=$(date +%s)
+bench_round "single-stream burst" 1
+bench_round "multi-stream burst" "${PREWARM_C_HIGH}"
+t1=$(date +%s)
+printf '[prewarm] done in %ss; log=%s\n' "$((t1-t0))" "${PREWARM_LOG}"
+REMOTE
+}
+
 printf 'stopping stale helpers and reclaiming file cache...\n'
 stop_existing_and_reclaim "${WORKER_HOST}"
 stop_existing_and_reclaim "${HEAD_HOST}"
@@ -370,3 +430,4 @@ printf 'starting vLLM mp worker and head...\n'
 start_worker
 start_head
 wait_for_health
+prewarm_serve
