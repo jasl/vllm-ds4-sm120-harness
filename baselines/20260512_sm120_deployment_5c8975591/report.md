@@ -7,11 +7,6 @@ profiles** for two use cases — short-prompt chat (Conversation) and
 long-context agentic work (Agent) — on both supported targets, and is
 the reference point for the next round of optimisation.
 
-The 2026-05-12 `_T1AT1D_T2A_2760932cf` bundle remains the apples-to-apples
-"kernel optimisation" reference. This bundle adds a final layer:
-production-shaped serve configs, real per-profile throughput up to the
-serving cap, and one decision per `{hardware, profile, variant}` cell.
-
 ## TL;DR
 
 - **Workstation SM120** (2× RTX PRO 6000 Blackwell Workstation Edition,
@@ -56,8 +51,9 @@ vllm serve deepseek-ai/DeepSeek-V4-Flash \
 ```
 
 Add `--default-chat-template-kwargs '{"thinking":true}'` if you want
-the DSv4 `<think>` block in responses (impacts mt-bench throughput;
-see `_T1AT1D_T2A_2760932cf/` for non-thinking apples-to-apples data).
+the DSv4 `<think>` block in responses. The bench numbers in this
+bundle are non-thinking (gsm8k uses `/v1/completions` so its result is
+unaffected by the flag).
 
 ### Workstation SM120 — Agent profile (long context, fewer streams)
 
@@ -179,7 +175,7 @@ throughput you should expect":
 | 4–8 chat users, short prompts | Conv c=8 MTP=2 → **442 tok/s** aggregate | Conv c=8 MTP=2 → 95 tok/s aggregate |
 | 1 agent, 32 K context | Agent c=1 MTP=2 → **130 tok/s** | Agent c=1 MTP=2 → 29 tok/s |
 | 2–4 parallel agents, 32 K each | Agent c=4 MTP=2 → 251 tok/s aggregate | Agent c=4 MTP=2 → 60 tok/s aggregate |
-| 1 agent, 65 K context | Use Workstation Agent profile (max-model-len=65K, `_T1AT1D_T2A_2760932cf` numbers); Spark Agent at 65 K works but per-request TTFT scales with chunk count | Spark Agent c=1 → 29 tok/s at 65 K (see `_T1AT1D_T2A_2760932cf` for the long prefill cost curve) |
+| 1 agent, 65 K context | Workstation Agent profile up-sized to `max-model-len=65536`; TTFT scales with chunk count (≈ 23 s at 65 K on Workstation, ≈ 160 s on Spark — chunked prefill cost dominates beyond 8 K) | Spark Agent profile up-sized to `max-model-len=131072` if needed, but expect minute-scale TTFT |
 
 For Conv on Workstation we still hit 60 % gpu-mem util at c=8 — there is
 headroom for a `--max-num-seqs 16` or `--max-num-seqs 24` upgrade if the
