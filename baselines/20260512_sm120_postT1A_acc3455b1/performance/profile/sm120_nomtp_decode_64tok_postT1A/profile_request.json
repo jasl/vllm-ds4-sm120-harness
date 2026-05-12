@@ -1,0 +1,12 @@
+{
+  "elapsed_s": 1.3373191356658936,
+  "usage": {
+    "prompt_tokens": 13,
+    "total_tokens": 122,
+    "completion_tokens": 109,
+    "prompt_tokens_details": null
+  },
+  "prompt": "Write a short paragraph about distributed inference systems.",
+  "max_tokens": 128,
+  "label": "sm120_nomtp_decode_64tok_postT1A"
+}
