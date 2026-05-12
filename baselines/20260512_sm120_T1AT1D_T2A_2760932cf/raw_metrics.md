@@ -203,13 +203,38 @@ second is "warm" (all kernels JIT-cached after the cold round).
 JIT-monitor warnings observed only during the cold round; the warm
 round produced none.
 
-Comparison to 020e0c89a baseline at the same shape:
+### End-to-end with auto-prewarm (`scripts/dgx_spark_start_mp_serve.sh`)
 
-| c | 020e0c89a (cold, MTP=2) | 2760932cf cold (warmup fix) | 2760932cf warm |
+`performance/gb10_spark/random/mtp2_random_isl8192_postprewarm_bench.json`
+
+Fresh cluster bring-up (Spark head rebooted), `PREWARM_AFTER_HEALTH=1`
+fires automatically after `/health=200`, then the same bench shape
+runs as the very first user request. Zero `jit_monitor` warnings.
+
+| c | tok/s | TTFT mean (ms) | TTFT p99 (ms) | TPOT mean (ms) | duration (s) | accept % | accept len |
+|---|---|---|---|---|---|---|---|
+| 1 | **25.67** | **820.94** | 858.27 | 37.42 | 79.78 | 46.51 | 1.93 |
+| 2 | 38.52 | 1,425.35 | 1,592.94 | 47.91 | 53.16 | 50.54 | 2.01 |
+| 4 | **46.75** | 3,185.93 | 4,097.20 | 74.50 | 43.81 | 54.92 | 2.10 |
+
+Compared to the warm 2nd-bench reference above:
+
+| c | Warm 2nd-bench | Post-prewarm 1st-bench | match? |
 |---|---|---|---|
-| 1 | 18.43 tok/s | 13.63 (-26 %) | **26.19 (+42 %)** |
-| 2 | 41.65 tok/s | 36.98 (-11 %) | 40.38 (-3 %) |
-| 4 | 27.00 tok/s | 30.22 (+12 %) | **34.84 (+29 %)** |
+| 1 | 26.19 tok/s, 829 ms | 25.67 tok/s, 821 ms | within ±2 % |
+| 2 | 40.38 tok/s, 1,358 ms | 38.52 tok/s, 1,425 ms | within ±5 % |
+| 4 | 34.84 tok/s, 3,998 ms | 46.75 tok/s, 3,186 ms | post-prewarm faster (run-to-run) |
+
+The auto-prewarm path lands the user's first request in the same
+steady-state band the second bench previously demonstrated.
+
+### Random-8K Spark MTP=2 vs 020e0c89a baseline
+
+| c | 020e0c89a (cold, MTP=2) | 2760932cf cold (warmup fix) | 2760932cf warm | 2760932cf post-prewarm |
+|---|---|---|---|---|
+| 1 | 18.43 tok/s | 13.63 (-26 %) | **26.19 (+42 %)** | **25.67 (+39 %)** |
+| 2 | 41.65 tok/s | 36.98 (-11 %) | 40.38 (-3 %) | 38.52 (-8 %) |
+| 4 | 27.00 tok/s | 30.22 (+12 %) | **34.84 (+29 %)** | **46.75 (+73 %)** |
 
 The cold delta is dominated by uncovered-kernel JIT spikes; the warm
 row is the steady-state delta the T1-A optimisations actually

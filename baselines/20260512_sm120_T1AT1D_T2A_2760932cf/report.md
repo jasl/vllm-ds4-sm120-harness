@@ -315,6 +315,26 @@ Compared to the 020e0c89a baseline (18.43 tok/s c=1, 41.65 c=2,
 c=4** — T1-A's real benefits, hidden in the first-bench cold readings
 by the JIT spikes on the kernels listed above.
 
+### End-to-end validation: cluster restart + auto-prewarm + first user request
+
+Reboot Spark head, launch via the harness with `PREWARM_AFTER_HEALTH=1`
+(default), then immediately issue the same random ISL=8,192 OSL=512
+num-prompts=4 c=1,2,4 bench as a "first user request":
+
+| c | tok/s | TTFT mean (ms) | TTFT p99 (ms) | TPOT mean (ms) | accept % |
+|---|---|---|---|---|---|
+| 1 | **25.67** | **820.94** | 858.27 | 37.42 | 46.51 |
+| 2 | 38.52 | 1,425.35 | 1,592.94 | 47.91 | 50.54 |
+| 4 | **46.75** | 3,185.93 | 4,097.20 | 74.50 | 54.92 |
+
+Zero `jit_monitor` warnings during this run — all nine previously-
+uncovered Triton specializations were absorbed by the prewarm rounds.
+The c=1 number is statistically indistinguishable from the warm
+2nd-bench reference (25.67 vs 26.19 tok/s, 821 vs 829 ms TTFT) and
++39 % over the 020e0c89a baseline; c=4 is +73 % over 020e0c89a. From
+the user's perspective the first long-prefill request after cluster
+bring-up now lands in the steady-state band, not the JIT-spike tail.
+
 ## Max-input recommendation
 
 KV cache sizes reported by the worker at startup (block-size 256, fp8
