@@ -252,17 +252,42 @@ about which workload condition the 254s number described.
 
 ## Generation quality (think-high)
 
-Two artefact groups in `generation/`:
+`generation/redo_1404_thinkhigh/`: **5 / 5 PASS** — same 5 prompts
+(`aquarium_html`, `en2zh_news_001`, `zh2en_news_001`, `zh_sum_tech_001`
+in `en` and `zh` directions where applicable), think-high budget,
+MTP=2. No `<think>` token leakage; reasoning markers cleanly
+separated. The `--reasoning-config` fix in
+`scripts/dgx_spark_start_mp_serve.sh` is confirmed working.
 
-| group | ok / total | notes |
-|---|:---:|---|
-| `quick_1301_thinkhigh` | **0 / 5** | Run immediately after the 512K cold-prefill kill cascade. EngineCore's `sample_tokens` RPC was stuck on the still-in-flight 512K prefill; every subsequent request got `HTTP 500 InternalServerError`. Documented in "Known issues" #4 below — kept in the bundle as a reference failure-mode trace. |
-| `redo_1404_thinkhigh` | **5 / 5** | Same 5 prompts, run after a full cluster restart. All passed: `aquarium_html`/`en2zh_news_001`/`zh2en_news_001`/`zh_sum_tech_001` in both `en` and `zh` directions where applicable, think-high budget, MTP=2. No `<think>` token leakage; reasoning markers cleanly separated. The `--reasoning-config` fix in `dgx_spark_start_mp_serve.sh` is confirmed working. |
+Each canon cell also ran acceptance probes at the three thinking-mode
+budgets where serve was configured correctly — see "Real generation
+issues" below for the three genuine model-side failures observed, all
+of them on the `*_code_fe_001` (frontend-code) prompt under
+non-thinking mode where the assistant did not emit a complete HTML
+artifact. These are not regressions, not GB10-specific, and not
+hardware-related; recorded for posterity.
 
-Each canon cell also ran an acceptance probe at all three thinking-mode
-budgets (full artifacts in `performance/canon/<cell>/probe.log`).
-Across 8 of 8 acceptance probes (4 cells × 2 random shapes), no
-garbled output or `<think>` token leakage was observed.
+### Real generation issues (kept in `failures.tsv`)
+
+| cell | case | mode | failure |
+|---|---|---|---|
+| agent_mtp2  | `en/en_code_fe_001` | non-thinking | missing complete HTML artifact |
+| agent_nomtp | `en/en_code_fe_001` | non-thinking | missing complete HTML artifact |
+| conv_nomtp  | `zh/zh_code_fe_001` | non-thinking | missing complete HTML artifact |
+
+### Removed (harness errors, see `CLEANUP_NOTES.md`)
+
+- `generation/quick_1301_thinkhigh/` (5 .md): every prompt returned
+  HTTP 500 from EngineCore stuck-RPC after the 512K bench-cancel. The
+  model never generated; rerun in `redo_1404_thinkhigh` PASSed 5/5.
+- `long_context_probe` / `prefix_cache_probe` failure rows: harness
+  `LINE_COUNT * tokens_per_line + preamble` overshoots `max_model_len`
+  by 1; the server rejected with HTTP 400 before the model was
+  invoked.
+- `acceptance_think-high` / `acceptance_think-max` in `agent_mtp2`:
+  serve for that cell predated the `--reasoning-config` fix; every
+  prompt returned HTTP 400 "`thinking_token_budget is set but
+  reasoning_config is not configured`". Pure launch-parameter error.
 
 ## Known issues / gotchas
 
@@ -287,14 +312,15 @@ garbled output or `<think>` token leakage was observed.
    hits the bench client during a long cold prefill (specifically, the
    512K probe we cancelled at ~16:25), EngineCore's `sample_tokens`
    RPC hangs for 5–10+ minutes, blocking subsequent requests with
-   `HTTP 500 InternalServerError`. Repro trace: see
-   `generation/quick_1301_thinkhigh/results.jsonl` (0/5 PASS, all
-   `HTTP 500`). Workaround: full cluster restart, not just the bench
-   client. After restart: `generation/redo_1404_thinkhigh/` (5/5 PASS,
-   same prompts). Track-issue: vLLM engine should detect a cancelled
-   chunked-prefill job and reject downstream requests with a clear
-   error rather than holding the RPC. Documented in harness's
-   `repro_recipe.md`.
+   `HTTP 500 InternalServerError`. The harness-error artifact set from
+   that incident (`generation/quick_1301_thinkhigh/`, 0/5 PASS) was
+   *removed* from this bundle — see `CLEANUP_NOTES.md`. After a full
+   cluster restart, the same 5 prompts ran cleanly in
+   `generation/redo_1404_thinkhigh/` (5/5 PASS). Workaround: full
+   cluster restart, not just the bench client. Track-issue: vLLM
+   engine should detect a cancelled chunked-prefill job and reject
+   downstream requests with a clear error rather than holding the
+   RPC. Documented in harness's `repro_recipe.md`.
 
 ## Harness changes pushed alongside this bundle
 
