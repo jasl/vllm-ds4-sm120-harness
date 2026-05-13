@@ -1,0 +1,59 @@
+[
+  {
+    "concurrency": 1,
+    "ok": true,
+    "detail": "successful_requests 2/2",
+    "metrics": {
+      "successful_requests": 2,
+      "benchmark_duration_s": 978.28,
+      "total_input_tokens": 200000,
+      "total_generated_tokens": 16,
+      "request_throughput_req_s": 0,
+      "output_token_throughput_tok_s": 0.02,
+      "mean_ttft_ms": 485909.76,
+      "median_ttft_ms": 485909.76,
+      "p99_ttft_ms": 494943.95,
+      "mean_tpot_ms": 461.35,
+      "median_tpot_ms": 461.35,
+      "p99_tpot_ms": 870.89,
+      "mean_itl_ms": 807.36,
+      "median_itl_ms": 80.4,
+      "p99_itl_ms": 5441.44,
+      "spec_acceptance_rate_percent": 36.11,
+      "spec_acceptance_length": 1.72,
+      "spec_drafts": 18,
+      "spec_draft_tokens": 36,
+      "spec_accepted_tokens": 13,
+      "spec_per_position_acceptance_percent": [
+        55.56,
+        16.67
+      ]
+    },
+    "command": [
+      "/home/jasl/Workspace/vllm/.venv/bin/vllm",
+      "bench",
+      "serve",
+      "--model",
+      "deepseek-ai/DeepSeek-V4-Flash",
+      "--tokenizer-mode",
+      "deepseek_v4",
+      "--dataset-name",
+      "random",
+      "--num-prompts",
+      "2",
+      "--max-concurrency",
+      "1",
+      "--base-url",
+      "http://127.0.0.1:8000",
+      "--random-input-len",
+      "100000",
+      "--random-output-len",
+      "8",
+      "--ignore-eos",
+      "--temperature",
+      "1.0"
+    ],
+    "attempts": 1,
+    "retry_failures": []
+  }
+]

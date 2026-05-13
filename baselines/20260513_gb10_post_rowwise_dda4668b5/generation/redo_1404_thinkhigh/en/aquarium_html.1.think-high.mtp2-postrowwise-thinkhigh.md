@@ -1,0 +1,532 @@
+# Generation Transcript
+
+- Case: `aquarium_html`
+- Language group: `en`
+- Workload: `coding`
+- Model: `deepseek-ai/DeepSeek-V4-Flash`
+- Round: `1`
+- Thinking mode: `think-high`
+- Thinking strength: `high`
+- Temperature: `1.0`
+- Top P: `1.0`
+- Variant: `mtp2-postrowwise-thinkhigh`
+- OK: `True`
+- Status: PASS
+- Check: matched expectation
+- Detail: `matched expectation`
+- Elapsed seconds: 173.786926
+- Finish reason: `stop`
+- Usage: `{"prompt_tokens": 74, "total_tokens": 5301, "completion_tokens": 5227, "prompt_tokens_details": null}`
+- Prompt tokens: 74
+- Completion tokens: 5227
+- Total tokens: 5301
+
+## Prompt
+
+```markdown
+Make an html animation of fishes in an aquarium. The aquarium is pretty, the fishes vary in colors and sizes and swim realistically. You can left click to place a piece of fish food in aquarium. Each fish chases a food piece closest to it, trying to eat it. Once there are no more food pieces, fishes resume swimming as usual.
+```
+
+## Assistant
+
+````markdown
+This is a complete HTML file that creates an interactive aquarium animation. You can left-click to add fish food, and the fish will realistically chase and eat the closest piece.
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🐠 Aquarium · fish & food</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: #0a1a2b;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+    }
+    .aquarium-wrapper {
+      background: #1c3e4c;
+      padding: 18px 18px 24px;
+      border-radius: 60px 60px 30px 30px;
+      box-shadow: 0 20px 30px rgba(0,0,0,0.6), inset 0 1px 8px rgba(255,255,240,0.2);
+      border: 1px solid #4f7b8c;
+    }
+    canvas {
+      display: block;
+      width: 800px;
+      height: 500px;
+      border-radius: 40px 40px 20px 20px;
+      box-shadow: inset 0 0 0 2px #87b9c9, inset 0 0 30px #0e2f3b;
+      background: radial-gradient(ellipse at 30% 40%, #2d7b8f, #12455a);
+      cursor: crosshair;
+      transition: filter 0.2s;
+    }
+    canvas:active {
+      filter: drop-shadow(0 0 6px #d4f3ff);
+    }
+    .info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      padding: 0 10px 0 18px;
+      color: #b3dce8;
+      font-weight: 400;
+      text-shadow: 0 2px 3px #04161f;
+      letter-spacing: 0.3px;
+    }
+    .food-counter {
+      background: #0f2f3b;
+      padding: 8px 20px;
+      border-radius: 30px;
+      font-size: 0.95rem;
+      border: 1px solid #367b8f;
+      box-shadow: inset 0 1px 4px #1a4d5c;
+    }
+    .hint {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .hint i {
+      font-style: normal;
+      background: #1f4959;
+      padding: 6px 14px;
+      border-radius: 50px;
+      font-size: 0.9rem;
+      border: 1px solid #5e9db0;
+    }
+  </style>
+</head>
+<body>
+<div class="aquarium-wrapper">
+  <canvas id="aquariumCanvas" width="800" height="500"></canvas>
+  <div class="info">
+    <span class="food-counter">🍕 food · <span id="foodCountDisplay">0</span></span>
+    <span class="hint">
+      <i>🐟 click to feed</i>
+      <span style="opacity:0.7;">🖱️ left click</span>
+    </span>
+  </div>
+</div>
+<script>
+  (function() {
+    const canvas = document.getElementById('aquariumCanvas');
+    const ctx = canvas.getContext('2d');
+    const foodCountSpan = document.getElementById('foodCountDisplay');
+
+    // ==========  AQUARIUM DIMENSIONS  ==========
+    const W = 800, H = 500;
+
+    // ==========  FISH STYLE PRESETS  ==========
+    const FISH_PALETTES = [
+      { body: '#f5a3c7', fin: '#d977a6', eye: '#222' },   // pink
+      { body: '#f7c35c', fin: '#d99f3a', eye: '#1f2a2e' }, // gold
+      { body: '#6fc2d9', fin: '#429bb3', eye: '#14262e' }, // sky
+      { body: '#b583e0', fin: '#8f5fc7', eye: '#1f1a2b' }, // lilac
+      { body: '#f28b82', fin: '#d96c62', eye: '#2b1e1c' }, // salmon
+      { body: '#81c784', fin: '#519c57', eye: '#1d2a1d' }, // mint
+      { body: '#ffb347', fin: '#e08e2b', eye: '#2e2617' }, // orange
+      { body: '#baa1e0', fin: '#8d73c2', eye: '#221e2c' }, // lavender
+      { body: '#7fd1c0', fin: '#49aa99', eye: '#0c2b26' }, // seafoam
+    ];
+
+    // ==========  FISH CLASS  ==========
+    class Fish {
+      constructor(x, y, paletteIndex) {
+        const pal = FISH_PALETTES[paletteIndex % FISH_PALETTES.length];
+        this.bodyColor = pal.body;
+        this.finColor = pal.fin;
+        this.eyeColor = pal.eye;
+
+        // random size (length factor)
+        this.sizeBase = 0.8 + Math.random() * 0.7;  // 0.8 .. 1.5
+        this.length = 32 * this.sizeBase;
+        this.height = 14 * this.sizeBase;
+
+        this.x = x;
+        this.y = y;
+        // velocity
+        this.vx = (Math.random() - 0.5) * 1.2;
+        this.vy = (Math.random() - 0.5) * 0.8;
+        // make sure fish don't start too slow
+        if (Math.abs(this.vx) < 0.3) this.vx = (this.vx > 0 ? 0.6 : -0.6);
+
+        // wiggle animation
+        this.wigglePhase = Math.random() * Math.PI * 2;
+        this.wiggleSpeed = 0.04 + Math.random() * 0.04;
+        this.wiggleAmp = 1.8 + Math.random() * 1.8;
+
+        // personality: random turning rate
+        this.turnSpeed = 0.008 + Math.random() * 0.018;
+        this.targetVx = this.vx;
+        this.targetVy = this.vy;
+
+        // hunger state (chasing food)
+        this.chasing = false;
+        this.targetFood = null;    // reference to food item
+      }
+
+      // compute steering toward food (seek)
+      seekFood(foodX, foodY) {
+        const dx = foodX - this.x;
+        const dy = foodY - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) return;
+        const speed = 2.2 + 0.3 * (1.2 - this.sizeBase * 0.5); // bigger -> a bit slower
+        const normX = dx / dist;
+        const normY = dy / dist;
+        this.targetVx = normX * speed + (Math.random() - 0.5) * 0.15;
+        this.targetVy = normY * speed + (Math.random() - 0.5) * 0.15;
+      }
+
+      // normal wandering (smooth random steering)
+      wander() {
+        // slowly change target direction
+        this.targetVx += (Math.random() - 0.5) * 0.10;
+        this.targetVy += (Math.random() - 0.5) * 0.08;
+        // maintain minimum speed
+        const spd = Math.hypot(this.targetVx, this.targetVy);
+        const minSpeed = 0.6;
+        if (spd < minSpeed) {
+          this.targetVx = (this.targetVx / (spd || 1)) * minSpeed;
+          this.targetVy = (this.targetVy / (spd || 1)) * minSpeed;
+        }
+        // clamp speed
+        const maxSpeed = 1.9;
+        if (spd > maxSpeed) {
+          this.targetVx = (this.targetVx / spd) * maxSpeed;
+          this.targetVy = (this.targetVy / spd) * maxSpeed;
+        }
+        // add some randomness to avoid stuck
+        if (Math.random() < 0.01) {
+          this.targetVx += (Math.random() - 0.5) * 0.5;
+          this.targetVy += (Math.random() - 0.5) * 0.4;
+        }
+      }
+
+      update(foodArray) {
+        // ----- decide behaviour: chase or wander -----
+        this.chasing = false;
+        this.targetFood = null;
+
+        if (foodArray.length > 0) {
+          // find closest food
+          let closestDist = Infinity;
+          let closestFood = null;
+          for (let f of foodArray) {
+            const d = Math.hypot(f.x - this.x, f.y - this.y);
+            if (d < closestDist) {
+              closestDist = d;
+              closestFood = f;
+            }
+          }
+          // if food is reasonably close, chase it
+          if (closestFood && closestDist < 700) { // big aquarium, reactive
+            this.chasing = true;
+            this.targetFood = closestFood;
+            this.seekFood(closestFood.x, closestFood.y);
+          } else {
+            this.wander();
+          }
+        } else {
+          this.wander();
+        }
+
+        // ----- smooth velocity  (steer) -----
+        this.vx += (this.targetVx - this.vx) * this.turnSpeed * 1.2;
+        this.vy += (this.targetVy - this.vy) * this.turnSpeed * 1.2;
+
+        // clamp total speed
+        const currentSpeed = Math.hypot(this.vx, this.vy);
+        const absMax = 3.5;
+        if (currentSpeed > absMax) {
+          this.vx = (this.vx / currentSpeed) * absMax;
+          this.vy = (this.vy / currentSpeed) * absMax;
+        }
+
+        // ----- position update -----
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // ----- boundary behavior (soft bounce + turn) -----
+        const margin = 25;
+        const turnFactor = 0.5;
+        if (this.x < margin) { this.vx += turnFactor; this.targetVx += 0.4; }
+        if (this.x > W - margin) { this.vx -= turnFactor; this.targetVx -= 0.4; }
+        if (this.y < margin) { this.vy += turnFactor * 0.8; this.targetVy += 0.3; }
+        if (this.y > H - margin) { this.vy -= turnFactor * 0.8; this.targetVy -= 0.3; }
+
+        // keep inside canvas (hard clamp)
+        this.x = Math.min(W - 10, Math.max(10, this.x));
+        this.y = Math.min(H - 10, Math.max(10, this.y));
+
+        // update wiggle phase
+        this.wigglePhase += this.wiggleSpeed;
+      }
+
+      // draw fish (body + fins + tail + eye)
+      draw() {
+        const angle = Math.atan2(this.vx, this.vy); // vx->cos, vy->sin but careful
+        // we want orientation: fish points along velocity (vx,vy)
+        // atan2(y,x) standard, but canvas: 0 is right, we use rotated coordinate
+        const angleRad = Math.atan2(this.vy, this.vx);
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(angleRad);
+        // flip if swimming left? we want fish always facing direction of velocity
+        // if vx < 0, fish body points left (default drawing points right)
+        // but after rotate, if we draw fish pointing right (0°), it's fine.
+
+        const w = this.length;
+        const h = this.height;
+        const wiggle = Math.sin(this.wigglePhase) * this.wiggleAmp;
+
+        // ---- tail ----
+        ctx.beginPath();
+        ctx.fillStyle = this.finColor;
+        ctx.moveTo(-w * 0.48, 0);
+        ctx.lineTo(-w * 0.70, -h * 0.55 + wiggle * 0.2);
+        ctx.lineTo(-w * 0.70, h * 0.55 + wiggle * 0.2);
+        ctx.closePath();
+        ctx.fill();
+
+        // ---- body (ellipse) ----
+        ctx.beginPath();
+        ctx.ellipse(0, 0, w * 0.4, h * 0.45, 0, 0, Math.PI * 2);
+        ctx.fillStyle = this.bodyColor;
+        ctx.fill();
+        // subtle body shine
+        ctx.beginPath();
+        ctx.ellipse(-2, -h * 0.12, w * 0.18, h * 0.16, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,245,0.25)';
+        ctx.fill();
+
+        // ---- dorsal fin ----
+        ctx.beginPath();
+        ctx.fillStyle = this.finColor;
+        ctx.moveTo(w * 0.05, -h * 0.4);
+        ctx.lineTo(w * 0.22, -h * 0.68);
+        ctx.lineTo(w * 0.10, -h * 0.30);
+        ctx.closePath();
+        ctx.fill();
+
+        // ---- pectoral fin ----
+        ctx.beginPath();
+        ctx.fillStyle = this.finColor;
+        ctx.moveTo(w * 0.15, h * 0.1);
+        ctx.lineTo(w * 0.30, h * 0.50);
+        ctx.lineTo(w * 0.05, h * 0.25);
+        ctx.closePath();
+        ctx.fill();
+
+        // ---- eye ----
+        ctx.beginPath();
+        ctx.arc(w * 0.22, -h * 0.1, 2.6 * this.sizeBase, 0, Math.PI * 2);
+        ctx.fillStyle = this.eyeColor;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(w * 0.25, -h * 0.14, 1.2 * this.sizeBase, 0, Math.PI * 2);
+        ctx.fillStyle = '#fafaff';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(w * 0.28, -h * 0.18, 0.6 * this.sizeBase, 0, Math.PI * 2);
+        ctx.fillStyle = '#111';
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    // ==========  FOOD CLASS  ==========
+    class Food {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 6 + Math.random() * 4;
+        this.opacity = 1;
+        this.bobPhase = Math.random() * 6;
+      }
+
+      update() {
+        // slight gentle bob
+        this.bobPhase += 0.02;
+        this.y += Math.sin(this.bobPhase) * 0.15;
+        // keep inside water (food shouldn't go too far)
+        this.x = Math.min(W-15, Math.max(15, this.x));
+        this.y = Math.min(H-15, Math.max(15, this.y));
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        const gradient = ctx.createRadialGradient(this.x-3, this.y-3, 2, this.x, this.y, this.radius+2);
+        gradient.addColorStop(0, '#fce9b0');
+        gradient.addColorStop(0.5, '#eab868');
+        gradient.addColorStop(1, '#b37d3a');
+        ctx.fillStyle = gradient;
+        ctx.shadowColor = 'rgba(255,220,150,0.6)';
+        ctx.shadowBlur = 14;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // tiny shine
+        ctx.beginPath();
+        ctx.arc(this.x-2, this.y-2, 2.5, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,220,0.5)';
+        ctx.fill();
+      }
+    }
+
+    // ==========  POPULATE FISH  ==========
+    const fishArray = [];
+    const NUM_FISH = 15;
+    for (let i = 0; i < NUM_FISH; i++) {
+      const x = 40 + Math.random() * (W - 80);
+      const y = 40 + Math.random() * (H - 80);
+      const paletteIdx = Math.floor(Math.random() * FISH_PALETTES.length);
+      const fish = new Fish(x, y, paletteIdx);
+      // randomize initial direction
+      fish.vx = (Math.random() - 0.5) * 1.8;
+      fish.vy = (Math.random() - 0.5) * 1.2;
+      fish.targetVx = fish.vx;
+      fish.targetVy = fish.vy;
+      fishArray.push(fish);
+    }
+
+    // ==========  FOOD ARRAY  ==========
+    let foodArray = [];
+
+    // ==========  CLICK TO ADD FOOD  ==========
+    canvas.addEventListener('mousedown', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mouseX = (e.clientX - rect.left) * scaleX;
+      const mouseY = (e.clientY - rect.top) * scaleY;
+
+      // add 1–2 food pieces (slight randomness)
+      const count = 1 + (Math.random() > 0.7 ? 1 : 0);
+      for (let i = 0; i < count; i++) {
+        const offsetX = (Math.random() - 0.5) * 14;
+        const offsetY = (Math.random() - 0.5) * 10;
+        const x = Math.min(W-16, Math.max(16, mouseX + offsetX));
+        const y = Math.min(H-16, Math.max(16, mouseY + offsetY));
+        foodArray.push(new Food(x, y));
+      }
+      updateFoodCounter();
+    });
+
+    function updateFoodCounter() {
+      foodCountSpan.textContent = foodArray.length;
+    }
+
+    // ==========  UPDATE & DRAW LOOP  ==========
+    function drawBackground() {
+      // water gradient
+      const grad = ctx.createRadialGradient(200, 150, 50, 400, 300, 600);
+      grad.addColorStop(0, '#388e9e');
+      grad.addColorStop(0.5, '#1c6777');
+      grad.addColorStop(1, '#0a3644');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      // light rays (subtle)
+      ctx.globalAlpha = 0.09;
+      for (let i = 0; i < 4; i++) {
+        const x = 50 + i * 200;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + 30, H);
+        ctx.lineTo(x - 10, H);
+        ctx.closePath();
+        ctx.fillStyle = '#c9edff';
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1.0;
+
+      // bubbles decoration
+      ctx.fillStyle = 'rgba(240,250,255,0.12)';
+      for (let i = 0; i < 9; i++) {
+        const bx = 120 + i * 80 + Math.sin(Date.now() * 0.0005 + i) * 6;
+        const by = 380 + Math.sin(i * 0.7) * 25;
+        ctx.beginPath();
+        ctx.arc(bx, by, 5 + i % 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function animate() {
+      // update fish: each decides based on current food
+      for (let fish of fishArray) {
+        fish.update(foodArray);
+      }
+
+      // food eaten? check each fish against food
+      const eatenIndices = new Set();
+      for (let fish of fishArray) {
+        if (!foodArray.length) break;
+        for (let i = 0; i < foodArray.length; i++) {
+          if (eatenIndices.has(i)) continue;
+          const f = foodArray[i];
+          const dx = fish.x - f.x;
+          const dy = fish.y - f.y;
+          const dist = Math.hypot(dx, dy);
+          const threshold = fish.length * 0.4 + f.radius * 0.7;
+          if (dist < threshold) {
+            eatenIndices.add(i);
+          }
+        }
+      }
+      if (eatenIndices.size > 0) {
+        foodArray = foodArray.filter((_, idx) => !eatenIndices.has(idx));
+        updateFoodCounter();
+      }
+
+      // update food bobbing
+      for (let food of foodArray) {
+        food.update();
+      }
+
+      // ---- DRAW ----
+      drawBackground();
+
+      // draw food (behind fish)
+      for (let food of foodArray) {
+        food.draw();
+      }
+
+      // draw fish
+      for (let fish of fishArray) {
+        fish.draw();
+      }
+
+      // draw subtle foreground overlay
+      ctx.fillStyle = 'rgba(8, 28, 40, 0.08)';
+      ctx.fillRect(0, 0, W, H);
+
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+  })();
+</script>
+</body>
+</html>
+```
+### Interactive Feeding & Realistic Fish Behavior
+
+You can feed the fish by clicking inside the tank. Here's how the simulation works:
+
+*   **Adding Food:** A left-click anywhere on the aquarium places one or two pieces of fish food at that spot. The food counter at the bottom updates immediately.
+*   **Chasing & Eating:** Each fish automatically identifies the food piece closest to it and swims toward it. When a fish gets close enough, it "eats" the food, and the piece disappears.
+*   **Natural Swimming:** When no food is present, each fish wanders around with its own unique speed, direction, and gentle wiggling motion, creating a realistic and varied swimming pattern.
+````
