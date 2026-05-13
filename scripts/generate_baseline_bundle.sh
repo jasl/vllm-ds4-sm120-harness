@@ -20,11 +20,19 @@ BASELINE_EXPECT_GENERATION_REPEAT_COUNT="${BASELINE_EXPECT_GENERATION_REPEAT_COU
 BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT="${BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT:-}"
 BASELINE_EXPECT_TEMPERATURE="${BASELINE_EXPECT_TEMPERATURE:-1.0}"
 BASELINE_EXPECT_TOP_P="${BASELINE_EXPECT_TOP_P:-1.0}"
-BASELINE_REQUIRE_ORACLE="${BASELINE_REQUIRE_ORACLE:-1}"
+# Oracle (token-level top-K logprob export) is optional — useful for
+# cross-platform alignment audits but does not feed the perf / accuracy
+# tuning loops. Default disabled; opt back in with `BASELINE_REQUIRE_ORACLE=1`.
+BASELINE_REQUIRE_ORACLE="${BASELINE_REQUIRE_ORACLE:-0}"
+# Decode profile (torch profiler chrome trace + top-kernels summary) is
+# required on SM12x — it's the primary input for the next round of
+# kernel-level optimisation on the consumer Blackwell parts.
+BASELINE_REQUIRE_DECODE_PROFILE="${BASELINE_REQUIRE_DECODE_PROFILE:-1}"
 export BASELINE_REQUIRE_GENERATION BASELINE_EXPECT_VARIANTS BASELINE_EXPECT_LANGUAGES
 export BASELINE_EXPECT_THINKING_MODES BASELINE_EXPECT_GENERATION_REPEAT_COUNT
 export BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT
 export BASELINE_EXPECT_TEMPERATURE BASELINE_EXPECT_TOP_P BASELINE_REQUIRE_ORACLE
+export BASELINE_REQUIRE_DECODE_PROFILE
 
 if [[ -z "${BASELINE_DATE}" ]]; then
   run_basename="$(basename "${BASELINE_RUN_DIR}")"
@@ -228,7 +236,7 @@ findings = scan_public_bundle(root)
 if findings:
     raise SystemExit("baseline bundle contains non-public data:\n" + "\n".join(findings))
 
-if os.environ.get("BASELINE_REQUIRE_ORACLE", "1").lower() not in {"0", "false", "no"}:
+if os.environ.get("BASELINE_REQUIRE_ORACLE", "0").lower() not in {"0", "false", "no"}:
     cases = load_oracle_cases(root / "oracle")
     if not cases:
         raise SystemExit("baseline bundle has no oracle cases")

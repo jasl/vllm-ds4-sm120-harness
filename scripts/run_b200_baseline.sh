@@ -96,7 +96,10 @@ RANDOM_LONG_NUM_PROMPTS="${RANDOM_LONG_NUM_PROMPTS:-8}"
 RANDOM_LONG_INPUT_LEN="${RANDOM_LONG_INPUT_LEN:-8192}"
 RANDOM_LONG_OUTPUT_LEN="${RANDOM_LONG_OUTPUT_LEN:-512}"
 RANDOM_LONG_BENCH_TIMEOUT="${RANDOM_LONG_BENCH_TIMEOUT:-1800}"
-RUN_ORACLE_EXPORT="${RUN_ORACLE_EXPORT:-1}"
+# Oracle (token-level top-K logprob export) is optional: useful for
+# cross-platform alignment audits but does not feed perf/accuracy tuning.
+# Default off; opt back in with `RUN_ORACLE_EXPORT=1`.
+RUN_ORACLE_EXPORT="${RUN_ORACLE_EXPORT:-0}"
 ORACLE_LOGPROBS="${ORACLE_LOGPROBS:-20}"
 ORACLE_TIMEOUT="${ORACLE_TIMEOUT:-300}"
 RUN_TOOLCALL15="${RUN_TOOLCALL15:-1}"
@@ -170,6 +173,7 @@ VALID_BASELINE_PHASES=(
   eval_gsm8k
   bench_random_8192x512
   oracle_export
+  decode_profile
 )
 
 validate_requested_phases() {

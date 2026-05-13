@@ -221,6 +221,7 @@ serve_args=(
   --tool-call-parser deepseek_v4
   --enable-auto-tool-choice
   --reasoning-parser deepseek_v4
+  --reasoning-config '{"reasoning_parser":"deepseek_v4","reasoning_start_str":"<think>","reasoning_end_str":"</think>"}'
   --node-rank "${NODE_RANK}"
   --headless
 )
@@ -291,6 +292,7 @@ serve_args=(
   --tool-call-parser deepseek_v4
   --enable-auto-tool-choice
   --reasoning-parser deepseek_v4
+  --reasoning-config '{"reasoning_parser":"deepseek_v4","reasoning_start_str":"<think>","reasoning_end_str":"</think>"}'
   --node-rank "${NODE_RANK}"
   --host "${API_HOST}"
   --port "${API_PORT}"
