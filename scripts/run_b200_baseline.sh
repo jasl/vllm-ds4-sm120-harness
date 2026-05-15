@@ -9,7 +9,22 @@ load_harness_env
 MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8080}"
-BASE_URL="${BASE_URL:-http://${HOST}:${PORT}}"
+# The harness ``.env`` historically shipped a hardcoded
+# ``BASE_URL=http://127.0.0.1:8000``. With ``PORT`` defaulting to 8080
+# in this script, the two could drift silently: serve binds 8080 but
+# the health probe targets 8000, every variant times out at
+# ``SERVER_STARTUP_TIMEOUT``. Re-derive ``BASE_URL`` from ``HOST``+``PORT``
+# whenever the env-provided value disagrees so the two sources of truth
+# can never get out of sync; emit one warning when we override.
+_derived_base_url="http://${HOST}:${PORT}"
+if [[ -z "${BASE_URL:-}" ]]; then
+  BASE_URL="${_derived_base_url}"
+elif [[ "${BASE_URL}" != "${_derived_base_url}" ]]; then
+  printf 'warning: ignoring BASE_URL=%s from env; using %s derived from HOST=%s PORT=%s\n' \
+    "${BASE_URL}" "${_derived_base_url}" "${HOST}" "${PORT}" >&2
+  BASE_URL="${_derived_base_url}"
+fi
+unset _derived_base_url
 B200_VLLM_REPO="${B200_VLLM_REPO:-/workspace/vllm}"
 B200_VLLM_VENV="${B200_VLLM_VENV:-${B200_VLLM_REPO}/.venv}"
 PYTHON="${PYTHON:-${B200_VLLM_VENV}/bin/python}"
@@ -159,6 +174,17 @@ export KV_LAYOUT_REQUIRE_HELPER_MATCH KV_LAYOUT_TIMEOUT
 
 if [[ -z "${MTP_SPECULATIVE_CONFIG+x}" ]]; then
   MTP_SPECULATIVE_CONFIG='{"method":"mtp","num_speculative_tokens":2}'
+fi
+# MTP1 is the conservative single-token draft variant; useful as the
+# anchor for measuring the per-position acceptance drop-off and the
+# minimum-overhead spec-decode baseline.
+if [[ -z "${MTP1_SPECULATIVE_CONFIG+x}" ]]; then
+  MTP1_SPECULATIVE_CONFIG='{"method":"mtp","num_speculative_tokens":1}'
+fi
+# MTP3 is an opt-in higher-K MTP variant; useful when MTP=2 pos1 acceptance
+# stays high (>50 %) and the per-step draft budget is not the bottleneck.
+if [[ -z "${MTP3_SPECULATIVE_CONFIG+x}" ]]; then
+  MTP3_SPECULATIVE_CONFIG='{"method":"mtp","num_speculative_tokens":3}'
 fi
 
 ACTIVE_SERVER_PID=""
@@ -342,9 +368,17 @@ official_serve_args() {
     OFFICIAL_SERVE_ARGS+=(--attention_config.use_fp4_indexer_cache=True)
   fi
 
-  if [[ "${variant}" == "mtp" ]]; then
-    OFFICIAL_SERVE_ARGS+=(--speculative_config "${MTP_SPECULATIVE_CONFIG}")
-  fi
+  case "${variant}" in
+    mtp1)
+      OFFICIAL_SERVE_ARGS+=(--speculative_config "${MTP1_SPECULATIVE_CONFIG}")
+      ;;
+    mtp)
+      OFFICIAL_SERVE_ARGS+=(--speculative_config "${MTP_SPECULATIVE_CONFIG}")
+      ;;
+    mtp3)
+      OFFICIAL_SERVE_ARGS+=(--speculative_config "${MTP3_SPECULATIVE_CONFIG}")
+      ;;
+  esac
 
   if [[ -n "${B200_EXTRA_SERVE_ARGS:-}" ]]; then
     # ``eval`` lets B200_EXTRA_SERVE_ARGS pass single-quoted tokens such as
@@ -781,11 +815,14 @@ fi
 
 variant_list="${B200_BASELINE_VARIANTS//,/ }"
 for variant in ${variant_list}; do
-  if [[ "${variant}" != "nomtp" && "${variant}" != "mtp" ]]; then
-    printf 'unsupported B200 baseline variant: %s\n' "${variant}" >&2
-    failures=1
-    continue
-  fi
+  case "${variant}" in
+    nomtp|mtp1|mtp|mtp3) ;;
+    *)
+      printf 'unsupported B200 baseline variant: %s\n' "${variant}" >&2
+      failures=1
+      continue
+      ;;
+  esac
 
   variant_dir="${RUN_ROOT}/${variant}"
   serve_log="${variant_dir}/serve.log"
@@ -864,13 +901,16 @@ for variant in ${variant_list}; do
         "${SCRIPT_DIR}/run_acceptance.sh"
   fi
 
-  if [[ "${variant}" == "mtp" ]]; then
-    bench_concurrency="${MTP_CONCURRENCY}"
-    lm_eval_concurrency="${MTP_LM_EVAL_NUM_CONCURRENT}"
-  else
-    bench_concurrency="${NO_MTP_CONCURRENCY}"
-    lm_eval_concurrency="${LM_EVAL_NUM_CONCURRENT}"
-  fi
+  case "${variant}" in
+    mtp1|mtp|mtp3)
+      bench_concurrency="${MTP_CONCURRENCY}"
+      lm_eval_concurrency="${MTP_LM_EVAL_NUM_CONCURRENT}"
+      ;;
+    *)
+      bench_concurrency="${NO_MTP_CONCURRENCY}"
+      lm_eval_concurrency="${LM_EVAL_NUM_CONCURRENT}"
+      ;;
+  esac
 
   if phase_enabled "long_context_probe" && { [[ "${RUN_LONG_CONTEXT_PROBE}" == "1" ]] || [[ "${RUN_LONG_CONTEXT_PROBE}" == "true" ]]; }; then
     run_phase "${variant}" "long_context_probe" "${variant_dir}/long_context_probe" \

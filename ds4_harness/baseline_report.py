@@ -21,7 +21,7 @@ PHASE_LABELS = {
     "oracle_export": "Oracle Export",
     "eval_gsm8k": "GSM8K",
 }
-VARIANT_ORDER = {"nomtp": 0, "mtp": 1}
+VARIANT_ORDER = {"nomtp": 0, "mtp1": 1, "mtp": 2, "mtp3": 3}
 REAL_WORKLOAD_ORDER = {
     "translation": 0,
     "writing": 1,
