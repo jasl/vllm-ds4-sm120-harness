@@ -65,6 +65,12 @@ KV_LAYOUT_SCALE_BYTES="${KV_LAYOUT_SCALE_BYTES:-8}"
 KV_LAYOUT_REQUIRE_HELPER_MATCH="${KV_LAYOUT_REQUIRE_HELPER_MATCH:-1}"
 KV_LAYOUT_TIMEOUT="${KV_LAYOUT_TIMEOUT:-120}"
 RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"
+RUN_DECODE_PROFILE="${RUN_DECODE_PROFILE:-1}"
+DECODE_PROFILE_MAX_TOKENS="${DECODE_PROFILE_MAX_TOKENS:-128}"
+DECODE_PROFILE_WARMUP_TOKENS="${DECODE_PROFILE_WARMUP_TOKENS:-32}"
+DECODE_PROFILE_TEMPERATURE="${DECODE_PROFILE_TEMPERATURE:-1.0}"
+DECODE_PROFILE_PROMPT="${DECODE_PROFILE_PROMPT:-Write a short paragraph about distributed inference systems.}"
+DECODE_PROFILE_LABEL="${DECODE_PROFILE_LABEL:-decode_short}"
 RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-1}"
 PREFIX_CACHE_CASE_NAME="${PREFIX_CACHE_CASE_NAME:-prefix_cache_interleaved_long_conversation}"
 PREFIX_CACHE_LINE_COUNT="${PREFIX_CACHE_LINE_COUNT:-1900}"
@@ -158,6 +164,8 @@ export LM_EVAL_LIMIT LM_EVAL_COMMAND_TIMEOUT LM_EVAL_EXTRA_ARGS
 export RUN_LONG_CONTEXT_PROBE LONG_CONTEXT_CASE_NAME LONG_CONTEXT_LINE_COUNT
 export LONG_CONTEXT_MAX_TOKENS LONG_CONTEXT_TEMPERATURE LONG_CONTEXT_TOP_P
 export LONG_CONTEXT_THINKING_MODE LONG_CONTEXT_TIMEOUT LONG_CONTEXT_REQUEST_RETRIES
+export RUN_DECODE_PROFILE DECODE_PROFILE_MAX_TOKENS DECODE_PROFILE_WARMUP_TOKENS
+export DECODE_PROFILE_TEMPERATURE DECODE_PROFILE_PROMPT DECODE_PROFILE_LABEL
 export RUN_PREFIX_CACHE_PROBE PREFIX_CACHE_CASE_NAME PREFIX_CACHE_LINE_COUNT
 export PREFIX_CACHE_MAX_TOKENS PREFIX_CACHE_TEMPERATURE PREFIX_CACHE_TOP_P
 export PREFIX_CACHE_THINKING_MODE PREFIX_CACHE_TIMEOUT PREFIX_CACHE_REQUEST_RETRIES
@@ -1056,6 +1064,31 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_oracle_export.sh"
+  fi
+
+  # decode_profile runs LAST in the variant cycle because it must launch its
+  # own vllm serve with VLLM_TORCH_PROFILER_DIR set at startup — the variant's
+  # active serve is torn down here. There is no after-this-phase serve restart
+  # because the next iteration starts its own serve via start_server() anyway.
+  if phase_enabled "decode_profile" && { [[ "${RUN_DECODE_PROFILE}" == "1" ]] || [[ "${RUN_DECODE_PROFILE}" == "true" ]]; }; then
+    stop_active_server
+    decode_serve_cmd="${VLLM_BIN}"
+    for _arg in "${OFFICIAL_SERVE_ARGS[@]}"; do
+      decode_serve_cmd+=$(printf ' %q' "${_arg}")
+    done
+    unset _arg
+    run_phase "${variant}" "decode_profile" "${variant_dir}/decode_profile" \
+      env OUT_DIR="${variant_dir}/decode_profile" \
+        BASE_URL="${BASE_URL}" PYTHON="${PYTHON}" \
+        SERVE_COMMAND="${decode_serve_cmd}" \
+        PROFILE_MODEL="${MODEL}" \
+        PROFILE_PROMPT="${DECODE_PROFILE_PROMPT}" \
+        PROFILE_MAX_TOKENS="${DECODE_PROFILE_MAX_TOKENS}" \
+        PROFILE_WARMUP_TOKENS="${DECODE_PROFILE_WARMUP_TOKENS}" \
+        PROFILE_TEMPERATURE="${DECODE_PROFILE_TEMPERATURE}" \
+        PROFILE_LABEL="${DECODE_PROFILE_LABEL}_${variant}" \
+        STARTUP_TIMEOUT_S="${SERVER_STARTUP_TIMEOUT}" \
+        "${SCRIPT_DIR}/run_decode_profile.sh"
   fi
 
   stop_active_server

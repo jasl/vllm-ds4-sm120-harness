@@ -898,8 +898,15 @@ def run_scenario(
             "content": content,
             "tool_calls": tool_calls,
         }
-        if preserve_reasoning_content and "reasoning_content" in message:
-            assistant_message["reasoning_content"] = message["reasoning_content"]
+        if preserve_reasoning_content:
+            # vLLM's OpenAI front-end exposes the parsed reasoning under
+            # `message.reasoning` (string) on this version. Older / other
+            # servers used `message.reasoning_content`. Persist either form
+            # under `reasoning_content` so downstream tools (replay,
+            # scoring) see one canonical key.
+            reasoning_val = message.get("reasoning") or message.get("reasoning_content")
+            if reasoning_val:
+                assistant_message["reasoning_content"] = reasoning_val
         messages.append(assistant_message)
 
         for index, raw_call in enumerate(tool_calls):

@@ -149,7 +149,10 @@ def build_prefix_cache_request(
 
 def _content_from_delta(delta: Json) -> str:
     parts = []
-    for key in ("content", "reasoning_content"):
+    # vLLM's OpenAI front-end uses `reasoning` on this version; older servers
+    # used `reasoning_content`. Capture both so prefix-cache TTFT counts
+    # reasoning tokens consistently across server versions.
+    for key in ("content", "reasoning", "reasoning_content"):
         value = delta.get(key)
         if isinstance(value, str) and value:
             parts.append(value)
