@@ -11,7 +11,13 @@ MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
 PYTHON="${PYTHON:-python}"
 LONG_CONTEXT_VARIANT="${LONG_CONTEXT_VARIANT:-manual}"
 LONG_CONTEXT_CASE_NAME="${LONG_CONTEXT_CASE_NAME:-kv_indexer_long_context}"
-LONG_CONTEXT_LINE_COUNT="${LONG_CONTEXT_LINE_COUNT:-2400}"
+# 2200 lines ~= 60K prompt tokens on DSv4 tokenizer (≈27.3 tok/line). With
+# LONG_CONTEXT_MAX_TOKENS=128, total stays under any 65536-context model with
+# >5K margin for chat-template overhead. Bumping above ~2350 risks the
+# request hitting the model's max_model_len ceiling. Bumped down from 2400
+# (saw "prompt_tokens=65409 + max_tokens=128 > 65536" on max-model-len=65536
+# serves).
+LONG_CONTEXT_LINE_COUNT="${LONG_CONTEXT_LINE_COUNT:-2200}"
 LONG_CONTEXT_MAX_TOKENS="${LONG_CONTEXT_MAX_TOKENS:-128}"
 LONG_CONTEXT_TEMPERATURE="${LONG_CONTEXT_TEMPERATURE:-0.0}"
 LONG_CONTEXT_TOP_P="${LONG_CONTEXT_TOP_P:-1.0}"

@@ -56,6 +56,7 @@ from ds4_harness.lm_eval import (
     summarize_lm_eval_results,
 )
 from ds4_harness.long_context_probe import (
+    DEFAULT_LINE_COUNT as DEFAULT_LONG_CONTEXT_LINE_COUNT,
     run_long_context_probe,
     write_long_context_markdown,
 )
@@ -1619,7 +1620,7 @@ def build_parser() -> argparse.ArgumentParser:
     long_context.add_argument("--model", default=DEFAULT_MODEL)
     long_context.add_argument("--variant", default="manual")
     long_context.add_argument("--case-name", default="kv_indexer_long_context")
-    long_context.add_argument("--line-count", type=int, default=2400)
+    long_context.add_argument("--line-count", type=int, default=DEFAULT_LONG_CONTEXT_LINE_COUNT)
     long_context.add_argument("--max-tokens", type=int, default=128)
     long_context.add_argument("--temperature", type=float, default=0.0)
     long_context.add_argument("--top-p", type=float, default=1.0)
