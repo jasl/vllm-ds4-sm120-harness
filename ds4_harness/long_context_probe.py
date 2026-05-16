@@ -16,11 +16,15 @@ Json = dict[str, Any]
 
 
 DEFAULT_CASE_NAME = "kv_indexer_long_context"
-# 2200 lines ≈ 60K prompt tokens on the DSv4 tokenizer (~27.3 tok/line).
-# With LONG_CONTEXT_MAX_TOKENS=128 this stays under any 65536-context serve
-# with >5K of headroom for chat-template + system overhead. 2400 was a
-# 1-token overflow on max_model_len=65536 (prompt 65409 + out 128 = 65537).
-DEFAULT_LINE_COUNT = 2200
+# 1900 lines ≈ 59K prompt tokens on the DSv4 tokenizer.
+# Measured directly (no chat template): line_count=1900 → 58953 user tokens,
+# line_count=2000 → 62053, line_count=2200 → 68253. Earlier estimates of
+# ~27 tok/line underestimated by ~13%; the real average is ~31 tok/line.
+# 1900 leaves >6K of headroom under a 65536-context serve with
+# LONG_CONTEXT_MAX_TOKENS=128, which covers any plausible chat-template
+# overhead (system role, user wrapper, reasoning markers). Earlier defaults
+# of 2400 (65409 overflow) and 2200 (~68253 tokens, still over) failed.
+DEFAULT_LINE_COUNT = 1900
 DEFAULT_REQUIRED_TERMS = (
     "alpha-cobalt-17",
     "beta-quartz-29",

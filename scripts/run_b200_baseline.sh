@@ -67,7 +67,7 @@ KV_LAYOUT_TIMEOUT="${KV_LAYOUT_TIMEOUT:-120}"
 RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"
 RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-1}"
 PREFIX_CACHE_CASE_NAME="${PREFIX_CACHE_CASE_NAME:-prefix_cache_interleaved_long_conversation}"
-PREFIX_CACHE_LINE_COUNT="${PREFIX_CACHE_LINE_COUNT:-2200}"
+PREFIX_CACHE_LINE_COUNT="${PREFIX_CACHE_LINE_COUNT:-1900}"
 PREFIX_CACHE_MAX_TOKENS="${PREFIX_CACHE_MAX_TOKENS:-64}"
 PREFIX_CACHE_TEMPERATURE="${PREFIX_CACHE_TEMPERATURE:-0.0}"
 PREFIX_CACHE_TOP_P="${PREFIX_CACHE_TOP_P:-1.0}"
@@ -577,10 +577,10 @@ write_summary() {
       "${RUN_KV_LAYOUT_PROBE}" "${KV_LAYOUT_NUM_BLOCKS}" "${KV_LAYOUT_BLOCK_SIZE}" \
       "${KV_LAYOUT_HEAD_DIM}" "${KV_LAYOUT_SCALE_BYTES}" "${KV_LAYOUT_REQUIRE_HELPER_MATCH}"
     printf -- '- long_context_probe: `%s`, lines `%s`, max tokens `%s`, thinking `%s`\n' \
-      "${RUN_LONG_CONTEXT_PROBE}" "${LONG_CONTEXT_LINE_COUNT:-2200}" \
+      "${RUN_LONG_CONTEXT_PROBE}" "${LONG_CONTEXT_LINE_COUNT:-1900}" \
       "${LONG_CONTEXT_MAX_TOKENS:-128}" "${LONG_CONTEXT_THINKING_MODE:-non-thinking}"
     printf -- '- prefix_cache_probe: `%s`, lines `%s`, max tokens `%s`, thinking `%s`, fail_on_regression `%s`\n' \
-      "${RUN_PREFIX_CACHE_PROBE}" "${PREFIX_CACHE_LINE_COUNT:-2200}" \
+      "${RUN_PREFIX_CACHE_PROBE}" "${PREFIX_CACHE_LINE_COUNT:-1900}" \
       "${PREFIX_CACHE_MAX_TOKENS:-64}" "${PREFIX_CACHE_THINKING_MODE:-non-thinking}" \
       "${PREFIX_CACHE_FAIL_ON_REGRESSION}"
     printf -- '- streaming_pressure_soak: `%s`, concurrency `%s`, rounds `%s`, lines `%s`, max tokens `%s`, thinking `%s`, fail_on_slow `%s`\n' \
@@ -921,7 +921,7 @@ for variant in ${variant_list}; do
         BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
         LONG_CONTEXT_VARIANT="${variant}" \
         LONG_CONTEXT_CASE_NAME="${LONG_CONTEXT_CASE_NAME:-kv_indexer_long_context}" \
-        LONG_CONTEXT_LINE_COUNT="${LONG_CONTEXT_LINE_COUNT:-2200}" \
+        LONG_CONTEXT_LINE_COUNT="${LONG_CONTEXT_LINE_COUNT:-1900}" \
         LONG_CONTEXT_MAX_TOKENS="${LONG_CONTEXT_MAX_TOKENS:-128}" \
         LONG_CONTEXT_TEMPERATURE="${LONG_CONTEXT_TEMPERATURE:-0.0}" \
         LONG_CONTEXT_TOP_P="${LONG_CONTEXT_TOP_P:-1.0}" \
@@ -942,7 +942,7 @@ for variant in ${variant_list}; do
         BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
         PREFIX_CACHE_VARIANT="${variant}" \
         PREFIX_CACHE_CASE_NAME="${PREFIX_CACHE_CASE_NAME:-prefix_cache_interleaved_long_conversation}" \
-        PREFIX_CACHE_LINE_COUNT="${PREFIX_CACHE_LINE_COUNT:-2200}" \
+        PREFIX_CACHE_LINE_COUNT="${PREFIX_CACHE_LINE_COUNT:-1900}" \
         PREFIX_CACHE_MAX_TOKENS="${PREFIX_CACHE_MAX_TOKENS:-64}" \
         PREFIX_CACHE_TEMPERATURE="${PREFIX_CACHE_TEMPERATURE:-0.0}" \
         PREFIX_CACHE_TOP_P="${PREFIX_CACHE_TOP_P:-1.0}" \
