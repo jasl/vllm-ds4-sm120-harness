@@ -17,7 +17,10 @@ Json = dict[str, Any]
 StreamFunc = Callable[..., Json]
 
 DEFAULT_CASE_NAME = "prefix_cache_interleaved_long_conversation"
-DEFAULT_LINE_COUNT = 2400
+# 2200 lines ~ 60K prompt tokens (≈27.3 tok/line). With DEFAULT_MAX_TOKENS=64
+# this stays under any 65536-context serve with >5K headroom. See the same
+# rationale and migration note in long_context_probe.py.
+DEFAULT_LINE_COUNT = 2200
 DEFAULT_MAX_TOKENS = 64
 DEFAULT_REGRESSION_TTFT_RATIO = 3.0
 
