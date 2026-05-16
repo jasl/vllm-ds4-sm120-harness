@@ -211,21 +211,34 @@ def _bearer_headers_from_env(env_name: str | None) -> dict[str, str] | None:
     return {"Authorization": f"Bearer {value}"}
 
 
+def _effective_output_budget(
+    max_case_tokens: int | None,
+    prompt_token_reservation: int,
+) -> int | None:
+    if max_case_tokens is None:
+        return None
+    effective = max_case_tokens - max(0, prompt_token_reservation)
+    return max(1, effective)
+
+
 def _apply_max_case_tokens_cap(
     payload: dict[str, Any],
     max_case_tokens: int | None,
+    prompt_token_reservation: int = 0,
 ) -> None:
-    if max_case_tokens is None:
+    cap = _effective_output_budget(max_case_tokens, prompt_token_reservation)
+    if cap is None:
         return
     current = payload.get("max_tokens")
-    if isinstance(current, int) and current > max_case_tokens:
-        payload["max_tokens"] = max_case_tokens
+    if isinstance(current, int) and current > cap:
+        payload["max_tokens"] = cap
 
 
 def _reserve_thinking_token_budget(
     payload: dict[str, Any],
     mode_extra_body: dict[str, Any],
     max_case_tokens: int | None,
+    prompt_token_reservation: int = 0,
 ) -> None:
     budget = mode_extra_body.get("thinking_token_budget")
     current = payload.get("max_tokens")
@@ -233,8 +246,9 @@ def _reserve_thinking_token_budget(
         return
 
     max_tokens = current + budget
-    if max_case_tokens is not None:
-        max_tokens = min(max_tokens, max_case_tokens)
+    cap = _effective_output_budget(max_case_tokens, prompt_token_reservation)
+    if cap is not None:
+        max_tokens = min(max_tokens, cap)
     payload["max_tokens"] = max_tokens
 
 
@@ -242,13 +256,15 @@ def _apply_mode_request_max_tokens(
     payload: dict[str, Any],
     request_max_tokens: int | None,
     max_case_tokens: int | None,
+    prompt_token_reservation: int = 0,
 ) -> None:
     if request_max_tokens is None:
         return
 
     target = request_max_tokens
-    if max_case_tokens is not None:
-        target = min(target, max_case_tokens)
+    cap = _effective_output_budget(max_case_tokens, prompt_token_reservation)
+    if cap is not None:
+        target = min(target, cap)
     current = payload.get("max_tokens")
     if not isinstance(current, int) or current < target:
         payload["max_tokens"] = target
@@ -346,7 +362,11 @@ def _cmd_chat_smoke(args: argparse.Namespace) -> int:
                 default_temperature=args.temperature,
             )
             payload.update(extra_body)
-            _apply_max_case_tokens_cap(payload, args.max_case_tokens)
+            _apply_max_case_tokens_cap(
+                payload,
+                args.max_case_tokens,
+                prompt_token_reservation=args.prompt_token_reservation,
+            )
             started = time.monotonic()
             try:
                 if headers:
@@ -481,12 +501,14 @@ def _cmd_generation_matrix(args: argparse.Namespace) -> int:
                     payload,
                     mode_extra_body,
                     args.max_case_tokens,
+                    prompt_token_reservation=args.prompt_token_reservation,
                 )
                 if thinking_mode == "think-max":
                     _apply_mode_request_max_tokens(
                         payload,
                         args.think_max_request_max_tokens,
                         args.max_case_tokens,
+                        prompt_token_reservation=args.prompt_token_reservation,
                     )
                 payload.update(mode_extra_body)
                 payload.update(extra_body)
@@ -1505,6 +1527,7 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--request-retries", type=int, default=1)
     smoke.add_argument("--api-key-env")
     smoke.add_argument("--max-case-tokens", type=int)
+    smoke.add_argument("--prompt-token-reservation", type=int, default=0)
     smoke.add_argument("--extra-body-json")
     smoke.add_argument("--jsonl-output", type=Path)
     smoke.add_argument("--markdown-output", type=Path)
@@ -1521,6 +1544,18 @@ def build_parser() -> argparse.ArgumentParser:
     generation.add_argument("--model", default=DEFAULT_MODEL)
     generation.add_argument("--max-tokens", type=int, default=2048)
     generation.add_argument("--max-case-tokens", type=int)
+    generation.add_argument(
+        "--prompt-token-reservation",
+        type=int,
+        default=0,
+        help=(
+            "Tokens reserved out of --max-case-tokens for the prompt + chat-template "
+            "overhead. Effective output budget = max_case_tokens - reservation. "
+            "Needed when max_case_tokens is set to the model's max_model_len so that "
+            "any non-empty prompt does not push prompt_tokens + max_tokens over the "
+            "model context limit."
+        ),
+    )
     generation.add_argument("--temperature", type=float, default=1.0)
     generation.add_argument("--top-p", type=float, default=1.0)
     generation.add_argument("--override-prompt-sampling", action="store_true")
