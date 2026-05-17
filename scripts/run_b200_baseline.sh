@@ -72,6 +72,25 @@ RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"
 # the default at 0 so they don't time out waiting for a serve they cannot
 # actually start.
 RUN_DECODE_PROFILE="${RUN_DECODE_PROFILE:-0}"
+# eval_longbench2 is OFF by default. It runs the lm-evaluation-harness
+# `longbench2` task family (LongBench-v2, 503 multiple-choice questions
+# spanning 8K-2M token prompts) against a *fresh* serve at
+# LONGBENCH2_MAX_MODEL_LEN — the baseline serve at 65K is too small for
+# anything beyond the Short tier. The phase tears down the variant's
+# running serve and launches its own, like decode_profile, then tears
+# the temporary serve down at the end. Set LONGBENCH2_MAX_MODEL_LEN
+# explicitly when enabling (no harness-side default — workstation tops
+# out near 128K, GB10 around 256K).
+RUN_LONGBENCH2="${RUN_LONGBENCH2:-0}"
+LONGBENCH2_TASKS="${LONGBENCH2_TASKS:-longbench2}"
+LONGBENCH2_LIMIT="${LONGBENCH2_LIMIT:-}"
+LONGBENCH2_BATCH_SIZE="${LONGBENCH2_BATCH_SIZE:-auto}"
+LONGBENCH2_NUM_CONCURRENT="${LONGBENCH2_NUM_CONCURRENT:-1}"
+LONGBENCH2_TIMEOUT_MS="${LONGBENCH2_TIMEOUT_MS:-1800000}"
+LONGBENCH2_COMMAND_TIMEOUT="${LONGBENCH2_COMMAND_TIMEOUT:-14400}"
+# LONGBENCH2_MAX_MODEL_LEN intentionally has no default; the user must set
+# it per host when enabling RUN_LONGBENCH2=1, because the right value
+# depends on KV memory budget (e.g. SM120 workstation ~128K, GB10 ~256K).
 DECODE_PROFILE_MAX_TOKENS="${DECODE_PROFILE_MAX_TOKENS:-128}"
 DECODE_PROFILE_WARMUP_TOKENS="${DECODE_PROFILE_WARMUP_TOKENS:-32}"
 DECODE_PROFILE_TEMPERATURE="${DECODE_PROFILE_TEMPERATURE:-1.0}"
@@ -172,6 +191,9 @@ export LONG_CONTEXT_MAX_TOKENS LONG_CONTEXT_TEMPERATURE LONG_CONTEXT_TOP_P
 export LONG_CONTEXT_THINKING_MODE LONG_CONTEXT_TIMEOUT LONG_CONTEXT_REQUEST_RETRIES
 export RUN_DECODE_PROFILE DECODE_PROFILE_MAX_TOKENS DECODE_PROFILE_WARMUP_TOKENS
 export DECODE_PROFILE_TEMPERATURE DECODE_PROFILE_PROMPT DECODE_PROFILE_LABEL
+export RUN_LONGBENCH2 LONGBENCH2_TASKS LONGBENCH2_LIMIT LONGBENCH2_BATCH_SIZE
+export LONGBENCH2_NUM_CONCURRENT LONGBENCH2_TIMEOUT_MS LONGBENCH2_COMMAND_TIMEOUT
+export LONGBENCH2_MAX_MODEL_LEN
 export RUN_PREFIX_CACHE_PROBE PREFIX_CACHE_CASE_NAME PREFIX_CACHE_LINE_COUNT
 export PREFIX_CACHE_MAX_TOKENS PREFIX_CACHE_TEMPERATURE PREFIX_CACHE_TOP_P
 export PREFIX_CACHE_THINKING_MODE PREFIX_CACHE_TIMEOUT PREFIX_CACHE_REQUEST_RETRIES
@@ -215,6 +237,7 @@ VALID_BASELINE_PHASES=(
   bench_random_8192x512
   oracle_export
   decode_profile
+  eval_longbench2
 )
 
 validate_requested_phases() {
@@ -239,7 +262,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,prefix_cache_probe,streaming_pressure_soak,bench_hf_mt_bench,eval_gsm8k,bench_random_8192x512,oracle_export' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,prefix_cache_probe,streaming_pressure_soak,bench_hf_mt_bench,eval_gsm8k,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
   done
@@ -1095,6 +1118,41 @@ for variant in ${variant_list}; do
         PROFILE_LABEL="${DECODE_PROFILE_LABEL}_${variant}" \
         STARTUP_TIMEOUT_S="${SERVER_STARTUP_TIMEOUT}" \
         "${SCRIPT_DIR}/run_decode_profile.sh"
+  fi
+
+  # eval_longbench2 also runs last and brings up its own serve at a
+  # user-specified --max-model-len (LongBench-v2 prompts can exceed 256K so
+  # the variant's SERVE_MAX_MODEL_LEN=65K is usually too small). Setting
+  # RUN_LONGBENCH2=1 without LONGBENCH2_MAX_MODEL_LEN is a hard error: the
+  # right ceiling depends on host KV memory budget, not on a harness default.
+  if phase_enabled "eval_longbench2" && { [[ "${RUN_LONGBENCH2}" == "1" ]] || [[ "${RUN_LONGBENCH2}" == "true" ]]; }; then
+    if [[ -z "${LONGBENCH2_MAX_MODEL_LEN:-}" ]]; then
+      printf 'error: RUN_LONGBENCH2=1 but LONGBENCH2_MAX_MODEL_LEN is unset\n' >&2
+      printf 'error: pick a value per host (e.g., SM120 workstation 131072, GB10 262144)\n' >&2
+      record_phase "${variant}" "eval_longbench2" "2" "${variant_dir}/eval_longbench2"
+    else
+      stop_active_server
+      lb2_serve_cmd="${VLLM_BIN}"
+      for _arg in "${OFFICIAL_SERVE_ARGS[@]}"; do
+        lb2_serve_cmd+=$(printf ' %q' "${_arg}")
+      done
+      unset _arg
+      run_phase "${variant}" "eval_longbench2" "${variant_dir}/eval_longbench2" \
+        env OUT_DIR="${variant_dir}/eval_longbench2" \
+          BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" \
+          LM_EVAL_BIN="${LM_EVAL_BIN}" \
+          LM_EVAL_TOKENIZER_BACKEND="${LM_EVAL_TOKENIZER_BACKEND}" \
+          SERVE_COMMAND="${lb2_serve_cmd}" \
+          LONGBENCH2_MAX_MODEL_LEN="${LONGBENCH2_MAX_MODEL_LEN}" \
+          LONGBENCH2_TASKS="${LONGBENCH2_TASKS}" \
+          LONGBENCH2_LIMIT="${LONGBENCH2_LIMIT}" \
+          LONGBENCH2_BATCH_SIZE="${LONGBENCH2_BATCH_SIZE}" \
+          LONGBENCH2_NUM_CONCURRENT="${LONGBENCH2_NUM_CONCURRENT}" \
+          LONGBENCH2_TIMEOUT_MS="${LONGBENCH2_TIMEOUT_MS}" \
+          LONGBENCH2_COMMAND_TIMEOUT="${LONGBENCH2_COMMAND_TIMEOUT}" \
+          STARTUP_TIMEOUT_S="${SERVER_STARTUP_TIMEOUT}" \
+          "${SCRIPT_DIR}/run_longbench2.sh"
+    fi
   fi
 
   stop_active_server
