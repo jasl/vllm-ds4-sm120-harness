@@ -1,0 +1,10 @@
+{
+  "elapsed_s": 1.1419026851654053,
+  "usage": {
+    "prompt_tokens": 13,
+    "total_tokens": 114,
+    "completion_tokens": 101,
+    "prompt_tokens_details": null
+  },
+  "label": "decode_short_nomtp_fullcapture"
+}

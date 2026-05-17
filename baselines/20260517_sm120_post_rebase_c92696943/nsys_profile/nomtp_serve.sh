@@ -1,0 +1,19 @@
+#!/bin/bash
+exec /home/jasl/Workspace/vllm/.venv/bin/vllm serve deepseek-ai/DeepSeek-V4-Flash \
+  --trust-remote-code \
+  --kv-cache-dtype fp8 \
+  --block-size 256 \
+  --max-model-len 65536 \
+  --tensor-parallel-size 2 \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --no-enable-flashinfer-autotune \
+  --reasoning-parser deepseek_v4 \
+  --tokenizer-mode deepseek_v4 \
+  --tool-call-parser deepseek_v4 \
+  --enable-auto-tool-choice \
+  --reasoning-config '{"reasoning_parser":"deepseek_v4","reasoning_start_str":"<think>","reasoning_end_str":"</think>"}' \
+  --enable-expert-parallel \
+  --gpu-memory-utilization 0.98 \
+  --no-enable-prefix-caching \
+  --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'

@@ -44,14 +44,22 @@ This bundle is a current reference baseline, not necessarily a completely green 
   (SGLang, TokenSpeed, downstream forks) to verify their reimplementation
   matches the vLLM reference at this revision. ~71 MiB. See
   `port_reference/kernel_reference_v2/README.md`.
+- `port_reference/moe_configs/`: tuned fused-MoE FP8 Triton config for the
+  production shape (`E=128, N=2048, block=[128,128]`) at TP=2+EP. This shape
+  had no prior tuning in the vLLM tree.
+- `port_reference/tokenizer_parity/`: tokenizer token-ID + SHA-256 reference
+  for 12 prompts × 4 chat modes.
+- `oracle/`: token-level top-20 logprob captures for 5 deterministic probe
+  cases on the nomtp variant (cross-platform alignment audit reference).
+- `nsys_profile/`: 125 MiB system-wide nsys trace of nomtp serve full
+  lifecycle. Open in `nsys-ui` for the timeline.
 
-## Pending follow-up
+## Pending follow-up (next run)
 
-A fused-MoE FP8 W8A8 autotune sweep is still running at the time this bundle
-was generated. The tune covers four DSv4-Flash topologies (TP=2/4/8 + EP,
-plus TP=2 no-EP). Results — including the production `E=128, N=2048`
-shape, which has no tuned config in the tree today — will land in a follow-up
-commit on top of this bundle.
+Three additional MoE shapes (TP=4+EP, TP=8+EP, TP=2 no-EP) were intentionally
+not finished in this round — the tune was terminated after the production
+shape landed. Same driver (`scripts/run_fp8_moe_tune.sh`) can finish them
+later. GB10-tagged MoE configs will be produced separately on GB10 hardware.
 
 ## Reuse
 

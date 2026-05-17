@@ -330,21 +330,66 @@ batch). Atol/rtol tolerances and capture metadata in
 `port_reference/kernel_reference_v2/manifest.json`. ~71 MiB total. Reproducible
 via `scripts/dump_kernel_reference.py --output-dir <out>` on any SM12x host.
 
-## Pending follow-up (will land in a separate commit)
+## Supplementary: Production-Shape Fused-MoE Tune
 
-A fused-MoE FP8 W8A8 autotune sweep is currently running on the workstation
-covering the four typical SM12x deployment shapes:
+Filled the previously-uncovered production shape `(E=128, N=2048,
+block=[128,128])` for DSv4-Flash at `--tensor-parallel-size 2
+--enable-expert-parallel`. Until this run, **no tuned config existed for
+this shape in the vLLM tree** — Triton's default heuristic was in use for
+the dominant MoE kernel.
 
-- `E=128, N=2048, block=[128,128]` — DSv4-Flash @ TP=2 + EP (our production
-  shape — **this shape currently has no tuned config in the tree**, default
-  Triton heuristic is in use)
-- `E=64, N=2048, block=[128,128]` — TP=4 + EP (4-card RTX PRO 6000 / 4-node GB10)
-- `E=32, N=2048, block=[128,128]` — TP=8 + EP (8-card / 8-node)
-- `E=256, N=1024, block=[128,128]` — TP=2 no-EP fallback
+| Field | Value |
+| --- | --- |
+| Device | `NVIDIA_RTX_PRO_6000_Blackwell_Workstation_Edition` |
+| Shape | `E=128, N=2048, block=[128,128]` |
+| dtype | `fp8_w8a8` |
+| Triton version | `3.6.0` |
+| M-buckets | 10 (1, 2, 4, 8, 16, 32, 64, 128, 256, 512) |
+| Search space | 640 configs, M-aware filter |
+| Source | `port_reference/moe_configs/E=128,N=2048,...json` |
 
-Tuner driver lives at `scripts/run_fp8_moe_tune.sh`
-(`scripts/_fp8_moe_tune_driver.py`). The same driver applies on GB10 (will
-be run there separately once that host is free).
+To deploy: copy the JSON into `vllm/model_executor/layers/fused_moe/configs/`
+in your vllm checkout and restart serve.
+
+Three other typical-deployment shapes (TP=4+EP, TP=8+EP, TP=2 no-EP) are
+NOT in this bundle — the sweep was terminated early after the production
+shape landed. The driver lives at `scripts/run_fp8_moe_tune.sh` and can
+finish the remaining shapes via a follow-up run.
+
+## Supplementary: Tokenizer Parity Reference
+
+Token-ID + SHA-256 snapshots for the DSv4 tokenizer applied to 12 prompts
+across 4 chat-mode variants (`raw`, `chat_chat`, `chat_thinking`,
+`chat_thinking_max`). Port teams (SGLang, TokenSpeed, downstream forks)
+compare their tokenizer wrapping against these hashes to verify byte-exact
+parity with `tokenizer_mode=deepseek_v4`.
+
+Source: `port_reference/tokenizer_parity/{tokenizer_parity.json,tokenizer_parity.md}`.
+
+## Supplementary: Oracle Top-K Logprobs Export
+
+Token-level top-20 logprobs for 5 deterministic probe cases (`short_math`,
+`raw_intro`, `translation`, `code_probe`, `long_prefill_2048`), captured
+against the **nomtp** variant. Used for cross-platform alignment audits —
+replay the same prompts on another implementation and compare top-K logprob
+lists position-by-position.
+
+Source: `oracle/` (5 × `completion_*.json` + 5 × `tokenize_*.json` +
+`oracle_export_summary.{json,md}`). All cases `OK`, `exit 0`.
+
+## Supplementary: Nsight Systems Long Trace
+
+System-wide nsys trace of vLLM nomtp serve over its full lifecycle (~150 s):
+spawn → 80 s model load + JIT warmup → captured 128-token request → SIGTERM
+teardown. 125 MiB `.nsys-rep`, opens in `nsys-ui` for the per-kernel
+timeline and NVTX-annotated phase boundaries.
+
+Source: `nsys_profile/` (binary `.nsys-rep` file is NOT checked in — exceeds
+GitHub's 100 MiB limit; only metadata and serve command are tracked. Ask
+the bundle maintainer for the binary or rerun the capture). Complements the
+kernel-summary tables in `v6b/{nomtp,mtp}/decode_profile/torch_kernel_summary.md`
+— those are aggregate top-N tables, this is the raw timeline you'd want
+for identifying serialisation points / collective stalls / stream overlap gaps.
 
 ## Notes
 
