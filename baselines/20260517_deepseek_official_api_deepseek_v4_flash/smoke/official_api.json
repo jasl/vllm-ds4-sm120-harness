@@ -1,0 +1,167 @@
+[
+  {
+    "case": "math_7_times_8",
+    "tags": [
+      "quick",
+      "basic",
+      "deterministic"
+    ],
+    "round": 1,
+    "ok": true,
+    "detail": "matched expectation",
+    "elapsed_seconds": 0.78932,
+    "payload": {
+      "model": "deepseek-v4-flash",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 7*8?"
+        }
+      ],
+      "max_tokens": 256,
+      "temperature": 0.0
+    },
+    "response": {
+      "id": "e43d0611-2a7c-477d-835f-41265875d9ab",
+      "object": "chat.completion",
+      "created": 1778977846,
+      "model": "deepseek-v4-flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "7 multiplied by 8 equals 56.",
+            "reasoning_content": "We need to answer: \"What is 7*8?\" It's a simple multiplication. 7 times 8 equals 56. So answer: 56."
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 11,
+        "completion_tokens": 44,
+        "total_tokens": 55,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 34
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 11
+      },
+      "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+    }
+  },
+  {
+    "case": "capital_of_france",
+    "tags": [
+      "quick",
+      "basic",
+      "deterministic"
+    ],
+    "round": 1,
+    "ok": true,
+    "detail": "matched expectation",
+    "elapsed_seconds": 0.882062,
+    "payload": {
+      "model": "deepseek-v4-flash",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Capital of France?"
+        }
+      ],
+      "max_tokens": 256,
+      "temperature": 0.0
+    },
+    "response": {
+      "id": "217c0b37-9e86-4621-895b-5c2556100546",
+      "object": "chat.completion",
+      "created": 1778977847,
+      "model": "deepseek-v4-flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "The capital of France is **Paris**.",
+            "reasoning_content": "The user is asking for the capital of France. This is a straightforward factual question. I need to provide the correct answer without any additional commentary or unnecessary details. The capital of France is Paris. I will state that clearly and concisely."
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 8,
+        "completion_tokens": 58,
+        "total_tokens": 66,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 49
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 8
+      },
+      "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+    }
+  },
+  {
+    "case": "spanish_greeting",
+    "tags": [
+      "quick",
+      "basic",
+      "deterministic"
+    ],
+    "round": 1,
+    "ok": true,
+    "detail": "matched expectation",
+    "elapsed_seconds": 1.652031,
+    "payload": {
+      "model": "deepseek-v4-flash",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello in Spanish?"
+        }
+      ],
+      "max_tokens": 256,
+      "temperature": 0.0
+    },
+    "response": {
+      "id": "96b93057-926a-4f26-9f61-e7300e51b3a7",
+      "object": "chat.completion",
+      "created": 1778977848,
+      "model": "deepseek-v4-flash",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "The Spanish word for \"Hello\" is **¡Hola!**",
+            "reasoning_content": "We need to respond to the user's query: \"Hello in Spanish?\" The user is asking for the Spanish translation of \"Hello\". The answer is \"Hola\". Since it's a simple question, we can provide a direct answer. Also, consider that the user might be expecting a response in English explaining the translation. But the instruction is just to answer. I'll respond with \"Hola\" and perhaps a brief explanation."
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 8,
+        "completion_tokens": 102,
+        "total_tokens": 110,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 87
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 8
+      },
+      "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+    }
+  }
+]

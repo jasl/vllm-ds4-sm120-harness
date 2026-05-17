@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "label": "deepseek_official_api_deepseek_v4_flash",
+  "date": "20260517",
+  "generated_at_utc": "2026-05-17T01:06:43.511881+00:00",
+  "source": {
+    "artifact_run": "20260517083045",
+    "raw_artifacts_are_not_required": true
+  },
+  "model": "deepseek-v4-flash",
+  "contents": {
+    "report": "Readable official API reference report.",
+    "generation": "Official API generation rows and Markdown transcripts.",
+    "smoke": "Small official API comparison checks.",
+    "toolcall15": "Official API ToolCall-15 trace and score."
+  }
+}

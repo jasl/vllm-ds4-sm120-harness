@@ -1,0 +1,123 @@
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>轻量看板</title>
+    <style>
+        /* ===== 全局重置 & 基础 ===== */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f0f2f5;
+            color: #1d1d1f;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        button {
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 14px;
+            transition: background 0.2s, opacity 0.2s;
+        }
+        button:active {
+            transform: scale(0.97);
+        }
+        input,
+        select,
+        textarea {
+            font-family: inherit;
+            font-size: 14px;
+            border: 1px solid #d0d5dd;
+            border-radius: 6px;
+            padding: 8px 12px;
+            outline: none;
+            transition: border-color 0.2s;
+            width: 100%;
+        }
+        input:focus,
+        select:focus,
+        textarea:focus {
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+        }
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        /* ===== 头部 ===== */
+        .app-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 24px;
+            background: #fff;
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        }
+        .app-header h1 {
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            color: #1a1a2e;
+            white-space: nowrap;
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            flex: 1 1 auto;
+            justify-content: flex-end;
+        }
+        .toolbar .search-wrap {
+            position: relative;
+            min-width: 180px;
+            max-width: 260px;
+            flex: 1 1 160px;
+        }
+        .toolbar .search-wrap input {
+            padding-left: 32px;
+        }
+        .toolbar .search-wrap .search-icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #8e8e93;
+            font-size: 16px;
+            pointer-events: none;
+        }
+        .toolbar select {
+            width: auto;
+            min-width: 110px;
+        }
+        .btn-primary {
+            background: #1a73e8;
+            color: #fff;
+            font-weight: 500;
+            padding: 8px 20px;
+            white-space: nowrap;
+        }
+        .btn-primary:hover {
+            background: #1557b0;
+        }
+        .btn-secondary {
+            background: #e8eaed;
+            color: #1d1d1f;
+        }
+        .btn-secondary:hover {
+            background: #d2d5d9;
+        }
