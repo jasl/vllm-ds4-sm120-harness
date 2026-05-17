@@ -431,6 +431,14 @@ def generation_result_row(
 
 
 def _thinking_strength(payload: Json) -> str:
+    # New shape: extra_body.chat_template_kwargs.thinking is the routing key.
+    # Legacy shape: top-level extra_body.thinking={"type":"enabled"|"disabled"}.
+    # Accept either so old transcripts replay correctly.
+    chat_kwargs = payload.get("chat_template_kwargs")
+    if isinstance(chat_kwargs, dict):
+        thinking_flag = chat_kwargs.get("thinking")
+        if thinking_flag is False:
+            return "disabled"
     thinking = payload.get("thinking")
     if isinstance(thinking, dict) and thinking.get("type") == "disabled":
         return "disabled"

@@ -340,10 +340,12 @@ def test_toolcall15_cli_runs_requested_thinking_matrix(monkeypatch, tmp_path):
     )
 
     assert rc == 0
+    # New extra_body shape: thinking is routed via chat_template_kwargs;
+    # the top-level `thinking` Claude-style key was a no-op on vLLM.
     assert [call[1]["extra_body"] for call in calls] == [
-        {"thinking": {"type": "disabled"}},
-        {"thinking": {"type": "enabled"}, "reasoning_effort": "high"},
-        {"thinking": {"type": "enabled"}, "reasoning_effort": "max"},
+        {"chat_template_kwargs": {"thinking": False}},
+        {"chat_template_kwargs": {"thinking": True}, "reasoning_effort": "high"},
+        {"chat_template_kwargs": {"thinking": True}, "reasoning_effort": "max"},
     ]
     assert [call[1]["temperature"] for call in calls] == [1.0, 1.0, 1.0]
     assert [call[1]["top_p"] for call in calls] == [1.0, 1.0, 1.0]

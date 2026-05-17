@@ -65,7 +65,13 @@ KV_LAYOUT_SCALE_BYTES="${KV_LAYOUT_SCALE_BYTES:-8}"
 KV_LAYOUT_REQUIRE_HELPER_MATCH="${KV_LAYOUT_REQUIRE_HELPER_MATCH:-1}"
 KV_LAYOUT_TIMEOUT="${KV_LAYOUT_TIMEOUT:-120}"
 RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"
-RUN_DECODE_PROFILE="${RUN_DECODE_PROFILE:-1}"
+# decode_profile is OFF by default because it tears down the variant's
+# running serve and launches a profiler-instrumented one (torch profiler
+# hooks must be installed at serve startup time). Production wrappers opt
+# in by setting RUN_DECODE_PROFILE=1; unit tests with mocked tools leave
+# the default at 0 so they don't time out waiting for a serve they cannot
+# actually start.
+RUN_DECODE_PROFILE="${RUN_DECODE_PROFILE:-0}"
 DECODE_PROFILE_MAX_TOKENS="${DECODE_PROFILE_MAX_TOKENS:-128}"
 DECODE_PROFILE_WARMUP_TOKENS="${DECODE_PROFILE_WARMUP_TOKENS:-32}"
 DECODE_PROFILE_TEMPERATURE="${DECODE_PROFILE_TEMPERATURE:-1.0}"

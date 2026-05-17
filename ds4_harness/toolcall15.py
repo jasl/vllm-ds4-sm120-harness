@@ -903,10 +903,14 @@ def run_scenario(
             # `message.reasoning` (string) on this version. Older / other
             # servers used `message.reasoning_content`. Persist either form
             # under `reasoning_content` so downstream tools (replay,
-            # scoring) see one canonical key.
-            reasoning_val = message.get("reasoning") or message.get("reasoning_content")
-            if reasoning_val:
-                assistant_message["reasoning_content"] = reasoning_val
+            # scoring) see one canonical key. Preserve empty strings — a
+            # turn that "tried to think but produced nothing" is semantically
+            # different from "thinking was never enabled", so we propagate
+            # the empty value if either key is explicitly present.
+            if "reasoning" in message:
+                assistant_message["reasoning_content"] = message["reasoning"] or ""
+            elif "reasoning_content" in message:
+                assistant_message["reasoning_content"] = message["reasoning_content"]
         messages.append(assistant_message)
 
         for index, raw_call in enumerate(tool_calls):

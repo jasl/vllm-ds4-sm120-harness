@@ -105,9 +105,9 @@ Translate this sentence into English: 隐私和延迟都很重要。
     )
 
     assert rc == 0
-    assert [payload["thinking"] for payload in captured_payloads] == [
-        {"type": "disabled"},
-        {"type": "disabled"},
+    assert [payload["chat_template_kwargs"] for payload in captured_payloads] == [
+        {"thinking": False},
+        {"thinking": False},
     ]
     rows = [json.loads(line) for line in jsonl_output.read_text().splitlines()]
     assert [row["round"] for row in rows] == [1, 2]
@@ -353,7 +353,9 @@ Write one sentence about local inference.
     )
 
     assert rc == 0
-    assert captured["payload"]["thinking"] == {"type": "enabled"}
+    # New extra_body shape: vLLM routes thinking via chat_template_kwargs,
+    # not a top-level `thinking` key (see vllm-project/vllm#41834 thread).
+    assert captured["payload"]["chat_template_kwargs"] == {"thinking": True}
     assert captured["payload"]["reasoning_effort"] == "max"
 
 
