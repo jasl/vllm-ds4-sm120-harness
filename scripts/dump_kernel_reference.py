@@ -213,33 +213,154 @@ def _run_accumulate(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
 
 
 # ============================================================
-# TODO(port-followup): fp8_einsum + dequantize_and_gather_k_cache
+# Kernel 2: deepseek_v4_sm12x_fp8_einsum (FP8 mHC compute)
 # ============================================================
-# These two kernels have layout invariants that don't tokenise into a
-# clean synthetic input on the first try:
 #
-#   * `deepseek_v4_sm12x_fp8_einsum(a, a_scale, b, b_scale, out)` is the
-#     3D mHC einsum `bhr,hdr->bhd` (a: [tokens, groups, hidden];
-#     b: [groups, out_rank, hidden]; both fp8_e4m3fn; out: [tokens,
-#     groups, out_rank]; both `hidden % 128 == 0` and `out_rank % 128 == 0`).
-#     The scales are E8M0 packed (uint8) with `[groups, out_rank // 128]`
-#     and `[tokens, hidden // 128]` shapes respectively. The mid-decode
-#     call site sets `groups = num_local_heads` and `out_rank = wo_a`
-#     which varies by config; the test-config shapes do not directly
-#     describe the 3D tensor.
+# Signature: `(a, a_scale, b, b_scale, out)`. Computes the 3D einsum
+# `bhr,hdr->bhd` where:
+#   a       : [num_tokens, num_groups, hidden_size]  fp8_e4m3fn
+#   b       : [num_groups, out_rank, hidden_size]    fp8_e4m3fn
+#   out     : [num_tokens, num_groups, out_rank]     bfloat16 (written
+#                                                    in-place; caller
+#                                                    pre-allocates)
 #
-#   * `dequantize_and_gather_k_cache(out, k_cache, ...)` reads a packed
-#     FP8 KV cache with `head_bytes = nope_head_dim + 2*rope_head_dim +
-#     nope_head_dim//64 + pad`. For DSv4-Flash that is 448 + 64 + 7 + 1 = 520
-#     (or 576/584 depending on FlashMLA alignment requirements). The output
-#     shape is [num_reqs, max_num_tokens, head_size] in bf16; the cache
-#     storage is `[num_blocks, block_size, head_bytes]` uint8.
+# Both `hidden_size` and `out_rank` must be divisible by 128 (kernel
+# asserts). Scales are E8M0 packed uint8 by default, upcast to fp32
+# inside the kernel; we pass already-fp32 scales here for portability.
 #
-# Both are easier to capture from a live serve via a monkey-patch hook
-# that records (inputs, output) on the first call per shape. That is the
-# right v2 of this script and lives in
-# `scripts/dump_kernel_reference_live.py` (followup), not in this v1
-# synthetic-input dump.
+# DSv4-Flash mid-decode shapes (TP=2):
+#   num_groups = num_local_heads = 32 (64 total heads / 2 ranks)
+#   hidden    = kv_lora_rank-style compressed dim, multiple of 128
+#   out_rank  = wo_a projection out, multiple of 128
+
+
+def _fp8_einsum_inputs(shape: str, device: str) -> dict[str, torch.Tensor]:
+    if shape == "small":
+        num_tokens, num_groups, hidden, out_rank = 8, 32, 512, 128
+    elif shape == "medium":
+        num_tokens, num_groups, hidden, out_rank = 128, 32, 512, 128
+    else:
+        raise ValueError(f"unknown shape `{shape}`")
+
+    # Generate via bf16 intermediates, then quantise; port consumers can
+    # round-trip back to bf16 for parity checks at atol≈5e-2.
+    a_bf16 = (torch.randn(num_tokens, num_groups, hidden, device=device) * 0.3).to(
+        torch.bfloat16
+    )
+    b_bf16 = (torch.randn(num_groups, out_rank, hidden, device=device) * 0.3).to(
+        torch.bfloat16
+    )
+    a = a_bf16.to(torch.float8_e4m3fn)
+    b = b_bf16.to(torch.float8_e4m3fn)
+
+    # FP32 block scales — kernel will accept either fp32 directly or
+    # E8M0 uint8 which it upcasts. We pass fp32 (simpler for the port
+    # team to reproduce without an e8m0 helper).
+    # Block layout: 128 along `hidden` for both a and b; for b also 128
+    # along `out_rank`. Shape conventions checked at the runtime asserts
+    # — see kernel for the exact scale-block layout assertion.
+    scale_blocks_h = hidden // 128
+    scale_blocks_o = out_rank // 128
+    a_scale = torch.ones(num_tokens, num_groups, scale_blocks_h, dtype=torch.float32, device=device)
+    b_scale = torch.ones(num_groups, scale_blocks_o, scale_blocks_h, dtype=torch.float32, device=device)
+    out = torch.zeros(num_tokens, num_groups, out_rank, dtype=torch.bfloat16, device=device)
+    return {
+        "a": a,
+        "a_scale": a_scale,
+        "b": b,
+        "b_scale": b_scale,
+        "out": out,
+    }
+
+
+def _run_fp8_einsum(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+    from vllm.v1.attention.ops.deepseek_v4_ops.fp8_einsum import (
+        deepseek_v4_sm12x_fp8_einsum,
+    )
+
+    deepseek_v4_sm12x_fp8_einsum(
+        inputs["a"],
+        inputs["a_scale"],
+        inputs["b"],
+        inputs["b_scale"],
+        inputs["out"],
+    )
+    return inputs["out"]
+
+
+# ============================================================
+# Kernel 3: dequantize_and_gather_k_cache (KV gather + dequant)
+# ============================================================
+#
+# Signature: `(out, k_cache, seq_lens, gather_lens, block_table,
+#              block_size, offset)`. Reads packed FP8 KV cache rows for
+# each (req, position) pair, dequantises via embedded E8M0 scales, and
+# writes bf16 values into `out`.
+#
+# DSv4-Flash KV cache layout per slot (head_bytes=584):
+#   bytes [0:448]   : NoPE values (FP8 e4m3, 1 byte each)
+#   bytes [448:512] : RoPE values (BF16, 2 bytes each = 32 floats)
+#   bytes [512:519] : E8M0 block scales (7 bytes, one per 64-element
+#                     NoPE block)
+#   bytes [519:520] : padding
+#   bytes [520:584] : reserved for FlashMLA 576B alignment + 8B header
+#
+# Output layout: `[chunk_size, max_gather_len, head_dim=512]` in bf16.
+# `seq_lens[r]` is the number of slots to gather for request r;
+# `block_table[r, ...]` indexes into k_cache.
+
+
+def _gather_kv_inputs(shape: str, device: str) -> dict[str, torch.Tensor]:
+    if shape == "small":
+        chunk_size, max_gather_len, seq_len = 1, 1024, 1024
+    elif shape == "medium":
+        chunk_size, max_gather_len, seq_len = 4, 4096, 4096
+    else:
+        raise ValueError(f"unknown shape `{shape}`")
+
+    block_size = 256
+    head_dim = 512
+    head_bytes = 584
+    num_blocks = 64
+
+    k_cache = torch.randint(
+        0,
+        255,
+        (num_blocks, block_size, head_bytes),
+        dtype=torch.uint8,
+        device=device,
+    )
+    out = torch.zeros(
+        chunk_size, max_gather_len, head_dim, dtype=torch.bfloat16, device=device
+    )
+    blocks_per_seq = (seq_len + block_size - 1) // block_size
+    block_table = torch.randint(
+        0, num_blocks, (chunk_size, blocks_per_seq), dtype=torch.int32, device=device
+    )
+    seq_lens = torch.full((chunk_size,), seq_len, dtype=torch.int32, device=device)
+    return {
+        "out": out,
+        "k_cache": k_cache,
+        "seq_lens": seq_lens,
+        "block_table": block_table,
+    }
+
+
+def _run_gather_kv(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+    from vllm.v1.attention.ops.deepseek_v4_ops.cache_utils import (
+        dequantize_and_gather_k_cache,
+    )
+
+    dequantize_and_gather_k_cache(
+        inputs["out"],
+        inputs["k_cache"],
+        seq_lens=inputs["seq_lens"],
+        gather_lens=None,
+        block_table=inputs["block_table"],
+        block_size=256,
+        offset=0,
+    )
+    return inputs["out"]
 
 
 # ============================================================
@@ -277,6 +398,63 @@ KERNELS: list[KernelSpec] = [
                 "Multi-head sparse MLA accumulate from PR #6 with the "
                 "gather-overlap commit's signature (single-head call site "
                 "internally dispatches to HEAD_BLOCK=8 multi-head kernel)."
+            ),
+        },
+    ),
+    KernelSpec(
+        name="deepseek_v4_sm12x_fp8_einsum",
+        build_inputs=_fp8_einsum_inputs,
+        run=_run_fp8_einsum,
+        shapes=("small", "medium"),
+        tolerance_hint=(
+            "atol=5e-2 rtol=5e-2 on the bf16 output. FP8 e4m3 input × fp32 "
+            "block scales accumulates rounding error proportional to "
+            "hidden_size; with hidden=512 and uniform fp32 scales of 1.0 the "
+            "result is just `a.to(fp32) @ b.to(fp32).transpose(-1, -2)` "
+            "tile-wise. Compare via einsum reference: "
+            "`torch.einsum('bhr,hdr->bhd', a.to(f32)*a_scale_per_block, "
+            "b.to(f32)*b_scale_per_block)` with the same 128-block-along-hidden "
+            "tiling."
+        ),
+        metadata={
+            "einsum": "bhr,hdr->bhd",
+            "block_hidden": 128,
+            "block_out": 128,
+            "block_tokens": 16,
+            "scale_dtype_accepted": "fp32 or e8m0 (uint8, upcast inside kernel)",
+            "notes": (
+                "FP8 W8A8 mHC compute in mid-decode head projection. Shape "
+                "uses TP=2 DSv4-Flash dims (num_groups=32). Both `hidden` "
+                "and `out_rank` must be divisible by 128."
+            ),
+        },
+    ),
+    KernelSpec(
+        name="dequantize_and_gather_k_cache",
+        build_inputs=_gather_kv_inputs,
+        run=_run_gather_kv,
+        shapes=("small", "medium"),
+        tolerance_hint=(
+            "atol=0 rtol=0 on `out` bytes. Packed FP8 cache read with "
+            "embedded E8M0 dequant — output is fully determined by the "
+            "input k_cache bytes + block_table + seq_lens. Any divergence "
+            "is a layout bug (wrong block_size, wrong head_bytes stride, "
+            "wrong scale-byte offsets, or wrong FlashMLA alignment)."
+        ),
+        metadata={
+            "block_size": 256,
+            "head_dim": 512,
+            "head_bytes": 584,
+            "fp8_layout_notes": (
+                "NoPE: bytes [0:448] fp8_e4m3. RoPE: bytes [448:512] bf16. "
+                "E8M0 block scales: bytes [512:519] (7 bytes, one per 64 "
+                "NoPE elements). Byte 519 is pad. Bytes 520-583 reserved "
+                "for FlashMLA 576B alignment + 8B header."
+            ),
+            "notes": (
+                "Read by gather-overlap on aux_stream[1] in attention_impl "
+                "and by _forward_prefill fallback. Same kernel for "
+                "compressed (C128A) and SWA caches."
             ),
         },
     ),
