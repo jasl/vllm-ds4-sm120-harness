@@ -8,12 +8,13 @@ kernel-summary tables only, not raw timelines).
 
 ## Files
 
-- `nsys_profile.nsys-rep` (~120 MiB) — **NOT in this git checkout** (exceeds
-  GitHub's 100 MiB file size limit). The binary trace is preserved locally
-  outside the bundle; ask the bundle maintainer or rerun the capture
-  yourself (see "Reproducing" below).
-- `nsys_run.json` — captured request elapsed + token usage
-- `serve_command.txt` / `nomtp_serve.sh` — exact serve invocation
+- `nsys_profile.nsys-rep` (~120 MiB) — **NOT tracked in git** (see
+  `.gitignore`; binary profiling artefacts are local-only). The binary
+  trace is preserved on the host that produced this bundle; ask the
+  bundle maintainer or rerun the capture yourself (see "Reproducing"
+  below).
+- `nsys_run.json` — captured request elapsed + token usage (tracked)
+- `serve_command.txt` / `nomtp_serve.sh` — exact serve invocation (tracked)
 
 ## Workload
 

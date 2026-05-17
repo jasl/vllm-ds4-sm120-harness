@@ -35,17 +35,25 @@ against both.
 
 ## Files
 
-| File | Size |
+`manifest.json` (tracked) — metadata + per-kernel atol/rtol tolerances +
+SHA-256 of each `.npz`.
+
+The six `.npz` files (~71 MiB total) are **NOT tracked in git** (see
+`.gitignore`). They live alongside `manifest.json` on the host that
+produced this bundle. Port teams can either:
+
+1. Ask the bundle maintainer for the binary blobs; or
+2. Reproduce them locally (deterministic given seed) — see "Reproducing"
+   below.
+
+| File | Approximate size |
 | --- | ---: |
-| `manifest.json` | metadata + per-kernel atol/rtol tolerances |
 | `accumulate_indexed_sparse_mla_attention_chunk_multihead__small.npz` | 4.0 MiB |
 | `accumulate_indexed_sparse_mla_attention_chunk_multihead__medium.npz` | 4.9 MiB |
 | `deepseek_v4_sm12x_fp8_einsum__small.npz` | 1.8 MiB |
 | `deepseek_v4_sm12x_fp8_einsum__medium.npz` | 5.1 MiB |
 | `dequantize_and_gather_k_cache__small.npz` | 11.3 MiB |
 | `dequantize_and_gather_k_cache__medium.npz` | 44 MiB |
-
-Total: ~71 MiB.
 
 ## Reproducing
 

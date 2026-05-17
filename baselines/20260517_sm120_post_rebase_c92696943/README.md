@@ -40,10 +40,10 @@ This bundle is a current reference baseline, not necessarily a completely green 
   matrix above.** See `mtp1_stability_followup/README.md` for full context;
   `report.md` has a summary section.
 - `port_reference/kernel_reference_v2/`: synthetic (input, expected_output)
-  reference data for the three SM12x-specific kernels — used by port teams
-  (SGLang, TokenSpeed, downstream forks) to verify their reimplementation
-  matches the vLLM reference at this revision. ~71 MiB. See
-  `port_reference/kernel_reference_v2/README.md`.
+  reference for the three SM12x-specific kernels. `manifest.json` (with
+  per-kernel SHA-256 + atol/rtol tolerances) is tracked; the six `.npz`
+  blobs (~71 MiB) are local-only — see `kernel_reference_v2/README.md`
+  for how to reproduce or request them.
 - `port_reference/moe_configs/`: tuned fused-MoE FP8 Triton config for the
   production shape (`E=128, N=2048, block=[128,128]`) at TP=2+EP. This shape
   had no prior tuning in the vLLM tree.
