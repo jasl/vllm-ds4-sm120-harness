@@ -44,9 +44,11 @@ This bundle is a current reference baseline, not necessarily a completely green 
   per-kernel SHA-256 + atol/rtol tolerances) is tracked; the six `.npz`
   blobs (~71 MiB) are local-only — see `kernel_reference_v2/README.md`
   for how to reproduce or request them.
-- `port_reference/moe_configs/`: tuned fused-MoE FP8 Triton config for the
-  production shape (`E=128, N=2048, block=[128,128]`) at TP=2+EP. This shape
-  had no prior tuning in the vLLM tree.
+- `port_reference/moe_configs/`: tuned fused-MoE FP8 Triton configs for all
+  4 typical SM12x DSv4-Flash deployment shapes — `E=128/N=2048` (TP=2+EP,
+  production), `E=64/N=2048` (TP=4+EP), `E=32/N=2048` (TP=8+EP), and
+  `E=256/N=1024` (TP=2 no-EP fallback). None had prior tuning in the vLLM
+  tree at this revision.
 - `port_reference/tokenizer_parity/`: tokenizer token-ID + SHA-256 reference
   for 12 prompts × 4 chat modes.
 - `oracle/`: token-level top-20 logprob captures for 5 deterministic probe
@@ -56,10 +58,9 @@ This bundle is a current reference baseline, not necessarily a completely green 
 
 ## Pending follow-up (next run)
 
-Three additional MoE shapes (TP=4+EP, TP=8+EP, TP=2 no-EP) were intentionally
-not finished in this round — the tune was terminated after the production
-shape landed. Same driver (`scripts/run_fp8_moe_tune.sh`) can finish them
-later. GB10-tagged MoE configs will be produced separately on GB10 hardware.
+GB10-tagged MoE configs (4 shapes, same `E×N` matrix as above but tagged
+`device_name=NVIDIA_GB10`) will be produced separately on GB10 hardware
+via the same driver (`scripts/run_fp8_moe_tune.sh`).
 
 ## Reuse
 

@@ -330,31 +330,28 @@ batch). Atol/rtol tolerances and capture metadata in
 `port_reference/kernel_reference_v2/manifest.json`. ~71 MiB total. Reproducible
 via `scripts/dump_kernel_reference.py --output-dir <out>` on any SM12x host.
 
-## Supplementary: Production-Shape Fused-MoE Tune
+## Supplementary: Fused-MoE Tune (4 shapes — full SM12x deploy matrix)
 
-Filled the previously-uncovered production shape `(E=128, N=2048,
-block=[128,128])` for DSv4-Flash at `--tensor-parallel-size 2
---enable-expert-parallel`. Until this run, **no tuned config existed for
-this shape in the vLLM tree** — Triton's default heuristic was in use for
-the dominant MoE kernel.
+All 4 typical DSv4-Flash deployment shapes covered on
+`NVIDIA_RTX_PRO_6000_Blackwell_Workstation_Edition`. Before this bundle,
+none of these had a tuned config in the vLLM tree — production serves
+were on Triton's default heuristic for the dominant MoE kernel.
 
-| Field | Value |
-| --- | --- |
-| Device | `NVIDIA_RTX_PRO_6000_Blackwell_Workstation_Edition` |
-| Shape | `E=128, N=2048, block=[128,128]` |
-| dtype | `fp8_w8a8` |
-| Triton version | `3.6.0` |
-| M-buckets | 10 (1, 2, 4, 8, 16, 32, 64, 128, 256, 512) |
-| Search space | 640 configs, M-aware filter |
-| Source | `port_reference/moe_configs/E=128,N=2048,...json` |
+| Shape (E, N, block) | Topology | Tune time |
+| --- | --- | ---: |
+| `E=128, N=2048, [128,128]` | **TP=2 + EP** (production) | (shape 1, round 1) |
+| `E=64,  N=2048, [128,128]` | TP=4 + EP | 1h47m |
+| `E=32,  N=2048, [128,128]` | TP=8 + EP | 1h00m |
+| `E=256, N=1024, [128,128]` | TP=2 no-EP fallback | 2h14m |
 
-To deploy: copy the JSON into `vllm/model_executor/layers/fused_moe/configs/`
-in your vllm checkout and restart serve.
+All 4 files: vllm@c92696943, Triton 3.6.0, 10 M-buckets per shape
+(`1, 2, 4, 8, 16, 32, 64, 128, 256, 512`), 640-config search space per M
+with M-aware filter. Source: `port_reference/moe_configs/`. To deploy,
+copy any/all into `vllm/model_executor/layers/fused_moe/configs/` and
+restart `vllm serve`.
 
-Three other typical-deployment shapes (TP=4+EP, TP=8+EP, TP=2 no-EP) are
-NOT in this bundle — the sweep was terminated early after the production
-shape landed. The driver lives at `scripts/run_fp8_moe_tune.sh` and can
-finish the remaining shapes via a follow-up run.
+GB10-tagged equivalents (`device_name=NVIDIA_GB10`) are a planned
+follow-up — same driver, runs on a GB10 host.
 
 ## Supplementary: Tokenizer Parity Reference
 

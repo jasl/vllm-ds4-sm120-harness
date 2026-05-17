@@ -1,35 +1,45 @@
-# Tuned Fused-MoE FP8 Block Configs (Production Shape)
+# Tuned Fused-MoE FP8 Block Configs
 
-Production shape `(E=128, N=2048, block=[128,128])` corresponds to DSv4-Flash
-running with `--tensor-parallel-size 2 --enable-expert-parallel` on
-`NVIDIA_RTX_PRO_6000_Blackwell_Workstation_Edition`. **No prior tuned config
-existed in the vLLM tree for this shape** — until this run, our production
-serve was using Triton's default heuristic for the dominant MoE kernel.
+All 4 typical SM12x DSv4-Flash deployment shapes covered on
+`NVIDIA_RTX_PRO_6000_Blackwell_Workstation_Edition`. **Before this bundle,
+none of these shapes had a tuned config in the vLLM tree** — production
+serves were using Triton's default heuristic for the dominant MoE kernel.
 
-## File
+## Coverage matrix
 
-`E=128,N=2048,device_name=NVIDIA_RTX_PRO_6000_Blackwell_Workstation_Edition,dtype=fp8_w8a8,block_shape=[128,128].json`
+| File (E, N, block) | Topology | Card count | Per-shape tune time |
+| --- | --- | ---: | ---: |
+| `E=128, N=2048, block=[128,128]` | **TP=2 + EP** (production) | 2× RTX PRO 6000 / 2-node GB10 | shape 1 of round 1 |
+| `E=64,  N=2048, block=[128,128]` | TP=4 + EP | 4× RTX PRO 6000 / 4-node GB10 | 6411 s (1h47m) |
+| `E=32,  N=2048, block=[128,128]` | TP=8 + EP | 8× RTX PRO 6000 / 8-node GB10 | 3602 s (1h00m) |
+| `E=256, N=1024, block=[128,128]` | TP=2 no-EP fallback | 2× RTX PRO 6000 / 2-node GB10 | 8021 s (2h14m) |
 
-Tuned via `scripts/run_fp8_moe_tune.sh` on the same workstation at
-vllm@c92696943, Triton 3.6.0. 10 M-buckets (1, 2, 4, 8, 16, 32, 64, 128, 256,
-512) each with the best Triton config found across a 640-config search space
-(filtered per-M to keep BLOCK_SIZE_M >= M/8).
+All 4 files: vllm@c92696943, Triton 3.6.0, 10 M-buckets per shape
+(`1, 2, 4, 8, 16, 32, 64, 128, 256, 512`), 640-config search space per M
+filtered to BLOCK_SIZE_M ≥ M/8 for M ≥ 64.
 
-To deploy: copy into `vllm/model_executor/layers/fused_moe/configs/` in your
-vllm checkout and restart serve.
+`tuning_summary_shapes_2_4.json` archives the in-process summary from the
+second tune session (shapes 2–4). Shape 1's summary is embedded in the
+preceding bundle commit's session log.
 
-## What's not here (deferred)
+## To deploy
 
-The tune driver also covers TP=4+EP (`E=64, N=2048`), TP=8+EP (`E=32, N=2048`),
-and TP=2 no-EP (`E=256, N=1024`) — useful for 4-card/8-card RTX PRO 6000 boxes
-and 4-node/8-node GB10 clusters respectively. Those three shapes were not
-finished in this round (terminated after shape 1 produced the
-production-critical file). To extend coverage:
+Copy any/all 4 JSON files into your vLLM checkout's
+`vllm/model_executor/layers/fused_moe/configs/` directory and restart
+`vllm serve`. The runtime looks up by `device_name + (E, N, dtype, block)`
+quadruple; no other change needed.
+
+## Producing GB10-tagged equivalents
+
+The same driver runs on a GB10 host and tags the output with
+`device_name=NVIDIA_GB10`. Either run the default 4-shape sweep:
 
 ```bash
-# Default 4-shape sweep (TP=2/4/8+EP, TP=2 no-EP), ~52 min:
-OUT_DIR=/path/out PYTHON=/path/.venv/bin/python bash scripts/run_fp8_moe_tune.sh
+OUT_DIR=/path/out PYTHON=/path/.venv/bin/python \
+  bash scripts/run_fp8_moe_tune.sh
 ```
 
-Run on RTX PRO 6000 to fill the remaining 3 RTX PRO 6000 shapes, or on GB10
-to produce the GB10-tagged equivalents.
+…or pin a subset via `SHAPES="E,shard,hidden,topk:..."`. Total wall-clock
+on a single GPU is ~3-5 h for all 4 shapes (RTX PRO 6000 reference: 300
+min for shapes 2–4 with JIT cache warm; GB10 should be similar or slower
+depending on memory bandwidth).
