@@ -88,6 +88,8 @@ def summarize_gpu_csv(path: Path) -> dict[str, Any]:
                     "power_draw_w": [],
                     "power_limit_w": [],
                     "gpu_utilization_percent": [],
+                    "temperature_gpu_c": [],
+                    "temperature_memory_c": [],
                 },
             )
             sample_count += 1
@@ -103,6 +105,10 @@ def summarize_gpu_csv(path: Path) -> dict[str, Any]:
             power_draw = _to_float(normalized.get("power_draw"))
             power_limit = _to_float(normalized.get("power_limit"))
             gpu_utilization = _to_float(normalized.get("utilization_gpu"))
+            # Older drivers may not report temperature.memory (the junction
+            # HBM/GDDR temp) — fall back to None so the aggregate omits it.
+            temperature_gpu = _to_float(normalized.get("temperature_gpu"))
+            temperature_memory = _to_float(normalized.get("temperature_memory"))
 
             if memory_used is not None:
                 data["memory_used_mib"].append(memory_used)
@@ -117,6 +123,10 @@ def summarize_gpu_csv(path: Path) -> dict[str, Any]:
                 data["power_limit_w"].append(power_limit)
             if gpu_utilization is not None:
                 data["gpu_utilization_percent"].append(gpu_utilization)
+            if temperature_gpu is not None:
+                data["temperature_gpu_c"].append(temperature_gpu)
+            if temperature_memory is not None:
+                data["temperature_memory_c"].append(temperature_memory)
 
     gpus: dict[str, dict[str, Any]] = {}
     for index, data in raw_by_gpu.items():
@@ -145,6 +155,10 @@ def summarize_gpu_csv(path: Path) -> dict[str, Any]:
             "gpu_utilization_percent",
             data["gpu_utilization_percent"],
         )
+        _set_metric(gpu_summary, "temperature_gpu_c", data["temperature_gpu_c"])
+        _set_metric(
+            gpu_summary, "temperature_memory_c", data["temperature_memory_c"]
+        )
         gpus[index] = gpu_summary
 
     overall_values: dict[str, list[float]] = {
@@ -152,6 +166,8 @@ def summarize_gpu_csv(path: Path) -> dict[str, Any]:
         "memory_used_percent": [],
         "power_draw_w": [],
         "gpu_utilization_percent": [],
+        "temperature_gpu_c": [],
+        "temperature_memory_c": [],
     }
     for data in raw_by_gpu.values():
         for key in overall_values:
