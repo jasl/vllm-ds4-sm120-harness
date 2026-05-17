@@ -1,0 +1,1199 @@
+# Generation Transcript
+
+- Case: `en_code_fe_001`
+- Language group: `en`
+- Workload: `coding`
+- Model: `deepseek-ai/DeepSeek-V4-Flash`
+- Round: `2`
+- Thinking mode: `think-high`
+- Thinking strength: `high`
+- Temperature: `1.0`
+- Top P: `1.0`
+- Variant: `nomtp`
+- OK: `True`
+- Status: PASS
+- Check: matched expectation
+- Detail: `matched expectation`
+- Elapsed seconds: 86.715294
+- Finish reason: `stop`
+- Usage: `{"prompt_tokens": 226, "total_tokens": 8782, "completion_tokens": 8556, "prompt_tokens_details": null}`
+- Prompt tokens: 226
+- Completion tokens: 8556
+- Total tokens: 8782
+
+## Prompt
+
+```markdown
+Create a single-file frontend app named `index.html`. Do not use external libraries, CDNs, images, or build tools. Keep the total code under 1,000 lines.
+
+Task: build an accessible “meeting notes board” for a small team.
+
+Functional requirements:
+1. Users can add a note with title, owner, meeting date, tags, and body.
+2. Notes appear as cards and can be filtered by owner, tag, and free-text search.
+3. A note can be marked as “Action Required,” “Decision,” or “Reference.”
+4. Users can edit and delete notes.
+5. Persist all data in `localStorage`.
+6. Provide a compact statistics strip: total notes, action-required count, unique owners, and most common tag.
+7. Responsive layout: two-column card grid on wide screens, single column on narrow screens.
+8. Basic accessibility: labels for inputs, keyboard-operable controls, visible focus states.
+
+Output only the complete `index.html` content, including HTML, CSS, and JavaScript. Do not include explanatory text.
+```
+
+## Reasoning Content
+
+````text
+The user wants me to create a single-file frontend app called `index.html` that is a "meeting notes board" for a small team. Let me carefully go through all the requirements and build a complete, accessible, and functional application.
+
+Let me plan the structure:
+
+1. **HTML Structure**:
+   - Header with title and statistics strip
+   - Filter bar (owner, tag, free-text search)
+   - Form for adding/editing notes (title, owner, meeting date, tags, body, type)
+   - Notes grid displaying cards
+
+2. **CSS**:
+   - Responsive layout (2-column grid on wide screens, 1 column on narrow)
+   - Accessible focus states
+   - Clean, modern design
+
+3. **JavaScript**:
+   - CRUD operations for notes
+   - localStorage persistence
+   - Filtering logic
+   - Statistics computation
+
+Let me build this out:
+
+### Data Model
+```js
+{
+  id: string,
+  title: string,
+  owner: string,
+  meetingDate: string,
+  tags: string[], // comma-separated input
+  body: string,
+  type: 'action' | 'decision' | 'reference',
+  createdAt: string
+}
+```
+
+### Statistics
+- Total notes
+- Action-required count
+- Unique owners
+- Most common tag
+
+### Features
+- Add note with form
+- Edit note (populate form with existing data)
+- Delete note with confirmation
+- Filter by owner (dropdown), tag (dropdown), free-text search
+- Notes displayed as cards
+
+Let me write the complete code now.
+
+I need to be careful about:
+- Accessible labels for all inputs
+- Keyboard-operable controls (buttons, links)
+- Visible focus states (outline)
+- Responsive design
+- No external dependencies
+
+Let me write this out now.
+
+Actually, let me think about the filtering more carefully:
+- Filter by owner: dropdown with unique owners from all notes
+- Filter by tag: dropdown with unique tags from all notes
+- Free-text search: search in title, body, and maybe owner
+
+For the statistics strip:
+- Total notes count
+- Action required count (notes with type 'action')
+- Unique owners count
+- Most common tag
+
+Let me design the UI:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  📋 Meeting Notes Board                             │
+│  [Stats: 12 notes | 3 action req | 5 owners | tag] │
+├──────────────────────────────────────────────────────┤
+│  [Filter by owner ▼] [Filter by tag ▼] [Search...]  │
+├──────────────────────────────────────────────────────┤
+│  ┌── Form ──────────────────────────────────────┐   │
+│  │ Title: [________] Owner: [________]          │   │
+│  │ Date: [________] Tags: [________]            │   │
+│  │ Type: [Action ▼]                             │   │
+│  │ Body: [______________________________]       │   │
+│  │ [Add Note]                                   │   │
+│  └──────────────────────────────────────────────┘   │
+├──────────────────────────────────────────────────────┤
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
+│  │ Card 1   │  │ Card 2   │  │ Card 3   │         │
+│  └──────────┘  └──────────┘  └──────────┘         │
+│  ┌──────────┐  ┌──────────┐                        │
+│  │ Card 4   │  │ Card 5   │                        │
+│  └──────────┘  └──────────┘                        │
+└──────────────────────────────────────────────────────┘
+```
+
+Let me now write the complete code. I'll keep it clean and well-organized.
+
+For the tag input, I'll use a comma-separated text input and split on commas.
+
+For the form, I'll reuse it for both add and edit modes.
+
+Let me be thorough with accessibility:
+- All form inputs have associated labels using `for` and `id`
+- Buttons have clear text
+- Focus states are visible with a clear outline
+- Keyboard navigation works (tab through elements)
+- ARIA attributes where appropriate
+
+Let me code this up now. I'll make it look professional and clean.
+
+Actually, let me reconsider the layout. I think having the form in a section above the cards makes sense, but on small screens it might take too much space. I'll make it collapsible or just keep it compact.
+
+Actually, I'll put the form in a card-like container above the grid. On mobile it'll stack vertically.
+
+Let me write the full code now.
+
+For the "most common tag" statistic, I need to count all tags across all notes and find the one with the highest frequency.
+
+Let me also think about the edit flow - when editing, the form should be populated with the note's data, and the submit button should say "Update Note" instead of "Add Note". I'll also add a "Cancel" button when editing.
+
+Let me finalize the design and write the code.
+
+Here's my plan for the HTML structure:
+
+```
+<div id="app">
+  <header>
+    <h1>Meeting Notes Board</h1>
+    <div class="stats-bar">...</div>
+  </header>
+
+  <main>
+    <section class="filters">...</section>
+    <section class="note-form">...</section>
+    <section class="notes-grid">...</section>
+  </main>
+</div>
+```
+
+Let me write it all now. I'll be comprehensive and make it polished.
+
+I need to make sure the total code is under 1000 lines. Let me be concise but thorough.
+
+Let me start writing the code now.
+
+One thing I want to handle well is the tags - I'll store them as arrays but display them as comma-separated values in the input.
+
+For the filter dropdowns, I need to dynamically populate them with unique values from all notes.
+
+Let me write the full implementation now.
+
+Actually, I realize I should also think about the "type" field - it's one of "Action Required", "Decision", or "Reference". I'll use a select dropdown for this.
+
+Let me also add some visual indicators for the note type - maybe a colored badge or border on the cards.
+
+OK let me just write the code now.
+````
+
+## Assistant
+
+````markdown
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Notes Board</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --color-bg: #f5f7fa;
+            --color-surface: #ffffff;
+            --color-primary: #2c6e9c;
+            --color-primary-hover: #1f547a;
+            --color-text: #1e293b;
+            --color-text-light: #64748b;
+            --color-border: #d1d5db;
+            --color-focus: #3b82f6;
+            --color-action: #dc2626;
+            --color-decision: #d97706;
+            --color-reference: #059669;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+            --radius: 8px;
+            --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.5;
+            padding: 1rem;
+            min-height: 100vh;
+        }
+
+        /* focus visible */
+        :focus-visible {
+            outline: 2px solid var(--color-focus);
+            outline-offset: 2px;
+        }
+        :focus:not(:focus-visible) {
+            outline: none;
+        }
+
+        #app {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* HEADER */
+        header {
+            background: var(--color-surface);
+            border-radius: var(--radius);
+            padding: 1.25rem 1.5rem;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 1rem;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--color-text);
+            margin-bottom: 0.75rem;
+        }
+
+        .stats-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1.5rem;
+            font-size: 0.875rem;
+            color: var(--color-text-light);
+        }
+
+        .stats-bar .stat {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: var(--color-bg);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            white-space: nowrap;
+        }
+
+        .stats-bar .stat strong {
+            color: var(--color-text);
+            font-weight: 600;
+        }
+
+        /* MAIN LAYOUT */
+        .filters-section {
+            background: var(--color-surface);
+            border-radius: var(--radius);
+            padding: 1rem 1.25rem;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 1rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            align-items: flex-end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            flex: 1 1 150px;
+            min-width: 120px;
+        }
+
+        .filter-group label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--color-text-light);
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 0.45rem 0.6rem;
+            border: 1px solid var(--color-border);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-family: var(--font);
+            background: var(--color-surface);
+            color: var(--color-text);
+            transition: border-color 0.15s;
+        }
+
+        .filter-group select:focus,
+        .filter-group input:focus {
+            border-color: var(--color-focus);
+        }
+
+        .filter-clear-btn {
+            padding: 0.45rem 1rem;
+            background: transparent;
+            border: 1px solid var(--color-border);
+            border-radius: 6px;
+            font-size: 0.8125rem;
+            cursor: pointer;
+            color: var(--color-text-light);
+            font-family: var(--font);
+            transition: background 0.15s, color 0.15s;
+            align-self: flex-end;
+            height: 36px;
+        }
+
+        .filter-clear-btn:hover {
+            background: var(--color-bg);
+            color: var(--color-text);
+        }
+
+        /* FORM */
+        .form-section {
+            background: var(--color-surface);
+            border-radius: var(--radius);
+            padding: 1.25rem 1.5rem;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 1rem;
+        }
+
+        .form-section h2 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+
+        .note-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem 1rem;
+        }
+
+        .note-form .field-full {
+            grid-column: 1 / -1;
+        }
+
+        .note-form .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .note-form .field-group label {
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--color-text);
+        }
+
+        .note-form .field-group input,
+        .note-form .field-group select,
+        .note-form .field-group textarea {
+            padding: 0.5rem 0.7rem;
+            border: 1px solid var(--color-border);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-family: var(--font);
+            background: var(--color-surface);
+            color: var(--color-text);
+            transition: border-color 0.15s;
+        }
+
+        .note-form .field-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .note-form .field-group input:focus,
+        .note-form .field-group select:focus,
+        .note-form .field-group textarea:focus {
+            border-color: var(--color-focus);
+        }
+
+        .form-actions {
+            grid-column: 1 / -1;
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            margin-top: 0.25rem;
+            flex-wrap: wrap;
+        }
+
+        .form-actions .btn {
+            padding: 0.55rem 1.25rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: var(--font);
+            transition: background 0.15s, transform 0.1s;
+        }
+
+        .form-actions .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: var(--color-primary-hover);
+        }
+
+        .btn-secondary {
+            background: var(--color-bg);
+            color: var(--color-text);
+            border: 1px solid var(--color-border);
+        }
+
+        .btn-secondary:hover {
+            background: #e9edf2;
+        }
+
+        .form-actions .cancel-btn {
+            display: none;
+        }
+
+        .form-actions .cancel-btn.visible {
+            display: inline-block;
+        }
+
+        .form-message {
+            font-size: 0.8125rem;
+            color: var(--color-text-light);
+            margin-left: 0.5rem;
+        }
+
+        /* NOTES GRID */
+        .notes-section {
+            margin-top: 0.5rem;
+        }
+
+        .notes-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 2.5rem 1rem;
+            color: var(--color-text-light);
+            background: var(--color-surface);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .empty-state p {
+            font-size: 1rem;
+        }
+
+        /* CARD */
+        .note-card {
+            background: var(--color-surface);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+            padding: 1.15rem 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            transition: box-shadow 0.15s;
+            border-left: 4px solid var(--color-border);
+        }
+
+        .note-card:hover {
+            box-shadow: var(--shadow-md);
+        }
+
+        .note-card.type-action {
+            border-left-color: var(--color-action);
+        }
+        .note-card.type-decision {
+            border-left-color: var(--color-decision);
+        }
+        .note-card.type-reference {
+            border-left-color: var(--color-reference);
+        }
+
+        .note-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .note-card .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            word-break: break-word;
+            flex: 1;
+        }
+
+        .note-card .card-type-badge {
+            font-size: 0.6875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 0.2rem 0.6rem;
+            border-radius: 12px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            background: var(--color-bg);
+            color: var(--color-text-light);
+        }
+
+        .note-card.type-action .card-type-badge {
+            background: #fee2e2;
+            color: var(--color-action);
+        }
+        .note-card.type-decision .card-type-badge {
+            background: #fef3c7;
+            color: var(--color-decision);
+        }
+        .note-card.type-reference .card-type-badge {
+            background: #d1fae5;
+            color: var(--color-reference);
+        }
+
+        .note-card .card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem 1rem;
+            font-size: 0.8125rem;
+            color: var(--color-text-light);
+        }
+
+        .note-card .card-meta span {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .note-card .card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+        }
+
+        .note-card .card-tags .tag {
+            font-size: 0.75rem;
+            background: var(--color-bg);
+            padding: 0.15rem 0.5rem;
+            border-radius: 12px;
+            color: var(--color-text-light);
+        }
+
+        .note-card .card-body {
+            font-size: 0.875rem;
+            color: var(--color-text);
+            line-height: 1.55;
+            word-break: break-word;
+            white-space: pre-wrap;
+            margin-top: 0.15rem;
+        }
+
+        .note-card .card-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.4rem;
+            flex-wrap: wrap;
+        }
+
+        .note-card .card-actions button {
+            padding: 0.3rem 0.75rem;
+            border: 1px solid var(--color-border);
+            border-radius: 5px;
+            font-size: 0.75rem;
+            font-family: var(--font);
+            cursor: pointer;
+            background: var(--color-surface);
+            color: var(--color-text-light);
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+
+        .note-card .card-actions button:hover {
+            background: var(--color-bg);
+            color: var(--color-text);
+            border-color: var(--color-text-light);
+        }
+
+        .note-card .card-actions .btn-delete:hover {
+            background: #fee2e2;
+            color: var(--color-action);
+            border-color: var(--color-action);
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 720px) {
+            body {
+                padding: 0.75rem;
+            }
+
+            header h1 {
+                font-size: 1.25rem;
+            }
+
+            .stats-bar {
+                gap: 0.4rem 0.8rem;
+                font-size: 0.8rem;
+            }
+            .stats-bar .stat {
+                padding: 0.2rem 0.6rem;
+            }
+
+            .filters-section {
+                flex-direction: column;
+                gap: 0.6rem;
+                padding: 0.85rem 1rem;
+            }
+            .filter-group {
+                flex: 1 1 auto;
+                min-width: unset;
+                width: 100%;
+            }
+            .filter-clear-btn {
+                align-self: flex-start;
+                width: 100%;
+            }
+
+            .note-form {
+                grid-template-columns: 1fr;
+                gap: 0.6rem;
+            }
+            .note-form .field-full {
+                grid-column: 1;
+            }
+            .form-actions {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .form-actions .btn {
+                text-align: center;
+            }
+
+            .notes-grid {
+                grid-template-columns: 1fr;
+                gap: 0.85rem;
+            }
+
+            .form-section {
+                padding: 1rem 1.15rem;
+            }
+            .note-card {
+                padding: 1rem 1.1rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stats-bar .stat {
+                font-size: 0.75rem;
+            }
+            .note-card .card-header {
+                flex-direction: column;
+                gap: 0.3rem;
+            }
+            .note-card .card-type-badge {
+                align-self: flex-start;
+            }
+        }
+
+        /* utility for screen readers */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>📋 Meeting Notes Board</h1>
+            <div class="stats-bar" role="region" aria-label="Statistics">
+                <span class="stat">📄 Total: <strong id="stat-total">0</strong></span>
+                <span class="stat">⚡ Action: <strong id="stat-action">0</strong></span>
+                <span class="stat">👤 Owners: <strong id="stat-owners">0</strong></span>
+                <span class="stat">🏷️ Top tag: <strong id="stat-tag">—</strong></span>
+            </div>
+        </header>
+
+        <main>
+            <!-- Filters -->
+            <section class="filters-section" aria-label="Filter notes">
+                <div class="filter-group">
+                    <label for="filter-owner">Owner</label>
+                    <select id="filter-owner" aria-label="Filter by owner">
+                        <option value="">All owners</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filter-tag">Tag</label>
+                    <select id="filter-tag" aria-label="Filter by tag">
+                        <option value="">All tags</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filter-search">Search</label>
+                    <input type="text" id="filter-search" placeholder="Search notes…" aria-label="Search notes by text">
+                </div>
+                <button type="button" class="filter-clear-btn" id="filter-clear" aria-label="Clear all filters">Clear</button>
+            </section>
+
+            <!-- Form -->
+            <section class="form-section" aria-label="Add or edit note">
+                <h2 id="form-heading">Add a Note</h2>
+                <form class="note-form" id="note-form" novalidate>
+                    <div class="field-group">
+                        <label for="note-title">Title *</label>
+                        <input type="text" id="note-title" required aria-required="true" placeholder="e.g. Sprint review">
+                    </div>
+                    <div class="field-group">
+                        <label for="note-owner">Owner *</label>
+                        <input type="text" id="note-owner" required aria-required="true" placeholder="e.g. Alice">
+                    </div>
+                    <div class="field-group">
+                        <label for="note-date">Meeting date</label>
+                        <input type="date" id="note-date">
+                    </div>
+                    <div class="field-group">
+                        <label for="note-tags">Tags</label>
+                        <input type="text" id="note-tags" placeholder="comma-separated, e.g. design, frontend">
+                    </div>
+                    <div class="field-group field-full">
+                        <label for="note-type">Type</label>
+                        <select id="note-type">
+                            <option value="action">Action Required</option>
+                            <option value="decision">Decision</option>
+                            <option value="reference">Reference</option>
+                        </select>
+                    </div>
+                    <div class="field-group field-full">
+                        <label for="note-body">Body</label>
+                        <textarea id="note-body" rows="3" placeholder="Meeting notes details…"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary" id="form-submit-btn">Add Note</button>
+                        <button type="button" class="btn btn-secondary cancel-btn" id="form-cancel-btn">Cancel</button>
+                        <span class="form-message" id="form-message"></span>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Notes Grid -->
+            <section class="notes-section" aria-label="Notes list">
+                <div class="notes-grid" id="notes-grid" role="list">
+                    <div class="empty-state" id="empty-state">
+                        <p>No notes yet. Add one above!</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ---- State ----
+            let notes = [];
+            let editingId = null; // id of note being edited, or null
+
+            // ---- DOM refs ----
+            const grid = document.getElementById('notes-grid');
+            const emptyState = document.getElementById('empty-state');
+            const form = document.getElementById('note-form');
+            const formHeading = document.getElementById('form-heading');
+            const submitBtn = document.getElementById('form-submit-btn');
+            const cancelBtn = document.getElementById('form-cancel-btn');
+            const formMessage = document.getElementById('form-message');
+
+            const inpTitle = document.getElementById('note-title');
+            const inpOwner = document.getElementById('note-owner');
+            const inpDate = document.getElementById('note-date');
+            const inpTags = document.getElementById('note-tags');
+            const selType = document.getElementById('note-type');
+            const inpBody = document.getElementById('note-body');
+
+            const filterOwner = document.getElementById('filter-owner');
+            const filterTag = document.getElementById('filter-tag');
+            const filterSearch = document.getElementById('filter-search');
+            const filterClear = document.getElementById('filter-clear');
+
+            const statTotal = document.getElementById('stat-total');
+            const statAction = document.getElementById('stat-action');
+            const statOwners = document.getElementById('stat-owners');
+            const statTag = document.getElementById('stat-tag');
+
+            // ---- Helpers ----
+            function generateId() {
+                return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+            }
+
+            function formatDate(dateStr) {
+                if (!dateStr) return '—';
+                const d = new Date(dateStr + 'T00:00:00');
+                if (isNaN(d)) return dateStr;
+                return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+
+            function getTypeLabel(val) {
+                const map = { action: 'Action Required', decision: 'Decision', reference: 'Reference' };
+                return map[val] || val;
+            }
+
+            function parseTags(str) {
+                return str.split(',')
+                    .map(t => t.trim())
+                    .filter(t => t.length > 0);
+            }
+
+            function tagsToString(tagsArray) {
+                return tagsArray.join(', ');
+            }
+
+            // ---- localStorage ----
+            function loadNotes() {
+                try {
+                    const raw = localStorage.getItem('meetingNotes');
+                    if (raw) {
+                        notes = JSON.parse(raw);
+                        if (!Array.isArray(notes)) notes = [];
+                    } else {
+                        notes = [];
+                    }
+                } catch (e) {
+                    notes = [];
+                }
+            }
+
+            function saveNotes() {
+                localStorage.setItem('meetingNotes', JSON.stringify(notes));
+            }
+
+            // ---- Statistics ----
+            function computeStats() {
+                const total = notes.length;
+                const actionCount = notes.filter(n => n.type === 'action').length;
+                const uniqueOwners = new Set(notes.map(n => n.owner.trim()).filter(Boolean)).size;
+
+                // most common tag
+                const tagCounts = {};
+                notes.forEach(n => {
+                    (n.tags || []).forEach(t => {
+                        const key = t.toLowerCase();
+                        tagCounts[key] = (tagCounts[key] || 0) + 1;
+                    });
+                });
+                let topTag = '—';
+                let topCount = 0;
+                for (const [tag, count] of Object.entries(tagCounts)) {
+                    if (count > topCount) {
+                        topCount = count;
+                        topTag = tag;
+                    }
+                }
+                if (topTag === '—') topTag = '—';
+                else topTag = topTag.charAt(0).toUpperCase() + topTag.slice(1);
+
+                statTotal.textContent = total;
+                statAction.textContent = actionCount;
+                statOwners.textContent = uniqueOwners;
+                statTag.textContent = topTag;
+            }
+
+            // ---- Filter logic ----
+            function getFilteredNotes() {
+                const ownerVal = filterOwner.value.toLowerCase().trim();
+                const tagVal = filterTag.value.toLowerCase().trim();
+                const searchVal = filterSearch.value.toLowerCase().trim();
+
+                return notes.filter(n => {
+                    // owner filter
+                    if (ownerVal && n.owner.toLowerCase().trim() !== ownerVal) return false;
+                    // tag filter
+                    if (tagVal) {
+                        const noteTags = (n.tags || []).map(t => t.toLowerCase().trim());
+                        if (!noteTags.includes(tagVal)) return false;
+                    }
+                    // search
+                    if (searchVal) {
+                        const haystack = (n.title + ' ' + n.owner + ' ' + n.body + ' ' + (n.tags || []).join(' ')).toLowerCase();
+                        if (!haystack.includes(searchVal)) return false;
+                    }
+                    return true;
+                });
+            }
+
+            function populateFilterDropdowns() {
+                // owners
+                const owners = [...new Set(notes.map(n => n.owner.trim()).filter(Boolean))].sort();
+                const currOwner = filterOwner.value;
+                filterOwner.innerHTML = '<option value="">All owners</option>';
+                owners.forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o.toLowerCase();
+                    opt.textContent = o;
+                    if (o.toLowerCase() === currOwner.toLowerCase()) opt.selected = true;
+                    filterOwner.appendChild(opt);
+                });
+
+                // tags
+                const tagSet = new Set();
+                notes.forEach(n => (n.tags || []).forEach(t => { if (t.trim()) tagSet.add(t.trim()); }));
+                const tags = [...tagSet].sort((a, b) => a.localeCompare(b));
+                const currTag = filterTag.value;
+                filterTag.innerHTML = '<option value="">All tags</option>';
+                tags.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.toLowerCase();
+                    opt.textContent = t;
+                    if (t.toLowerCase() === currTag.toLowerCase()) opt.selected = true;
+                    filterTag.appendChild(opt);
+                });
+            }
+
+            // ---- Render ----
+            function render() {
+                const filtered = getFilteredNotes();
+
+                // clear grid, keep empty state
+                const cards = grid.querySelectorAll('.note-card');
+                cards.forEach(el => el.remove());
+
+                if (filtered.length === 0) {
+                    emptyState.style.display = 'block';
+                } else {
+                    emptyState.style.display = 'none';
+                    filtered.forEach(n => {
+                        const card = createCard(n);
+                        grid.appendChild(card);
+                    });
+                }
+
+                computeStats();
+                populateFilterDropdowns();
+            }
+
+            function createCard(note) {
+                const card = document.createElement('div');
+                card.className = 'note-card type-' + note.type;
+                card.setAttribute('role', 'listitem');
+                card.dataset.id = note.id;
+
+                const typeLabel = getTypeLabel(note.type);
+
+                card.innerHTML = `
+                    <div class="card-header">
+                        <span class="card-title">${escapeHtml(note.title || 'Untitled')}</span>
+                        <span class="card-type-badge">${escapeHtml(typeLabel)}</span>
+                    </div>
+                    <div class="card-meta">
+                        <span>👤 ${escapeHtml(note.owner || '—')}</span>
+                        <span>📅 ${formatDate(note.meetingDate)}</span>
+                    </div>
+                    ${(note.tags && note.tags.length) ? `<div class="card-tags">${note.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+                    ${note.body ? `<div class="card-body">${escapeHtml(note.body)}</div>` : ''}
+                    <div class="card-actions">
+                        <button type="button" class="btn-edit" data-id="${note.id}">Edit</button>
+                        <button type="button" class="btn-delete" data-id="${note.id}">Delete</button>
+                    </div>
+                `;
+
+                // Attach event listeners
+                card.querySelector('.btn-edit').addEventListener('click', () => startEdit(note.id));
+                card.querySelector('.btn-delete').addEventListener('click', () => deleteNote(note.id));
+
+                return card;
+            }
+
+            function escapeHtml(str) {
+                const div = document.createElement('div');
+                div.textContent = str;
+                return div.innerHTML;
+            }
+
+            // ---- CRUD ----
+            function addNote(data) {
+                const note = {
+                    id: generateId(),
+                    title: data.title.trim(),
+                    owner: data.owner.trim(),
+                    meetingDate: data.meetingDate || '',
+                    tags: data.tags,
+                    body: data.body.trim(),
+                    type: data.type,
+                    createdAt: new Date().toISOString()
+                };
+                notes.push(note);
+                saveNotes();
+                render();
+                return note;
+            }
+
+            function updateNote(id, data) {
+                const idx = notes.findIndex(n => n.id === id);
+                if (idx === -1) return null;
+                notes[idx] = {
+                    ...notes[idx],
+                    title: data.title.trim(),
+                    owner: data.owner.trim(),
+                    meetingDate: data.meetingDate || '',
+                    tags: data.tags,
+                    body: data.body.trim(),
+                    type: data.type
+                };
+                saveNotes();
+                render();
+                return notes[idx];
+            }
+
+            function deleteNote(id) {
+                if (!confirm('Delete this note?')) return;
+                const idx = notes.findIndex(n => n.id === id);
+                if (idx === -1) return;
+                notes.splice(idx, 1);
+                if (editingId === id) cancelEdit();
+                saveNotes();
+                render();
+            }
+
+            // ---- Form ----
+            function resetForm() {
+                form.reset();
+                editingId = null;
+                formHeading.textContent = 'Add a Note';
+                submitBtn.textContent = 'Add Note';
+                cancelBtn.classList.remove('visible');
+                formMessage.textContent = '';
+                inpTitle.focus();
+            }
+
+            function cancelEdit() {
+                resetForm();
+            }
+
+            function startEdit(id) {
+                const note = notes.find(n => n.id === id);
+                if (!note) return;
+                editingId = id;
+                inpTitle.value = note.title || '';
+                inpOwner.value = note.owner || '';
+                inpDate.value = note.meetingDate || '';
+                inpTags.value = tagsToString(note.tags || []);
+                selType.value = note.type || 'action';
+                inpBody.value = note.body || '';
+                formHeading.textContent = 'Edit Note';
+                submitBtn.textContent = 'Update Note';
+                cancelBtn.classList.add('visible');
+                formMessage.textContent = '';
+                inpTitle.focus();
+                // scroll to form
+                document.querySelector('.form-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            function getFormData() {
+                const title = inpTitle.value.trim();
+                const owner = inpOwner.value.trim();
+                const meetingDate = inpDate.value;
+                const tags = parseTags(inpTags.value);
+                const type = selType.value;
+                const body = inpBody.value.trim();
+
+                if (!title) { formMessage.textContent = 'Title is required.'; return null; }
+                if (!owner) { formMessage.textContent = 'Owner is required.'; return null; }
+
+                return { title, owner, meetingDate, tags, type, body };
+            }
+
+            function handleSubmit(e) {
+                e.preventDefault();
+                const data = getFormData();
+                if (!data) return;
+
+                if (editingId) {
+                    const updated = updateNote(editingId, data);
+                    if (updated) {
+                        formMessage.textContent = '✅ Note updated!';
+                        resetForm();
+                    } else {
+                        formMessage.textContent = '❌ Error updating note.';
+                    }
+                } else {
+                    const created = addNote(data);
+                    if (created) {
+                        formMessage.textContent = '✅ Note added!';
+                        resetForm();
+                    } else {
+                        formMessage.textContent = '❌ Error adding note.';
+                    }
+                }
+                // clear message after a few seconds
+                setTimeout(() => { if (formMessage.textContent.includes('✅')) formMessage.textContent = ''; }, 3000);
+            }
+
+            // ---- Init ----
+            function init() {
+                loadNotes();
+
+                // Set today's date as default for date input
+                const today = new Date();
+                const yyyy = today.getFullYear();
+                const mm = String(today.getMonth() + 1).padStart(2, '0');
+                const dd = String(today.getDate()).padStart(2, '0');
+                inpDate.value = yyyy + '-' + mm + '-' + dd;
+
+                render();
+
+                // Event listeners
+                form.addEventListener('submit', handleSubmit);
+                cancelBtn.addEventListener('click', cancelEdit);
+
+                filterOwner.addEventListener('change', render);
+                filterTag.addEventListener('change', render);
+                filterSearch.addEventListener('input', render);
+                filterClear.addEventListener('click', function() {
+                    filterOwner.value = '';
+                    filterTag.value = '';
+                    filterSearch.value = '';
+                    render();
+                });
+            }
+
+            // ---- Start ----
+            init();
+        })();
+    </script>
+</body>
+</html>
+```
+````

@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>极简挂钟 · 北京时</title>
+    <style>
+        /* ── 全局重置 & 背景 ── */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #f0f2f5;
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            user-select: none;
+        }
+
+        /* ── 时钟容器 ── */
+        .clock {
+            position: relative;
+            width: 420px;
+            height: 420px;
+            background: #ffffff;
+            border-radius: 50%;
+            border: 8px solid #2d2d2d;
+            box-shadow:
+                0 20px 60px rgba(0, 0, 0, 0.15),
+                0 0 0 2px rgba(0, 0, 0, 0.04),
+                inset 0 -8px 24px rgba(0, 0, 0, 0.04);
+            /* 固定尺寸，保证内部绝对定位精确 */
+            flex-shrink: 0;
+        }
+
+        /* ── 刻度容器 ── */
+        .marks {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+        }
+
+        /* 单根刻度 */
+        .mark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            transform-origin: 0 0;
+        }
+
+        .mark-inner {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 2px;
+            background: #888;
+            transition: background 0.2s;
+        }
+
+        /* ── 数字 ── */
+        .numbers {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .number {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            transform-origin: 0 0;
+            font-size: 18px;
+            font-weight: 500;
+            color: #222;
+            letter-spacing: 0.5px;
+        }
+
+        .number span {
+            position: absolute;
+            display: block;
+            text-align: center;
+            line-height: 1;
+            transform: translate(-50%, -50%);
+            width: 28px;
+        }
+
+        /* ── 指针 ── */
+        .hands {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .hand {
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: 50% 100%;
+            border-radius: 4px;
+            transition: none;
+            /* 平滑由 requestAnimationFrame 保证 */;
+        }
+
+        .hand-hour {
+            width: 6px;
+            height: 100px;
+            margin-left: -3px;
+            background: #1a1a1a;
+            border-radius: 4px 4px 3px 3px;
+            box-shadow: 1px 2px 6px rgba(0, 0, 0, 0.12);
+            z-index: 3;
+        }
+
+        .hand-minute {
+            width: 4.5px;
+            height: 148px;
+            margin-left: -2.25px;
+            background: #1a1a1a;
+            border-radius: 4px 4px 3px 3px;
+            box-shadow: 1px 2px 6px rgba(0, 0, 0, 0.12);
+            z-index: 4;
+        }
+
+        .hand-second {
+            width: 2px;
+            height: 162px;
+            margin-left: -1px;
+            background: #e53935;
+            border-radius: 2px 2px 1px 1px;
+            box-shadow: 0 0 8px rgba(229, 57, 53, 0.25);
+            z-index: 5;
+        }
+
+        /* 秒针尾端小圆点（配重） */
+        .hand-second::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 10px;
+            height: 10px;
+            background: #e53935;
+            border-radius: 50%;
+            box-shadow: 0 0 6px rgba(229, 57, 53, 0.3);
+        }
+
+        /* 中心圆点 */
+        .center-dot {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            transform: translate(-50%, -50%);
+            background: #1a1a1a;
+            border-radius: 50%;
+            z-index: 6;
+            box-shadow: 0 0 0 4px #ffffff, 0 2px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .center-dot-second {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 6px;
+            height: 6px;
+            transform: translate(-50%, -50%);
+            background: #e53935;
+            border-radius: 50%;
+            z-index: 7;
+        }
+
+        /* ── 文字信息（上：时间，下：日期） ── */
+        .info {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            pointer-events: none;
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+        }
+
+        .info-time {
+            top: 32%;
+            font-size: 32px;
+            font-weight: 600;
+            color: #1a1a1a;
+            letter-spacing: 2px;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 2px 16px;
+            border-radius: 12px;
+            backdrop-filter: blur(2px);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+        }
+
+        .info-date {
+            bottom: 30%;
+            font-size: 15px;
+            font-weight: 500;
+            color: #555;
+            letter-spacing: 1.2px;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 2px 18px;
+            border-radius: 10px;
+            backdrop-filter: blur(2px);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+        }
+
+        /* ── 细微响应式适配 ── */
+        @media (max-width: 480px) {
+            .clock {
+                width: 340px;
+                height: 340px;
+                border-width: 6px;
+            }
+
+            .hand-hour {
+                height: 80px;
+                width: 5px;
+                margin-left: -2.5px;
+            }
+            .hand-minute {
+                height: 118px;
+                width: 3.8px;
+                margin-left: -1.9px;
+            }
+            .hand-second {
+                height: 128px;
+                width: 1.8px;
+                margin-left: -0.9px;
+            }
+
+            .info-time {
+                font-size: 26px;
+                top: 30%;
+                padding: 2px 12px;
+            }
+            .info-date {
+                font-size: 13px;
+                bottom: 28%;
+                padding: 2px 14px;
+            }
+
+            .number {
+                font-size: 15px;
+            }
+            .number span {
+                width: 22px;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .clock {
+                width: 280px;
+                height: 280px;
+                border-width: 5px;
+            }
+
+            .hand-hour {
+                height: 64px;
+                width: 4px;
+                margin-left: -2px;
+            }
+            .hand-minute {
+                height: 96px;
+                width: 3px;
+                margin-left: -1.5px;
+            }
+            .hand-second {
+                height: 106px;
+                width: 1.5px;
+                margin-left: -0.75px;
+            }
+
+            .info-time {
+                font-size: 20px;
+                top: 28%;
+                padding: 2px 10px;
+                letter-spacing: 1px;
+            }
+            .info-date {
+                font-size: 11px;
+                bottom: 26%;
+                padding: 2px 10px;
+                letter-spacing: 0.8px;
+            }
+
+            .number {
+                font-size: 12px;
+            }
+            .number span {
+                width: 18px;
+            }
+
+            .center-dot {
+                width: 12px;
+                height: 12px;
+            }
+            .center-dot-second {
+                width: 5px;
+                height: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===== 时钟结构 ===== -->
+    <div class="clock" id="clock">
+
+        <!-- 刻度 (由 JS 生成) -->
+        <div class="marks" id="marksContainer"></div>
+
+        <!-- 数字 (由 JS 生成) -->
+        <div class="numbers" id="numbersContainer"></div>
+
+        <!-- 指针 -->
+        <div class="hands">
+            <div class="hand hand-hour" id="hourHand"></div>
+            <div class="hand hand-minute" id="minuteHand"></div>
+            <div class="hand hand-second" id="secondHand"></div>
+        </div>
+
+        <!-- 中心装饰 -->
+        <div class="center-dot"></div>
+        <div class="center-dot-second"></div>
+
+        <!-- 文字信息 -->
+        <div class="info info-time" id="timeDisplay">00:00:00</div>
+        <div class="info info-date" id="dateDisplay">----年--月--日 周-</div>
+    </div>
+
+    <script>
+        /* ================================================================
+               JavaScript – 北京时 (UTC+8) 极简挂钟
+               ================================================================ */
+
+        (function() {
+            'use strict';
+
+            // ── 常量 ──
+            const CLOCK_RADIUS = 210; // 时钟半径 (px) — 配合 420px 尺寸
+            const MARK_MARGIN = 12; // 刻度离外缘间距
+            const MARK_BASE_TOP = -(CLOCK_RADIUS - MARK_MARGIN);
+
+            // 刻度长度
+            const MARK_LONG = 22; // 整点刻度
+            const MARK_SHORT = 13; // 非整点刻度
+
+            // 刻度粗细
+            const MARK_THICK = 3.2;
+            const MARK_THIN = 1.6;
+
+            // 数字半径
+            const NUM_RADIUS = CLOCK_RADIUS - 50;
+
+            // ── DOM 引用 ──
+            const marksContainer = document.getElementById('marksContainer');
+            const numbersContainer = document.getElementById('numbersContainer');
+            const hourHand = document.getElementById('hourHand');
+            const minuteHand = document.getElementById('minuteHand');
+            const secondHand = document.getElementById('secondHand');
+            const timeDisplay = document.getElementById('timeDisplay');
+            const dateDisplay = document.getElementById('dateDisplay');
+
+            // ── 生成刻度 ──
+            function buildMarks() {
+                const fragment = document.createDocumentFragment();
+                for (let i = 0; i < 60; i++) {
+                    const angle = i * 6;
+                    const isHour = (i % 5 === 0);
+
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'mark';
+                    // transform-origin 在 .mark 中已设为 0 0，但我们需要旋转并平移
+                    // 使用 rotate(angle) translateY(topOffset)
+                    // 让 wrapper 位于圆心，旋转后子元素定位在边缘
+                    wrapper.style.transform = `rotate(${angle}deg)`;
+
+                    const inner = document.createElement('div');
+                    inner.className = 'mark-inner';
+                    const len = isHour ? MARK_LONG : MARK_SHORT;
+                    const thick = isHour ? MARK_THICK : MARK_THIN;
+                    const topPos = MARK_BASE_TOP - (isHour ? 0 : 2); // 微调非整点位置使其视觉均匀
+                    const actualTop = isHour ? MARK_BASE_TOP : MARK_BASE_TOP + 2;
+
+                    inner.style.width = thick + 'px';
+                    inner.style.height = len + 'px';
+                    inner.style.bottom = '0';
+                    inner.style.left = '50%';
+                    inner.style.transform = 'translateX(-50%)';
+                    inner.style.background = isHour ? '#1a1a1a' : '#999';
+                    inner.style.borderRadius = '2px';
+                    // 将inner放置在wrapper的顶部偏移处
+                    // 由于wrapper旋转后，其"向上"方向就是角度方向
+                    // 我们使用translateY将inner从圆心移到边缘
+                    // wrapper的transform: rotate(angle) 已经旋转了坐标系
+                    // 所以我们需要在wrapper内部用translateY把inner推上去
+                    // 但wrapper的transform已经用了rotate，不能再translate
+                    // 改用: wrapper的transform: rotate(angle); inner的transform: translateY(-R)
+                    // 这样inner就会沿着旋转后的方向移动
+                    // 重写结构: wrapper只做旋转，inner做平移
+
+                    // 重新调整：wrapper旋转，inner使用translateY移动到边缘
+                    // 但上面wrapper的transform已经用了rotate，我们可以在inner上用translateY
+                    // 修改：wrapper只旋转，inner使用translateY(-radius + margin)
+
+                    // 由于上面已经设置了wrapper的transform为rotate，现在设置inner的transform
+                    const translateY = -(CLOCK_RADIUS - MARK_MARGIN) + (isHour ? 0 : 2);
+                    inner.style.transform = `translateX(-50%) translateY(${translateY}px)`;
+
+                    wrapper.appendChild(inner);
+                    fragment.appendChild(wrapper);
+                }
+                marksContainer.appendChild(fragment);
+            }
+
+            // ── 生成数字 (1-12) ──
+            function buildNumbers() {
+                const fragment = document.createDocumentFragment();
+                const numbers = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+                numbers.forEach((num, idx) => {
+                    const angle = idx * 30;
+                    const rad = (angle - 90) * Math.PI / 180;
+                    const x = NUM_RADIUS * Math.cos(rad);
+                    const y = NUM_RADIUS * Math.sin(rad);
+
+                    const el = document.createElement('div');
+                    el.className = 'number';
+                    // 使用绝对定位 + transform 平移
+                    el.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+                    // 修正：实际上 number 元素本身是绝对定位在圆心，然后通过 transform 移动
+                    // 但 .number 已经设定了 top:50%; left:50%; transform-origin:0 0;
+                    // 我们需要用 translate 移动
+                    // 更直接：直接用 left/top 计算位置
+                    // 重写：不使用 .number 的 transform-origin，直接用 left/top
+
+                    // 重新实现: 直接用 left/top 定位
+                    const cx = 50 + (x / 4.2); // 百分比
+                    const cy = 50 + (y / 4.2);
+
+                    // 更精确: 父容器 420px, 所以 1% = 4.2px
+                    // left = 50% + x/4.2 %, top = 50% + y/4.2 %
+                    const leftPct = 50 + (x / 4.2);
+                    const topPct = 50 + (y / 4.2);
+
+                    el.style.left = leftPct + '%';
+                    el.style.top = topPct + '%';
+                    el.style.transform = 'translate(-50%, -50%)';
+                    el.style.transformOrigin = 'center center';
+                    el.style.width = '0';
+                    el.style.height = '0';
+
+                    const span = document.createElement('span');
+                    span.textContent = num;
+                    // span 居中
+                    span.style.position = 'absolute';
+                    span.style.top = '50%';
+                    span.style.left = '50%';
+                    span.style.transform = 'translate(-50%, -50%)';
+                    span.style.width = '30px';
+                    span.style.textAlign = 'center';
+                    span.style.fontSize = '18px';
+                    span.style.fontWeight = '500';
+                    span.style.color = '#1a1a1a';
+                    span.style.fontFamily = "'Inter', 'Segoe UI', system-ui, sans-serif";
+
+                    el.appendChild(span);
+                    fragment.appendChild(el);
+                });
+                numbersContainer.appendChild(fragment);
+            }
+
+            // ── 修正刻度生成（结构优化） ──
+            function buildMarksFixed() {
+                // 清空重新生成，避免重复
+                marksContainer.innerHTML = '';
+                const fragment = document.createDocumentFragment();
+                const R = CLOCK_RADIUS;
+                const margin = MARK_MARGIN;
+                const outerR = R - margin; // 刻度外端到圆心的距离
+
+                for (let i = 0; i < 60; i++) {
+                    const angle = i * 6;
+                    const isHour = (i % 5 === 0);
+                    const len = isHour ? MARK_LONG : MARK_SHORT;
+                    const thick = isHour ? MARK_THICK : MARK_THIN;
+                    // 刻度内端到圆心的距离
+                    const innerR = outerR - len;
+
+                    // 刻度的中心位置在 (outerR + innerR) / 2 处
+                    const midR = (outerR + innerR) / 2;
+
+                    // 创建刻度元素
+                    const bar = document.createElement('div');
+                    bar.style.position = 'absolute';
+                    bar.style.top = '50%';
+                    bar.style.left = '50%';
+                    bar.style.width = thick + 'px';
+                    bar.style.height = len + 'px';
+                    bar.style.background = isHour ? '#1a1a1a' : '#999';
+                    bar.style.borderRadius = '2px';
+                    bar.style.transformOrigin = '50% 50%';
+                    // 从圆心沿角度方向移动 midR 像素，然后旋转 angle 度
+                    const rad = (angle - 90) * Math.PI / 180;
+                    const dx = midR * Math.cos(rad);
+                    const dy = midR * Math.sin(rad);
+                    bar.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${angle}deg)`;
+                    bar.style.boxShadow = isHour ? '0 1px 3px rgba(0,0,0,0.08)' : 'none';
+
+                    fragment.appendChild(bar);
+                }
+                marksContainer.appendChild(fragment);
+            }
+
+            // ── 修正数字生成（更干净） ──
+            function buildNumbersFixed() {
+                numbersContainer.innerHTML = '';
+                const fragment = document.createDocumentFragment();
+                const nums = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+                const R = NUM_RADIUS;
+
+                nums.forEach((num, idx) => {
+                    const angle = idx * 30;
+                    const rad = (angle - 90) * Math.PI / 180;
+                    const x = R * Math.cos(rad);
+                    const y = R * Math.sin(rad);
+
+                    const el = document.createElement('div');
+                    el.style.position = 'absolute';
+                    el.style.top = '50%';
+                    el.style.left = '50%';
+                    el.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+                    el.style.width = '30px';
+                    el.style.height = '30px';
+                    el.style.display = 'flex';
+                    el.style.alignItems = 'center';
+                    el.style.justifyContent = 'center';
+                    el.style.fontSize = '19px';
+                    el.style.fontWeight = '500';
+                    el.style.color = '#1a1a1a';
+                    el.style.fontFamily = "'Inter', 'Segoe UI', system-ui, sans-serif";
+                    el.style.letterSpacing = '0.3px';
+                    el.textContent = num;
+
+                    fragment.appendChild(el);
+                });
+                numbersContainer.appendChild(fragment);
+            }
+
+            // ── 初始化构建 ──
+            buildMarksFixed();
+            buildNumbersFixed();
+
+            // ── 获取北京时 (UTC+8) ──
+            function getBeijingTime() {
+                // 使用 toLocaleString 获取北京时区的时间字符串并解析
+                const str = new Date().toLocaleString("en-US", { timeZone: "Asia/Shanghai" });
+                // 格式: "M/D/YYYY, H:MM:SS AM/PM" 或 "M/D/YYYY, H:MM:SS" (24h)
+                // 使用 Date 解析会有歧义，手动解析更可靠
+                // 改用 Intl.DateTimeFormat 获取各部分
+                const now = new Date();
+
+                // 方法: 直接用 Date 计算 UTC+8 偏移
+                const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+                const beijing = new Date(utc + 8 * 3600000);
+
+                return beijing;
+            }
+
+            // ── 更新时钟 ──
+            function updateClock() {
+                const now = getBeijingTime();
+
+                const hours = now.getHours();
+                const minutes = now.getMinutes();
+                const seconds = now.getSeconds();
+                const milliseconds = now.getMilliseconds();
+
+                // 平滑秒针: 包含毫秒
+                const smoothSeconds = seconds + milliseconds / 1000;
+                const secondAngle = smoothSeconds * 6; // 每秒 6°
+
+                // 分针: 包含秒的微小移动
+                const minuteAngle = (minutes + smoothSeconds / 60) * 6;
+
+                // 时针: 包含分钟和秒的移动
+                const hourAngle = (hours % 12 + minutes / 60 + smoothSeconds / 3600) * 30;
+
+                // 应用旋转
+                hourHand.style.transform = `rotate(${hourAngle}deg)`;
+                minuteHand.style.transform = `rotate(${minuteAngle}deg)`;
+                secondHand.style.transform = `rotate(${secondAngle}deg)`;
+
+                // ── 文字更新 ──
+                // 时间: 24小时制 HH:MM:SS
+                const hh = String(hours).padStart(2, '0');
+                const mm = String(minutes).padStart(2, '0');
+                const ss = String(seconds).padStart(2, '0');
+                timeDisplay.textContent = `${hh}:${mm}:${ss}`;
+
+                // 日期: 年月日 星期
+                const year = now.getFullYear();
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const day = String(now.getDate()).padStart(2, '0');
+                const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+                const weekday = weekdays[now.getDay()];
+                dateDisplay.textContent = `${year}年${month}月${day}日 周${weekday}`;
+            }
+
+            // ── 启动循环 (requestAnimationFrame) ──
+            function tick() {
+                updateClock();
+                requestAnimationFrame(tick);
+            }
+
+            // 首次立即更新
+            updateClock();
+            // 启动动画循环
+            requestAnimationFrame(tick);
+
+            // ── 窗口尺寸变化时无需处理，CSS 已适配 ──
+
+            // ── 额外: 每整秒微调一次样式（无需额外操作） ──
+
+            console.log('🕐 极简挂钟已启动 · 北京时间 (UTC+8)');
+        })();
+    </script>
+
+</body>
+</html>

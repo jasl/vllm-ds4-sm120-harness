@@ -1,0 +1,428 @@
+{
+  "seed": 0,
+  "device_name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+  "compute_cap": "12.0",
+  "torch_version": "2.11.0+cu130",
+  "kernels": [
+    {
+      "kernel": "accumulate_indexed_sparse_mla_attention_chunk_multihead",
+      "shape_name": "small",
+      "npz": "accumulate_indexed_sparse_mla_attention_chunk_multihead__small.npz",
+      "inputs": {
+        "q": {
+          "shape": [
+            1,
+            64,
+            512
+          ],
+          "dtype": "torch.bfloat16",
+          "device": "cuda:0"
+        },
+        "kv_flat": {
+          "shape": [
+            4096,
+            512
+          ],
+          "dtype": "torch.bfloat16",
+          "device": "cuda:0"
+        },
+        "indices": {
+          "shape": [
+            1,
+            256
+          ],
+          "dtype": "torch.int32",
+          "device": "cuda:0"
+        },
+        "lens": {
+          "shape": [
+            1
+          ],
+          "dtype": "torch.int32",
+          "device": "cuda:0"
+        },
+        "max_score": {
+          "shape": [
+            1,
+            64
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0"
+        },
+        "denom": {
+          "shape": [
+            1,
+            64
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0"
+        },
+        "acc": {
+          "shape": [
+            1,
+            64,
+            512
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0"
+        }
+      },
+      "output": {
+        "shape": [
+          1,
+          64,
+          512
+        ],
+        "dtype": "torch.float32",
+        "sha256": "f48d8502b3506b5b12d74d08684f17500fcd98675d3e7778f1d11b2e48312ce5"
+      },
+      "metadata": {
+        "scale": 0.125,
+        "head_block": 8,
+        "candidate_offset": 0,
+        "notes": "Multi-head sparse MLA accumulate from PR #6 with the gather-overlap commit's signature (single-head call site internally dispatches to HEAD_BLOCK=8 multi-head kernel)."
+      },
+      "tolerance_hint": "atol=1e-3 rtol=1e-3 on `acc`; the kernel uses online softmax (max + denom + acc) so float32 accumulators can drift slightly vs the alternative implementation. Compare `max_score` exactly (no reduction noise), `denom` with atol=1e-3, `acc` with atol=1e-3.",
+      "status": "ok"
+    },
+    {
+      "kernel": "accumulate_indexed_sparse_mla_attention_chunk_multihead",
+      "shape_name": "medium",
+      "npz": "accumulate_indexed_sparse_mla_attention_chunk_multihead__medium.npz",
+      "inputs": {
+        "q": {
+          "shape": [
+            4,
+            64,
+            512
+          ],
+          "dtype": "torch.bfloat16",
+          "device": "cuda:0"
+        },
+        "kv_flat": {
+          "shape": [
+            4096,
+            512
+          ],
+          "dtype": "torch.bfloat16",
+          "device": "cuda:0"
+        },
+        "indices": {
+          "shape": [
+            4,
+            256
+          ],
+          "dtype": "torch.int32",
+          "device": "cuda:0"
+        },
+        "lens": {
+          "shape": [
+            4
+          ],
+          "dtype": "torch.int32",
+          "device": "cuda:0"
+        },
+        "max_score": {
+          "shape": [
+            4,
+            64
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0"
+        },
+        "denom": {
+          "shape": [
+            4,
+            64
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0"
+        },
+        "acc": {
+          "shape": [
+            4,
+            64,
+            512
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0"
+        }
+      },
+      "output": {
+        "shape": [
+          4,
+          64,
+          512
+        ],
+        "dtype": "torch.float32",
+        "sha256": "b6b7024886a9e240aa672c7ad801950acc38e1a65257c0c05871ac19f2244777"
+      },
+      "metadata": {
+        "scale": 0.125,
+        "head_block": 8,
+        "candidate_offset": 0,
+        "notes": "Multi-head sparse MLA accumulate from PR #6 with the gather-overlap commit's signature (single-head call site internally dispatches to HEAD_BLOCK=8 multi-head kernel)."
+      },
+      "tolerance_hint": "atol=1e-3 rtol=1e-3 on `acc`; the kernel uses online softmax (max + denom + acc) so float32 accumulators can drift slightly vs the alternative implementation. Compare `max_score` exactly (no reduction noise), `denom` with atol=1e-3, `acc` with atol=1e-3.",
+      "status": "ok"
+    },
+    {
+      "kernel": "deepseek_v4_sm12x_fp8_einsum",
+      "shape_name": "small",
+      "npz": "deepseek_v4_sm12x_fp8_einsum__small.npz",
+      "inputs": {
+        "a": {
+          "shape": [
+            8,
+            32,
+            512
+          ],
+          "dtype": "torch.float8_e4m3fn",
+          "device": "cuda:0"
+        },
+        "a_scale": {
+          "shape": [
+            8,
+            32,
+            4
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0"
+        },
+        "b": {
+          "shape": [
+            32,
+            128,
+            512
+          ],
+          "dtype": "torch.float8_e4m3fn",
+          "device": "cuda:0"
+        },
+        "b_scale": {
+          "shape": [
+            32,
+            1,
+            4
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0"
+        },
+        "out": {
+          "shape": [
+            8,
+            32,
+            128
+          ],
+          "dtype": "torch.bfloat16",
+          "device": "cuda:0"
+        }
+      },
+      "output": {
+        "shape": [
+          8,
+          32,
+          128
+        ],
+        "dtype": "torch.bfloat16",
+        "sha256": "e0de9ae8b26778a23febaa54392da9618aada0331bdef3e600c298016575aa17"
+      },
+      "metadata": {
+        "einsum": "bhr,hdr->bhd",
+        "block_hidden": 128,
+        "block_out": 128,
+        "block_tokens": 16,
+        "scale_dtype_accepted": "fp32 or e8m0 (uint8, upcast inside kernel)",
+        "notes": "FP8 W8A8 mHC compute in mid-decode head projection. Shape uses TP=2 DSv4-Flash dims (num_groups=32). Both `hidden` and `out_rank` must be divisible by 128."
+      },
+      "tolerance_hint": "atol=5e-2 rtol=5e-2 on the bf16 output. FP8 e4m3 input \u00d7 fp32 block scales accumulates rounding error proportional to hidden_size; with hidden=512 and uniform fp32 scales of 1.0 the result is just `a.to(fp32) @ b.to(fp32).transpose(-1, -2)` tile-wise. Compare via einsum reference: `torch.einsum('bhr,hdr->bhd', a.to(f32)*a_scale_per_block, b.to(f32)*b_scale_per_block)` with the same 128-block-along-hidden tiling.",
+      "status": "ok"
+    },
+    {
+      "kernel": "deepseek_v4_sm12x_fp8_einsum",
+      "shape_name": "medium",
+      "npz": "deepseek_v4_sm12x_fp8_einsum__medium.npz",
+      "inputs": {
+        "a": {
+          "shape": [
+            128,
+            32,
+            512
+          ],
+          "dtype": "torch.float8_e4m3fn",
+          "device": "cuda:0"
+        },
+        "a_scale": {
+          "shape": [
+            128,
+            32,
+            4
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0"
+        },
+        "b": {
+          "shape": [
+            32,
+            128,
+            512
+          ],
+          "dtype": "torch.float8_e4m3fn",
+          "device": "cuda:0"
+        },
+        "b_scale": {
+          "shape": [
+            32,
+            1,
+            4
+          ],
+          "dtype": "torch.float32",
+          "device": "cuda:0"
+        },
+        "out": {
+          "shape": [
+            128,
+            32,
+            128
+          ],
+          "dtype": "torch.bfloat16",
+          "device": "cuda:0"
+        }
+      },
+      "output": {
+        "shape": [
+          128,
+          32,
+          128
+        ],
+        "dtype": "torch.bfloat16",
+        "sha256": "667efb2202b73f6916f0a2604bca8474cab1abac390cb0c1286725157d196bd1"
+      },
+      "metadata": {
+        "einsum": "bhr,hdr->bhd",
+        "block_hidden": 128,
+        "block_out": 128,
+        "block_tokens": 16,
+        "scale_dtype_accepted": "fp32 or e8m0 (uint8, upcast inside kernel)",
+        "notes": "FP8 W8A8 mHC compute in mid-decode head projection. Shape uses TP=2 DSv4-Flash dims (num_groups=32). Both `hidden` and `out_rank` must be divisible by 128."
+      },
+      "tolerance_hint": "atol=5e-2 rtol=5e-2 on the bf16 output. FP8 e4m3 input \u00d7 fp32 block scales accumulates rounding error proportional to hidden_size; with hidden=512 and uniform fp32 scales of 1.0 the result is just `a.to(fp32) @ b.to(fp32).transpose(-1, -2)` tile-wise. Compare via einsum reference: `torch.einsum('bhr,hdr->bhd', a.to(f32)*a_scale_per_block, b.to(f32)*b_scale_per_block)` with the same 128-block-along-hidden tiling.",
+      "status": "ok"
+    },
+    {
+      "kernel": "dequantize_and_gather_k_cache",
+      "shape_name": "small",
+      "npz": "dequantize_and_gather_k_cache__small.npz",
+      "inputs": {
+        "out": {
+          "shape": [
+            1,
+            1024,
+            512
+          ],
+          "dtype": "torch.bfloat16",
+          "device": "cuda:0"
+        },
+        "k_cache": {
+          "shape": [
+            64,
+            256,
+            584
+          ],
+          "dtype": "torch.uint8",
+          "device": "cuda:0"
+        },
+        "seq_lens": {
+          "shape": [
+            1
+          ],
+          "dtype": "torch.int32",
+          "device": "cuda:0"
+        },
+        "block_table": {
+          "shape": [
+            1,
+            4
+          ],
+          "dtype": "torch.int32",
+          "device": "cuda:0"
+        }
+      },
+      "output": {
+        "shape": [
+          1,
+          1024,
+          512
+        ],
+        "dtype": "torch.bfloat16",
+        "sha256": "f44d6f1ac43dd8714bbec59497bc059d7688faf643ecc3878a026ed220fb8f58"
+      },
+      "metadata": {
+        "block_size": 256,
+        "head_dim": 512,
+        "head_bytes": 584,
+        "fp8_layout_notes": "NoPE: bytes [0:448] fp8_e4m3. RoPE: bytes [448:512] bf16. E8M0 block scales: bytes [512:519] (7 bytes, one per 64 NoPE elements). Byte 519 is pad. Bytes 520-583 reserved for FlashMLA 576B alignment + 8B header.",
+        "notes": "Read by gather-overlap on aux_stream[1] in attention_impl and by _forward_prefill fallback. Same kernel for compressed (C128A) and SWA caches."
+      },
+      "tolerance_hint": "atol=0 rtol=0 on `out` bytes. Packed FP8 cache read with embedded E8M0 dequant \u2014 output is fully determined by the input k_cache bytes + block_table + seq_lens. Any divergence is a layout bug (wrong block_size, wrong head_bytes stride, wrong scale-byte offsets, or wrong FlashMLA alignment).",
+      "status": "ok"
+    },
+    {
+      "kernel": "dequantize_and_gather_k_cache",
+      "shape_name": "medium",
+      "npz": "dequantize_and_gather_k_cache__medium.npz",
+      "inputs": {
+        "out": {
+          "shape": [
+            4,
+            4096,
+            512
+          ],
+          "dtype": "torch.bfloat16",
+          "device": "cuda:0"
+        },
+        "k_cache": {
+          "shape": [
+            64,
+            256,
+            584
+          ],
+          "dtype": "torch.uint8",
+          "device": "cuda:0"
+        },
+        "seq_lens": {
+          "shape": [
+            4
+          ],
+          "dtype": "torch.int32",
+          "device": "cuda:0"
+        },
+        "block_table": {
+          "shape": [
+            4,
+            16
+          ],
+          "dtype": "torch.int32",
+          "device": "cuda:0"
+        }
+      },
+      "output": {
+        "shape": [
+          4,
+          4096,
+          512
+        ],
+        "dtype": "torch.bfloat16",
+        "sha256": "cda6199c51258eeea35f4d66d399dbe1d71f3f565f281a54adba933fa5a488c4"
+      },
+      "metadata": {
+        "block_size": 256,
+        "head_dim": 512,
+        "head_bytes": 584,
+        "fp8_layout_notes": "NoPE: bytes [0:448] fp8_e4m3. RoPE: bytes [448:512] bf16. E8M0 block scales: bytes [512:519] (7 bytes, one per 64 NoPE elements). Byte 519 is pad. Bytes 520-583 reserved for FlashMLA 576B alignment + 8B header.",
+        "notes": "Read by gather-overlap on aux_stream[1] in attention_impl and by _forward_prefill fallback. Same kernel for compressed (C128A) and SWA caches."
+      },
+      "tolerance_hint": "atol=0 rtol=0 on `out` bytes. Packed FP8 cache read with embedded E8M0 dequant \u2014 output is fully determined by the input k_cache bytes + block_table + seq_lens. Any divergence is a layout bug (wrong block_size, wrong head_bytes stride, wrong scale-byte offsets, or wrong FlashMLA alignment).",
+      "status": "ok"
+    }
+  ]
+}

@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>静音极简 · 挂钟</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: linear-gradient(145deg, #3a3f4d 0%, #1e222b 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+      padding: 20px;
+    }
+
+    /* 时钟容器：圆形表盘 + 3D 阴影效果 */
+    .clock {
+      position: relative;
+      width: 380px;
+      height: 380px;
+      background: #fbfbfa;
+      border-radius: 50%;
+      box-shadow:
+        0 20px 35px rgba(0, 0, 0, 0.5),
+        0 6px 12px rgba(0, 0, 0, 0.3),
+        inset 0 -3px 8px rgba(0, 0, 0, 0.05),
+        inset 0 3px 8px rgba(255, 255, 255, 0.8);
+      border: 2px solid #2d3139;
+      /* 保证内部绝对定位元素参照 */
+    }
+
+    /* 刻度容器 – 利用旋转生成60个刻度 */
+    .scale-wrap {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      border-radius: 50%;
+    }
+
+    /* 通用刻度样式 */
+    .scale-tick {
+      position: absolute;
+      left: 50%;
+      top: 8px;                /* 距离表盘边缘 */
+      width: 2.5px;            /* 基础宽度 */
+      height: 16px;
+      background: #9aa0ac;
+      border-radius: 2px;
+      transform-origin: 50% 182px;  /* 圆心在表盘中心 (380/2=190) 偏移8px => 182px */
+      opacity: 0.6;
+    }
+
+    /* 整点刻度：更粗、更深 */
+    .scale-tick.hour-tick {
+      width: 4.5px;
+      height: 22px;
+      background: #2c313a;
+      opacity: 0.95;
+      top: 6px;
+      transform-origin: 50% 184px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+
+    /* 数字样式 – 干净纤细 */
+    .clock-number {
+      position: absolute;
+      font-size: 20px;
+      font-weight: 400;
+      color: #262a33;
+      letter-spacing: 0.5px;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.7);
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform-origin: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 指针层 (保证层次) */
+    .hands-layer {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      border-radius: 50%;
+    }
+
+    /* 时针 & 分针 – 黑色纤细 */
+    .hand-hour, .hand-minute {
+      position: absolute;
+      bottom: 50%;
+      left: 50%;
+      transform-origin: 50% 100%;
+      border-radius: 4px 4px 2px 2px;
+      background: #282c34;
+      box-shadow: 1px 1px 4px rgba(0,0,0,0.25);
+    }
+
+    .hand-hour {
+      width: 6px;
+      height: 95px;
+      margin-left: -3px;
+      background: #1f232b;
+      border-radius: 5px;
+    }
+
+    .hand-minute {
+      width: 4.5px;
+      height: 130px;
+      margin-left: -2.25px;
+      background: #2a2e38;
+      border-radius: 4px;
+    }
+
+    /* 秒针 – 红色高亮 */
+    .hand-second {
+      position: absolute;
+      bottom: 50%;
+      left: 50%;
+      width: 2px;
+      height: 140px;
+      margin-left: -1px;
+      background: #d94247;
+      border-radius: 2px;
+      box-shadow: 0 0 6px rgba(217, 66, 71, 0.35);
+      transform-origin: 50% 100%;
+      transition: none; /* 平滑由 JS 控制 */
+    }
+
+    /* 秒针尾部小圆点 (红色装饰) */
+    .hand-second::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 8px;
+      height: 8px;
+      background: #d94247;
+      border-radius: 50%;
+      box-shadow: 0 0 6px rgba(217, 66, 71, 0.4);
+    }
+
+    /* 中心圆盖 */
+    .center-cap {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 16px;
+      height: 16px;
+      background: #2b2f39;
+      border-radius: 50%;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+      z-index: 5;
+    }
+
+    /* 文本信息 – 上半部 (时间) */
+    .digits-upper {
+      position: absolute;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 32px;
+      font-weight: 350;
+      letter-spacing: 3px;
+      color: #1f232b;
+      background: transparent;
+      text-shadow: 0 1px 3px rgba(255, 255, 255, 0.5);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      z-index: 6;
+      pointer-events: none;
+      background: rgba(251, 251, 250, 0.3);
+      backdrop-filter: blur(2px);
+      padding: 4px 16px;
+      border-radius: 40px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+    }
+
+    /* 文本信息 – 下半部 (日期/星期) */
+    .digits-lower {
+      position: absolute;
+      bottom: 78px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 21px;
+      font-weight: 350;
+      color: #343a44;
+      background: transparent;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.4);
+      letter-spacing: 1px;
+      white-space: nowrap;
+      z-index: 6;
+      pointer-events: none;
+      background: rgba(251, 251, 250, 0.2);
+      backdrop-filter: blur(2px);
+      padding: 4px 18px;
+      border-radius: 40px;
+    }
+
+    /* 兼容性 & 微调 */
+    @media (max-width: 420px) {
+      .clock {
+        width: 330px;
+        height: 330px;
+      }
+      .scale-tick {
+        top: 6px;
+        height: 14px;
+        transform-origin: 50% 159px;
+      }
+      .scale-tick.hour-tick {
+        top: 4px;
+        height: 19px;
+        transform-origin: 50% 161px;
+      }
+      .clock-number {
+        font-size: 17px;
+      }
+      .digits-upper {
+        top: 68px;
+        font-size: 27px;
+      }
+      .digits-lower {
+        bottom: 68px;
+        font-size: 17px;
+      }
+      .hand-hour { height: 80px; }
+      .hand-minute { height: 110px; }
+      .hand-second { height: 120px; }
+    }
+  </style>
+</head>
+<body>
+<div class="clock" id="clockFace">
+  <!-- 刻度（JS动态生成） -->
+  <div class="scale-wrap" id="scaleContainer"></div>
+  <!-- 数字（JS动态生成） -->
+  <div id="numberContainer" style="position:absolute; width:100%; height:100%; top:0; left:0; border-radius:50%;"></div>
+
+  <!-- 指针层 -->
+  <div class="hands-layer">
+    <div class="hand-hour" id="hourHand"></div>
+    <div class="hand-minute" id="minuteHand"></div>
+    <div class="hand-second" id="secondHand"></div>
+  </div>
+  <!-- 中心盖 -->
+  <div class="center-cap"></div>
+
+  <!-- 文字信息区域 -->
+  <div class="digits-upper" id="timeDisplay">00:00:00</div>
+  <div class="digits-lower" id="dateDisplay">2025-01-01 星期一</div>
+</div>
+
+<script>
+  (function() {
+    // ---------- 1. 生成刻度 (60个) ----------
+    const scaleWrap = document.getElementById('scaleContainer');
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < 60; i++) {
+      const tick = document.createElement('div');
+      tick.className = 'scale-tick';
+      // 整点刻度 (12个)  : 每5个一刻度
+      if (i % 5 === 0) {
+        tick.classList.add('hour-tick');
+      }
+      // 旋转角度: 每个刻度 6 度
+      const angle = i * 6;
+      tick.style.transform = `rotate(${angle}deg)`;
+      fragment.appendChild(tick);
+    }
+    scaleWrap.appendChild(fragment);
+
+    // ---------- 2. 生成数字 1-12 ----------
+    const numContainer = document.getElementById('numberContainer');
+    const radius = 153;          // 数字离圆心距离 (px)  380/2 - 边缘距离
+    const centerX = 190;         // 圆心参考 (数字绝对定位)
+    const centerY = 190;
+    // 对于小屏适配微调
+    let clockSize = 380;
+    const updateNumbers = () => {
+      const clock = document.getElementById('clockFace');
+      const rect = clock.getBoundingClientRect();
+      // 动态适配 (但保持初始比例)
+    };
+    // 直接用固定尺寸: 380px 基准
+    const numRadius = 155;       // 数字到圆心距离
+    const offsetX = 190, offsetY = 190;
+    // 清除已有数字 (便于多次调用但此处仅一次)
+    numContainer.innerHTML = '';
+    for (let i = 1; i <= 12; i++) {
+      const angle = (i * 30) * Math.PI / 180;  // 弧度
+      // 12点方向为 -90° (即 -PI/2)  调整使得数字正常布局: 12点在正上方
+      const x = offsetX + numRadius * Math.sin(angle) - 15;   // 减去宽度一半
+      const y = offsetY - numRadius * Math.cos(angle) - 15;
+      const numberDiv = document.createElement('div');
+      numberDiv.className = 'clock-number';
+      numberDiv.textContent = i;
+      numberDiv.style.left = x + 'px';
+      numberDiv.style.top = y + 'px';
+      numContainer.appendChild(numberDiv);
+    }
+
+    // ---------- 3. 时钟逻辑 (北京时间 UTC+8) ----------
+    const hourHand = document.getElementById('hourHand');
+    const minuteHand = document.getElementById('minuteHand');
+    const secondHand = document.getElementById('secondHand');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const dateDisplay = document.getElementById('dateDisplay');
+
+    // 辅助：获取北京时间 (Asia/Shanghai)
+    function getBeijingTime() {
+      // 利用 toLocaleString 提取完整时间字符串再解析 (可靠)
+      const dateStr = new Date().toLocaleString("en-US", { timeZone: "Asia/Shanghai" });
+      // 返回 Date 对象 (但注意解析是本地时间？ 但 en-US 格式 "M/d/yyyy, h:mm:ss A" 但无日期分隔)
+      // 更稳健：手动构造
+      const now = new Date();
+      // 转换为北京时间偏移: UTC+8
+      const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+      const beijingOffset = 8 * 3600000;
+      const beijingDate = new Date(utc + beijingOffset);
+      return beijingDate;
+    }
+
+    // 获取北京时间更精确的字符串 (直接 Date 对象)
+    function updateClock() {
+      const now = new Date();
+      // 计算北京时间偏移 (分钟)
+      const localOffset = now.getTimezoneOffset(); // 本地与UTC分钟差
+      const beijingOffset = -480; // UTC+8 => -480分钟
+      const diffMinutes = localOffset - beijingOffset; // 本地比北京慢/快
+      const beijingTime = new Date(now.getTime() + diffMinutes * 60000);
+
+      // 提取时分秒、毫秒 (用于平滑秒针)
+      const hours = beijingTime.getHours();
+      const minutes = beijingTime.getMinutes();
+      const seconds = beijingTime.getSeconds();
+      const milliseconds = beijingTime.getMilliseconds();
+
+      // 平滑秒针: 秒 + 毫秒/1000
+      const smoothSeconds = seconds + milliseconds / 1000;
+
+      // 角度计算
+      // 时针: 每小时30° + 分针影响 (0.5°每分钟) + 秒针微调 (可忽略)
+      const hourAngle = (hours % 12) * 30 + minutes * 0.5 + seconds * (0.5 / 60);
+      // 分针: 每分钟6° + 秒针影响 (0.1°每6秒? 秒针精细)
+      const minuteAngle = minutes * 6 + seconds * 0.1;
+      // 秒针: 每秒6° (平滑)
+      const secondAngle = smoothSeconds * 6;
+
+      // 应用旋转
+      hourHand.style.transform = `rotate(${hourAngle}deg)`;
+      minuteHand.style.transform = `rotate(${minuteAngle}deg)`;
+      secondHand.style.transform = `rotate(${secondAngle}deg)`;
+
+      // ---- 文本更新 ----
+      // 上半部: 24小时制 HH:mm:ss (补零)
+      const pad = (num) => String(num).padStart(2, '0');
+      const timeStr = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+      timeDisplay.textContent = timeStr;
+
+      // 下半部: 日期 + 星期 (中文)
+      const year = beijingTime.getFullYear();
+      const month = pad(beijingTime.getMonth() + 1);
+      const day = pad(beijingTime.getDate());
+      const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+      const weekday = weekdays[beijingTime.getDay()];
+      dateDisplay.textContent = `${year}年${month}月${day}日 ${weekday}`;
+    }
+
+    // 启动循环: 使用 requestAnimationFrame 平滑更新
+    let lastFrame = 0;
+    function tickLoop(timestamp) {
+      // 每秒更新约60帧，秒针平滑
+      updateClock();
+      requestAnimationFrame(tickLoop);
+    }
+    // 首帧立刻执行
+    requestAnimationFrame(tickLoop);
+
+    // 后备：每1秒强制刷新文本/角度 (但 rAF 已经足够)
+    // 同时防止某些浏览器标签页休眠后恢复
+    setInterval(() => {
+      // 仅作为补充，避免在极端情况下停滞，但 rAF 已持续更新
+      if (document.hidden) {
+        // 如果页面不可见，手动更新一次避免跳动太大
+        updateClock();
+      }
+    }, 1000);
+
+    // 窗口尺寸变化 数字位置适配 (如果响应式需要)
+    window.addEventListener('resize', () => {
+      // 保持数字位置相对，但时钟固定宽高无影响
+    });
+
+    // 额外初始化一次
+    updateClock();
+  })();
+</script>
+</body>
+</html>

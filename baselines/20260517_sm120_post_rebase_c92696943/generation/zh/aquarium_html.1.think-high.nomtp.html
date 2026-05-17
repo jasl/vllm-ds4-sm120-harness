@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐠 梦幻水族箱</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #0a0e1a;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            background: radial-gradient(ellipse at center bottom, #0c2a4a 0%, #05101f 100%);
+        }
+
+        /* 左下角信息提示 */
+        .hint {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.35);
+            font-size: 14px;
+            letter-spacing: 2px;
+            pointer-events: none;
+            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+            background: rgba(0, 0, 0, 0.25);
+            padding: 8px 20px;
+            border-radius: 30px;
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            transition: opacity 1.2s ease;
+            font-weight: 300;
+        }
+        .hint span {
+            display: inline-block;
+            animation: pulseHint 2.8s ease-in-out infinite;
+        }
+        @keyframes pulseHint {
+            0%,
+            100% {
+                opacity: 0.6;
+            }
+            50% {
+                opacity: 1;
+            }
+        }
+
+        /* 右上角统计 */
+        .stats {
+            position: fixed;
+            top: 20px;
+            right: 24px;
+            color: rgba(255, 255, 255, 0.2);
+            font-size: 13px;
+            pointer-events: none;
+            text-align: right;
+            line-height: 1.6;
+            font-weight: 300;
+            letter-spacing: 0.5px;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+        .stats strong {
+            color: rgba(255, 255, 255, 0.4);
+            font-weight: 400;
+        }
+
+        /* 点击涟漪效果 (CSS动画) */
+        .ripple {
+            position: fixed;
+            pointer-events: none;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 200, 0.3);
+            background: radial-gradient(circle, rgba(255, 240, 180, 0.15) 0%, transparent 70%);
+            animation: rippleAnim 0.9s ease-out forwards;
+            transform: translate(-50%, -50%);
+        }
+        @keyframes rippleAnim {
+            0% {
+                width: 0;
+                height: 0;
+                opacity: 1;
+            }
+            100% {
+                width: 120px;
+                height: 120px;
+                opacity: 0;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .hint {
+                font-size: 11px;
+                padding: 6px 16px;
+                bottom: 18px;
+            }
+            .stats {
+                font-size: 11px;
+                top: 14px;
+                right: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="aquarium"></canvas>
+
+    <div class="hint"><span>🖱 点击任意位置 · 投放鱼食</span></div>
+    <div class="stats" id="stats">
+        <div>🐟 <strong id="fishCount">0</strong></div>
+        <div>🍕 <strong id="foodCount">0</strong></div>
+    </div>
+
+    <script>
+        // ============================================================
+        //   🐠 梦幻水族箱  –  完整实现
+        //   特性：多色鱼群 · 自然游动 · 点击喂食 · 追逐 + 吃掉
+        // ============================================================
+
+        (function() {
+            'use strict';
+
+            // ---------- canvas 设置 ----------
+            const canvas = document.getElementById('aquarium');
+            const ctx = canvas.getContext('2d');
+            let W, H;
+
+            function resize() {
+                W = canvas.width = window.innerWidth;
+                H = canvas.height = window.innerHeight;
+            }
+            window.addEventListener('resize', resize);
+            resize();
+
+            // ---------- DOM 引用 ----------
+            const fishCountEl = document.getElementById('fishCount');
+            const foodCountEl = document.getElementById('foodCount');
+
+            // ---------- 工具函数 ----------
+            function rand(min, max) { return Math.random() * (max - min) + min; }
+
+            function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
+
+            function lerp(a, b, t) { return a + (b - a) * t; }
+
+            function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+            function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
+
+            function angleDelta(a, b) {
+                let d = b - a;
+                while (d > Math.PI) d -= 2 * Math.PI;
+                while (d < -Math.PI) d += 2 * Math.PI;
+                return d;
+            }
+
+            // 颜色工具
+            function hexToRgb(hex) {
+                const r = parseInt(hex.slice(1, 3), 16);
+                const g = parseInt(hex.slice(3, 5), 16);
+                const b = parseInt(hex.slice(5, 7), 16);
+                return { r, g, b };
+            }
+
+            function rgbStr(r, g, b, a) {
+                if (a !== undefined) return `rgba(${r},${g},${b},${a})`;
+                return `rgb(${r},${g},${b})`;
+            }
+
+            function colorWithAlpha(hex, alpha) {
+                const c = hexToRgb(hex);
+                return `rgba(${c.r},${c.g},${c.b},${alpha})`;
+            }
+
+            function lighten(hex, amt = 30) {
+                const c = hexToRgb(hex);
+                return rgbStr(Math.min(255, c.r + amt), Math.min(255, c.g + amt), Math.min(255, c.b + amt));
+            }
+
+            function darken(hex, amt = 30) {
+                const c = hexToRgb(hex);
+                return rgbStr(Math.max(0, c.r - amt), Math.max(0, c.g - amt), Math.max(0, c.b - amt));
+            }
+
+            // ---------- 调色板 ----------
+            const FISH_COLORS = [
+                '#FF6B6B', '#FF4757', '#FF7F50', '#FFA94D', '#FFE66D',
+                '#FECA57', '#2ED573', '#7BED9F', '#4DACFF', '#74B9FF',
+                '#A29BFE', '#6C5CE7', '#FF9FF3', '#F368E0', '#FD79A8',
+                '#00CEC9', '#55EFC4', '#FDCB6E', '#E17055', '#0984E3'
+            ];
+
+            // ---------- 常量 ----------
+            const FISH_COUNT = 14;
+            const MAX_SPEED_FREE = 1.8;
+            const MAX_SPEED_CHASE = 3.8;
+            const CHASE_RANGE = 580;
+            const EAT_DIST = 18;
+            const FOOD_SINK_SPEED = 0.25;
+            const FOOD_SIZE = 5;
+            const BOUNDARY_PADDING = 40;
+            const TURN_SPEED = 0.028;
+            const BUBBLE_COUNT = 28;
+            const SEAWEED_COUNT = 7;
+
+            // ---------- 全局状态 ----------
+            let fishes = [];
+            let foods = [];
+            let bubbles = [];
+            let seaweeds = [];
+            let sandPoints = [];
+            let time = 0;
+            let frameId = null;
+
+            // ---------- 水族箱装饰 ----------
+            function initDecor() {
+                // 沙地
+                sandPoints = [];
+                for (let i = 0; i < 60; i++) {
+                    sandPoints.push({
+                        x: rand(0, W),
+                        y: H - rand(10, 50),
+                        r: rand(4, 18),
+                        shade: rand(0.6, 1.0)
+                    });
+                }
+
+                // 水草
+                seaweeds = [];
+                for (let i = 0; i < SEAWEED_COUNT; i++) {
+                    const x = rand(40, W - 40);
+                    const h = rand(80, 200);
+                    const color = `hsl(${randInt(120, 180)}, ${randInt(50, 80)}%, ${randInt(25, 45)}%)`;
+                    seaweeds.push({
+                        x,
+                        baseY: H - rand(10, 30),
+                        height: h,
+                        color,
+                        segments: randInt(5, 9),
+                        phase: rand(0, Math.PI * 2),
+                        freq: rand(0.004, 0.012),
+                        amp: rand(6, 18),
+                        thickness: rand(3, 7)
+                    });
+                }
+
+                // 气泡
+                bubbles = [];
+                for (let i = 0; i < BUBBLE_COUNT; i++) {
+                    bubbles.push(createBubble(true));
+                }
+            }
+
+            function createBubble(randomY = false) {
+                return {
+                    x: rand(10, W - 10),
+                    y: randomY ? rand(0, H) : H + rand(5, 30),
+                    r: rand(2, 8),
+                    speed: rand(0.15, 0.5),
+                    wobble: rand(0, Math.PI * 2),
+                    wobbleAmp: rand(0.3, 1.2),
+                    wobbleFreq: rand(0.01, 0.03),
+                    alpha: rand(0.08, 0.25)
+                };
+            }
+
+            // ---------- 鱼食 ----------
+            class Food {
+                constructor(x, y) {
+                    this.x = x;
+                    this.y = y;
+                    this.r = FOOD_SIZE * (0.8 + rand(0, 0.4));
+                    this.sinkSpeed = FOOD_SINK_SPEED * (0.8 + rand(0, 0.4));
+                    this.alive = true;
+                    this.bobPhase = rand(0, Math.PI * 2);
+                    this.bobAmp = rand(0.2, 0.6);
+                    this.glow = 1.0;
+                }
+
+                update() {
+                    this.bobPhase += 0.02;
+                    this.y += this.sinkSpeed + Math.sin(this.bobPhase) * 0.06;
+                    // 碰到底部停止下沉
+                    if (this.y > H - 30) {
+                        this.y = H - 30;
+                        this.sinkSpeed = 0;
+                    }
+                    // 超出左右边界移除
+                    if (this.x < -20 || this.x > W + 20 || this.y > H + 20) {
+                        this.alive = false;
+                    }
+                    // 发光衰减
+                    this.glow = Math.max(0.2, this.glow - 0.002);
+                }
+
+                draw(ctx) {
+                    const r = this.r;
+                    // 发光光晕
+                    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 5);
+                    grad.addColorStop(0, `rgba(255, 220, 140, ${0.25 * this.glow})`);
+                    grad.addColorStop(0.5, `rgba(255, 190, 100, ${0.08 * this.glow})`);
+                    grad.addColorStop(1, 'rgba(255, 200, 120, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, r * 5, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 食物颗粒
+                    const grad2 = ctx.createRadialGradient(this.x - r * 0.3, this.y - r * 0.3, 0, this.x, this.y, r);
+                    grad2.addColorStop(0, '#FFE8B0');
+                    grad2.addColorStop(0.5, '#F5C842');
+                    grad2.addColorStop(1, '#C49A3C');
+                    ctx.fillStyle = grad2;
+                    ctx.shadowColor = 'rgba(255, 200, 80, 0.4)';
+                    ctx.shadowBlur = 12;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    // 高光
+                    ctx.fillStyle = 'rgba(255,255,240,0.5)';
+                    ctx.beginPath();
+                    ctx.arc(this.x - r * 0.25, this.y - r * 0.3, r * 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // ---------- 鱼 ----------
+            class Fish {
+                constructor(x, y, size, colorHex) {
+                    this.x = x;
+                    this.y = y;
+                    this.size = size; // 0.6 ~ 1.4
+                    this.colorHex = colorHex;
+                    this.color = colorHex;
+
+                    // 朝向 (弧度)
+                    this.angle = rand(0, Math.PI * 2);
+                    // 速度
+                    this.speed = rand(0.8, 1.6);
+                    // 角速度
+                    this.angularVel = 0;
+
+                    // 身体波动
+                    this.bodyPhase = rand(0, Math.PI * 2);
+                    this.bodyFreq = rand(0.06, 0.12);
+                    this.bodyAmp = rand(1.2, 2.8);
+
+                    // 尾巴摆动
+                    this.tailPhase = rand(0, Math.PI * 2);
+                    this.tailFreq = rand(0.08, 0.15);
+                    this.tailAmp = rand(0.3, 0.7);
+
+                    // 行为状态
+                    this.targetFood = null;
+                    this.chaseTimer = 0;
+
+                    // 独特特征
+                    this.finAngle = rand(-0.15, 0.15);
+                    this.eyeOffset = rand(0.8, 1.2);
+
+                    // 游动风格 (有些鱼更活跃)
+                    this.activity = rand(0.7, 1.3);
+                    this.wanderAngle = this.angle;
+                    this.wanderTimer = rand(0, 200);
+
+                    // 身体"记忆"用于平滑弯曲
+                    this.prevBodyWave = 0;
+
+                    // 边界回避力
+                    this.boundaryForce = 0;
+
+                    // 是否活着
+                    this.alive = true;
+
+                    // 颜色缓存
+                    this._cacheColors();
+                }
+
+                _cacheColors() {
+                    const c = hexToRgb(this.colorHex);
+                    this.colorLight = rgbStr(
+                        Math.min(255, c.r + 40),
+                        Math.min(255, c.g + 40),
+                        Math.min(255, c.b + 40)
+                    );
+                    this.colorDark = rgbStr(
+                        Math.max(0, c.r - 40),
+                        Math.max(0, c.g - 40),
+                        Math.max(0, c.b - 40)
+                    );
+                    this.colorGlow = colorWithAlpha(this.colorHex, 0.15);
+                }
+
+                // 寻找最近的鱼食
+                findNearestFood() {
+                    let nearest = null;
+                    let minDist = CHASE_RANGE;
+                    for (const food of foods) {
+                        if (!food.alive) continue;
+                        const d = dist(this.x, this.y, food.x, food.y);
+                        if (d < minDist) {
+                            minDist = d;
+                            nearest = food;
+                        }
+                    }
+                    return nearest;
+                }
+
+                update() {
+                    // 更新波动相位
+                    this.bodyPhase += this.bodyFreq * this.speed * 0.6;
+                    this.tailPhase += this.tailFreq * this.speed * 0.8;
+
+                    // 寻找目标食物
+                    const newTarget = this.findNearestFood();
+                    if (newTarget) {
+                        this.targetFood = newTarget;
+                        this.chaseTimer = 60;
+                    } else if (this.chaseTimer > 0) {
+                        this.chaseTimer--;
+                        if (this.chaseTimer <= 0) {
+                            this.targetFood = null;
+                        }
+                    } else {
+                        this.targetFood = null;
+                    }
+
+                    // --- 转向逻辑 ---
+                    let targetAngle = this.angle;
+
+                    if (this.targetFood && this.targetFood.alive) {
+                        // 追逐食物
+                        const dx = this.targetFood.x - this.x;
+                        const dy = this.targetFood.y - this.y;
+                        targetAngle = Math.atan2(dy, dx);
+                        this.speed = lerp(this.speed, MAX_SPEED_CHASE * this.activity, 0.06);
+
+                        // 如果很近，吃掉它
+                        const d = dist(this.x, this.y, this.targetFood.x, this.targetFood.y);
+                        if (d < EAT_DIST * this.size) {
+                            this.targetFood.alive = false;
+                            this.targetFood = null;
+                            this.chaseTimer = 0;
+                            // 吃到的瞬间加速一下 (反应)
+                            this.speed = Math.min(this.speed + 0.8, MAX_SPEED_CHASE * 1.2);
+                        }
+                    } else {
+                        // 自由游动
+                        this.speed = lerp(this.speed, MAX_SPEED_FREE * this.activity, 0.01);
+                        this.wanderTimer--;
+                        if (this.wanderTimer <= 0) {
+                            this.wanderAngle = this.angle + rand(-0.8, 0.8);
+                            this.wanderTimer = randInt(60, 200);
+                        }
+                        targetAngle = this.wanderAngle;
+
+                        // 边界回避
+                        const margin = BOUNDARY_PADDING * (1.2 - this.size * 0.3);
+                        if (this.x < margin) targetAngle = lerp(targetAngle, 0, 0.12);
+                        if (this.x > W - margin) targetAngle = lerp(targetAngle, Math.PI, 0.12);
+                        if (this.y < margin + 20) targetAngle = lerp(targetAngle, Math.PI / 2, 0.12);
+                        if (this.y > H - margin) targetAngle = lerp(targetAngle, -Math.PI / 2, 0.12);
+                    }
+
+                    // 平滑转向
+                    const delta = angleDelta(this.angle, targetAngle);
+                    const turnSpeed = this.targetFood ? TURN_SPEED * 1.6 : TURN_SPEED * 0.9;
+                    this.angularVel = clamp(delta, -turnSpeed * 2, turnSpeed * 2);
+                    this.angle += this.angularVel;
+
+                    // 边界硬性反弹 (防止卡在边缘)
+                    const hardMargin = 12;
+                    if (this.x < hardMargin) { this.x = hardMargin;
+                        this.angle = lerp(this.angle, 0, 0.3); }
+                    if (this.x > W - hardMargin) { this.x = W - hardMargin;
+                        this.angle = lerp(this.angle, Math.PI, 0.3); }
+                    if (this.y < hardMargin + 10) { this.y = hardMargin + 10;
+                        this.angle = lerp(this.angle, Math.PI / 2, 0.3); }
+                    if (this.y > H - hardMargin) { this.y = H - hardMargin;
+                        this.angle = lerp(this.angle, -Math.PI / 2, 0.3); }
+
+                    // 移动
+                    this.x += Math.cos(this.angle) * this.speed;
+                    this.y += Math.sin(this.angle) * this.speed;
+
+                    // 保持在画面内 (保险)
+                    this.x = clamp(this.x, -5, W + 5);
+                    this.y = clamp(this.y, -5, H + 5);
+
+                    // 身体波动记忆
+                    this.prevBodyWave = Math.sin(this.bodyPhase) * this.bodyAmp;
+                }
+
+                draw(ctx) {
+                    const s = this.size;
+                    const x = this.x;
+                    const y = this.y;
+                    const angle = this.angle;
+                    const bodyWave = Math.sin(this.bodyPhase) * this.bodyAmp;
+                    const tailSwing = Math.sin(this.tailPhase) * this.tailAmp * 0.8;
+
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.rotate(angle);
+
+                    // ---- 身体参数 ----
+                    const bodyLen = 42 * s;
+                    const bodyWidth = 18 * s;
+                    const tailLen = 18 * s;
+                    const headRatio = 0.22;
+
+                    // ---- 身体轮廓 (流线型) ----
+                    ctx.save();
+
+                    // 轻微身体弯曲 (沿身体长度)
+                    const bendAmount = bodyWave * 0.12;
+
+                    // 绘制鱼身 (使用贝塞尔曲线)
+                    ctx.beginPath();
+                    // 鱼头 (右侧)
+                    const headX = bodyLen * 0.48;
+                    const headY = 0;
+                    // 上侧控制
+                    const c1x = bodyLen * 0.1;
+                    const c1y = -bodyWidth * 0.55 - bendAmount * 0.5;
+                    const c2x = -bodyLen * 0.25;
+                    const c2y = -bodyWidth * 0.45 + bendAmount * 0.3;
+                    // 尾基
+                    const tailBaseX = -bodyLen * 0.45;
+                    const tailBaseY = 0;
+
+                    // 上侧曲线
+                    ctx.moveTo(headX, headY - 1);
+                    ctx.bezierCurveTo(
+                        bodyLen * 0.3, -bodyWidth * 0.5 - bendAmount * 0.7,
+                        c1x, c1y,
+                        tailBaseX, -bodyWidth * 0.2 + bendAmount * 0.2
+                    );
+
+                    // 尾巴上侧到尖端
+                    const tailTipX = -bodyLen * 0.45 - tailLen;
+                    const tailTipY = -tailLen * 0.6 + tailSwing * 4;
+                    ctx.lineTo(tailTipX, tailTipY);
+
+                    // 尾巴下侧回到尾基
+                    ctx.lineTo(tailBaseX, bodyWidth * 0.2 + bendAmount * 0.2);
+
+                    // 下侧曲线回到鱼头
+                    ctx.bezierCurveTo(
+                        c1x, bodyWidth * 0.55 - bendAmount * 0.5,
+                        bodyLen * 0.3, bodyWidth * 0.5 - bendAmount * 0.7,
+                        headX, headY + 1
+                    );
+
+                    ctx.closePath();
+
+                    // 填充鱼身 - 渐变
+                    const grad = ctx.createLinearGradient(0, -bodyWidth * 0.7, 0, bodyWidth * 0.7);
+                    grad.addColorStop(0, this.colorLight);
+                    grad.addColorStop(0.4, this.colorHex);
+                    grad.addColorStop(0.7, this.colorHex);
+                    grad.addColorStop(1, this.colorDark);
+                    ctx.fillStyle = grad;
+
+                    ctx.shadowColor = this.colorGlow;
+                    ctx.shadowBlur = 8 * s;
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    // 身体轮廓线 (强调)
+                    ctx.strokeStyle = colorWithAlpha(this.colorDark, 0.25);
+                    ctx.lineWidth = 0.8;
+                    ctx.stroke();
+
+                    // ---- 尾巴分叉 (第二层) ----
+                    ctx.beginPath();
+                    ctx.moveTo(tailBaseX, -bodyWidth * 0.15);
+                    const fork1x = -bodyLen * 0.45 - tailLen * 0.8;
+                    const fork1y = -tailLen * 0.7 + tailSwing * 5;
+                    const fork2x = -bodyLen * 0.45 - tailLen * 0.8;
+                    const fork2y = tailLen * 0.7 + tailSwing * 5;
+                    const forkMidx = -bodyLen * 0.45 - tailLen * 0.3;
+                    const forkMidy = tailSwing * 2;
+
+                    ctx.quadraticCurveTo(fork1x, fork1y, forkMidx, forkMidy);
+                    ctx.quadraticCurveTo(fork2x, fork2y, tailBaseX, bodyWidth * 0.15);
+                    ctx.closePath();
+                    ctx.fillStyle = this.colorDark;
+                    ctx.globalAlpha = 0.7;
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+
+                    // ---- 背鳍 ----
+                    ctx.beginPath();
+                    const finX1 = bodyLen * 0.05;
+                    const finY1 = -bodyWidth * 0.5;
+                    const finX2 = -bodyLen * 0.15;
+                    const finY2 = -bodyWidth * 0.45;
+                    const finTopX = -bodyLen * 0.05;
+                    const finTopY = -bodyWidth * 0.5 - 12 * s - bodyWave * 0.15;
+                    ctx.moveTo(finX1, finY1);
+                    ctx.quadraticCurveTo(finTopX, finTopY, finX2, finY2);
+                    ctx.lineTo(finX1, finY1);
+                    ctx.closePath();
+                    ctx.fillStyle = colorWithAlpha(this.colorLight, 0.5);
+                    ctx.fill();
+
+                    // ---- 胸鳍 (下侧) ----
+                    ctx.beginPath();
+                    const pectX1 = bodyLen * 0.15;
+                    const pectY1 = bodyWidth * 0.4;
+                    const pectX2 = -bodyLen * 0.05;
+                    const pectY2 = bodyWidth * 0.35;
+                    const pectBotX = bodyLen * 0.08;
+                    const pectBotY = bodyWidth * 0.4 + 10 * s + Math.sin(this.bodyPhase * 0.7) * 2;
+                    ctx.moveTo(pectX1, pectY1);
+                    ctx.quadraticCurveTo(pectBotX, pectBotY, pectX2, pectY2);
+                    ctx.lineTo(pectX1, pectY1);
+                    ctx.closePath();
+                    ctx.fillStyle = colorWithAlpha(this.colorLight, 0.35);
+                    ctx.fill();
+
+                    // ---- 眼睛 ----
+                    const eyeX = bodyLen * 0.35;
+                    const eyeY = -bodyWidth * 0.2;
+                    const eyeR = 4.5 * s * this.eyeOffset;
+
+                    // 眼白
+                    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+                    ctx.shadowBlur = 4;
+                    ctx.fillStyle = '#FDFDFD';
+                    ctx.beginPath();
+                    ctx.ellipse(eyeX, eyeY, eyeR, eyeR * 1.05, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    // 瞳孔
+                    const pupilR = eyeR * 0.6;
+                    ctx.fillStyle = '#1A1A2E';
+                    ctx.beginPath();
+                    ctx.ellipse(eyeX + 0.5, eyeY + 0.5, pupilR, pupilR * 1.1, 0, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 瞳孔高光
+                    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+                    ctx.beginPath();
+                    ctx.arc(eyeX + pupilR * 0.3, eyeY - pupilR * 0.4, pupilR * 0.35, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 第二高光 (小)
+                    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                    ctx.beginPath();
+                    ctx.arc(eyeX + pupilR * 0.6, eyeY + pupilR * 0.2, pupilR * 0.18, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // ---- 身体光泽 (侧线) ----
+                    ctx.globalAlpha = 0.12;
+                    ctx.strokeStyle = '#FFFFFF';
+                    ctx.lineWidth = 1.5 * s;
+                    ctx.beginPath();
+                    ctx.moveTo(bodyLen * 0.2, -bodyWidth * 0.1);
+                    ctx.quadraticCurveTo(0, -bodyWidth * 0.05, -bodyLen * 0.2, -bodyWidth * 0.1);
+                    ctx.stroke();
+                    ctx.globalAlpha = 1;
+
+                    ctx.restore();
+
+                    // ---- 鱼周围的微弱光晕 (仅追逐时) ----
+                    if (this.targetFood && this.targetFood.alive) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.06 + Math.sin(time * 0.05) * 0.03;
+                        const grad2 = ctx.createRadialGradient(x, y, 0, x, y, 40 * s);
+                        grad2.addColorStop(0, this.colorLight);
+                        grad2.addColorStop(1, 'transparent');
+                        ctx.fillStyle = grad2;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 40 * s, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+
+                    ctx.restore();
+                }
+            }
+
+            // ---------- 初始化鱼群 ----------
+            function initFishes() {
+                fishes = [];
+                const colors = [...FISH_COLORS];
+                // 打乱颜色
+                for (let i = colors.length - 1; i > 0; i--) {
+                    const j = randInt(0, i);
+                    [colors[i], colors[j]] = [colors[j], colors[i]];
+                }
+
+                for (let i = 0; i < FISH_COUNT; i++) {
+                    const x = rand(60, W - 60);
+                    const y = rand(40, H - 60);
+                    const size = rand(0.7, 1.35);
+                    const color = colors[i % colors.length];
+                    const fish = new Fish(x, y, size, color);
+                    fish.angle = rand(0, Math.PI * 2);
+                    fish.speed = rand(0.8, 1.8);
+                    fish.wanderAngle = fish.angle;
+                    fishes.push(fish);
+                }
+            }
+
+            // ---------- 添加鱼食 ----------
+            function addFood(x, y) {
+                const food = new Food(x, y);
+                foods.push(food);
+                // 限制食物数量
+                if (foods.length > 50) {
+                    const removed = foods.shift();
+                    removed.alive = false;
+                }
+                // 点击涟漪 (视觉反馈)
+                createRipple(x, y);
+            }
+
+            // ---------- 点击涟漪 (DOM) ----------
+            function createRipple(x, y) {
+                const el = document.createElement('div');
+                el.className = 'ripple';
+                el.style.left = x + 'px';
+                el.style.top = y + 'px';
+                document.body.appendChild(el);
+                setTimeout(() => el.remove(), 1000);
+            }
+
+            // ---------- 绘制水族箱背景 ----------
+            function drawBackground() {
+                // 水底渐变已经通过CSS background实现，这里补充绘制细节
+
+                // ---- 沙地 ----
+                for (const s of sandPoints) {
+                    const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
+                    const base = 0.15 + s.shade * 0.12;
+                    grad.addColorStop(0, `rgba(180,160,120,${base + 0.05})`);
+                    grad.addColorStop(0.6, `rgba(150,130,100,${base})`);
+                    grad.addColorStop(1, `rgba(120,100,80,${base * 0.5})`);
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.ellipse(s.x, s.y, s.r, s.r * 0.5, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // ---- 水草 ----
+                for (const sw of seaweeds) {
+                    ctx.save();
+                    const { x, baseY, height, color, segments, phase, freq, amp, thickness } = sw;
+                    const t = time * freq + phase;
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = thickness;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.shadowColor = 'rgba(0,40,20,0.2)';
+                    ctx.shadowBlur = 10;
+
+                    ctx.beginPath();
+                    ctx.moveTo(x, baseY);
+                    let px = x,
+                        py = baseY;
+                    const segH = height / segments;
+                    for (let i = 1; i <= segments; i++) {
+                        const wave = Math.sin(t + i * 0.7) * amp * (i / segments) * 0.8;
+                        const nx = x + wave;
+                        const ny = baseY - i * segH;
+                        // 使用二次贝塞尔曲线使水草更柔顺
+                        const cpx = (px + nx) / 2 + Math.sin(t + i * 0.5) * amp * 0.2;
+                        const cpy = (py + ny) / 2;
+                        ctx.quadraticCurveTo(cpx, cpy, nx, ny);
+                        px = nx;
+                        py = ny;
+                    }
+                    ctx.stroke();
+
+                    // 水草叶片光泽
+                    ctx.globalAlpha = 0.15;
+                    ctx.strokeStyle = '#90EE90';
+                    ctx.lineWidth = thickness * 0.4;
+                    ctx.beginPath();
+                    ctx.moveTo(x + 2, baseY);
+                    for (let i = 1; i <= segments; i++) {
+                        const wave = Math.sin(t + i * 0.7) * amp * (i / segments) * 0.8;
+                        const nx = x + wave + 2;
+                        const ny = baseY - i * segH;
+                        const cpx = (x + nx) / 2 + Math.sin(t + i * 0.5) * amp * 0.2 + 1;
+                        const cpy = (baseY + ny) / 2;
+                        ctx.quadraticCurveTo(cpx, cpy, nx, ny);
+                    }
+                    ctx.stroke();
+                    ctx.globalAlpha = 1;
+
+                    ctx.restore();
+                }
+
+                // ---- 气泡 ----
+                for (const b of bubbles) {
+                    b.x += Math.sin(b.wobble + time * b.wobbleFreq) * b.wobbleAmp;
+                    b.y -= b.speed;
+                    b.wobble += 0.01;
+
+                    if (b.y < -20) {
+                        Object.assign(b, createBubble(false));
+                        b.y = H + rand(5, 30);
+                    }
+
+                    const grad = ctx.createRadialGradient(b.x - b.r * 0.3, b.y - b.r * 0.3, 0, b.x, b.y, b.r);
+                    grad.addColorStop(0, `rgba(255,255,255,${b.alpha + 0.08})`);
+                    grad.addColorStop(0.6, `rgba(200,230,255,${b.alpha * 0.7})`);
+                    grad.addColorStop(1, `rgba(180,220,255,${b.alpha * 0.2})`);
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 气泡高光
+                    ctx.fillStyle = `rgba(255,255,255,${b.alpha * 0.5})`;
+                    ctx.beginPath();
+                    ctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.35, b.r * 0.25, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // ---- 水面光线效果 ----
+                const gradLight = ctx.createLinearGradient(0, 0, 0, H * 0.3);
+                gradLight.addColorStop(0, 'rgba(180, 220, 255, 0.04)');
+                gradLight.addColorStop(0.3, 'rgba(120, 180, 240, 0.02)');
+                gradLight.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.fillStyle = gradLight;
+                ctx.fillRect(0, 0, W, H * 0.3);
+
+                // 水纹光斑
+                for (let i = 0; i < 5; i++) {
+                    const x = (Math.sin(time * 0.008 + i * 1.7) * 0.5 + 0.5) * W;
+                    const y = rand(5, 40) + Math.sin(time * 0.01 + i * 2.3) * 10;
+                    const r = 40 + Math.sin(time * 0.007 + i * 1.2) * 20;
+                    const grad2 = ctx.createRadialGradient(x, y, 0, x, y, r);
+                    grad2.addColorStop(0, 'rgba(255,255,240,0.04)');
+                    grad2.addColorStop(0.5, 'rgba(200,230,255,0.02)');
+                    grad2.addColorStop(1, 'rgba(255,255,255,0)');
+                    ctx.fillStyle = grad2;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // ---------- 更新统计数据 ----------
+            function updateStats() {
+                const aliveFish = fishes.filter(f => f.alive).length;
+                const aliveFood = foods.filter(f => f.alive).length;
+                fishCountEl.textContent = aliveFish;
+                foodCountEl.textContent = aliveFood;
+            }
+
+            // ---------- 主循环 ----------
+            function update() {
+                time++;
+
+                // 更新鱼
+                for (const fish of fishes) {
+                    if (fish.alive) {
+                        fish.update();
+                    }
+                }
+
+                // 更新鱼食
+                for (const food of foods) {
+                    if (food.alive) {
+                        food.update();
+                    }
+                }
+                // 清理失效食物
+                foods = foods.filter(f => f.alive);
+
+                // 更新气泡 (在draw中处理)
+
+                // 更新装饰
+                // 沙地/水草在draw中处理
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, W, H);
+
+                // 背景 (利用CSS渐变 + 额外绘制)
+                drawBackground();
+
+                // 绘制鱼食 (在鱼下方，但为了视觉层次，先画食物)
+                for (const food of foods) {
+                    if (food.alive) {
+                        food.draw(ctx);
+                    }
+                }
+
+                // 绘制鱼 (按y排序，实现深度)
+                const sortedFish = [...fishes].filter(f => f.alive).sort((a, b) => a.y - b.y);
+                for (const fish of sortedFish) {
+                    fish.draw(ctx);
+                }
+
+                // 额外：水面最浅层的光晕
+                const gradTop = ctx.createLinearGradient(0, 0, 0, 60);
+                gradTop.addColorStop(0, 'rgba(200,230,255,0.04)');
+                gradTop.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.fillStyle = gradTop;
+                ctx.fillRect(0, 0, W, 60);
+
+                // 更新stats
+                updateStats();
+            }
+
+            function loop() {
+                update();
+                draw();
+                frameId = requestAnimationFrame(loop);
+            }
+
+            // ---------- 交互 ----------
+            function handleClick(e) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+                if (x >= 0 && x <= W && y >= 0 && y <= H) {
+                    addFood(x, y);
+                }
+            }
+
+            canvas.addEventListener('click', handleClick);
+
+            // 触屏支持
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                const x = (touch.clientX - rect.left) * scaleX;
+                const y = (touch.clientY - rect.top) * scaleY;
+                if (x >= 0 && x <= W && y >= 0 && y <= H) {
+                    addFood(x, y);
+                }
+            }, { passive: false });
+
+            // ---------- 窗口改变时重新初始化装饰 ----------
+            function onResize() {
+                resize();
+                // 重新生成装饰 (保持视觉适配)
+                initDecor();
+                // 鱼的位置约束 (简单处理: 把超出边界的鱼拉回来)
+                for (const fish of fishes) {
+                    fish.x = clamp(fish.x, 20, W - 20);
+                    fish.y = clamp(fish.y, 20, H - 20);
+                }
+            }
+
+            window.addEventListener('resize', () => {
+                // 防抖
+                clearTimeout(window._resizeTimer);
+                window._resizeTimer = setTimeout(onResize, 200);
+            });
+
+            // ---------- 启动 ----------
+            function init() {
+                initDecor();
+                initFishes();
+                // 初始投放几粒食物作演示
+                for (let i = 0; i < 3; i++) {
+                    setTimeout(() => {
+                        addFood(rand(100, W - 100), rand(60, H * 0.5));
+                    }, i * 400 + 200);
+                }
+                loop();
+            }
+
+            init();
+
+            // 清理 (理论上页面关闭自动清理)
+            window.addEventListener('beforeunload', () => {
+                if (frameId) cancelAnimationFrame(frameId);
+            });
+
+            // 暴露几个变量方便调试 (非必须)
+            window.__aquarium = { fishes, foods, addFood };
+
+        })();
+    </script>
+</body>
+</html>

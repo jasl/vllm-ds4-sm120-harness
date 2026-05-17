@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高级简约时钟</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f0f2f5;
+            font-family: 'Segoe UI', 'PingFang SC', Roboto, 'Helvetica Neue', sans-serif;
+            user-select: none;
+        }
+        .clock-wrapper {
+            background: radial-gradient(ellipse at center, #fafafa 0%, #f0f0f0 100%);
+            border-radius: 50%;
+            padding: 20px;
+            box-shadow:
+                0 20px 60px rgba(0, 0, 0, 0.15),
+                0 8px 20px rgba(0, 0, 0, 0.10),
+                inset 0 2px 4px rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            transition: all 0.2s ease;
+        }
+        .clock-wrapper:hover {
+            box-shadow:
+                0 25px 70px rgba(0, 0, 0, 0.18),
+                0 10px 25px rgba(0, 0, 0, 0.12),
+                inset 0 2px 4px rgba(255, 255, 255, 0.8);
+            transform: scale(1.01);
+        }
+        canvas {
+            display: block;
+            width: 420px;
+            height: 420px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow:
+                inset 0 4px 12px rgba(0, 0, 0, 0.06),
+                0 0 0 2px #d0d4d8,
+                0 0 0 4px #ffffff;
+        }
+        @media (max-width: 500px) {
+            .clock-wrapper {
+                padding: 12px;
+            }
+            canvas {
+                width: 320px;
+                height: 320px;
+            }
+        }
+        @media (max-width: 380px) {
+            canvas {
+                width: 260px;
+                height: 260px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="clock-wrapper">
+        <canvas id="clockCanvas" width="600" height="600"></canvas>
+    </div>
+    <script>
+        (function() {
+            const canvas = document.getElementById('clockCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // 尺寸常量 (画布 600x600)
+            const SIZE = 600;
+            const CENTER = SIZE / 2;
+            const RADIUS = 270;
+            const OUTER_RADIUS = 282;
+
+            // 指针长度
+            const HOUR_LENGTH = 160;
+            const MINUTE_LENGTH = 220;
+            const SECOND_LENGTH = 245;
+
+            // 指针宽度
+            const HOUR_WIDTH = 8;
+            const MINUTE_WIDTH = 5;
+            const SECOND_WIDTH = 2;
+
+            // 数字半径
+            const NUM_RADIUS = 210;
+
+            // 日期时间显示半径 (从中心到6点方向)
+            const INFO_RADIUS = 120;
+
+            // ---------- 工具函数 ----------
+            function degToRad(deg) {
+                return deg * Math.PI / 180;
+            }
+
+            // 获取北京时间 (Asia/Shanghai)
+            function getBeijingTime() {
+                const now = new Date();
+                const formatter = new Intl.DateTimeFormat('zh-CN', {
+                    timeZone: 'Asia/Shanghai',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                });
+                const parts = formatter.formatToParts(now);
+                let year, month, day, hour, minute, second;
+                for (const p of parts) {
+                    if (p.type === 'year') year = parseInt(p.value, 10);
+                    if (p.type === 'month') month = parseInt(p.value, 10);
+                    if (p.type === 'day') day = parseInt(p.value, 10);
+                    if (p.type === 'hour') hour = parseInt(p.value, 10);
+                    if (p.type === 'minute') minute = parseInt(p.value, 10);
+                    if (p.type === 'second') second = parseInt(p.value, 10);
+                }
+                // 获取毫秒用于平滑
+                const ms = now.getMilliseconds();
+                // 获取星期
+                const weekdayFormatter = new Intl.DateTimeFormat('zh-CN', {
+                    timeZone: 'Asia/Shanghai',
+                    weekday: 'long',
+                });
+                const weekday = weekdayFormatter.format(now);
+                return { year, month, day, hour, minute, second, ms, weekday };
+            }
+
+            // ---------- 绘制函数 ----------
+            function drawFace() {
+                // 背景 - 纯白
+                ctx.beginPath();
+                ctx.arc(CENTER, CENTER, OUTER_RADIUS, 0, 2 * Math.PI);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+
+                // 外圈描边 - 深色精致边框
+                ctx.beginPath();
+                ctx.arc(CENTER, CENTER, OUTER_RADIUS, 0, 2 * Math.PI);
+                ctx.strokeStyle = '#2c2f33';
+                ctx.lineWidth = 3.5;
+                ctx.stroke();
+
+                // 内圈细边
+                ctx.beginPath();
+                ctx.arc(CENTER, CENTER, OUTER_RADIUS - 5, 0, 2 * Math.PI);
+                ctx.strokeStyle = '#d0d4d8';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // 轻微内阴影 (径向渐变)
+                const grad = ctx.createRadialGradient(CENTER, CENTER, RADIUS * 0.7, CENTER, CENTER, RADIUS);
+                grad.addColorStop(0, 'rgba(0,0,0,0)');
+                grad.addColorStop(1, 'rgba(0,0,0,0.04)');
+                ctx.beginPath();
+                ctx.arc(CENTER, CENTER, RADIUS, 0, 2 * Math.PI);
+                ctx.fillStyle = grad;
+                ctx.fill();
+            }
+
+            function drawTicks() {
+                for (let i = 0; i < 60; i++) {
+                    const angle = degToRad(i * 6 - 90);
+                    const isHour = (i % 5 === 0);
+
+                    const innerR = isHour ? RADIUS - 38 : RADIUS - 22;
+                    const outerR = RADIUS - 12;
+
+                    const x1 = CENTER + innerR * Math.cos(angle);
+                    const y1 = CENTER + innerR * Math.sin(angle);
+                    const x2 = CENTER + outerR * Math.cos(angle);
+                    const y2 = CENTER + outerR * Math.sin(angle);
+
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    if (isHour) {
+                        ctx.strokeStyle = '#1a1c1e';
+                        ctx.lineWidth = 3.5;
+                        ctx.shadowColor = 'rgba(0,0,0,0.08)';
+                        ctx.shadowBlur = 2;
+                    } else {
+                        ctx.strokeStyle = '#8a8f94';
+                        ctx.lineWidth = 1.2;
+                        ctx.shadowColor = 'transparent';
+                        ctx.shadowBlur = 0;
+                    }
+                    ctx.stroke();
+                    ctx.shadowColor = 'transparent';
+                    ctx.shadowBlur = 0;
+                }
+            }
+
+            function drawNumbers() {
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+
+                for (let i = 1; i <= 12; i++) {
+                    const angle = degToRad(i * 30 - 90);
+                    const x = CENTER + NUM_RADIUS * Math.cos(angle);
+                    const y = CENTER + NUM_RADIUS * Math.sin(angle);
+
+                    const fontSize = (i === 12 || i === 6 || i === 3 || i === 9) ? 38 : 32;
+                    ctx.font = `${fontSize}px 'Segoe UI', 'PingFang SC', 'Helvetica Neue', sans-serif`;
+                    ctx.fillStyle = '#1a1c1e';
+                    ctx.shadowColor = 'rgba(0,0,0,0.05)';
+                    ctx.shadowBlur = 4;
+                    ctx.fillText(i.toString(), x, y + 1);
+                    ctx.shadowColor = 'transparent';
+                    ctx.shadowBlur = 0;
+                }
+            }
+
+            function drawDateTime() {
+                const t = getBeijingTime();
+
+                // ---- 在6点方向内侧显示日期和时间 ----
+                const baseAngle = degToRad(90); // 6点钟方向 (向下)
+                const cx = CENTER + INFO_RADIUS * Math.cos(baseAngle);
+                const cy = CENTER + INFO_RADIUS * Math.sin(baseAngle);
+
+                // 半透明背景卡片 - 圆角矩形
+                const cardW = 180;
+                const cardH = 64;
+                const cardX = cx - cardW / 2;
+                const cardY = cy - cardH / 2 + 6;
+
+                ctx.shadowColor = 'rgba(0,0,0,0.06)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 2;
+
+                // 卡片背景 - 柔白半透明
+                ctx.beginPath();
+                const r = 12;
+                ctx.moveTo(cardX + r, cardY);
+                ctx.lineTo(cardX + cardW - r, cardY);
+                ctx.quadraticCurveTo(cardX + cardW, cardY, cardX + cardW, cardY + r);
+                ctx.lineTo(cardX + cardW, cardY + cardH - r);
+                ctx.quadraticCurveTo(cardX + cardW, cardY + cardH, cardX + cardW - r, cardY + cardH);
+                ctx.lineTo(cardX + r, cardY + cardH);
+                ctx.quadraticCurveTo(cardX, cardY + cardH, cardX, cardY + cardH - r);
+                ctx.lineTo(cardX, cardY + r);
+                ctx.quadraticCurveTo(cardX, cardY, cardX + r, cardY);
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+
+                // 卡片边框
+                ctx.beginPath();
+                ctx.moveTo(cardX + r, cardY);
+                ctx.lineTo(cardX + cardW - r, cardY);
+                ctx.quadraticCurveTo(cardX + cardW, cardY, cardX + cardW, cardY + r);
+                ctx.lineTo(cardX + cardW, cardY + cardH - r);
+                ctx.quadraticCurveTo(cardX + cardW, cardY + cardH, cardX + cardW - r, cardY + cardH);
+                ctx.lineTo(cardX + r, cardY + cardH);
+                ctx.quadraticCurveTo(cardX, cardY + cardH, cardX, cardY + cardH - r);
+                ctx.lineTo(cardX, cardY + r);
+                ctx.quadraticCurveTo(cardX, cardY, cardX + r, cardY);
+                ctx.closePath();
+                ctx.strokeStyle = 'rgba(180, 184, 190, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // ---- 日期 ----
+                const dateStr = `${t.year}年${t.month}月${t.day}日`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.font = `20px 'Segoe UI', 'PingFang SC', 'Helvetica Neue', sans-serif`;
+                ctx.fillStyle = '#2c2f33';
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.fillText(dateStr, cx, cy - 10);
+
+                // ---- 时间 ----
+                const timeStr = `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}:${String(t.second).padStart(2, '0')}`;
+                ctx.font = `28px 'Segoe UI', 'PingFang SC', 'Helvetica Neue', sans-serif`;
+                ctx.fillStyle = '#1a1c1e';
+                ctx.fontWeight = '600';
+                ctx.shadowColor = 'rgba(0,0,0,0.04)';
+                ctx.shadowBlur = 4;
+                ctx.fillText(timeStr, cx, cy + 24);
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+
+                // ---- 星期 ----
+                const weekStr = t.weekday;
+                ctx.font = `16px 'Segoe UI', 'PingFang SC', 'Helvetica Neue', sans-serif`;
+                ctx.fillStyle = '#6b7078';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(weekStr, cx, cy - 34);
+            }
+
+            function drawHands() {
+                const t = getBeijingTime();
+
+                // 平滑时间 (秒包含毫秒)
+                const smoothSecond = t.second + t.ms / 1000;
+                const smoothMinute = t.minute + smoothSecond / 60;
+                const smoothHour = (t.hour % 12) + smoothMinute / 60;
+
+                // 角度计算 (时针: 每小时30度, 分针: 每分钟6度, 秒针: 每秒6度)
+                const hourAngle = degToRad(smoothHour * 30 - 90);
+                const minuteAngle = degToRad(smoothMinute * 6 - 90);
+                const secondAngle = degToRad(smoothSecond * 6 - 90);
+
+                // ---- 时针 ----
+                ctx.shadowColor = 'rgba(0,0,0,0.12)';
+                ctx.shadowBlur = 10;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 3;
+                ctx.beginPath();
+                ctx.moveTo(CENTER - 14 * Math.cos(hourAngle), CENTER - 14 * Math.sin(hourAngle));
+                ctx.lineTo(CENTER + HOUR_LENGTH * Math.cos(hourAngle), CENTER + HOUR_LENGTH * Math.sin(hourAngle));
+                ctx.strokeStyle = '#1a1c1e';
+                ctx.lineWidth = HOUR_WIDTH;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // ---- 分针 ----
+                ctx.shadowColor = 'rgba(0,0,0,0.10)';
+                ctx.shadowBlur = 8;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 3;
+                ctx.beginPath();
+                ctx.moveTo(CENTER - 18 * Math.cos(minuteAngle), CENTER - 18 * Math.sin(minuteAngle));
+                ctx.lineTo(CENTER + MINUTE_LENGTH * Math.cos(minuteAngle), CENTER + MINUTE_LENGTH * Math.sin(minuteAngle));
+                ctx.strokeStyle = '#2c2f33';
+                ctx.lineWidth = MINUTE_WIDTH;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // ---- 秒针 ----
+                ctx.shadowColor = 'rgba(220, 60, 60, 0.25)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 2;
+                ctx.beginPath();
+                ctx.moveTo(CENTER - 26 * Math.cos(secondAngle), CENTER - 26 * Math.sin(secondAngle));
+                ctx.lineTo(CENTER + SECOND_LENGTH * Math.cos(secondAngle), CENTER + SECOND_LENGTH * Math.sin(secondAngle));
+                ctx.strokeStyle = '#d13030';
+                ctx.lineWidth = SECOND_WIDTH;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // ---- 秒针尾部 (短尾) ----
+                ctx.shadowColor = 'rgba(220, 60, 60, 0.10)';
+                ctx.shadowBlur = 6;
+                ctx.beginPath();
+                ctx.moveTo(CENTER - 26 * Math.cos(secondAngle), CENTER - 26 * Math.sin(secondAngle));
+                ctx.lineTo(CENTER - 46 * Math.cos(secondAngle), CENTER - 46 * Math.sin(secondAngle));
+                ctx.strokeStyle = 'rgba(180, 40, 40, 0.35)';
+                ctx.lineWidth = 1.5;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // ---- 中心轴盖 ----
+                ctx.shadowColor = 'rgba(0,0,0,0.15)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 2;
+                ctx.beginPath();
+                ctx.arc(CENTER, CENTER, 10, 0, 2 * Math.PI);
+                ctx.fillStyle = '#1a1c1e';
+                ctx.fill();
+
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.beginPath();
+                ctx.arc(CENTER, CENTER, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = '#d13030';
+                ctx.fill();
+
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+            }
+
+            // ---------- 主绘制 ----------
+            function updateClock() {
+                ctx.clearRect(0, 0, SIZE, SIZE);
+
+                // 启用抗锯齿
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+
+                drawFace();
+                drawTicks();
+                drawNumbers();
+                drawDateTime();
+                drawHands();
+
+                // 外圈装饰光晕
+                const grad = ctx.createRadialGradient(CENTER, CENTER, RADIUS - 10, CENTER, CENTER, RADIUS + 10);
+                grad.addColorStop(0, 'rgba(255,255,255,0)');
+                grad.addColorStop(0.7, 'rgba(255,255,255,0)');
+                grad.addColorStop(1, 'rgba(255,255,255,0.15)');
+                ctx.beginPath();
+                ctx.arc(CENTER, CENTER, RADIUS + 10, 0, 2 * Math.PI);
+                ctx.strokeStyle = grad;
+                ctx.lineWidth = 6;
+                ctx.stroke();
+            }
+
+            // ---------- 动画循环 ----------
+            let animId = null;
+
+            function tick() {
+                updateClock();
+                animId = requestAnimationFrame(tick);
+            }
+
+            // 启动
+            tick();
+
+            // 清理 (虽然页面关闭会自动清理，但做好习惯)
+            window.addEventListener('beforeunload', function() {
+                if (animId) {
+                    cancelAnimationFrame(animId);
+                    animId = null;
+                }
+            });
+
+            // 响应式重绘 (窗口变化时不需要额外操作，因为canvas尺寸固定)
+            // 但为了适应高DPI，已使用CSS缩放
+
+            // 如果浏览器不支持 requestAnimationFrame，回退到 setInterval
+            if (!window.requestAnimationFrame) {
+                if (animId) {
+                    cancelAnimationFrame(animId);
+                }
+                setInterval(updateClock, 1000 / 60);
+            }
+
+            console.log('🕐 高级时钟已启动 | 时区: Asia/Shanghai');
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
+    <title>轻量看板 · 个人任务</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            background: #f4f5f9;
+            min-height: 100vh;
+            padding: 1.5rem 1rem 2rem;
+        }
+        .kanban-container {
+            max-width: 1280px;
+            margin: 0 auto;
+        }
+
+        /* 头部：标题 + 搜索/筛选/新增 */
+        .board-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem 1rem;
+            background: white;
+            padding: 1rem 1.5rem;
+            border-radius: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+            margin-bottom: 2rem;
+        }
+        .board-header h1 {
+            font-weight: 600;
+            font-size: 1.6rem;
+            color: #1e293b;
+            letter-spacing: -0.3px;
+        }
+        .board-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.6rem 0.8rem;
+        }
+        .board-controls input, .board-controls select {
+            padding: 0.5rem 0.9rem;
+            border: 1px solid #d0d5dd;
+            border-radius: 40px;
+            font-size: 0.9rem;
+            background: white;
+            outline: none;
+            transition: 0.2s;
+            min-width: 120px;
+        }
+        .board-controls input:focus, .board-controls select:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.5rem 1.2rem;
+            border-radius: 40px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: 0.2s;
+            white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .btn-primary:hover {
+            background: #2563eb;
+            transform: scale(0.98);
+        }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #d0d5dd;
+            padding: 0.4rem 0.9rem;
+            border-radius: 40px;
+            cursor: pointer;
+            transition: 0.1s;
+            font-size: 0.85rem;
+        }
+        .btn-outline:hover {
+            border-color: #3b82f6;
+            background: #f0f7ff;
+        }
+
+        /* 三列看板 */
+        .columns-wrapper {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            justify-content: center;
+        }
+        .kanban-column {
+            flex: 1 1 280px;
+            min-width: 240px;
+            background: #ebedf2;
+            border-radius: 24px;
+            padding: 1.2rem 0.8rem 0.8rem;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.02);
+            backdrop-filter: blur(2px);
+            transition: 0.1s;
+            display: flex;
+            flex-direction: column;
+        }
+        .column-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 0.4rem 0.8rem;
+            font-weight: 600;
+            color: #1e293b;
+            border-bottom: 2px solid rgba(0,0,0,0.05);
+        }
+        .column-header h2 {
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .column-header span.badge {
+            background: rgba(0,0,0,0.08);
+            font-size: 0.7rem;
+            padding: 0.15rem 0.6rem;
+            border-radius: 30px;
+            font-weight: 500;
+        }
+        .task-list {
+            min-height: 200px;
+            padding: 0.6rem 0 0.4rem;
+            flex: 1;
+        }
+        /* 任务卡片 */
+        .task-card {
+            background: white;
+            border-radius: 18px;
+            padding: 0.8rem 0.9rem 0.7rem;
+            margin-bottom: 0.8rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            transition: 0.1s ease;
+            border-left: 5px solid #94a3b8;
+            position: relative;
+            cursor: grab;
+            word-break: break-word;
+        }
+        .task-card:active {
+            cursor: grabbing;
+            opacity: 0.85;
+        }
+        .task-card.priority-high {
+            border-left-color: #ef4444;
+        }
+        .task-card.priority-medium {
+            border-left-color: #f59e0b;
+        }
+        .task-card.priority-low {
+            border-left-color: #10b981;
+        }
+        .task-title {
+            font-weight: 600;
+            font-size: 1rem;
+            margin-right: 30px;
+        }
+        .task-desc {
+            font-size: 0.85rem;
+            color: #475569;
+            margin: 4px 0 6px;
+            white-space: pre-wrap;
+        }
+        .task-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: #64748b;
+            margin-top: 6px;
+            border-top: 1px dashed #e2e8f0;
+            padding-top: 5px;
+        }
+        .task-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 5px;
+        }
+        .task-actions button {
+            background: none;
+            border: none;
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            border-radius: 30px;
+            background: #f1f5f9;
+            color: #1e293b;
+            cursor: pointer;
+            transition: 0.1s;
+        }
+        .task-actions button:hover {
+            background: #e2e8f0;
+        }
+        .task-actions .delete-btn {
+            color: #b91c1c;
+            background: #fee2e2;
+        }
+        .task-actions .delete-btn:hover {
+            background: #fecaca;
+        }
+        .task-actions .move-btn {
+            background: #eef2ff;
+            color: #2563eb;
+        }
+        .task-actions .move-btn:hover {
+            background: #dbeafe;
+        }
+        .card-time {
+            font-size: 0.65rem;
+        }
+        /* 编辑模式 —— 内联表单 */
+        .edit-inline {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .edit-inline input, .edit-inline textarea, .edit-inline select {
+            border: 1px solid #cbd5e1;
+            border-radius: 14px;
+            padding: 0.4rem 0.7rem;
+            font-size: 0.85rem;
+            background: white;
+            width: 100%;
+        }
+        .edit-inline textarea {
+            resize: vertical;
+            min-height: 50px;
+        }
+        .edit-actions {
+            display: flex;
+            gap: 6px;
+            justify-content: flex-end;
+        }
+        .edit-actions button {
+            padding: 0.2rem 0.9rem;
+            border-radius: 30px;
+            border: none;
+            background: #e2e8f0;
+            cursor: pointer;
+            font-size: 0.75rem;
+        }
+        .edit-actions .save-btn {
+            background: #3b82f6;
+            color: white;
+        }
+        .empty-column {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 1.5rem 0.3rem;
+        }
+
+        /* 响应式：窄屏三列纵向 */
+        @media (max-width: 780px) {
+            .columns-wrapper {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .kanban-column {
+                min-width: unset;
+                width: 100%;
+            }
+            .board-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .board-controls {
+                justify-content: stretch;
+            }
+            .board-controls input, .board-controls select {
+                flex: 1;
+                min-width: 80px;
+            }
+        }
+
+        /* 拖拽辅助 */
+        .dragging {
+            opacity: 0.5;
+            transform: scale(0.98);
+        }
+        .drag-over {
+            background: #e2e8f0;
+            border-radius: 20px;
+        }
+        .sr-only {
+            position: absolute;
+            width: 1px; height: 1px;
+            overflow: hidden;
+            clip: rect(0,0,0,0);
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+<div class="kanban-container">
+    <!-- 头部：标题 + 工具栏 -->
+    <header class="board-header">
+        <h1>📋 轻量看板</h1>
+        <div class="board-controls">
+            <input type="text" id="searchInput" placeholder="🔍 搜索任务..." aria-label="搜索任务关键词">
+            <select id="priorityFilter" aria-label="优先级筛选">
+                <option value="all">所有优先级</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+            </select>
+            <button class="btn-primary" id="addTaskBtn" aria-label="新增任务">＋ 新增</button>
+        </div>
+    </header>
+
+    <!-- 三列 -->
+    <div class="columns-wrapper" id="columnsWrapper">
+        <!-- 待办 -->
+        <section class="kanban-column" data-column="todo" aria-label="待办任务">
+            <div class="column-header"><h2>📌 待办 <span class="badge" id="todoCount">0</span></h2></div>
+            <div class="task-list" id="todoList" role="list"></div>
+        </section>
+        <!-- 进行中 -->
+        <section class="kanban-column" data-column="inprogress" aria-label="进行中任务">
+            <div class="column-header"><h2>⏳ 进行中 <span class="badge" id="inprogressCount">0</span></h2></div>
+            <div class="task-list" id="inprogressList" role="list"></div>
+        </section>
+        <!-- 已完成 -->
+        <section class="kanban-column" data-column="done" aria-label="已完成任务">
+            <div class="column-header"><h2>✅ 已完成 <span class="badge" id="doneCount">0</span></h2></div>
+            <div class="task-list" id="doneList" role="list"></div>
+        </section>
+    </div>
+</div>
+
+<!-- 新增任务对话框 (轻量内联) -->
+<dialog id="taskDialog" style="border:none;border-radius:28px;padding:1.5rem;max-width:400px;width:90%;box-shadow:0 20px 40px rgba(0,0,0,0.15);">
+    <form id="taskForm" autocomplete="off">
+        <h3 style="margin-bottom:1rem;font-weight:600;">📝 新任务</h3>
+        <label>标题 *<br><input type="text" id="taskTitle" required placeholder="任务名称" style="width:100%;padding:0.5rem;border-radius:14px;border:1px solid #d0d5dd;"></label>
+        <label style="display:block;margin-top:0.6rem;">备注<br><textarea id="taskNote" rows="2" placeholder="可选备注" style="width:100%;padding:0.5rem;border-radius:14px;border:1px solid #d0d5dd;"></textarea></label>
+        <label style="display:block;margin-top:0.6rem;">优先级
+            <select id="taskPriority" style="width:100%;padding:0.5rem;border-radius:14px;border:1px solid #d0d5dd;">
+                <option value="low">低</option>
+                <option value="medium" selected>中</option>
+                <option value="high">高</option>
+            </select>
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:1.4rem;">
+            <button type="button" id="cancelDialogBtn" class="btn-outline">取消</button>
+            <button type="submit" class="btn-primary" style="padding:0.5rem 1.5rem;">保存</button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+    (function() {
+        "use strict";
+
+        // ---------- 数据层 ----------
+        const COLUMNS = ['todo', 'inprogress', 'done'];
+        const COLUMN_LABELS = { todo: '待办', inprogress: '进行中', done: '已完成' };
+        let tasks = []; // { id, title, note, priority, column, createdAt }
+
+        // 加载 localStorage
+        function loadData() {
+            try {
+                const stored = localStorage.getItem('kanban_tasks');
+                if (stored) {
+                    tasks = JSON.parse(stored);
+                    // 兼容旧数据无 createdAt
+                    tasks = tasks.map(t => {
+                        if (!t.createdAt) t.createdAt = Date.now();
+                        return t;
+                    });
+                } else {
+                    // 初始示例数据
+                    tasks = [
+                        { id: '1', title: '设计原型', note: 'Figma 初稿', priority: 'high', column: 'inprogress', createdAt: Date.now() - 3600000 },
+                        { id: '2', title: '买咖啡', note: '无咖啡因', priority: 'low', column: 'todo', createdAt: Date.now() - 7200000 },
+                        { id: '3', title: '写周报', note: '包括项目进度', priority: 'medium', column: 'done', createdAt: Date.now() - 86400000 },
+                    ];
+                }
+                // 确保每个任务都有 column 有效
+                tasks = tasks.filter(t => COLUMNS.includes(t.column));
+            } catch(e) {
+                tasks = [];
+            }
+        }
+        function saveData() {
+            localStorage.setItem('kanban_tasks', JSON.stringify(tasks));
+        }
+
+        // 生成短 id
+        function uid() {
+            return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,6);
+        }
+
+        // ---------- 渲染引擎 ----------
+        function render() {
+            const searchTerm = document.getElementById('searchInput').value.trim().toLowerCase();
+            const filterPrio = document.getElementById('priorityFilter').value;
+
+            // 过滤后的任务
+            const filtered = tasks.filter(t => {
+                if (filterPrio !== 'all' && t.priority !== filterPrio) return false;
+                if (searchTerm) {
+                    const inTitle = t.title.toLowerCase().includes(searchTerm);
+                    const inNote = (t.note || '').toLowerCase().includes(searchTerm);
+                    if (!inTitle && !inNote) return false;
+                }
+                return true;
+            });
+
+            // 分组
+            const grouped = { todo: [], inprogress: [], done: [] };
+            filtered.forEach(t => {
+                if (grouped[t.column]) grouped[t.column].push(t);
+            });
+
+            // 更新各列
+            COLUMNS.forEach(col => {
+                const listEl = document.getElementById(col + 'List');
+                const countEl = document.getElementById(col + 'Count');
+                listEl.innerHTML = '';
+                const tasksInCol = grouped[col] || [];
+                countEl.textContent = tasksInCol.length;
+
+                if (tasksInCol.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'empty-column';
+                    empty.textContent = '✨ 暂无任务';
+                    empty.setAttribute('role', 'listitem');
+                    listEl.appendChild(empty);
+                    return;
+                }
+
+                tasksInCol.forEach(task => {
+                    const card = createCardElement(task);
+                    listEl.appendChild(card);
+                });
+            });
+
+            // 更新拖拽监听 (已经在 createCardElement 中绑定 dragstart)
+        }
+
+        // 创建卡片 DOM
+        function createCardElement(task) {
+            const card = document.createElement('div');
+            card.className = `task-card priority-${task.priority}`;
+            card.draggable = true;
+            card.dataset.taskId = task.id;
+            card.setAttribute('role', 'listitem');
+            card.setAttribute('aria-label', `任务: ${task.title}, 优先级: ${task.priority}, 创建于 ${new Date(task.createdAt).toLocaleString()}`);
+
+            // 标题 + 备注
+            const titleDiv = document.createElement('div');
+            titleDiv.className = 'task-title';
+            titleDiv.textContent = task.title;
+            card.appendChild(titleDiv);
+
+            if (task.note) {
+                const noteDiv = document.createElement('div');
+                noteDiv.className = 'task-desc';
+                noteDiv.textContent = task.note;
+                card.appendChild(noteDiv);
+            }
+
+            // 元数据行：时间 + 优先级标记
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'task-meta';
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'card-time';
+            timeSpan.textContent = new Date(task.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour:'2-digit', minute:'2-digit' });
+            metaDiv.appendChild(timeSpan);
+
+            const prioLabel = document.createElement('span');
+            const prioMap = { low: '🟢低', medium: '🟡中', high: '🔴高' };
+            prioLabel.textContent = prioMap[task.priority] || task.priority;
+            metaDiv.appendChild(prioLabel);
+            card.appendChild(metaDiv);
+
+            // 操作按钮组：编辑 / 删除 / 移动 (无障碍)
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'task-actions';
+
+            // 编辑按钮
+            const editBtn = document.createElement('button');
+            editBtn.textContent = '✎ 编辑';
+            editBtn.setAttribute('aria-label', `编辑任务「${task.title}」`);
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                enableInlineEdit(card, task);
+            });
+            actionsDiv.appendChild(editBtn);
+
+            // 删除按钮
+            const delBtn = document.createElement('button');
+            delBtn.textContent = '🗑 删除';
+            delBtn.className = 'delete-btn';
+            delBtn.setAttribute('aria-label', `删除任务「${task.title}」`);
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (confirm(`确定删除「${task.title}」?`)) {
+                    tasks = tasks.filter(t => t.id !== task.id);
+                    saveData();
+                    render();
+                }
+            });
+            actionsDiv.appendChild(delBtn);
+
+            // 移动按钮 (左移/右移)
+            const moveLeftBtn = document.createElement('button');
+            moveLeftBtn.textContent = '◀ 左移';
+            moveLeftBtn.className = 'move-btn';
+            moveLeftBtn.setAttribute('aria-label', `左移任务「${task.title}」`);
+            moveLeftBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                moveTask(task.id, -1);
+            });
+            actionsDiv.appendChild(moveLeftBtn);
+
+            const moveRightBtn = document.createElement('button');
+            moveRightBtn.textContent = '右移 ▶';
+            moveRightBtn.className = 'move-btn';
+            moveRightBtn.setAttribute('aria-label', `右移任务「${task.title}」`);
+            moveRightBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                moveTask(task.id, 1);
+            });
+            actionsDiv.appendChild(moveRightBtn);
+
+            // 根据列禁用部分移动 (达到边界不可移)
+            const colIndex = COLUMNS.indexOf(task.column);
+            if (colIndex === 0) moveLeftBtn.disabled = true;
+            if (colIndex === COLUMNS.length - 1) moveRightBtn.disabled = true;
+            if (moveLeftBtn.disabled) moveLeftBtn.style.opacity = '0.4';
+            if (moveRightBtn.disabled) moveRightBtn.style.opacity = '0.4';
+
+            card.appendChild(actionsDiv);
+
+            // 拖拽事件 —— 使用 html5 drag & drop
+            card.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', task.id);
+                card.classList.add('dragging');
+            });
+            card.addEventListener('dragend', () => {
+                card.classList.remove('dragging');
+                document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            });
+
+            // 允许拖拽放置 (卡片本身不阻止)
+            return card;
+        }
+
+        // 移动任务 (direction: -1 左移, 1 右移)
+        function moveTask(taskId, direction) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+            const curIdx = COLUMNS.indexOf(task.column);
+            const newIdx = curIdx + direction;
+            if (newIdx < 0 || newIdx >= COLUMNS.length) return;
+            task.column = COLUMNS[newIdx];
+            saveData();
+            render();
+        }
+
+        // ---------- 内联编辑 ----------
+        function enableInlineEdit(card, task) {
+            // 隐藏原有内容，显示编辑表单
+            const originalHTML = card.innerHTML;
+            card.draggable = false;  // 编辑时禁止拖拽
+
+            const formDiv = document.createElement('div');
+            formDiv.className = 'edit-inline';
+            formDiv.innerHTML = `
+                <input type="text" id="editTitle-${task.id}" value="${escapeHtml(task.title)}" placeholder="标题" required>
+                <textarea id="editNote-${task.id}" rows="2" placeholder="备注">${escapeHtml(task.note || '')}</textarea>
+                <select id="editPrio-${task.id}">
+                    <option value="low" ${task.priority === 'low' ? 'selected' : ''}>低</option>
+                    <option value="medium" ${task.priority === 'medium' ? 'selected' : ''}>中</option>
+                    <option value="high" ${task.priority === 'high' ? 'selected' : ''}>高</option>
+                </select>
+                <div class="edit-actions">
+                    <button class="save-btn" data-id="${task.id}">保存</button>
+                    <button class="cancel-edit">取消</button>
+                </div>
+            `;
+            card.innerHTML = '';
+            card.appendChild(formDiv);
+
+            const saveBtn = formDiv.querySelector('.save-btn');
+            const cancelBtn = formDiv.querySelector('.cancel-edit');
+
+            saveBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const newTitle = document.getElementById(`editTitle-${task.id}`).value.trim();
+                if (!newTitle) { alert('标题不能为空'); return; }
+                task.title = newTitle;
+                task.note = document.getElementById(`editNote-${task.id}`).value.trim();
+                task.priority = document.getElementById(`editPrio-${task.id}`).value;
+                saveData();
+                render();
+            });
+
+            cancelBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                render(); // 重新渲染恢复
+            });
+        }
+
+        // 简单的转义
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        // ---------- 新增任务对话框 ----------
+        const dialog = document.getElementById('taskDialog');
+        const addBtn = document.getElementById('addTaskBtn');
+        const cancelBtn = document.getElementById('cancelDialogBtn');
+        const form = document.getElementById('taskForm');
+
+        addBtn.addEventListener('click', () => {
+            document.getElementById('taskTitle').value = '';
+            document.getElementById('taskNote').value = '';
+            document.getElementById('taskPriority').value = 'medium';
+            dialog.showModal();
+        });
+
+        cancelBtn.addEventListener('click', () => dialog.close());
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const title = document.getElementById('taskTitle').value.trim();
+            if (!title) { alert('标题不能为空'); return; }
+            const note = document.getElementById('taskNote').value.trim();
+            const priority = document.getElementById('taskPriority').value;
+            const newTask = {
+                id: uid(),
+                title: title,
+                note: note,
+                priority: priority,
+                column: 'todo',  // 默认待办
+                createdAt: Date.now(),
+            };
+            tasks.push(newTask);
+            saveData();
+            render();
+            dialog.close();
+        });
+
+        // ---------- 搜索 & 筛选 ----------
+        document.getElementById('searchInput').addEventListener('input', render);
+        document.getElementById('priorityFilter').addEventListener('change', render);
+
+        // ---------- 全局拖拽放置 (列级别) ----------
+        function setupColumnDropZones() {
+            const columns = document.querySelectorAll('.kanban-column');
+            columns.forEach(col => {
+                const listEl = col.querySelector('.task-list');
+                // 阻止默认以允许放置
+                col.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    col.classList.add('drag-over');
+                });
+                col.addEventListener('dragleave', () => {
+                    col.classList.remove('drag-over');
+                });
+                col.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    col.classList.remove('drag-over');
+                    const taskId = e.dataTransfer.getData('text/plain');
+                    if (!taskId) return;
+                    const targetColumn = col.dataset.column;
+                    const task = tasks.find(t => t.id === taskId);
+                    if (task && targetColumn && COLUMNS.includes(targetColumn)) {
+                        if (task.column !== targetColumn) {
+                            task.column = targetColumn;
+                            saveData();
+                            render();
+                        }
+                    }
+                });
+            });
+        }
+
+        // ---------- 初始化 ----------
+        loadData();
+        render();
+        setupColumnDropZones();
+
+        // 窗口变化重绘保留 (resize 不影响数据)
+        window.addEventListener('resize', () => {}); // 无操作，保持响应式
+
+        // 暴露 moveTask 供调试 (非必须)
+        window.moveTask = moveTask;
+    })();
+</script>
+</body>
+</html>

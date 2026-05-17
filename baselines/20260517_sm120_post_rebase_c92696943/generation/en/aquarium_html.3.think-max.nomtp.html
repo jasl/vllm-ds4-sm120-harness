@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Aquarium</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+        canvas {
+            border: 12px solid #3a2a1a;
+            border-radius: 24px;
+            box-shadow: 0 0 60px rgba(0, 150, 255, 0.3), inset 0 0 30px rgba(0, 50, 100, 0.3);
+            display: block;
+            max-width: 95vw;
+            max-height: 95vh;
+            cursor: pointer;
+            background: #0e4d92;
+        }
+    </style>
+</head>
+<body>
+<canvas id="aquarium"></canvas>
+<script>
+    const canvas = document.getElementById('aquarium');
+    const ctx = canvas.getContext('2d');
+
+    const WIDTH = 1400;
+    const HEIGHT = 750;
+    canvas.width = WIDTH;
+    canvas.height = HEIGHT;
+
+    const SAND_TOP = HEIGHT - 80;
+    const MARGIN = 60;
+    const FISH_COUNT = 18;
+
+    let fishes = [];
+    let food = [];
+    let bubbles = [];
+    let particles = [];
+    let time = 0;
+
+    // ---------- Bubble ----------
+    class Bubble {
+        constructor() {
+            this.x = Math.random() * WIDTH;
+            this.y = Math.random() * HEIGHT * 0.5 + HEIGHT * 0.5;
+            this.radius = Math.random() * 6 + 2;
+            this.speed = Math.random() * 1 + 0.5;
+            this.wobble = Math.random() * 100;
+        }
+        update() {
+            this.y -= this.speed;
+            this.x += Math.sin(this.wobble + Date.now() * 0.002) * 0.3;
+        }
+        draw() {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(this.x - this.radius * 0.3, this.y - this.radius * 0.3, this.radius * 0.2, 0, 2 * Math.PI);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.fill();
+        }
+    }
+
+    // ---------- Particle (dust / sparkle) ----------
+    class Particle {
+        constructor(x, y, sparkle = false) {
+            this.x = x || Math.random() * WIDTH;
+            this.y = y || Math.random() * HEIGHT;
+            this.size = Math.random() * 2 + 1;
+            this.speed = Math.random() * 0.2 + 0.1;
+            this.phase = Math.random() * 100;
+            this.sparkle = sparkle;
+            this.life = sparkle ? 30 : -1;
+        }
+        update() {
+            this.y -= this.speed;
+            this.x += Math.sin(this.phase + Date.now() * 0.001) * 0.1;
+            if (this.sparkle) {
+                this.life--;
+                this.size *= 0.98;
+            }
+            if (!this.sparkle && this.y < -5) {
+                this.y = HEIGHT + 5;
+                this.x = Math.random() * WIDTH;
+            }
+        }
+        draw() {
+            if (this.sparkle) {
+                ctx.globalAlpha = Math.max(0, this.life / 30);
+                ctx.fillStyle = '#fff9c4';
+                ctx.shadowColor = '#fff9c4';
+                ctx.shadowBlur = 10;
+            } else {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            }
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
+        }
+        get dead() {
+            return this.sparkle && this.life <= 0;
+        }
+    }
+
+    // ---------- Food ----------
+    class Food {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.radius = 5;
+            this.vy = 0.3;
+        }
+        update() {
+            this.y += this.vy;
+        }
+        draw() {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+            ctx.fillStyle = '#5D4037';
+            ctx.fill();
+            ctx.fillStyle = '#795548';
+            ctx.beginPath();
+            ctx.arc(this.x - 1, this.y - 2, this.radius * 0.5, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+    }
+
+    // ---------- Fish ----------
+    class Fish {
+        constructor() {
+            this.x = Math.random() * (WIDTH - 2 * MARGIN) + MARGIN;
+            this.y = Math.random() * (SAND_TOP - 2 * MARGIN) + MARGIN;
+            const angle = Math.random() * 2 * Math.PI;
+            this.vx = Math.cos(angle) * 1.5;
+            this.vy = Math.sin(angle) * 1.5;
+            this.size = Math.random() * 25 + 15;
+            this.hue = Math.random() * 360;
+            this.sat = 60 + Math.random() * 30;
+            this.light = 40 + Math.random() * 30;
+            this.maxSpeed = 1.5 + Math.random() * 2;
+            this.maxForce = 0.05 + Math.random() * 0.03;
+            this.wanderAngle = Math.random() * 2 * Math.PI;
+            this.wagPhase = Math.random() * 100;
+            this.eatFlash = 0;
+            this.ax = 0;
+            this.ay = 0;
+        }
+
+        get color() { return `hsl(${this.hue}, ${this.sat}%, ${this.light}%)`; }
+        get finColor() { return `hsl(${this.hue}, ${this.sat + 10}%, ${this.light - 12}%)`; }
+
+        seek(tx, ty) {
+            const dx = tx - this.x;
+            const dy = ty - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 1) return { x: 0, y: 0 };
+            const desiredX = dx / dist * this.maxSpeed;
+            const desiredY = dy / dist * this.maxSpeed;
+            let steerX = desiredX - this.vx;
+            let steerY = desiredY - this.vy;
+            const mag = Math.sqrt(steerX * steerX + steerY * steerY);
+            if (mag > this.maxForce) {
+                steerX = steerX / mag * this.maxForce;
+                steerY = steerY / mag * this.maxForce;
+            }
+            return { x: steerX, y: steerY };
+        }
+
+        wander() {
+            let cx = this.vx;
+            let cy = this.vy;
+            let mag = Math.sqrt(cx * cx + cy * cy);
+            if (mag < 0.1) {
+                cx = Math.cos(this.wanderAngle);
+                cy = Math.sin(this.wanderAngle);
+                mag = 1;
+            }
+            cx = cx / mag * 100;
+            cy = cy / mag * 100;
+
+            this.wanderAngle += (Math.random() - 0.5) * 0.3;
+            const dx = Math.cos(this.wanderAngle) * 50;
+            const dy = Math.sin(this.wanderAngle) * 50;
+
+            return this.seek(this.x + cx + dx, this.y + cy + dy);
+        }
+
+        avoidWalls() {
+            let steerX = 0,
+                steerY = 0;
+            const margin = 60;
+            if (this.x < margin) steerX = (margin - this.x) / margin * this.maxSpeed;
+            if (this.x > WIDTH - margin) steerX = -(this.x - (WIDTH - margin)) / margin * this.maxSpeed;
+            if (this.y < margin) steerY = (margin - this.y) / margin * this.maxSpeed;
+            if (this.y > SAND_TOP - margin) steerY = -(this.y - (SAND_TOP - margin)) / margin * this.maxSpeed;
+            let steer = { x: steerX - this.vx, y: steerY - this.vy };
+            const mag = Math.sqrt(steer.x * steer.x + steer.y * steer.y);
+            if (mag > this.maxForce * 3) {
+                steer.x = steer.x / mag * this.maxForce * 3;
+                steer.y = steer.y / mag * this.maxForce * 3;
+            }
+            return steer;
+        }
+
+        separate(fishes) {
+            let steerX = 0,
+                steerY = 0;
+            let count = 0;
+            const desiredSep = this.size * 1.5;
+            for (const other of fishes) {
+                if (other === this) continue;
+                const dx = this.x - other.x;
+                const dy = this.y - other.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < desiredSep && dist > 0) {
+                    const str = (desiredSep - dist) / desiredSep;
+                    steerX += (dx / dist) * str;
+                    steerY += (dy / dist) * str;
+                    count++;
+                }
+            }
+            if (count > 0) {
+                steerX /= count;
+                steerY /= count;
+                let mag = Math.sqrt(steerX * steerX + steerY * steerY);
+                if (mag > 0) {
+                    steerX = steerX / mag * this.maxSpeed;
+                    steerY = steerY / mag * this.maxSpeed;
+                    steerX -= this.vx;
+                    steerY -= this.vy;
+                    mag = Math.sqrt(steerX * steerX + steerY * steerY);
+                    if (mag > this.maxForce) {
+                        steerX = steerX / mag * this.maxForce;
+                        steerY = steerY / mag * this.maxForce;
+                    }
+                }
+            }
+            return { x: steerX, y: steerY };
+        }
+
+        applyForce(fx, fy) {
+            this.ax += fx;
+            this.ay += fy;
+        }
+
+        update() {
+            this.vx += this.ax;
+            this.vy += this.ay;
+            const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+            if (speed > this.maxSpeed) {
+                this.vx = this.vx / speed * this.maxSpeed;
+                this.vy = this.vy / speed * this.maxSpeed;
+            }
+            this.x += this.vx;
+            this.y += this.vy;
+
+            // Hard boundary reflection
+            if (this.x < 0) { this.x = 0;
+                this.vx *= -1; }
+            if (this.x > WIDTH) { this.x = WIDTH;
+                this.vx *= -1; }
+            if (this.y < 0) { this.y = 0;
+                this.vy *= -1; }
+            if (this.y > SAND_TOP) { this.y = SAND_TOP;
+                this.vy *= -1; }
+
+            this.angle = Math.atan2(this.vy, this.vx);
+            this.ax = 0;
+            this.ay = 0;
+        }
+
+        draw() {
+            ctx.save();
+
+            // Eat flash glow
+            if (this.eatFlash > 0) {
+                ctx.shadowColor = 'rgba(255, 255, 200, 0.8)';
+                ctx.shadowBlur = 18;
+                this.eatFlash--;
+            }
+
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.angle);
+
+            const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+            const wagRate = 0.01 * (30 / this.size);
+            const wag = Math.sin(Date.now() * wagRate + this.wagPhase) * 0.4 * Math.min(speed / this.maxSpeed, 1);
+
+            // Body
+            ctx.beginPath();
+            ctx.ellipse(0, 0, this.size / 2, this.size / 4, 0, 0, Math.PI * 2);
+            ctx.fillStyle = this.color;
+            ctx.fill();
+
+            // Body stripe
+            ctx.globalAlpha = 0.2;
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, this.size / 3, this.size / 9, 0.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            // Tail
+            ctx.save();
+            ctx.translate(-this.size / 2, 0);
+            ctx.rotate(wag);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-this.size / 4, -this.size / 2.5);
+            ctx.lineTo(-this.size / 4, this.size / 2.5);
+            ctx.closePath();
+            ctx.fillStyle = this.finColor;
+            ctx.fill();
+            ctx.restore();
+
+            // Dorsal fin
+            ctx.beginPath();
+            ctx.ellipse(-this.size / 10, -this.size / 4 - 3, this.size / 6, this.size / 9, 0, 0, Math.PI * 2);
+            ctx.fillStyle = this.finColor;
+            ctx.fill();
+
+            // Pectoral fin
+            ctx.beginPath();
+            ctx.ellipse(this.size / 8, this.size / 4 + 2, this.size / 7, this.size / 10, 0.3, 0, Math.PI * 2);
+            ctx.fillStyle = this.finColor;
+            ctx.fill();
+
+            // Anal fin
+            ctx.beginPath();
+            ctx.ellipse(-this.size / 8, this.size / 3 + 2, this.size / 8, this.size / 12, 0.2, 0, Math.PI * 2);
+            ctx.fillStyle = this.finColor;
+            ctx.fill();
+
+            // Eye
+            const eyeX = this.size / 4;
+            const eyeY = -this.size / 8;
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(eyeX, eyeY, 3 + this.size * 0.03, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.fillStyle = '#111';
+            ctx.beginPath();
+            ctx.arc(eyeX + 1.5, eyeY, 1.5 + this.size * 0.015, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Mouth
+            ctx.fillStyle = '#111';
+            ctx.beginPath();
+            ctx.arc(this.size / 2 + 1, -this.size / 12, 1.5, 0, 2 * Math.PI);
+            ctx.fill();
+
+            ctx.restore();
+        }
+    }
+
+    // ---------- Background ----------
+    function drawBackground() {
+        // Water gradient
+        const grad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+        grad.addColorStop(0, '#0e4d92');
+        grad.addColorStop(0.4, '#1a6ba0');
+        grad.addColorStop(0.8, '#1e7e5e');
+        grad.addColorStop(1, '#1a5a3a');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+        // Sand
+        const sandGrad = ctx.createLinearGradient(0, SAND_TOP, 0, HEIGHT);
+        sandGrad.addColorStop(0, '#c2b280');
+        sandGrad.addColorStop(0.5, '#a7936d');
+        sandGrad.addColorStop(1, '#6b5b48');
+        ctx.fillStyle = sandGrad;
+        ctx.beginPath();
+        ctx.moveTo(0, SAND_TOP);
+        for (let x = 0; x <= WIDTH; x += 20) {
+            const y = SAND_TOP + Math.sin(x * 0.01 + time * 0.0001) * 10;
+            ctx.lineTo(x, y);
+        }
+        ctx.lineTo(WIDTH, HEIGHT);
+        ctx.lineTo(0, HEIGHT);
+        ctx.closePath();
+        ctx.fill();
+
+        // Sand texture
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        for (let i = 0; i < 120; i++) {
+            const x = Math.sin(i * 12345) * WIDTH;
+            const y = SAND_TOP + Math.cos(i * 67890) * (HEIGHT - SAND_TOP) * 0.8 + 10;
+            const r = Math.sin(i * 11111) * 3 + 1;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
+        // Rocks
+        const rocks = [
+            { x: 80, y: SAND_TOP - 20, rx: 45, ry: 30 },
+            { x: 320, y: SAND_TOP + 5, rx: 65, ry: 35 },
+            { x: 700, y: SAND_TOP - 15, rx: 55, ry: 40 },
+            { x: 1050, y: SAND_TOP - 5, rx: 75, ry: 45 },
+            { x: 1280, y: SAND_TOP - 10, rx: 50, ry: 30 },
+        ];
+        for (const r of rocks) {
+            ctx.fillStyle = '#546e7a';
+            ctx.beginPath();
+            ctx.ellipse(r.x, r.y, r.rx, r.ry, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#455a64';
+            ctx.beginPath();
+            ctx.ellipse(r.x - 5, r.y - 5, r.rx * 0.6, r.ry * 0.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Plants (seaweed)
+        const plants = [
+            { x: 140, h: 130, c: '#2e7d32' },
+            { x: 220, h: 110, c: '#43a047' },
+            { x: 480, h: 160, c: '#1b5e20' },
+            { x: 550, h: 90, c: '#4caf50' },
+            { x: 780, h: 140, c: '#388e3c' },
+            { x: 860, h: 100, c: '#43a047' },
+            { x: 1150, h: 150, c: '#2e7d32' },
+            { x: 1220, h: 100, c: '#4caf50' },
+        ];
+        for (const p of plants) {
+            const sway = Math.sin(time * 0.002 + p.x * 0.01) * 12;
+            ctx.strokeStyle = p.c;
+            ctx.lineCap = 'round';
+            ctx.lineWidth = 7;
+            ctx.beginPath();
+            ctx.moveTo(p.x, SAND_TOP);
+            const cp1x = p.x + sway + 25;
+            const cp1y = SAND_TOP - p.h * 0.5;
+            const cp2x = p.x + sway - 15;
+            const cp2y = SAND_TOP - p.h * 0.8;
+            const ex = p.x + sway * 0.6;
+            const ey = SAND_TOP - p.h;
+            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, ex, ey);
+            ctx.stroke();
+
+            // Leaves
+            for (let i = 1; i < 5; i++) {
+                const t = i / 5;
+                const lx = p.x + sway * t * 0.8;
+                const ly = SAND_TOP - p.h * t;
+                const leafSize = 8 + t * 3;
+                ctx.fillStyle = '#66bb6a';
+                ctx.beginPath();
+                ctx.ellipse(lx - 12 - t * 6, ly, leafSize, 5, -0.6 + t * 0.2, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(lx + 12 + t * 6, ly, leafSize, 5, 0.6 - t * 0.2, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+
+        // Light rays
+        ctx.save();
+        ctx.globalAlpha = 0.07;
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 5; i++) {
+            const bx = 100 + (WIDTH - 200) * (i / 4);
+            const sway = Math.sin(time * 0.0005 + i * 1.5) * 80;
+            ctx.beginPath();
+            ctx.moveTo(bx + sway * 0.2, 0);
+            ctx.lineTo(bx - 60 + sway, HEIGHT * 0.8);
+            ctx.lineTo(bx + 60 + sway, HEIGHT * 0.8);
+            ctx.closePath();
+            ctx.fill();
+        }
+        ctx.restore();
+
+        // Surface light shimmer
+        ctx.save();
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        for (let x = 0; x <= WIDTH; x += 5) {
+            const y = Math.sin(x * 0.05 + time * 0.002) * 5 + Math.sin(x * 0.02 + time * 0.003) * 3;
+            if (x === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.lineTo(WIDTH, 0);
+        ctx.lineTo(0, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        // Vignette overlay
+        const vig = ctx.createRadialGradient(WIDTH / 2, HEIGHT / 2, HEIGHT * 0.3, WIDTH / 2, HEIGHT / 2, HEIGHT * 0.9);
+        vig.addColorStop(0, 'rgba(0,0,0,0)');
+        vig.addColorStop(1, 'rgba(0,0,0,0.45)');
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    }
+
+    // ---------- Setup ----------
+    function setup() {
+        for (let i = 0; i < FISH_COUNT; i++) {
+            fishes.push(new Fish());
+        }
+        for (let i = 0; i < 40; i++) {
+            bubbles.push(new Bubble());
+        }
+        for (let i = 0; i < 60; i++) {
+            particles.push(new Particle());
+        }
+    }
+
+    // ---------- Animation Loop ----------
+    function animate() {
+        time = Date.now();
+        drawBackground();
+
+        // Bubbles
+        if (Math.random() < 0.4) {
+            bubbles.push(new Bubble());
+        }
+        for (let i = bubbles.length - 1; i >= 0; i--) {
+            const b = bubbles[i];
+            b.update();
+            b.draw();
+            if (b.y < -10) bubbles.splice(i, 1);
+        }
+
+        // Particles
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.update();
+            p.draw();
+            if (p.dead) {
+                particles.splice(i, 1);
+            }
+        }
+
+        // Food
+        for (let i = food.length - 1; i >= 0; i--) {
+            const f = food[i];
+            f.update();
+            f.draw();
+            if (f.y > SAND_TOP) food.splice(i, 1);
+        }
+
+        // Fish logic
+        for (const fish of fishes) {
+            let nearestFood = null;
+            let nearestDist = Infinity;
+            for (const f of food) {
+                const d = Math.hypot(fish.x - f.x, fish.y - f.y);
+                if (d < nearestDist) {
+                    nearestDist = d;
+                    nearestFood = f;
+                }
+            }
+
+            // Eat food
+            if (nearestFood && nearestDist < 10) {
+                const idx = food.indexOf(nearestFood);
+                if (idx > -1) {
+                    food.splice(idx, 1);
+                    fish.eatFlash = 12;
+                    // Sparkle burst
+                    for (let j = 0; j < 6; j++) {
+                        particles.push(new Particle(fish.x + (Math.random() - 0.5) * 20, fish.y + (Math.random() - 0.5) * 20, true));
+                    }
+                }
+            }
+
+            let force = { x: 0, y: 0 };
+            const chaseDist = 300;
+            if (nearestFood && nearestDist < chaseDist) {
+                const seekForce = fish.seek(nearestFood.x, nearestFood.y);
+                force.x += seekForce.x * 2.5;
+                force.y += seekForce.y * 2.5;
+            } else {
+                const wanderForce = fish.wander();
+                force.x += wanderForce.x;
+                force.y += wanderForce.y;
+            }
+
+            const wallForce = fish.avoidWalls();
+            force.x += wallForce.x * 5;
+            force.y += wallForce.y * 5;
+
+            const sepForce = fish.separate(fishes);
+            force.x += sepForce.x * 2;
+            force.y += sepForce.y * 2;
+
+            fish.applyForce(force.x, force.y);
+            fish.update();
+        }
+
+        // Draw fish
+        for (const fish of fishes) {
+            fish.draw();
+        }
+
+        requestAnimationFrame(animate);
+    }
+
+    // ---------- Interaction ----------
+    canvas.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+        if (y < SAND_TOP) {
+            food.push(new Food(x, y));
+        }
+    });
+
+    // ---------- Start ----------
+    setup();
+    animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>轻量看板</title>
+    <style>
+        /* 基础重置与全局样式 */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            line-height: 1.4;
+        }
+
+        /* 头部 */
+        header {
+            background: #fff;
+            padding: 16px 24px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+        }
+        header h1 {
+            font-size: 24px;
+            color: #1a1a1a;
+            margin-right: 16px;
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .toolbar input,
+        .toolbar select,
+        .toolbar button {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #d9d9d9;
+            font-size: 14px;
+            background: #fff;
+        }
+        .toolbar input {
+            min-width: 200px;
+        }
+        .toolbar button {
+            background: #1890ff;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toolbar button:hover {
+            background: #40a9ff;
+        }
+
+        /* 看板列布局 */
+        .board {
+            display: flex;
+            gap: 16px;
+            padding: 24px;
+            min-height: calc(100vh - 80px);
+            align-items: flex-start;
+        }
+        .column {
+            background: #fafafa;
+            border-radius: 8px;
+            padding: 12px;
+            flex: 1;
+            min-width: 0;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+            transition: background 0.2s;
+        }
+        /* 拖拽时的高亮 */
+        .column.drag-over {
+            background: #e6f7ff;
+        }
+        .column-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .column-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .task-count {
+            background: #e6e6e6;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+        .card-list {
+            min-height: 200px;
+        }
+
+        /* 任务卡片 */
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+            cursor: grab;
+            border-left: 4px solid transparent;
+            transition: box-shadow 0.2s, opacity 0.2s;
+        }
+        .card:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+        .card.dragging {
+            opacity: 0.5;
+        }
+        /* 优先级边框颜色 */
+        .card.priority-high {
+            border-left-color: #ff4d4f;
+        }
+        .card.priority-medium {
+            border-left-color: #faad14;
+        }
+        .card.priority-low {
+            border-left-color: #52c41a;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        .priority {
+            font-size: 11px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            margin-right: 8px;
+            white-space: nowrap;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .priority-low {
+            background: #f6ffed;
+            color: #52c41a;
+            border: 1px solid #b7eb8f;
+        }
+        .priority-medium {
+            background: #fffbe6;
+            color: #faad14;
+            border: 1px solid #ffe58f;
+        }
+        .priority-high {
+            background: #fff2f0;
+            color: #ff4d4f;
+            border: 1px solid #ffccc7;
+        }
+        .card-title {
+            font-weight: 500;
+            font-size: 14px;
+            word-break: break-word;
+            flex: 1;
+        }
+        .card-note {
+            font-size: 12px;
+            color: #666;
+            margin: 4px 0 8px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #999;
+            margin-top: 8px;
+        }
+        .card-actions {
+            display: flex;
+            gap: 4px;
+        }
+        .card-actions button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #666;
+            transition: background 0.2s, color 0.2s;
+        }
+        .card-actions button:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+        .card-actions button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        /* 模态框 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay[hidden] {
+            display: none;
+        }
+        .modal {
+            background: #fff;
+            border-radius: 8px;
+            padding: 24px;
+            width: 90%;
+            max-width: 480px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal h2 {
+            margin-bottom: 16px;
+        }
+        #taskForm label {
+            display: block;
+            margin-bottom: 12px;
+            font-weight: 500;
+        }
+        #taskForm input,
+        #taskForm textarea,
+        #taskForm select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-top: 4px;
+        }
+        #taskForm textarea {
+            min-height: 60px;
+            resize: vertical;
+        }
+        #taskForm .required {
+            color: red;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        .modal-actions button {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        #cancelBtn {
+            background: #f5f5f5;
+        }
+        #saveBtn {
+            background: #1890ff;
+            color: #fff;
+        }
+        /* 状态字段在编辑模式下隐藏 */
+        .status-field {
+            display: block;
+        }
+        .edit-mode .status-field {
+            display: none;
+        }
+
+        /* 响应式窄屏 */
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .toolbar {
+                justify-content: stretch;
+            }
+            .toolbar input {
+                min-width: auto;
+                flex: 1;
+            }
+            .board {
+                flex-direction: column;
+                padding: 12px;
+            }
+            .column {
+                width: 100%;
+                min-height: auto;
+            }
+        }
+        @media (max-width: 480px) {
+            .toolbar {
+                flex-direction: column;
+            }
+            .toolbar input,
+            .toolbar select,
+            .toolbar button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 顶部导航 -->
+    <header>
+        <h1>轻量看板</h1>
+        <div class="toolbar">
+            <input type="text" id="searchInput" placeholder="搜索任务..." aria-label="搜索任务">
+            <select id="priorityFilter" aria-label="按优先级筛选">
+                <option value="all">全部优先级</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+            </select>
+            <button id="addTaskBtn">+ 新增任务</button>
+        </div>
+    </header>
+
+    <!-- 看板主体 -->
+    <main class="board">
+        <!-- 待办列 -->
+        <div class="column" data-status="todo">
+            <div class="column-header">
+                <h2>待办</h2>
+                <span class="task-count" id="todoCount">0</span>
+            </div>
+            <div class="card-list" id="todoList"></div>
+        </div>
+        <!-- 进行中列 -->
+        <div class="column" data-status="in-progress">
+            <div class="column-header">
+                <h2>进行中</h2>
+                <span class="task-count" id="inProgressCount">0</span>
+            </div>
+            <div class="card-list" id="inProgressList"></div>
+        </div>
+        <!-- 已完成列 -->
+        <div class="column" data-status="done">
+            <div class="column-header">
+                <h2>已完成</h2>
+                <span class="task-count" id="doneCount">0</span>
+            </div>
+            <div class="card-list" id="doneList"></div>
+        </div>
+    </main>
+
+    <!-- 新增/编辑模态框 -->
+    <div class="modal-overlay" id="modalOverlay" hidden>
+        <div class="modal" role="dialog" aria-labelledby="modalTitle">
+            <h2 id="modalTitle">新增任务</h2>
+            <form id="taskForm">
+                <label>
+                    标题 <span class="required">*</span>
+                    <input type="text" id="titleInput" required>
+                </label>
+                <label>
+                    备注
+                    <textarea id="noteInput"></textarea>
+                </label>
+                <label>
+                    优先级
+                    <select id="priorityInput">
+                        <option value="low">低</option>
+                        <option value="medium" selected>中</option>
+                        <option value="high">高</option>
+                    </select>
+                </label>
+                <!-- 状态选择，新增时可见，编辑时隐藏 -->
+                <label class="status-field">
+                    状态
+                    <select id="statusInput">
+                        <option value="todo">待办</option>
+                        <option value="in-progress">进行中</option>
+                        <option value="done">已完成</option>
+                    </select>
+                </label>
+                <div class="modal-actions">
+                    <button type="button" id="cancelBtn">取消</button>
+                    <button type="submit" id="saveBtn">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        'use strict';
+
+        // ---------- 常量 ----------
+        const STATUSES = ['todo', 'in-progress', 'done'];
+        const STATUS_LABELS = { 'todo': '待办', 'in-progress': '进行中', 'done': '已完成' };
+        const PRIORITY_LABELS = { 'low': '低', 'medium': '中', 'high': '高' };
+        const STORAGE_KEY = 'kanban-tasks';
+
+        // ---------- 状态 ----------
+        let tasks = [];
+        let searchKeyword = '';
+        let filterPriority = 'all';
+        let currentModalMode = 'add'; // 'add' | 'edit'
+        let editingId = null;
+        let draggedId = null; // 拖拽中的任务id
+
+        // ---------- DOM 引用 ----------
+        const board = document.querySelector('.board');
+        const todoList = document.getElementById('todoList');
+        const inProgressList = document.getElementById('inProgressList');
+        const doneList = document.getElementById('doneList');
+        const todoCount = document.getElementById('todoCount');
+        const inProgressCount = document.getElementById('inProgressCount');
+        const doneCount = document.getElementById('doneCount');
+        const searchInput = document.getElementById('searchInput');
+        const priorityFilter = document.getElementById('priorityFilter');
+        const addTaskBtn = document.getElementById('addTaskBtn');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const taskForm = document.getElementById('taskForm');
+        const titleInput = document.getElementById('titleInput');
+        const noteInput = document.getElementById('noteInput');
+        const priorityInput = document.getElementById('priorityInput');
+        const statusInput = document.getElementById('statusInput');
+        const cancelBtn = document.getElementById('cancelBtn');
+
+        // ---------- 辅助函数 ----------
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(timestamp) {
+            var d = new Date(timestamp);
+            var year = d.getFullYear();
+            var month = String(d.getMonth() + 1).padStart(2, '0');
+            var day = String(d.getDate()).padStart(2, '0');
+            var hour = String(d.getHours()).padStart(2, '0');
+            var minute = String(d.getMinutes()).padStart(2, '0');
+            return year + '-' + month + '-' + day + ' ' + hour + ':' + minute;
+        }
+
+        function getStatusIndex(status) {
+            return STATUSES.indexOf(status);
+        }
+
+        // ---------- 数据持久化 ----------
+        function loadTasks() {
+            var stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                try {
+                    tasks = JSON.parse(stored);
+                } catch (e) {
+                    tasks = [];
+                }
+            } else {
+                tasks = [];
+            }
+            // 过滤无效数据
+            tasks = tasks.filter(function(t) {
+                return t && t.id && t.title && STATUSES.indexOf(t.status) !== -1;
+            });
+        }
+
+        function saveTasks() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+        }
+
+        function generateId() {
+            return Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // ---------- 任务操作 ----------
+        function addTask(title, note, priority, status) {
+            var task = {
+                id: generateId(),
+                title: title,
+                note: note || '',
+                priority: priority || 'medium',
+                status: status || 'todo',
+                createdAt: Date.now()
+            };
+            tasks.push(task);
+            saveTasks();
+            return task;
+        }
+
+        function updateTask(id, title, note, priority) {
+            var task = tasks.find(function(t) { return t.id === id; });
+            if (!task) return;
+            task.title = title;
+            task.note = note || '';
+            task.priority = priority;
+            saveTasks();
+        }
+
+        function deleteTask(id) {
+            tasks = tasks.filter(function(t) { return t.id !== id; });
+            saveTasks();
+        }
+
+        function moveTaskToStatus(id, newStatus) {
+            if (STATUSES.indexOf(newStatus) === -1) return;
+            var task = tasks.find(function(t) { return t.id === id; });
+            if (!task || task.status === newStatus) return;
+            task.status = newStatus;
+            saveTasks();
+        }
+
+        // ---------- 搜索与筛选 ----------
+        function filterTasks() {
+            var kw = searchKeyword.toLowerCase();
+            return tasks.filter(function(task) {
+                // 关键词过滤
+                if (searchKeyword) {
+                    var title = task.title.toLowerCase();
+                    var note = (task.note || '').toLowerCase();
+                    if (title.indexOf(kw) === -1 && note.indexOf(kw) === -1) return false;
+                }
+                // 优先级过滤
+                if (filterPriority !== 'all' && task.priority !== filterPriority) return false;
+                return true;
+            });
+        }
+
+        // ---------- 渲染 ----------
+        function getContainerByStatus(status) {
+            if (status === 'todo') return todoList;
+            if (status === 'in-progress') return inProgressList;
+            if (status === 'done') return doneList;
+            return null;
+        }
+
+        function updateCount(status, count) {
+            var el = status === 'todo' ? todoCount :
+                status === 'in-progress' ? inProgressCount : doneCount;
+            el.textContent = count;
+        }
+
+        function createCardElement(task) {
+            // 卡片容器
+            var card = document.createElement('div');
+            card.className = 'card priority-' + task.priority;
+            card.draggable = true;
+            card.dataset.id = task.id;
+
+            // 头部：优先级 + 标题
+            var header = document.createElement('div');
+            header.className = 'card-header';
+            var prioritySpan = document.createElement('span');
+            prioritySpan.className = 'priority priority-' + task.priority;
+            prioritySpan.textContent = PRIORITY_LABELS[task.priority];
+            header.appendChild(prioritySpan);
+            var titleSpan = document.createElement('span');
+            titleSpan.className = 'card-title';
+            titleSpan.textContent = task.title;
+            header.appendChild(titleSpan);
+            card.appendChild(header);
+
+            // 备注
+            if (task.note) {
+                var noteDiv = document.createElement('div');
+                noteDiv.className = 'card-note';
+                noteDiv.textContent = task.note;
+                card.appendChild(noteDiv);
+            }
+
+            // 底部：时间 + 操作按钮
+            var footer = document.createElement('div');
+            footer.className = 'card-footer';
+            var timeSpan = document.createElement('span');
+            timeSpan.className = 'card-time';
+            timeSpan.textContent = formatDate(task.createdAt);
+            footer.appendChild(timeSpan);
+
+            var actions = document.createElement('div');
+            actions.className = 'card-actions';
+
+            var statusIdx = getStatusIndex(task.status);
+
+            // 左移按钮
+            var leftBtn = document.createElement('button');
+            leftBtn.className = 'btn-move-left';
+            leftBtn.innerHTML = '←';
+            leftBtn.dataset.id = task.id;
+            leftBtn.setAttribute('aria-label', '左移');
+            if (statusIdx === 0) leftBtn.disabled = true;
+            actions.appendChild(leftBtn);
+
+            // 右移按钮
+            var rightBtn = document.createElement('button');
+            rightBtn.className = 'btn-move-right';
+            rightBtn.innerHTML = '→';
+            rightBtn.dataset.id = task.id;
+            rightBtn.setAttribute('aria-label', '右移');
+            if (statusIdx === STATUSES.length - 1) rightBtn.disabled = true;
+            actions.appendChild(rightBtn);
+
+            // 编辑按钮
+            var editBtn = document.createElement('button');
+            editBtn.className = 'btn-edit';
+            editBtn.innerHTML = '✎';
+            editBtn.dataset.id = task.id;
+            editBtn.setAttribute('aria-label', '编辑');
+            actions.appendChild(editBtn);
+
+            // 删除按钮
+            var deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn-delete';
+            deleteBtn.innerHTML = '✕';
+            deleteBtn.dataset.id = task.id;
+            deleteBtn.setAttribute('aria-label', '删除');
+            actions.appendChild(deleteBtn);
+
+            footer.appendChild(actions);
+            card.appendChild(footer);
+
+            return card;
+        }
+
+        function renderBoard() {
+            var filtered = filterTasks();
+
+            // 清空列
+            todoList.innerHTML = '';
+            inProgressList.innerHTML = '';
+            doneList.innerHTML = '';
+
+            // 分组
+            var groups = { 'todo': [], 'in-progress': [], 'done': [] };
+            filtered.forEach(function(task) {
+                if (groups[task.status]) groups[task.status].push(task);
+            });
+
+            // 渲染各列
+            STATUSES.forEach(function(status) {
+                var container = getContainerByStatus(status);
+                var list = groups[status] || [];
+                list.forEach(function(task) {
+                    container.appendChild(createCardElement(task));
+                });
+                updateCount(status, list.length);
+            });
+        }
+
+        // ---------- 模态框 ----------
+        function openModal(mode, taskId) {
+            currentModalMode = mode;
+            if (mode === 'add') {
+                modalTitle.textContent = '新增任务';
+                modalOverlay.classList.remove('edit-mode');
+                taskForm.reset();
+                editingId = null;
+            } else if (mode === 'edit') {
+                var task = tasks.find(function(t) { return t.id === taskId; });
+                if (!task) return;
+                modalTitle.textContent = '编辑任务';
+                modalOverlay.classList.add('edit-mode'); // 隐藏状态字段
+                taskForm.reset();
+                titleInput.value = task.title;
+                noteInput.value = task.note || '';
+                priorityInput.value = task.priority;
+                editingId = taskId;
+            }
+            modalOverlay.hidden = false;
+            // 确保可见后再聚焦
+            setTimeout(function() { titleInput.focus(); }, 50);
+        }
+
+        function closeModal() {
+            modalOverlay.hidden = true;
+            modalOverlay.classList.remove('edit-mode');
+            taskForm.reset();
+            editingId = null;
+        }
+
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            var title = titleInput.value.trim();
+            if (!title) {
+                alert('标题不能为空');
+                return;
+            }
+            var note = noteInput.value.trim();
+            var priority = priorityInput.value;
+            if (currentModalMode === 'add') {
+                var status = statusInput.value;
+                addTask(title, note, priority, status);
+            } else if (currentModalMode === 'edit' && editingId) {
+                updateTask(editingId, title, note, priority);
+            }
+            closeModal();
+            renderBoard();
+        }
+
+        // ---------- 方向移动（按钮） ----------
+        function moveTaskByDirection(id, direction) {
+            var task = tasks.find(function(t) { return t.id === id; });
+            if (!task) return;
+            var idx = getStatusIndex(task.status);
+            var newIdx = idx + direction;
+            if (newIdx < 0 || newIdx >= STATUSES.length) return;
+            moveTaskToStatus(id, STATUSES[newIdx]);
+            renderBoard();
+        }
+
+        // ---------- 拖拽处理 ----------
+        function handleDragStart(e) {
+            var card = e.target.closest('.card');
+            if (!card) return;
+            draggedId = card.dataset.id;
+            e.dataTransfer.setData('text/plain', draggedId);
+            e.dataTransfer.effectAllowed = 'move';
+            card.classList.add('dragging');
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            // 高亮当前列
+            document.querySelectorAll('.column.drag-over').forEach(function(col) {
+                col.classList.remove('drag-over');
+            });
+            var column = e.target.closest('.column');
+            if (column) column.classList.add('drag-over');
+        }
+
+        function handleDrop(e) {
+            // 清除高亮
+            document.querySelectorAll('.column.drag-over').forEach(function(col) {
+                col.classList.remove('drag-over');
+            });
+            var targetColumn = e.target.closest('.column');
+            if (!targetColumn) return;
+            var targetStatus = targetColumn.dataset.status;
+            if (!targetStatus) return;
+            var id = e.dataTransfer.getData('text/plain') || draggedId;
+            if (!id) return;
+            moveTaskToStatus(id, targetStatus);
+            renderBoard();
+            draggedId = null;
+        }
+
+        function handleDragEnd(e) {
+            var card = e.target.closest('.card');
+            if (card) card.classList.remove('dragging');
+            document.querySelectorAll('.column.drag-over').forEach(function(col) {
+                col.classList.remove('drag-over');
+            });
+            draggedId = null;
+        }
+
+        // ---------- 事件绑定 ----------
+        function initEventListeners() {
+            // 搜索
+            searchInput.addEventListener('input', function() {
+                searchKeyword = this.value.trim();
+                renderBoard();
+            });
+            // 优先级筛选
+            priorityFilter.addEventListener('change', function() {
+                filterPriority = this.value;
+                renderBoard();
+            });
+            // 新增按钮
+            addTaskBtn.addEventListener('click', function() {
+                openModal('add');
+            });
+            // 取消按钮
+            cancelBtn.addEventListener('click', closeModal);
+            // 遮罩点击关闭
+            modalOverlay.addEventListener('click', function(e) {
+                if (e.target === this) closeModal();
+            });
+            // Escape 键关闭
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && !modalOverlay.hidden) closeModal();
+            });
+            // 表单提交
+            taskForm.addEventListener('submit', handleFormSubmit);
+            // 拖拽事件（使用事件委托）
+            board.addEventListener('dragstart', handleDragStart);
+            board.addEventListener('dragover', handleDragOver);
+            board.addEventListener('drop', handleDrop);
+            board.addEventListener('dragend', handleDragEnd);
+            // 卡片操作按钮（移动、编辑、删除）
+            board.addEventListener('click', function(e) {
+                var btn = e.target.closest('button');
+                if (!btn) return;
+                var id = btn.dataset.id;
+                if (!id) return;
+                if (btn.classList.contains('btn-move-left')) {
+                    moveTaskByDirection(id, -1);
+                } else if (btn.classList.contains('btn-move-right')) {
+                    moveTaskByDirection(id, 1);
+                } else if (btn.classList.contains('btn-edit')) {
+                    openModal('edit', id);
+                } else if (btn.classList.contains('btn-delete')) {
+                    if (confirm('确认删除该任务吗？')) {
+                        deleteTask(id);
+                        renderBoard();
+                    }
+                }
+            });
+        }
+
+        // ---------- 初始化 ----------
+        function init() {
+            loadTasks();
+            renderBoard();
+            initEventListeners();
+        }
+
+        init();
+    </script>
+</body>
+</html>

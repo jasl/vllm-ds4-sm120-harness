@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🐟 水族箱动画</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: #0a2a4a;
+            cursor: pointer;
+            box-shadow: 0 0 60px rgba(0, 40, 80, 0.6);
+        }
+        .hint {
+            position: fixed;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.55);
+            font-size: 15px;
+            letter-spacing: 1.2px;
+            background: rgba(0, 10, 20, 0.45);
+            padding: 8px 24px;
+            border-radius: 30px;
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            pointer-events: none;
+            transition: opacity 0.6s;
+            font-weight: 300;
+        }
+        .hint span {
+            display: inline-block;
+            margin-right: 6px;
+            font-size: 18px;
+        }
+        @media (max-width: 600px) {
+            .hint {
+                font-size: 12px;
+                padding: 6px 16px;
+                bottom: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="aquarium"></canvas>
+    <div class="hint"><span>🖱️</span> 点击任意位置投放鱼食</div>
+
+    <script>
+        // ============================================================
+        //  水族箱动画 — 完整实现
+        //  技术: Canvas 2D + requestAnimationFrame
+        //  特性: 多条鱼自由游动 / 追逐鱼食 / 精致视觉
+        // ============================================================
+
+        (function() {
+            'use strict';
+
+            // ---------- canvas 设置 ----------
+            const canvas = document.getElementById('aquarium');
+            const ctx = canvas.getContext('2d');
+            let W, H;
+
+            function resize() {
+                const dpr = window.devicePixelRatio || 1;
+                W = window.innerWidth;
+                H = window.innerHeight;
+                canvas.width = W * dpr;
+                canvas.height = H * dpr;
+                canvas.style.width = W + 'px';
+                canvas.style.height = H + 'px';
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+            window.addEventListener('resize', resize);
+            resize();
+
+            // ---------- 工具函数 ----------
+            function rand(min, max) { return Math.random() * (max - min) + min; }
+
+            function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
+
+            function lerp(a, b, t) { return a + (b - a) * t; }
+
+            function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+            function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
+
+            function angleTo(x1, y1, x2, y2) { return Math.atan2(y2 - y1, x2 - x1); }
+
+            function randomColor() {
+                const hues = [0, 15, 30, 45, 180, 200, 220, 260, 300, 340];
+                const h = hues[randInt(0, hues.length - 1)] + rand(-15, 15);
+                const s = 65 + rand(0, 30);
+                const l = 50 + rand(0, 25);
+                return `hsl(${h}, ${s}%, ${l}%)`;
+            }
+
+            function darken(hex, amount = 0.3) {
+                // 简单变暗
+                const c = hexToRgb(hex);
+                const f = 1 - amount;
+                return `rgb(${Math.floor(c.r * f)},${Math.floor(c.g * f)},${Math.floor(c.b * f)})`;
+            }
+
+            function hexToRgb(hex) {
+                // 支持 #rgb 和 #rrggbb
+                let h = hex.replace('#', '');
+                if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+                const num = parseInt(h, 16);
+                return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+            }
+
+            // HSL 转 RGB (用于鱼身渐变的颜色插值)
+            function hslToRgb(h, s, l) {
+                s /= 100;
+                l /= 100;
+                const k = n => (n + h / 30) % 12;
+                const a = s * Math.min(l, 1 - l);
+                const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+                return { r: Math.round(255 * f(0)), g: Math.round(255 * f(8)), b: Math.round(255 * f(4)) };
+            }
+
+            function hslStr(h, s, l) { return `hsl(${h}, ${s}%, ${l}%)`; }
+
+            function colorToRgbStr(color) {
+                // 如果是 hsl 字符串，转成 rgb 字符串
+                if (color.startsWith('hsl')) {
+                    const parts = color.match(/[\d.]+/g);
+                    if (parts && parts.length >= 3) {
+                        const h = parseFloat(parts[0]);
+                        const s = parseFloat(parts[1]);
+                        const l = parseFloat(parts[2]);
+                        const c = hslToRgb(h, s, l);
+                        return `rgb(${c.r},${c.g},${c.b})`;
+                    }
+                }
+                return color;
+            }
+
+            // ---------- 常量 ----------
+            const FISH_COUNT = 9;
+            const MAX_FOOD = 40;
+            const GRAVITY_FOOD = 0.012; // 鱼食下沉速度
+            const BUBBLE_COUNT = 18;
+            const WEED_COUNT = 7;
+
+            // ---------- 水族箱边界 (留出边距) ----------
+            const MARGIN = 30;
+            function getBounds() {
+                return {
+                    left: MARGIN,
+                    right: W - MARGIN,
+                    top: MARGIN,
+                    bottom: H - MARGIN,
+                    width: W - 2 * MARGIN,
+                    height: H - 2 * MARGIN
+                };
+            }
+
+            // ---------- 沙地高度 ----------
+            function getSandY() {
+                return H - 60 - 20 * Math.sin(Date.now() / 8000);
+            }
+
+            // ---------- 鱼食类 ----------
+            class Food {
+                constructor(x, y) {
+                    this.x = x;
+                    this.y = y;
+                    this.radius = 3 + rand(0, 1.5);
+                    this.vy = 0.2 + rand(0, 0.3); // 下沉速度
+                    this.alive = true;
+                    this.age = 0;
+                    this.opacity = 1;
+                    this.bobPhase = rand(0, Math.PI * 2);
+                }
+
+                update(bounds, sandY) {
+                    this.age++;
+                    // 下沉
+                    this.vy += GRAVITY_FOOD;
+                    this.y += this.vy;
+                    // 左右微飘
+                    this.bobPhase += 0.02;
+                    this.x += Math.sin(this.bobPhase) * 0.06;
+
+                    // 触底
+                    if (this.y + this.radius >= sandY) {
+                        this.y = sandY - this.radius;
+                        this.vy *= 0.5;
+                        if (this.vy < 0.05) this.vy = 0;
+                    }
+                    // 边界
+                    if (this.x < bounds.left + 4) this.x = bounds.left + 4;
+                    if (this.x > bounds.right - 4) this.x = bounds.right - 4;
+                    if (this.y < bounds.top + 4) this.y = bounds.top + 4;
+
+                    // 如果存在太久还没被吃，慢慢淡出 (但优先被吃)
+                    if (this.age > 1800) {
+                        this.opacity -= 0.005;
+                        if (this.opacity <= 0) this.alive = false;
+                    }
+                }
+
+                draw(ctx) {
+                    if (!this.alive || this.opacity <= 0) return;
+                    ctx.save();
+                    ctx.globalAlpha = this.opacity;
+
+                    // 发光光晕
+                    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 4);
+                    grad.addColorStop(0, 'rgba(255,220,140,0.15)');
+                    grad.addColorStop(1, 'rgba(255,220,140,0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.radius * 4, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 鱼食主体 - 立体颗粒
+                    const r = this.radius;
+                    const g2 = ctx.createRadialGradient(this.x - r * 0.3, this.y - r * 0.3, r * 0.1, this.x, this.y, r);
+                    g2.addColorStop(0, '#fef7e0');
+                    g2.addColorStop(0.3, '#f5d742');
+                    g2.addColorStop(0.7, '#c49a2c');
+                    g2.addColorStop(1, '#7a5a1a');
+                    ctx.fillStyle = g2;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 高光
+                    ctx.fillStyle = 'rgba(255,255,240,0.5)';
+                    ctx.beginPath();
+                    ctx.arc(this.x - r * 0.25, this.y - r * 0.25, r * 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.restore();
+                }
+            }
+
+            // ---------- 气泡类 ----------
+            class Bubble {
+                constructor() {
+                    this.reset();
+                    this.y = rand(H * 0.4, H * 0.9);
+                }
+                reset() {
+                    const bounds = getBounds();
+                    this.x = rand(bounds.left + 10, bounds.right - 10);
+                    this.y = H + rand(10, 60);
+                    this.radius = rand(2, 6);
+                    this.speed = rand(0.15, 0.45);
+                    this.wobble = rand(0, Math.PI * 2);
+                    this.wobbleSpeed = rand(0.01, 0.03);
+                    this.wobbleAmp = rand(0.3, 0.9);
+                    this.alpha = rand(0.15, 0.40);
+                }
+                update() {
+                    this.y -= this.speed;
+                    this.wobble += this.wobbleSpeed;
+                    this.x += Math.sin(this.wobble) * this.wobbleAmp * 0.4;
+                    // 到顶部重置
+                    if (this.y < -20) this.reset();
+                    // 左右边界限制
+                    const bounds = getBounds();
+                    if (this.x < bounds.left + 5) this.x = bounds.left + 5;
+                    if (this.x > bounds.right - 5) this.x = bounds.right - 5;
+                }
+                draw(ctx) {
+                    ctx.save();
+                    ctx.globalAlpha = this.alpha;
+                    // 气泡
+                    const r = this.radius;
+                    const grad = ctx.createRadialGradient(
+                        this.x - r * 0.3, this.y - r * 0.3, r * 0.1,
+                        this.x, this.y, r
+                    );
+                    grad.addColorStop(0, 'rgba(255,255,255,0.6)');
+                    grad.addColorStop(0.5, 'rgba(200,230,255,0.2)');
+                    grad.addColorStop(1, 'rgba(180,210,255,0.05)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 高光
+                    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                    ctx.beginPath();
+                    ctx.arc(this.x - r * 0.25, this.y - r * 0.25, r * 0.28, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.restore();
+                }
+            }
+
+            // ---------- 水草类 ----------
+            class Weed {
+                constructor(x, height, color, segments) {
+                    this.x = x;
+                    this.baseHeight = height;
+                    this.height = height;
+                    this.color = color;
+                    this.segments = segments || 6;
+                    this.phase = rand(0, Math.PI * 2);
+                    this.speed = rand(0.008, 0.018);
+                    this.amplitude = rand(8, 20);
+                }
+                update(time) {
+                    this.phase += this.speed;
+                    this.height = this.baseHeight + Math.sin(this.phase) * 3;
+                }
+                draw(ctx, sandY) {
+                    const x = this.x;
+                    const baseY = sandY;
+                    const seg = this.segments;
+                    const segH = this.height / seg;
+                    const amp = this.amplitude;
+
+                    ctx.save();
+                    // 绘制水草 (贝塞尔曲线)
+                    ctx.beginPath();
+                    ctx.moveTo(x, baseY);
+
+                    // 用多个二次贝塞尔画出波浪形状
+                    let px = x;
+                    let py = baseY;
+                    for (let i = 1; i <= seg; i++) {
+                        const t = i / seg;
+                        const wave = Math.sin(this.phase + t * 4.5) * amp * (t * t);
+                        const cx = px + wave * 0.6 + (Math.sin(this.phase * 1.3 + i) * 2);
+                        const cy = py - segH * 0.5;
+                        const ex = x + Math.sin(this.phase + (i + 1) * 0.9) * amp * t * t;
+                        const ey = baseY - segH * i;
+                        ctx.quadraticCurveTo(cx, cy, ex, ey);
+                        px = ex;
+                        py = ey;
+                    }
+
+                    // 叶子的宽度渐变
+                    ctx.lineWidth = 4 + (1 - py / baseY) * 6;
+                    ctx.strokeStyle = this.color;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.stroke();
+
+                    // 再画一条细的亮线在中间增加立体感
+                    ctx.beginPath();
+                    ctx.moveTo(x, baseY);
+                    let px2 = x,
+                        py2 = baseY;
+                    for (let i = 1; i <= seg; i++) {
+                        const t = i / seg;
+                        const wave = Math.sin(this.phase + t * 4.5) * amp * (t * t);
+                        const cx = px2 + wave * 0.5;
+                        const cy = py2 - segH * 0.5;
+                        const ex = x + Math.sin(this.phase + (i + 1) * 0.9) * amp * t * t * 0.8;
+                        const ey = baseY - segH * i;
+                        ctx.quadraticCurveTo(cx, cy, ex, ey);
+                        px2 = ex;
+                        py2 = ey;
+                    }
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeStyle = 'rgba(180,255,180,0.2)';
+                    ctx.stroke();
+
+                    ctx.restore();
+                }
+            }
+
+            // ---------- 鱼类 (核心) ----------
+            class Fish {
+                constructor(config) {
+                    const bounds = getBounds();
+                    this.x = config.x || rand(bounds.left + 50, bounds.right - 50);
+                    this.y = config.y || rand(bounds.top + 40, bounds.bottom - 80);
+                    this.size = config.size || rand(0.7, 1.3);
+                    this.color = config.color || randomColor();
+                    this.finColor = config.finColor || darken(this.color, 0.2);
+
+                    // 物理
+                    this.vx = rand(-0.3, 0.3);
+                    this.vy = rand(-0.3, 0.3);
+                    this.angle = rand(0, Math.PI * 2);
+                    this.targetAngle = this.angle;
+                    this.speed = rand(0.6, 1.4) * (0.8 + this.size * 0.3);
+                    this.maxSpeed = this.speed * 1.6;
+
+                    // 行为
+                    this.targetX = this.x + rand(-100, 100);
+                    this.targetY = this.y + rand(-60, 60);
+                    this.chooseNewTargetCounter = randInt(60, 200);
+                    this.mode = 'free'; // 'free' | 'chase'
+                    this.targetFood = null;
+
+                    // 动画
+                    this.tailPhase = rand(0, Math.PI * 2);
+                    this.tailFreq = 0.06 + rand(0, 0.03) + (1 - this.size * 0.3) * 0.02;
+                    this.bodyWave = 0;
+                    this.walkPhase = rand(0, Math.PI * 2);
+
+                    // 个性
+                    this.turnSpeed = rand(0.015, 0.035);
+                    this.aggressiveness = rand(0.4, 1.0); // 对食物追逐的迫切程度
+                    this.wanderRadius = rand(80, 200);
+
+                    // 存活
+                    this.alive = true;
+
+                    // 用于绘制的缓存
+                    this._breathPhase = rand(0, Math.PI * 2);
+                }
+
+                // ---------- 选择随机自由目标 ----------
+                pickFreeTarget() {
+                    const bounds = getBounds();
+                    const cx = this.x + rand(-this.wanderRadius, this.wanderRadius);
+                    const cy = this.y + rand(-this.wanderRadius * 0.7, this.wanderRadius * 0.7);
+                    this.targetX = clamp(cx, bounds.left + 20, bounds.right - 20);
+                    this.targetY = clamp(cy, bounds.top + 30, bounds.bottom - 60);
+                    this.chooseNewTargetCounter = randInt(80, 240);
+                }
+
+                // ---------- 更新 ----------
+                update(foodArray, bounds, time) {
+                    // 检测鱼食，选择最近的
+                    let nearestFood = null;
+                    let nearestDist = Infinity;
+                    for (const food of foodArray) {
+                        if (!food.alive) continue;
+                        const d = dist(this.x, this.y, food.x, food.y);
+                        if (d < nearestDist) {
+                            nearestDist = d;
+                            nearestFood = food;
+                        }
+                    }
+
+                    if (nearestFood && nearestFood.alive) {
+                        // 追逐模式
+                        this.mode = 'chase';
+                        this.targetFood = nearestFood;
+                        this.targetX = nearestFood.x;
+                        this.targetY = nearestFood.y;
+                        // 如果非常接近，吃掉它
+                        const eatDist = this.size * 16;
+                        if (nearestDist < eatDist && nearestFood.alive) {
+                            nearestFood.alive = false;
+                            this.mode = 'free';
+                            this.targetFood = null;
+                            // 吃完后很快选新目标
+                            this.chooseNewTargetCounter = randInt(10, 40);
+                        }
+                    } else {
+                        // 自由模式
+                        if (this.mode === 'chase') {
+                            this.mode = 'free';
+                            this.targetFood = null;
+                            this.pickFreeTarget();
+                        }
+                        this.chooseNewTargetCounter--;
+                        if (this.chooseNewTargetCounter <= 0) {
+                            this.pickFreeTarget();
+                        }
+                        // 自由模式也轻微晃动目标，使路径更自然
+                        if (rand(0, 100) < 3) {
+                            this.targetX += rand(-30, 30);
+                            this.targetY += rand(-20, 20);
+                            const b = getBounds();
+                            this.targetX = clamp(this.targetX, b.left + 20, b.right - 20);
+                            this.targetY = clamp(this.targetY, b.top + 30, b.bottom - 60);
+                        }
+                    }
+
+                    // ---- 物理运动 ----
+                    const dx = this.targetX - this.x;
+                    const dy = this.targetY - this.y;
+                    const targetDist = Math.hypot(dx, dy);
+
+                    // 目标角度
+                    let targetAngle = Math.atan2(dy, dx);
+                    // 角度平滑过渡 (转向有惯性)
+                    let angleDiff = targetAngle - this.angle;
+                    // 规范化到 -PI..PI
+                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+                    // 转向速度
+                    const turnRate = this.mode === 'chase' ? this.turnSpeed * 1.6 : this.turnSpeed;
+                    const maxTurn = turnRate * 1.8;
+                    const turnAmount = clamp(angleDiff, -maxTurn, maxTurn);
+                    this.angle += turnAmount;
+
+                    // 速度计算
+                    let targetSpeed = this.speed;
+                    if (this.mode === 'chase') {
+                        // 追逐时更快，但根据距离调整
+                        const speedFactor = clamp(targetDist / 150, 0.6, 1.6);
+                        targetSpeed = this.speed * (0.9 + 0.7 * speedFactor * this.aggressiveness);
+                    } else {
+                        // 自由游动时速度有波动
+                        const wave = Math.sin(this.walkPhase + time * 0.002) * 0.3 + 0.7;
+                        targetSpeed = this.speed * wave;
+                    }
+                    targetSpeed = clamp(targetSpeed, 0.2, this.maxSpeed);
+
+                    // 加速 / 减速
+                    const currentSpeed = Math.hypot(this.vx, this.vy);
+                    const accel = 0.04;
+                    if (currentSpeed < targetSpeed) {
+                        const factor = 1 + (targetSpeed - currentSpeed) * 0.02;
+                        this.vx *= factor;
+                        this.vy *= factor;
+                    } else if (currentSpeed > targetSpeed * 1.1) {
+                        const factor = 1 - 0.02;
+                        this.vx *= factor;
+                        this.vy *= factor;
+                    }
+
+                    // 施加朝向目标方向的力
+                    if (targetDist > 1) {
+                        const force = this.mode === 'chase' ? 0.012 : 0.006;
+                        const nx = dx / targetDist;
+                        const ny = dy / targetDist;
+                        this.vx += nx * force * (this.mode === 'chase' ? 1.4 : 1);
+                        this.vy += ny * force * (this.mode === 'chase' ? 1.4 : 1);
+                    }
+
+                    // 限制最大速度
+                    const sp = Math.hypot(this.vx, this.vy);
+                    if (sp > this.maxSpeed) {
+                        this.vx = (this.vx / sp) * this.maxSpeed;
+                        this.vy = (this.vy / sp) * this.maxSpeed;
+                    }
+
+                    // 阻力
+                    this.vx *= 0.992;
+                    this.vy *= 0.992;
+
+                    // 更新位置
+                    this.x += this.vx;
+                    this.y += this.vy;
+
+                    // 边界处理 (软边界，有反弹力)
+                    const b = bounds;
+                    const margin = 15 * this.size;
+                    if (this.x < b.left + margin) { this.x = b.left + margin;
+                        this.vx *= -0.3; }
+                    if (this.x > b.right - margin) { this.x = b.right - margin;
+                        this.vx *= -0.3; }
+                    if (this.y < b.top + margin) { this.y = b.top + margin;
+                        this.vy *= -0.3; }
+                    if (this.y > b.bottom - margin * 0.8) { this.y = b.bottom - margin * 0.8;
+                        this.vy *= -0.3; }
+
+                    // 确保在边界内
+                    this.x = clamp(this.x, b.left + 5, b.right - 5);
+                    this.y = clamp(this.y, b.top + 5, b.bottom - 5);
+
+                    // ---- 动画参数 ----
+                    const speedFactor = Math.hypot(this.vx, this.vy) / (this.speed || 0.1);
+                    this.tailPhase += this.tailFreq * (0.5 + speedFactor * 0.8);
+                    this.bodyWave = Math.sin(this.tailPhase) * 0.15 * speedFactor;
+                    this.walkPhase += 0.01;
+                    this._breathPhase += 0.008;
+                }
+
+                // ---------- 绘制 ----------
+                draw(ctx, time) {
+                    const s = this.size * 24; // 基础尺寸缩放
+                    const x = this.x;
+                    const y = this.y;
+                    const angle = this.angle;
+                    const bodyWave = this.bodyWave;
+
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.rotate(angle);
+
+                    // 鱼的各部位尺寸
+                    const bodyLen = s * 1.8;
+                    const bodyH = s * 0.7;
+                    const tailLen = s * 0.6;
+                    const tailW = s * 0.45;
+
+                    // 尾巴摆动偏移
+                    const tailSwing = Math.sin(this.tailPhase) * tailW * 0.6;
+                    const tailSwing2 = Math.sin(this.tailPhase + 0.6) * tailW * 0.3;
+
+                    // ---- 尾巴 (在身体后面) ----
+                    // 上尾叶
+                    ctx.beginPath();
+                    ctx.moveTo(-bodyLen * 0.42, 0);
+                    ctx.quadraticCurveTo(
+                        -bodyLen * 0.42 - tailLen * 0.5,
+                        -tailW * 0.4 + tailSwing * 0.5,
+                        -bodyLen * 0.42 - tailLen * 0.8,
+                        -tailW * 0.7 + tailSwing
+                    );
+                    ctx.quadraticCurveTo(
+                        -bodyLen * 0.42 - tailLen * 0.3,
+                        -tailW * 0.15 + tailSwing2 * 0.3,
+                        -bodyLen * 0.42,
+                        0
+                    );
+                    ctx.closePath();
+                    const tailGrad = ctx.createLinearGradient(-bodyLen * 0.42, -tailW * 0.4, -bodyLen * 0.42 - tailLen * 0.6,
+                        tailW * 0.4);
+                    tailGrad.addColorStop(0, this.color);
+                    tailGrad.addColorStop(1, this.finColor);
+                    ctx.fillStyle = tailGrad;
+                    ctx.fill();
+                    ctx.globalAlpha = 0.15;
+                    ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                    ctx.globalAlpha = 1;
+
+                    // 下尾叶
+                    ctx.beginPath();
+                    ctx.moveTo(-bodyLen * 0.42, 0);
+                    ctx.quadraticCurveTo(
+                        -bodyLen * 0.42 - tailLen * 0.5,
+                        tailW * 0.4 - tailSwing * 0.5,
+                        -bodyLen * 0.42 - tailLen * 0.8,
+                        tailW * 0.7 - tailSwing
+                    );
+                    ctx.quadraticCurveTo(
+                        -bodyLen * 0.42 - tailLen * 0.3,
+                        tailW * 0.15 - tailSwing2 * 0.3,
+                        -bodyLen * 0.42,
+                        0
+                    );
+                    ctx.closePath();
+                    const tailGrad2 = ctx.createLinearGradient(-bodyLen * 0.42, tailW * 0.4, -bodyLen * 0.42 - tailLen * 0.6, -
+                        tailW * 0.4);
+                    tailGrad2.addColorStop(0, this.color);
+                    tailGrad2.addColorStop(1, this.finColor);
+                    ctx.fillStyle = tailGrad2;
+                    ctx.fill();
+                    ctx.globalAlpha = 0.15;
+                    ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                    ctx.globalAlpha = 1;
+
+                    // ---- 身体 ----
+                    ctx.beginPath();
+                    // 身体上轮廓 (从头部到尾部)
+                    const headX = bodyLen * 0.5;
+                    const bodyTopY = -bodyH * 0.48;
+                    const bodyBottomY = bodyH * 0.48;
+
+                    ctx.moveTo(headX, 0);
+                    // 上轮廓: 头部到背部
+                    ctx.bezierCurveTo(
+                        headX - bodyLen * 0.2, bodyTopY + bodyWave * bodyH * 0.15,
+                        bodyLen * 0.1, bodyTopY * 1.2 + bodyWave * bodyH * 0.2,
+                        -bodyLen * 0.1, bodyTopY * 0.9 + bodyWave * bodyH * 0.1
+                    );
+                    ctx.bezierCurveTo(
+                        -bodyLen * 0.25, bodyTopY * 0.6 + bodyWave * bodyH * 0.05,
+                        -bodyLen * 0.4, bodyTopY * 0.2,
+                        -bodyLen * 0.42, 0
+                    );
+                    // 下轮廓 (从尾部到头部)
+                    ctx.bezierCurveTo(
+                        -bodyLen * 0.4, bodyBottomY * 0.2,
+                        -bodyLen * 0.25, bodyBottomY * 0.6 - bodyWave * bodyH * 0.05,
+                        -bodyLen * 0.1, bodyBottomY * 0.9 - bodyWave * bodyH * 0.1
+                    );
+                    ctx.bezierCurveTo(
+                        bodyLen * 0.1, bodyBottomY * 1.2 - bodyWave * bodyH * 0.2,
+                        headX - bodyLen * 0.2, bodyBottomY - bodyWave * bodyH * 0.15,
+                        headX, 0
+                    );
+                    ctx.closePath();
+
+                    // 身体填充 - 漂亮渐变
+                    const bodyGrad = ctx.createLinearGradient(0, -bodyH * 0.6, 0, bodyH * 0.6);
+                    const baseColor = this.color;
+                    // 解析颜色的亮度
+                    let brightColor, darkColor;
+                    if (baseColor.startsWith('hsl')) {
+                        const parts = baseColor.match(/[\d.]+/g);
+                        if (parts && parts.length >= 3) {
+                            const h = parseFloat(parts[0]);
+                            const s = parseFloat(parts[1]);
+                            const l = parseFloat(parts[2]);
+                            brightColor = hslStr(h, s, Math.min(l + 20, 90));
+                            darkColor = hslStr(h, s, Math.max(l - 25, 15));
+                        } else {
+                            brightColor = baseColor;
+                            darkColor = baseColor;
+                        }
+                    } else {
+                        // 如果是 hex 或 rgb，简单处理
+                        brightColor = baseColor;
+                        const c = hexToRgb(baseColor);
+                        darkColor = `rgb(${Math.floor(c.r*0.6)},${Math.floor(c.g*0.6)},${Math.floor(c.b*0.6)})`;
+                    }
+                    bodyGrad.addColorStop(0, brightColor);
+                    bodyGrad.addColorStop(0.4, baseColor);
+                    bodyGrad.addColorStop(0.7, baseColor);
+                    bodyGrad.addColorStop(1, darkColor);
+                    ctx.fillStyle = bodyGrad;
+                    ctx.fill();
+
+                    // 身体描边 (轻)
+                    ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+                    ctx.lineWidth = 0.8;
+                    ctx.stroke();
+
+                    // ---- 鳞片纹理 (半透明弧线) ----
+                    ctx.save();
+                    ctx.globalAlpha = 0.12;
+                    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+                    ctx.lineWidth = 0.6;
+                    for (let i = 0; i < 5; i++) {
+                        const t = 0.15 + i * 0.14;
+                        const sx = lerp(headX, -bodyLen * 0.4, t);
+                        const syTop = lerp(0, bodyTopY * 0.8, Math.sin(t * Math.PI)) + bodyWave * bodyH * 0.1 * (1 - t);
+                        const syBot = lerp(0, bodyBottomY * 0.8, Math.sin(t * Math.PI)) - bodyWave * bodyH * 0.1 * (1 - t);
+                        ctx.beginPath();
+                        ctx.arc(sx, (syTop + syBot) / 2, bodyH * 0.2, -0.8, 0.8);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(sx + 4, (syTop + syBot) / 2 + 2, bodyH * 0.16, -0.6, 1.0);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+
+                    // ---- 身体光泽 (高光带) ----
+                    ctx.save();
+                    ctx.globalAlpha = 0.18;
+                    const hlGrad = ctx.createLinearGradient(0, -bodyH * 0.5, 0, bodyH * 0.1);
+                    hlGrad.addColorStop(0, 'rgba(255,255,255,0.5)');
+                    hlGrad.addColorStop(0.5, 'rgba(255,255,255,0.05)');
+                    hlGrad.addColorStop(1, 'rgba(255,255,255,0)');
+                    ctx.fillStyle = hlGrad;
+                    ctx.beginPath();
+                    ctx.ellipse(headX - bodyLen * 0.15, -bodyH * 0.2, bodyLen * 0.3, bodyH * 0.15, -0.1, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+
+                    // ---- 背鳍 ----
+                    ctx.save();
+                    ctx.beginPath();
+                    const dorsX1 = bodyLen * 0.05;
+                    const dorsX2 = -bodyLen * 0.25;
+                    const dorsY = -bodyH * 0.5 + bodyWave * bodyH * 0.08;
+                    const dorsH = s * 0.22;
+                    ctx.moveTo(dorsX1, dorsY);
+                    ctx.quadraticCurveTo(
+                        (dorsX1 + dorsX2) / 2,
+                        dorsY - dorsH - Math.sin(this.tailPhase * 0.8) * 3,
+                        dorsX2,
+                        dorsY + bodyWave * bodyH * 0.05
+                    );
+                    ctx.quadraticCurveTo(
+                        (dorsX1 + dorsX2) / 2 + 3,
+                        dorsY - 2,
+                        dorsX1,
+                        dorsY
+                    );
+                    ctx.closePath();
+                    ctx.fillStyle = this.finColor;
+                    ctx.globalAlpha = 0.7;
+                    ctx.fill();
+                    ctx.globalAlpha = 0.2;
+                    ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                    ctx.restore();
+
+                    // ---- 胸鳍 (下侧) ----
+                    ctx.save();
+                    const pectX = bodyLen * 0.05;
+                    const pectY = bodyH * 0.4;
+                    const pectW = s * 0.25;
+                    const pectH2 = s * 0.14;
+                    const pectSwing = Math.sin(this.tailPhase * 0.7 + 1.2) * 3;
+                    ctx.beginPath();
+                    ctx.moveTo(pectX, pectY);
+                    ctx.quadraticCurveTo(
+                        pectX - pectW * 0.8,
+                        pectY + pectH2 + pectSwing,
+                        pectX - pectW * 1.2,
+                        pectY + pectH2 * 0.3 + pectSwing * 0.5
+                    );
+                    ctx.quadraticCurveTo(
+                        pectX - pectW * 0.5,
+                        pectY + 2,
+                        pectX,
+                        pectY
+                    );
+                    ctx.closePath();
+                    ctx.fillStyle = this.finColor;
+                    ctx.globalAlpha = 0.5;
+                    ctx.fill();
+                    ctx.restore();
+
+                    // 另一侧胸鳍 (半透明，在身体下方)
+                    ctx.save();
+                    ctx.globalAlpha = 0.2;
+                    ctx.beginPath();
+                    ctx.moveTo(pectX - 2, pectY + 2);
+                    ctx.quadraticCurveTo(
+                        pectX - pectW * 0.6,
+                        pectY + pectH2 * 0.8 + pectSwing * 0.3,
+                        pectX - pectW * 1.0,
+                        pectY + pectH2 * 0.1 + pectSwing * 0.2
+                    );
+                    ctx.quadraticCurveTo(
+                        pectX - pectW * 0.4,
+                        pectY + 1,
+                        pectX - 2,
+                        pectY + 2
+                    );
+                    ctx.closePath();
+                    ctx.fillStyle = this.finColor;
+                    ctx.fill();
+                    ctx.restore();
+
+                    // ---- 眼睛 ----
+                    const eyeX = bodyLen * 0.38;
+                    const eyeY = -bodyH * 0.08 + bodyWave * bodyH * 0.05;
+                    const eyeR = s * 0.09 + 1.2;
+
+                    // 眼白
+                    ctx.save();
+                    const eyeGrad = ctx.createRadialGradient(
+                        eyeX - eyeR * 0.2, eyeY - eyeR * 0.2, eyeR * 0.1,
+                        eyeX, eyeY, eyeR
+                    );
+                    eyeGrad.addColorStop(0, '#ffffff');
+                    eyeGrad.addColorStop(0.7, '#f0f4ff');
+                    eyeGrad.addColorStop(1, '#b0c8e0');
+                    ctx.fillStyle = eyeGrad;
+                    ctx.beginPath();
+                    ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 瞳孔
+                    const pupilR = eyeR * 0.55;
+                    const pupilOffsetX = 0.3 * eyeR;
+                    const pupilOffsetY = 0.1 * eyeR;
+                    ctx.fillStyle = '#1a1a2e';
+                    ctx.beginPath();
+                    ctx.arc(eyeX + pupilOffsetX, eyeY + pupilOffsetY, pupilR, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 瞳孔高光
+                    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+                    ctx.beginPath();
+                    ctx.arc(eyeX + pupilOffsetX + pupilR * 0.4, eyeY + pupilOffsetY - pupilR * 0.35, pupilR * 0.25, 0, Math.PI *
+                        2);
+                    ctx.fill();
+
+                    // 第二高光 (小)
+                    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+                    ctx.beginPath();
+                    ctx.arc(eyeX + pupilOffsetX - pupilR * 0.2, eyeY + pupilOffsetY + pupilR * 0.3, pupilR * 0.13, 0, Math.PI *
+                        2);
+                    ctx.fill();
+                    ctx.restore();
+
+                    // ---- 嘴巴 (微笑线) ----
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+                    ctx.lineWidth = 1.2;
+                    ctx.beginPath();
+                    const mouthX = bodyLen * 0.48;
+                    const mouthY = 0.6;
+                    ctx.arc(mouthX, mouthY, s * 0.06, 0.1, Math.PI - 0.1);
+                    ctx.stroke();
+                    ctx.restore();
+
+                    // ---- 呼吸鳃线 ----
+                    ctx.save();
+                    ctx.globalAlpha = 0.1;
+                    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+                    ctx.lineWidth = 0.8;
+                    for (let i = 0; i < 3; i++) {
+                        const gx = bodyLen * 0.2 + i * 5;
+                        const gy = -bodyH * 0.15 + Math.sin(this._breathPhase + i) * 1.5;
+                        ctx.beginPath();
+                        ctx.arc(gx, gy, bodyH * 0.12, 0.3, Math.PI - 0.3);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+
+                    ctx.restore(); // 恢复主变换
+                }
+            }
+
+            // ---------- 场景 ----------
+            let fishes = [];
+            let foods = [];
+            let bubbles = [];
+            let weeds = [];
+            let time = 0;
+            let sandY = 0;
+
+            // ---------- 初始化 ----------
+            function initScene() {
+                // 鱼
+                fishes = [];
+                const fishColors = [
+                    '#e74c3c', '#e67e22', '#f1c40f', '#2ecc71',
+                    '#3498db', '#9b59b6', '#e91e63', '#1abc9c',
+                    '#f39c12', '#00bcd4', '#ff5722', '#8bc34a'
+                ];
+                for (let i = 0; i < FISH_COUNT; i++) {
+                    const bounds = getBounds();
+                    const size = rand(0.7, 1.35);
+                    const color = fishColors[i % fishColors.length];
+                    const fish = new Fish({
+                        x: rand(bounds.left + 60, bounds.right - 60),
+                        y: rand(bounds.top + 50, bounds.bottom - 100),
+                        size: size,
+                        color: color,
+                        finColor: darken(color, 0.25)
+                    });
+                    // 个性化
+                    fish.speed = rand(0.5, 1.3) * (0.7 + size * 0.4);
+                    fish.maxSpeed = fish.speed * 1.7;
+                    fish.turnSpeed = rand(0.012, 0.032);
+                    fish.aggressiveness = rand(0.4, 1.0);
+                    fish.wanderRadius = rand(80, 220);
+                    fishes.push(fish);
+                }
+
+                // 气泡
+                bubbles = [];
+                for (let i = 0; i < BUBBLE_COUNT; i++) {
+                    const b = new Bubble();
+                    b.y = rand(-20, H + 20);
+                    bubbles.push(b);
+                }
+
+                // 水草
+                weeds = [];
+                const weedColors = ['#2d7d3a', '#1e6b2f', '#3a8a4a', '#1f7a32', '#2b6e3a'];
+                const bounds2 = getBounds();
+                for (let i = 0; i < WEED_COUNT; i++) {
+                    const x = rand(bounds2.left + 20, bounds2.right - 20);
+                    const h = rand(80, 200);
+                    const color = weedColors[randInt(0, weedColors.length - 1)];
+                    const weed = new Weed(x, h, color, randInt(5, 8));
+                    weed.amplitude = rand(6, 18);
+                    weed.speed = rand(0.006, 0.016);
+                    weeds.push(weed);
+                }
+            }
+
+            // ---------- 绘制背景 ----------
+            function drawBackground(ctx, time) {
+                // 深海渐变
+                const grad = ctx.createLinearGradient(0, 0, 0, H);
+                grad.addColorStop(0, '#0c3d6e');
+                grad.addColorStop(0.2, '#0f4a7a');
+                grad.addColorStop(0.5, '#0d3358');
+                grad.addColorStop(0.75, '#091f3a');
+                grad.addColorStop(1, '#040e1a');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, W, H);
+
+                // 水面光线效果 (体积光)
+                ctx.save();
+                for (let i = 0; i < 6; i++) {
+                    const x = 60 + i * (W - 120) / 5 + Math.sin(time * 0.0003 + i * 1.7) * 40;
+                    const width = 30 + Math.sin(time * 0.0005 + i * 2.3) * 12 + 20;
+                    const alpha = 0.025 + Math.sin(time * 0.0008 + i * 1.1) * 0.015;
+                    ctx.globalAlpha = clamp(alpha, 0.01, 0.06);
+                    const grad2 = ctx.createLinearGradient(0, 0, 0, H);
+                    grad2.addColorStop(0, 'rgba(180,220,255,0.25)');
+                    grad2.addColorStop(0.3, 'rgba(140,200,255,0.08)');
+                    grad2.addColorStop(0.7, 'rgba(100,180,255,0.02)');
+                    grad2.addColorStop(1, 'rgba(60,120,200,0)');
+                    ctx.fillStyle = grad2;
+                    ctx.beginPath();
+                    ctx.moveTo(x - width * 0.3, 0);
+                    ctx.lineTo(x + width * 0.3, 0);
+                    ctx.lineTo(x + width * 0.8, H);
+                    ctx.lineTo(x - width * 0.8, H);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                ctx.restore();
+
+                // 水面波纹 (顶部)
+                ctx.save();
+                ctx.globalAlpha = 0.08;
+                ctx.strokeStyle = 'rgba(180,220,255,0.3)';
+                ctx.lineWidth = 1.2;
+                for (let i = 0; i < 8; i++) {
+                    ctx.beginPath();
+                    const baseY = 2 + i * 4;
+                    for (let x = 0; x <= W; x += 6) {
+                        const y = baseY + Math.sin(x * 0.02 + time * 0.002 + i * 0.9) * 2.5 +
+                            Math.sin(x * 0.04 + time * 0.003 + i * 1.5) * 1.2;
+                        if (x === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                }
+                ctx.restore();
+
+                // 沙地
+                sandY = H - 50 - 12 * Math.sin(time * 0.0004);
+                const sandGrad = ctx.createLinearGradient(0, sandY, 0, H);
+                sandGrad.addColorStop(0, '#d4a76a');
+                sandGrad.addColorStop(0.15, '#c49660');
+                sandGrad.addColorStop(0.4, '#b08550');
+                sandGrad.addColorStop(0.7, '#8a6a3e');
+                sandGrad.addColorStop(1, '#5a4428');
+                ctx.fillStyle = sandGrad;
+                ctx.beginPath();
+                ctx.moveTo(0, sandY);
+                for (let x = 0; x <= W; x += 6) {
+                    const y = sandY + Math.sin(x * 0.025 + time * 0.0006) * 5 +
+                        Math.sin(x * 0.05 + time * 0.0009) * 2.5 +
+                        Math.sin(x * 0.01 + time * 0.0003) * 3;
+                    ctx.lineTo(x, y);
+                }
+                ctx.lineTo(W, H);
+                ctx.lineTo(0, H);
+                ctx.closePath();
+                ctx.fill();
+
+                // 沙地纹理 (小点)
+                ctx.save();
+                ctx.globalAlpha = 0.06;
+                ctx.fillStyle = '#5a3a1a';
+                for (let i = 0; i < 120; i++) {
+                    const sx = rand(0, W);
+                    const sy = sandY + rand(2, 60);
+                    const sr = rand(0.5, 2.5);
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+
+                // 沙地亮斑
+                ctx.save();
+                ctx.globalAlpha = 0.04;
+                ctx.fillStyle = '#f0e0b0';
+                for (let i = 0; i < 30; i++) {
+                    const sx = rand(0, W);
+                    const sy = sandY + rand(1, 40);
+                    const sr = rand(1, 5);
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+
+                // 远处模糊的水草剪影 (深度感)
+                ctx.save();
+                ctx.globalAlpha = 0.04;
+                ctx.strokeStyle = '#1a4a2a';
+                ctx.lineWidth = 6;
+                ctx.lineCap = 'round';
+                for (let i = 0; i < 5; i++) {
+                    const gx = rand(0, W);
+                    const gh = rand(80, 180);
+                    ctx.beginPath();
+                    ctx.moveTo(gx, sandY);
+                    for (let t = 0; t <= 1; t += 0.05) {
+                        const yy = sandY - gh * t;
+                        const xx = gx + Math.sin(t * 5 + time * 0.001 + i * 2) * 10 * t;
+                        ctx.lineTo(xx, yy);
+                    }
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            // ---------- 绘制鱼食 (批量) ----------
+            function drawFoods(ctx) {
+                for (const food of foods) {
+                    if (food.alive) food.draw(ctx);
+                }
+            }
+
+            // ---------- 绘制气泡 (批量) ----------
+            function drawBubbles(ctx) {
+                for (const b of bubbles) {
+                    b.draw(ctx);
+                }
+            }
+
+            // ---------- 绘制水草 ----------
+            function drawWeeds(ctx, sandY) {
+                for (const weed of weeds) {
+                    weed.draw(ctx, sandY);
+                }
+            }
+
+            // ---------- 主循环 ----------
+            function update() {
+                time++;
+                const bounds = getBounds();
+                sandY = H - 50 - 12 * Math.sin(time * 0.0004);
+
+                // 更新鱼
+                for (const fish of fishes) {
+                    fish.update(foods, bounds, time);
+                }
+
+                // 更新鱼食
+                for (const food of foods) {
+                    if (food.alive) food.update(bounds, sandY);
+                }
+                // 清理死亡鱼食
+                foods = foods.filter(f => f.alive && f.opacity > 0);
+
+                // 更新气泡
+                for (const b of bubbles) {
+                    b.update();
+                }
+
+                // 更新水草
+                for (const w of weeds) {
+                    w.update(time);
+                }
+
+                // 偶尔自动生成鱼食（增加趣味，但不要太多）
+                if (foods.length < 3 && Math.random() < 0.002) {
+                    const b = getBounds();
+                    const fx = rand(b.left + 30, b.right - 30);
+                    const fy = rand(b.top + 30, b.bottom - 100);
+                    if (foods.length < MAX_FOOD) {
+                        foods.push(new Food(fx, fy));
+                    }
+                }
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, W, H);
+
+                // 背景 + 沙地
+                drawBackground(ctx, time);
+
+                // 水草 (在鱼后面)
+                sandY = H - 50 - 12 * Math.sin(time * 0.0004);
+                drawWeeds(ctx, sandY);
+
+                // 气泡 (在鱼后面)
+                drawBubbles(ctx);
+
+                // 鱼食 (在鱼前面)
+                drawFoods(ctx);
+
+                // 绘制鱼 (排序，让在画面下方的鱼后绘制，增加层次感)
+                const sortedFishes = [...fishes].sort((a, b) => a.y - b.y);
+                for (const fish of sortedFishes) {
+                    fish.draw(ctx, time);
+                }
+
+                // 额外水域朦胧效果 (最上层，增加深度感)
+                ctx.save();
+                const vignetteGrad = ctx.createRadialGradient(W / 2, H / 2, H * 0.2, W / 2, H / 2, H * 0.9);
+                vignetteGrad.addColorStop(0, 'rgba(0,20,40,0)');
+                vignetteGrad.addColorStop(0.6, 'rgba(0,15,35,0)');
+                vignetteGrad.addColorStop(1, 'rgba(0,10,25,0.3)');
+                ctx.fillStyle = vignetteGrad;
+                ctx.fillRect(0, 0, W, H);
+                ctx.restore();
+
+                // 顶部水面反光细线
+                ctx.save();
+                ctx.globalAlpha = 0.06;
+                for (let i = 0; i < 3; i++) {
+                    ctx.strokeStyle = 'rgba(200,240,255,0.2)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    const yy = 4 + i * 5;
+                    for (let x = 0; x <= W; x += 4) {
+                        const y2 = yy + Math.sin(x * 0.03 + time * 0.003 + i * 2) * 2;
+                        if (x === 0) ctx.moveTo(x, y2);
+                        else ctx.lineTo(x, y2);
+                    }
+                    ctx.stroke();
+                }
+                ctx.restore();
+
+                // 底部微粒 (浮尘)
+                ctx.save();
+                ctx.globalAlpha = 0.03;
+                ctx.fillStyle = 'rgba(200,220,255,0.2)';
+                for (let i = 0; i < 30; i++) {
+                    const px = (Math.sin(time * 0.0005 + i * 7.3) * 0.5 + 0.5) * W;
+                    const py = (Math.cos(time * 0.0004 + i * 5.1) * 0.5 + 0.5) * H * 0.6 + H * 0.2;
+                    const pr = 0.5 + Math.sin(time * 0.001 + i * 3.7) * 0.5 + 0.8;
+                    ctx.beginPath();
+                    ctx.arc(px, py, pr, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            function loop() {
+                update();
+                draw();
+                requestAnimationFrame(loop);
+            }
+
+            // ---------- 交互: 点击放置鱼食 ----------
+            canvas.addEventListener('click', function(e) {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                // 限制在边界内
+                const bounds = getBounds();
+                const fx = clamp(x, bounds.left + 5, bounds.right - 5);
+                const fy = clamp(y, bounds.top + 5, bounds.bottom - 10);
+                if (foods.length < MAX_FOOD) {
+                    foods.push(new Food(fx, fy));
+                    // 可同时放多颗 (小范围)
+                    for (let i = 0; i < randInt(0, 2); i++) {
+                        const ox = rand(-12, 12);
+                        const oy = rand(-8, 8);
+                        if (foods.length < MAX_FOOD) {
+                            foods.push(new Food(clamp(fx + ox, bounds.left + 5, bounds.right - 5),
+                                clamp(fy + oy, bounds.top + 5, bounds.bottom - 10)));
+                        }
+                    }
+                }
+            });
+
+            // 触摸支持
+            canvas.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                if (!touch) return;
+                const rect = canvas.getBoundingClientRect();
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                const bounds = getBounds();
+                const fx = clamp(x, bounds.left + 5, bounds.right - 5);
+                const fy = clamp(y, bounds.top + 5, bounds.bottom - 10);
+                if (foods.length < MAX_FOOD) {
+                    foods.push(new Food(fx, fy));
+                    for (let i = 0; i < randInt(0, 2); i++) {
+                        const ox = rand(-12, 12);
+                        const oy = rand(-8, 8);
+                        if (foods.length < MAX_FOOD) {
+                            foods.push(new Food(clamp(fx + ox, bounds.left + 5, bounds.right - 5),
+                                clamp(fy + oy, bounds.top + 5, bounds.bottom - 10)));
+                        }
+                    }
+                }
+            }, { passive: false });
+
+            // ---------- 窗口自适应 ----------
+            window.addEventListener('resize', () => {
+                resize();
+                // 更新鱼的位置防止出界
+                const bounds = getBounds();
+                for (const fish of fishes) {
+                    fish.x = clamp(fish.x, bounds.left + 10, bounds.right - 10);
+                    fish.y = clamp(fish.y, bounds.top + 10, bounds.bottom - 10);
+                }
+                // 重置气泡
+                for (const b of bubbles) {
+                    if (b.x > bounds.right || b.x < bounds.left) {
+                        b.x = rand(bounds.left + 10, bounds.right - 10);
+                    }
+                }
+            });
+
+            // ---------- 启动 ----------
+            initScene();
+            loop();
+
+            // 键盘: R 重置 (彩蛋)
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'r' || e.key === 'R') {
+                    foods = [];
+                    initScene();
+                }
+            });
+
+        })();
+    </script>
+</body>
+</html>

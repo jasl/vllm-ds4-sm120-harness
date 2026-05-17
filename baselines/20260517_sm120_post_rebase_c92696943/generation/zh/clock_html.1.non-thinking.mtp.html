@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>简约·北京时区时钟</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(145deg, #ececec 0%, #f5f5f5 100%);
+      font-family: 'Inter', 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+      padding: 20px;
+    }
+
+    .clock-wrapper {
+      background: #ffffff;
+      border-radius: 48px;
+      box-shadow:
+        0 30px 50px -20px rgba(0, 0, 0, 0.3),
+        0 0 0 1px rgba(0, 0, 0, 0.05),
+        inset 0 2px 4px rgba(255, 255, 255, 0.6);
+      padding: 28px;
+      transition: box-shadow 0.2s ease;
+    }
+
+    .clock-container {
+      position: relative;
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      background: #fcfcfc;
+      box-shadow:
+        inset 0 8px 12px rgba(0, 0, 0, 0.04),
+        inset 0 -4px 8px rgba(255, 255, 255, 0.8),
+        0 12px 28px -8px rgba(0, 0, 0, 0.25),
+        0 0 0 2px #2c2c2c;
+      transition: all 0.1s ease;
+    }
+
+    /* 画布铺满容器 */
+    #clockCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: transparent;
+      cursor: default;
+    }
+
+    /* 日期时间显示 —— 表盘内部浮动层 */
+    .digital-panel {
+      position: absolute;
+      bottom: 22%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.60);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      padding: 8px 24px;
+      border-radius: 40px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), inset 0 1px 2px rgba(255, 255, 255, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      pointer-events: none;
+      white-space: nowrap;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+      transition: all 0.2s;
+    }
+
+    .digital-time {
+      font-size: 28px;
+      line-height: 1.3;
+      color: #1a1a1a;
+      font-weight: 600;
+      text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
+    }
+
+    .digital-date {
+      font-size: 15px;
+      color: #3a3a3a;
+      font-weight: 450;
+      margin-top: 2px;
+      opacity: 0.8;
+      letter-spacing: 1px;
+    }
+
+    /* 极简响应 */
+    @media (max-width: 520px) {
+      .clock-wrapper {
+        padding: 16px;
+        border-radius: 32px;
+      }
+      .clock-container {
+        width: 300px;
+        height: 300px;
+      }
+      .digital-time {
+        font-size: 20px;
+      }
+      .digital-date {
+        font-size: 13px;
+      }
+      .digital-panel {
+        padding: 4px 16px;
+        bottom: 18%;
+      }
+    }
+
+    @media (max-width: 400px) {
+      .clock-container {
+        width: 260px;
+        height: 260px;
+      }
+      .digital-time {
+        font-size: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="clock-wrapper">
+  <div class="clock-container">
+    <canvas id="clockCanvas" width="800" height="800"></canvas>
+    <!-- 表盘内部显示时间日期 (浮层) -->
+    <div class="digital-panel">
+      <div class="digital-time" id="digitalTime">00:00:00</div>
+      <div class="digital-date" id="digitalDate">2025-01-01 周三</div>
+    </div>
+  </div>
+</div>
+<script>
+  (function() {
+    const canvas = document.getElementById('clockCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // 尺寸适配 — 用CSS固定高宽，canvas画布保持800x800
+    const size = 800;           // 逻辑像素
+    const centerX = size / 2;
+    const centerY = size / 2;
+    const radius = 360;        // 表盘半径 (留边)
+
+    // DOM 数字时间
+    const timeEl = document.getElementById('digitalTime');
+    const dateEl = document.getElementById('digitalDate');
+
+    // 辅助：中国标准时间 (Asia/Shanghai)
+    function getChinaTime() {
+      const now = new Date();
+      // 直接通过 Intl 格式化获取北京时间 (无时区偏移计算)
+      const options = {
+        timeZone: 'Asia/Shanghai',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+      };
+      const parts = new Intl.DateTimeFormat('zh-CN', options).formatToParts(now);
+      let hour = 0, minute = 0, second = 0;
+      for (const part of parts) {
+        if (part.type === 'hour') hour = parseInt(part.value, 10);
+        if (part.type === 'minute') minute = parseInt(part.value, 10);
+        if (part.type === 'second') second = parseInt(part.value, 10);
+      }
+      return { hour, minute, second, now };
+    }
+
+    // 获取北京日期
+    function getChinaDate(now) {
+      const formatter = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        weekday: 'short'
+      });
+      // 返回格式如 "2025/01/01 周三"
+      const formatted = formatter.format(now);
+      // 处理分隔符，统一为 "-"
+      const parts = formatted.split(/[\s/]+/);
+      if (parts.length >= 4) {
+        const [year, month, day, weekday] = parts;
+        return `${year}-${month}-${day} ${weekday}`;
+      } else {
+        // fallback
+        return formatted.replace(/\//g, '-');
+      }
+    }
+
+    // 绘图：刻度、数字、指针 ============
+    function drawClock(hour, minute, second, millisecond = 0) {
+      ctx.clearRect(0, 0, size, size);
+
+      // ---------- 1. 背景 (保证纯白底) ----------
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius + 10, 0, 2 * Math.PI);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      // 外圈柔和描边 (配合css阴影)
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius + 4, 0, 2 * Math.PI);
+      ctx.strokeStyle = '#eaeaea';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // ---------- 2. 刻度线 (60个) ----------
+      for (let i = 0; i < 60; i++) {
+        const angle = (i * 6 - 90) * Math.PI / 180; // 从12点开始
+        const isHourMark = i % 5 === 0;
+        const innerRadius = isHourMark ? radius * 0.85 : radius * 0.92;
+        const outerRadius = isHourMark ? radius * 0.75 : radius * 0.88;
+
+        const x1 = centerX + innerRadius * Math.cos(angle);
+        const y1 = centerY + innerRadius * Math.sin(angle);
+        const x2 = centerX + outerRadius * Math.cos(angle);
+        const y2 = centerY + outerRadius * Math.sin(angle);
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = isHourMark ? '#1e1e1e' : '#888888';
+        ctx.lineWidth = isHourMark ? 6 : 2.5;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+
+      // ---------- 3. 数字 (1~12) ----------
+      ctx.fillStyle = '#222222';
+      ctx.font = '600 40px "Inter", "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const numRadius = radius * 0.74;
+      for (let i = 1; i <= 12; i++) {
+        const angle = (i * 30 - 90) * Math.PI / 180;
+        const x = centerX + numRadius * Math.cos(angle);
+        const y = centerY + numRadius * Math.sin(angle);
+        ctx.fillStyle = '#1c1c1c';
+        ctx.shadowColor = 'rgba(0,0,0,0.02)';
+        ctx.shadowBlur = 4;
+        ctx.fillText(i.toString(), x, y);
+      }
+      ctx.shadowBlur = 0; // reset
+
+      // ---------- 4. 中心装饰圆 ----------
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 12, 0, 2 * Math.PI);
+      ctx.fillStyle = '#222';
+      ctx.shadowColor = 'rgba(0,0,0,0.1)';
+      ctx.shadowBlur = 6;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = '#f5f5f5';
+      ctx.fill();
+
+      // ---------- 5. 指针 (时针/分针/秒针) ----------
+      // 秒针平滑：考虑毫秒 (传入millisecond)
+      const secAngle = (second * 6 + (millisecond / 1000) * 6 - 90) * Math.PI / 180;
+      const minAngle = (minute * 6 + (second / 60) * 6 - 90) * Math.PI / 180;
+      // 时针: 每小时30度 + 分钟偏移
+      const hourAngle = ((hour % 12) * 30 + minute * 0.5 + second * (0.5 / 60) - 90) * Math.PI / 180;
+
+      // --- 时针 (深色, 较宽) ---
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      const hourLen = radius * 0.5;
+      ctx.moveTo(centerX - 8, centerY - 8);
+      ctx.lineTo(centerX + hourLen * Math.cos(hourAngle), centerY + hourLen * Math.sin(hourAngle));
+      ctx.strokeStyle = '#1a1a1a';
+      ctx.lineWidth = 12;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // --- 分针 (稍浅) ---
+      ctx.beginPath();
+      const minLen = radius * 0.68;
+      ctx.moveTo(centerX - 6, centerY - 6);
+      ctx.lineTo(centerX + minLen * Math.cos(minAngle), centerY + minLen * Math.sin(minAngle));
+      ctx.strokeStyle = '#2c2c2c';
+      ctx.lineWidth = 8;
+      ctx.stroke();
+
+      // --- 秒针 (红色, 细长) ---
+      ctx.shadowColor = 'rgba(200, 50, 50, 0.15)';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      const secLen = radius * 0.78;
+      ctx.moveTo(centerX + 12 * Math.cos(secAngle + Math.PI), centerY + 12 * Math.sin(secAngle + Math.PI)); // 尾部小尾巴
+      ctx.lineTo(centerX + secLen * Math.cos(secAngle), centerY + secLen * Math.sin(secAngle));
+      ctx.strokeStyle = '#d14242';
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+
+      // 秒针中心小圆点 (红色点缀)
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
+      ctx.fillStyle = '#d14242';
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
+    }
+
+    // ---------- 更新函数 (平滑秒针) ----------
+    function updateClock() {
+      const { hour, minute, second, now } = getChinaTime();
+      // 获取毫秒 (用于秒针平滑)
+      const ms = now.getMilliseconds();
+
+      // 更新数字时间 (使用北京时区)
+      const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+      timeEl.textContent = timeStr;
+      dateEl.textContent = getChinaDate(now);
+
+      // 绘制表盘 (传入毫秒)
+      drawClock(hour, minute, second, ms);
+    }
+
+    // ---------- 启动循环: requestAnimationFrame 实现平滑 ----------
+    let animFrameId = null;
+    function startClock() {
+      function tick() {
+        updateClock();
+        animFrameId = requestAnimationFrame(tick);
+      }
+      tick();
+    }
+
+    // 兼容：若 requestAnimationFrame 不运行 (Edge 很早就支持), 备用 setInterval
+    if (!window.requestAnimationFrame) {
+      window.requestAnimationFrame = function(callback) {
+        return window.setTimeout(callback, 1000 / 60);
+      };
+      window.cancelAnimationFrame = function(id) {
+        clearTimeout(id);
+      };
+    }
+
+    // 启动
+    startClock();
+
+    // 清理 (虽然不是必须，但提供销毁方法)
+    window.addEventListener('beforeunload', function() {
+      if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }
+    });
+
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Minimalist · Beijing Wall Clock</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: radial-gradient(circle at 20% 20%, #e5e9f0, #b0b8c4);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+      padding: 16px;
+      margin: 0;
+    }
+
+    /* CLOCK DIAL — 3D white circle with refined shadow */
+    .clock-dial {
+      position: relative;
+      width: min(85vw, 520px);
+      height: min(85vw, 520px);
+      background: #fcfcfc;
+      border-radius: 50%;
+      box-shadow:
+        0 20px 35px rgba(0, 0, 0, 0.25),
+        0 8px 12px rgba(0, 0, 0, 0.1),
+        inset 0 -3px 8px rgba(0,0,0,0.05),
+        inset 0 3px 6px rgba(255,255,255,0.5);
+      border: 1px solid rgba(60, 60, 70, 0.2);
+      transition: box-shadow 0.2s ease;
+    }
+
+    /* dynamic scale wrapper: full-size, pointer-events-none */
+    .scale-layer {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+    }
+
+    /* each scale tick: generated via JS sets rotation & transform-origin */
+    .tick {
+      position: absolute;
+      left: 50%;
+      bottom: 50%;
+      width: 2px;
+      height: 48%;
+      transform-origin: bottom center;
+      transform: translateX(-50%) rotate(0deg); /* will be overridden inline */
+      pointer-events: none;
+    }
+
+    .tick-inner {
+      width: 100%;
+      height: 18px;          /* tick length from rim inward */
+      background: #9aa3b1;
+      border-radius: 1px;
+    }
+
+    /* thicker & darker for hour marks (every 5 ticks) */
+    .tick.hour .tick-inner {
+      height: 26px;
+      width: 3px;
+      background: #2b303a;
+      box-shadow: 0 0 0 0.5px rgba(0,0,0,0.06);
+    }
+
+    /* numbers (1–12) */
+    .number-layer {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      top: 0; left: 0;
+      pointer-events: none;
+    }
+
+    .num {
+      position: absolute;
+      font-size: clamp(1.1rem, 4.5vw, 1.9rem);
+      font-weight: 400;
+      color: #242832;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.6);
+      transform: translate(-50%, -50%);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ----- HANDS (slender, refined) ----- */
+    .hand {
+      position: absolute;
+      bottom: 50%;
+      left: 50%;
+      transform-origin: bottom center;
+      border-radius: 20px;
+      pointer-events: none;
+      transition: none;  /* we control via JS transform */
+    }
+
+    .hour-hand {
+      width: 5px;
+      height: 30%;
+      margin-left: -2.5px;
+      background: #1f232b;
+      box-shadow: 1px 1px 3px rgba(0,0,0,0.2);
+      z-index: 10;
+      border-radius: 6px;
+    }
+
+    .minute-hand {
+      width: 3.5px;
+      height: 40%;
+      margin-left: -1.75px;
+      background: #1f232b;
+      box-shadow: 1px 1px 3px rgba(0,0,0,0.15);
+      z-index: 11;
+      border-radius: 5px;
+    }
+
+    .second-hand {
+      width: 2px;
+      height: 44%;
+      margin-left: -1px;
+      background: #d93b4a;
+      box-shadow: 0 0 5px rgba(217, 59, 74, 0.25);
+      z-index: 12;
+      border-radius: 2px;
+    }
+
+    /* center cap */
+    .center-dot {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: #1f232b;
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 15;
+      box-shadow: 0 0 3px rgba(0,0,0,0.2);
+      border: 1.5px solid white;
+    }
+
+    /* ----- TEXT INFO: upper time, lower date ----- */
+    .info-text {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 70%;
+      text-align: center;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      color: #1e232b;
+      text-shadow: 0 1px 3px rgba(255,255,255,0.3);
+      pointer-events: none;
+      line-height: 1.2;
+    }
+
+    .time-text {
+      top: 21%;
+      font-size: clamp(1.8rem, 7.5vw, 3.2rem);
+      font-weight: 450;
+      letter-spacing: 0.5px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .date-text {
+      bottom: 20%;
+      font-size: clamp(0.9rem, 3.2vw, 1.3rem);
+      color: #2c3440;
+      font-weight: 420;
+      opacity: 0.9;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    /* small adapt for very small screens */
+    @media (max-width: 380px) {
+      .time-text { top: 22%; }
+      .date-text { bottom: 22%; }
+    }
+
+    /* compatibility: ensure transforms & shadow */
+  </style>
+</head>
+<body>
+  <div class="clock-dial" id="clockDial">
+    <!-- scale ticks injected by JS -->
+    <div class="scale-layer" id="scaleLayer"></div>
+    <!-- numbers 1-12 injected by JS -->
+    <div class="number-layer" id="numberLayer"></div>
+
+    <!-- Hands -->
+    <div class="hand hour-hand" id="hourHand"></div>
+    <div class="hand minute-hand" id="minuteHand"></div>
+    <div class="hand second-hand" id="secondHand"></div>
+    <div class="center-dot"></div>
+
+    <!-- upper / lower text info -->
+    <div class="info-text time-text" id="timeText">00:00:00</div>
+    <div class="info-text date-text" id="dateText">2025-01-01 Wed</div>
+  </div>
+
+  <script>
+    (function() {
+      'use strict';
+
+      // ---------- 1. Build scales & numbers ----------
+      const scaleLayer = document.getElementById('scaleLayer');
+      const numberLayer = document.getElementById('numberLayer');
+
+      // 60 ticks (12 hour marks, 48 minute marks)
+      for (let i = 0; i < 60; i++) {
+        const tick = document.createElement('div');
+        tick.className = 'tick';
+        if (i % 5 === 0) tick.classList.add('hour');
+        const inner = document.createElement('div');
+        inner.className = 'tick-inner';
+        tick.appendChild(inner);
+
+        // rotation: each tick 6 deg
+        const angle = i * 6;
+        tick.style.transform = `translateX(-50%) rotate(${angle}deg)`;
+        scaleLayer.appendChild(tick);
+      }
+
+      // numbers 1 .. 12
+      const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+      const radiusFactor = 0.385; // relative to dial width (approx)
+      const dial = document.getElementById('clockDial');
+
+      function placeNumbers() {
+        const rect = dial.getBoundingClientRect();
+        const size = rect.width || 520;
+        const radius = size * 0.38; // comfortable distance from rim
+
+        numberLayer.innerHTML = '';
+        numbers.forEach(num => {
+          const span = document.createElement('span');
+          span.className = 'num';
+          span.textContent = num;
+          // angle: 12 at top, clockwise
+          const angle = (num - 12) * 30; // 12 -> 0°, 1 -> 30°, ...
+          const rad = (angle * Math.PI) / 180;
+          // center of dial is 50%, 50%
+          const cx = 50;
+          const cy = 50;
+          const x = cx + radius * Math.sin(rad);
+          const y = cy - radius * Math.cos(rad);
+          span.style.left = x + '%';
+          span.style.top = y + '%';
+          numberLayer.appendChild(span);
+        });
+      }
+
+      // initial placement; update on resize (debounced)
+      placeNumbers();
+      let resizeTimer;
+      window.addEventListener('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(placeNumbers, 80);
+      });
+
+      // ---------- 2. Clock update (Beijing time) ----------
+      const hourHand = document.getElementById('hourHand');
+      const minuteHand = document.getElementById('minuteHand');
+      const secondHand = document.getElementById('secondHand');
+      const timeText = document.getElementById('timeText');
+      const dateText = document.getElementById('dateText');
+
+      function getBeijingTime() {
+        // use Intl.DateTimeFormat to get Beijing date components
+        const now = new Date();
+        // We parse the full numeric string for reliability
+        const beijingStr = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' });
+        // en-US format: "M/D/YYYY, h:mm:ss AM" or without comma? we parse carefully
+        const parts = beijingStr.split(', ');
+        const datePart = parts[0];   // "1/15/2025"
+        const timePart = parts[1];   // "12:08:46 AM" or "1:05:32 PM"
+
+        // parse date
+        const [month, day, year] = datePart.split('/').map(v => parseInt(v, 10));
+        // parse time (12-hour format with AM/PM)
+        let hour12, minute, second, ampm;
+        if (timePart.includes(':')) {
+          // may have seconds: "12:08:46 AM"
+          const partsTime = timePart.split(' ');
+          const hms = partsTime[0].split(':');
+          hour12 = parseInt(hms[0], 10);
+          minute = parseInt(hms[1], 10);
+          second = hms.length === 3 ? parseInt(hms[2], 10) : 0;
+          ampm = partsTime[1] || 'AM';
+        } else {
+          // fallback
+          hour12 = 0; minute = 0; second = 0; ampm = 'AM';
+        }
+
+        // convert 12-hour to 24-hour
+        let hour24 = hour12;
+        if (ampm === 'PM' && hour12 !== 12) hour24 = hour12 + 12;
+        if (ampm === 'AM' && hour12 === 12) hour24 = 0;
+
+        // week day (Beijing)
+        const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        // we compute weekday from date (beijing date)
+        const beijingDate = new Date(year, month - 1, day, hour24, minute, second);
+        const weekDay = weekDays[beijingDate.getDay()];
+
+        return {
+          year, month, day, hour24, minute, second,
+          weekDay,
+          beijingDate
+        };
+      }
+
+      // Smooth second hand: we use precise milliseconds for rotation
+      function updateClock() {
+        // Use performance.now() for smooth interpolation, but we need Beijing time.
+        // We'll get base time from Beijing, then use local milliseconds to smooth.
+        // Approach: get Beijing time once, then use local MS offset to avoid drift.
+        const baseBeijing = getBeijingTime();
+        const baseSecond = baseBeijing.second;
+        const baseMinute = baseBeijing.minute;
+        const baseHour = baseBeijing.hour24;
+        const baseMs = baseBeijing.beijingDate.getMilliseconds();
+
+        // We'll compute exact second + fractional part from performance.now()?
+        // More robust: use Date.now() with known offset from Beijing.
+        // Simpler & reliable: use getMilliseconds from Beijing date.
+        // For smooth second hand we need continuous rotation: combine seconds + ms/1000
+        let smoothSec = baseSecond + (baseMs / 1000);
+        // But to avoid jumps, we sync with local performance?
+        // For a wall clock effect, the above is enough (refreshes each frame).
+        // We also call update every ~16ms using requestAnimationFrame.
+
+        // However, the second hand rotates 6° per second.
+        // Smooth: (seconds + ms/1000) * 6
+        const secondAngle = smoothSec * 6;
+        // minute hand: each minute 6° + second fraction * 0.1°
+        const minuteAngle = (baseMinute + (smoothSec / 60)) * 6;
+        // hour hand: each hour 30° + minute fraction * 0.5°
+        const hourAngle = ((baseHour % 12) + (baseMinute / 60) + (smoothSec / 3600)) * 30;
+
+        // Apply transforms (compatibility: Edge supports transform)
+        hourHand.style.transform = `translateX(-50%) rotate(${hourAngle}deg)`;
+        minuteHand.style.transform = `translateX(-50%) rotate(${minuteAngle}deg)`;
+        secondHand.style.transform = `translateX(-50%) rotate(${secondAngle}deg)`;
+
+        // TEXT update (upper: time HH:mm:ss, lower: date + week)
+        const hh = String(baseHour).padStart(2, '0');
+        const mm = String(baseMinute).padStart(2, '0');
+        const ss = String(baseSecond).padStart(2, '0');
+        timeText.textContent = `${hh}:${mm}:${ss}`;
+
+        const monthStr = String(baseBeijing.month).padStart(2, '0');
+        const dayStr = String(baseBeijing.day).padStart(2, '0');
+        dateText.textContent = `${baseBeijing.year}-${monthStr}-${dayStr} · ${baseBeijing.weekDay}`;
+      }
+
+      // ---------- 3. Loop with requestAnimationFrame ----------
+      let animFrameId = null;
+      function tick() {
+        updateClock();
+        animFrameId = requestAnimationFrame(tick);
+      }
+
+      // start the clock
+      tick();
+
+      // cleanup (optional, but not required)
+      window.addEventListener('beforeunload', function() {
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+      });
+
+      // Edge compatibility: additional reflow on resize for numbers
+      // already handled
+
+    })();
+  </script>
+</body>
+</html>

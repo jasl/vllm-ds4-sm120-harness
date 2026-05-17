@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>轻量看板</title>
+  <style>
+    /* 全局重置与基础样式 */
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#f5f7fa;color:#333;line-height:1.5}
+    #app{max-width:1200px;margin:0 auto;padding:16px;min-height:100vh;display:flex;flex-direction:column}
+    header{text-align:center;margin-bottom:16px}
+    header h1{font-size:1.8rem;margin:0}
+    /* 控件区域：表单 + 筛选 */
+    #controls{margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;background:#fff;padding:16px;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1)}
+    #add-form{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;flex:2;min-width:240px}
+    #add-form input[type="text"],#add-form textarea,#add-form select{padding:8px;border:1px solid #ddd;border-radius:4px;font-size:0.95rem;outline:none;transition:border-color 0.2s}
+    #add-form input[type="text"]:focus,#add-form textarea:focus,#add-form select:focus{border-color:#4CAF50}
+    #add-form input[type="text"]{flex:1 1 200px}
+    #add-form textarea{flex:1 1 200px;resize:vertical;min-height:38px}
+    #add-form select{width:80px}
+    #add-form button{padding:8px 20px;background:#4CAF50;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;transition:background 0.2s}
+    #add-form button:hover{background:#45a049}
+    #filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;flex:1;min-width:200px}
+    #search-input{padding:8px;border:1px solid #ddd;border-radius:4px;flex:1 1 150px;font-size:0.95rem;outline:none;transition:border-color 0.2s}
+    #search-input:focus{border-color:#2196F3}
+    #priority-filter{padding:8px;border:1px solid #ddd;border-radius:4px;font-size:0.95rem;outline:none}
+    /* 看板三列布局 */
+    #board{display:flex;flex:1;gap:16px;overflow-x:auto;padding-bottom:16px}
+    .column{background:#fff;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);display:flex;flex-direction:column;flex:1;min-width:200px;padding:12px}
+    .column-header{font-size:1.1rem;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #eee;display:flex;justify-content:space-between;align-items:center}
+    .column-header .count{font-size:0.9rem;color:#888;background:#efefef;padding:2px 10px;border-radius:12px}
+    .card-list{min-height:100px;padding:4px 0;flex:1}
+    /* 空状态提示 */
+    .empty-state{color:#aaa;text-align:center;padding:20px 10px;font-size:0.9rem}
+    /* 任务卡片 */
+    .card{background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:12px;margin-bottom:8px;box-shadow:0 1px 2px rgba(0,0,0,0.05);cursor:grab;position:relative;transition:box-shadow 0.2s,border-color 0.2s}
+    .card:hover{box-shadow:0 2px 8px rgba(0,0,0,0.1);border-color:#bbb}
+    .card:active{cursor:grabbing}
+    .card.dragging{opacity:0.5;border-style:dashed}
+    .card .card-title{font-weight:600;font-size:1rem;margin-bottom:4px;word-break:break-word}
+    .card .card-note{font-size:0.9rem;color:#666;margin-bottom:6px;word-break:break-word;white-space:pre-wrap}
+    .card .card-meta{font-size:0.8rem;color:#999;display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+    .card .card-meta .priority{padding:2px 8px;border-radius:10px;font-weight:500;font-size:0.75rem;color:#fff}
+    .priority-low{background:#4CAF50}
+    .priority-medium{background:#FF9800}
+    .priority-high{background:#f44336}
+    .card .card-time{font-size:0.75rem;color:#aaa}
+    .card .card-actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+    .card .card-actions button{padding:4px 8px;border:none;border-radius:4px;font-size:0.8rem;cursor:pointer;transition:background 0.2s,opacity 0.2s}
+    .card .card-actions button:disabled{opacity:0.5;cursor:not-allowed}
+    .card .card-actions .btn-move{background:#e3f2fd;color:#1565c0}
+    .card .card-actions .btn-move:hover:not(:disabled){background:#bbdefb}
+    .card .card-actions .btn-edit{background:#fff3e0;color:#e65100}
+    .card .card-actions .btn-edit:hover{background:#ffe0b2}
+    .card .card-actions .btn-delete{background:#ffebee;color:#c62828}
+    .card .card-actions .btn-delete:hover{background:#ffcdd2}
+    /* 编辑模态框 */
+    .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);justify-content:center;align-items:center;z-index:1000}
+    .modal.active{display:flex}
+    .modal-content{background:#fff;padding:24px;border-radius:8px;width:90%;max-width:500px;max-height:90vh;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,0.2)}
+    .modal-content h2{margin-top:0;margin-bottom:16px}
+    #edit-form label{display:block;margin-top:12px;margin-bottom:4px;font-weight:500}
+    #edit-form input[type="text"],#edit-form textarea,#edit-form select{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:0.95rem;box-sizing:border-box;outline:none;transition:border-color 0.2s}
+    #edit-form input[type="text"]:focus,#edit-form textarea:focus,#edit-form select:focus{border-color:#4CAF50}
+    #edit-form textarea{min-height:80px;resize:vertical}
+    .modal-actions{margin-top:20px;display:flex;gap:8px;justify-content:flex-end}
+    .modal-actions button{padding:8px 20px;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;transition:background 0.2s}
+    .modal-actions button[type="submit"]{background:#4CAF50;color:#fff}
+    .modal-actions button[type="submit"]:hover{background:#45a049}
+    .modal-actions button[type="button"]{background:#e0e0e0;color:#333}
+    .modal-actions button[type="button"]:hover{background:#d5d5d5}
+    /* 响应式：窄屏三列纵向排列 */
+    @media (max-width:768px){
+      #board{flex-direction:column;overflow-x:visible}
+      .column{min-width:auto}
+      #controls{flex-direction:column}
+      #add-form,#filters{width:100%}
+    }
+    /* 辅助类 */
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+  </style>
+</head>
+<body>
+<div id="app">
+  <header><h1>📋 轻量看板</h1></header>
+  <section id="controls">
+    <!-- 新增任务表单 -->
+    <form id="add-form">
+      <input type="text" id="title-input" placeholder="任务标题" required aria-label="任务标题">
+      <textarea id="note-input" placeholder="备注（可选）" aria-label="备注"></textarea>
+      <select id="priority-select" aria-label="优先级">
+        <option value="low">低</option>
+        <option value="medium" selected>中</option>
+        <option value="high">高</option>
+      </select>
+      <button type="submit" aria-label="添加任务">添加</button>
+    </form>
+    <!-- 搜索与筛选 -->
+    <div id="filters">
+      <input type="text" id="search-input" placeholder="搜索任务..." aria-label="搜索任务">
+      <select id="priority-filter" aria-label="优先级筛选">
+        <option value="all">全部优先级</option>
+        <option value="low">低</option>
+        <option value="medium">中</option>
+        <option value="high">高</option>
+      </select>
+    </div>
+  </section>
+  <!-- 看板三列 -->
+  <main id="board">
+    <div class="column" data-status="todo">
+      <h2 class="column-header">待办 <span class="count">0</span></h2>
+      <div class="card-list" data-status="todo"></div>
+    </div>
+    <div class="column" data-status="in-progress">
+      <h2 class="column-header">进行中 <span class="count">0</span></h2>
+      <div class="card-list" data-status="in-progress"></div>
+    </div>
+    <div class="column" data-status="done">
+      <h2 class="column-header">已完成 <span class="count">0</span></h2>
+      <div class="card-list" data-status="done"></div>
+    </div>
+  </main>
+</div>
+
+<!-- 编辑任务模态框 -->
+<div id="edit-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+  <div class="modal-content">
+    <h2 id="edit-modal-title">编辑任务</h2>
+    <form id="edit-form">
+      <input type="hidden" id="edit-id">
+      <label for="edit-title">标题</label>
+      <input type="text" id="edit-title" required>
+      <label for="edit-note">备注</label>
+      <textarea id="edit-note"></textarea>
+      <label for="edit-priority">优先级</label>
+      <select id="edit-priority">
+        <option value="low">低</option>
+        <option value="medium">中</option>
+        <option value="high">高</option>
+      </select>
+      <div class="modal-actions">
+        <button type="submit" aria-label="保存编辑">保存</button>
+        <button type="button" id="cancel-edit" aria-label="取消编辑">取消</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  (function() {
+    'use strict';
+
+    // ---------- 常量与映射 ----------
+    const STATUSES = ['todo', 'in-progress', 'done'];
+    const STATUS_LABELS = { 'todo': '待办', 'in-progress': '进行中', 'done': '已完成' };
+    const PRIORITY_LABELS = { 'low': '低', 'medium': '中', 'high': '高' };
+
+    // ---------- 数据管理 ----------
+    let tasks = [];
+    // 从 localStorage 恢复数据
+    const stored = localStorage.getItem('kanban-tasks');
+    if (stored) {
+      try {
+        tasks = JSON.parse(stored);
+        if (!Array.isArray(tasks)) tasks = [];
+      } catch(e) {
+        tasks = [];
+      }
+    }
+
+    // 搜索与筛选状态
+    let searchKeyword = '';
+    let priorityFilter = 'all';
+
+    // 持久化存储
+    function saveTasks() {
+      localStorage.setItem('kanban-tasks', JSON.stringify(tasks));
+    }
+
+    // 获取过滤后的任务列表
+    function getFilteredTasks() {
+      return tasks.filter(task => {
+        // 关键词搜索（标题、备注）
+        if (searchKeyword) {
+          const kw = searchKeyword.toLowerCase();
+          const inTitle = task.title.toLowerCase().includes(kw);
+          const inNote = task.note && task.note.toLowerCase().includes(kw);
+          if (!inTitle && !inNote) return false;
+        }
+        // 优先级筛选
+        if (priorityFilter !== 'all' && task.priority !== priorityFilter) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    // ---------- 渲染看板 ----------
+    function renderBoard() {
+      const filtered = getFilteredTasks();
+
+      // 按状态分组
+      const groups = {};
+      STATUSES.forEach(s => { groups[s] = []; });
+      filtered.forEach(task => {
+        if (groups[task.status]) {
+          groups[task.status].push(task);
+        } else {
+          // 未知状态归入待办
+          groups['todo'].push(task);
+        }
+      });
+
+      // 更新每一列
+      STATUSES.forEach(status => {
+        const cardListEl = document.querySelector(`.card-list[data-status="${status}"]`);
+        if (!cardListEl) return;
+        const tasksInCol = groups[status] || [];
+
+        // 更新列头计数
+        const countEl = cardListEl.closest('.column').querySelector('.count');
+        if (countEl) countEl.textContent = tasksInCol.length;
+
+        // 生成卡片或空状态
+        if (tasksInCol.length === 0) {
+          cardListEl.innerHTML = '<p class="empty-state">暂无任务</p>';
+          return;
+        }
+
+        const cardsHtml = tasksInCol.map(task => {
+          const priorityClass = 'priority-' + task.priority;
+          const priorityLabel = PRIORITY_LABELS[task.priority] || task.priority;
+          const timeStr = new Date(task.createdAt).toLocaleString();
+
+          // 移动按钮（为每个目标列生成一个）
+          const moveButtons = STATUSES.map(targetStatus => {
+            const label = STATUS_LABELS[targetStatus] || targetStatus;
+            const disabled = task.status === targetStatus;
+            return `<button class="btn-move" data-move-to="${targetStatus}" ${disabled ? 'disabled aria-disabled="true"' : ''} aria-label="移至${label}">${label}</button>`;
+          }).join('');
+
+          // 使用转义防止 XSS
+          const safeTitle = escapeHtml(task.title);
+          const safeNote = task.note ? escapeHtml(task.note) : '';
+
+          return `
+            <div class="card" draggable="true" data-id="${task.id}">
+              <div class="card-title">${safeTitle}</div>
+              ${safeNote ? `<div class="card-note">${safeNote}</div>` : ''}
+              <div class="card-meta">
+                <span class="priority ${priorityClass}">${priorityLabel}</span>
+                <span class="card-time">${timeStr}</span>
+              </div>
+              <div class="card-actions">
+                ${moveButtons}
+                <button class="btn-edit" data-action="edit" aria-label="编辑任务">编辑</button>
+                <button class="btn-delete" data-action="delete" aria-label="删除任务">删除</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        cardListEl.innerHTML = cardsHtml;
+      });
+    }
+
+    // 简单的 HTML 转义
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ---------- 任务操作函数 ----------
+    function addTask(title, note, priority) {
+      const task = {
+        id: Date.now() + Math.random(), // 唯一 ID
+        title: title.trim(),
+        note: note.trim(),
+        priority: priority,
+        status: 'todo',
+        createdAt: Date.now()
+      };
+      tasks.push(task);
+      saveTasks();
+      renderBoard();
+    }
+
+    function moveTask(id, newStatus) {
+      if (!STATUSES.includes(newStatus)) return;
+      const task = tasks.find(t => t.id === id);
+      if (task && task.status !== newStatus) {
+        task.status = newStatus;
+        saveTasks();
+        renderBoard();
+      }
+    }
+
+    function deleteTask(id) {
+      if (!confirm('确定删除该任务吗？')) return;
+      tasks = tasks.filter(t => t.id !== id);
+      saveTasks();
+      renderBoard();
+    }
+
+    // ---------- 编辑模态框操作 ----------
+    function openEditModal(id) {
+      const task = tasks.find(t => t.id === id);
+      if (!task) return;
+      document.getElementById('edit-id').value = task.id;
+      document.getElementById('edit-title').value = task.title;
+      document.getElementById('edit-note').value = task.note || '';
+      document.getElementById('edit-priority').value = task.priority;
+      document.getElementById('edit-modal').classList.add('active');
+    }
+
+    function closeEditModal() {
+      document.getElementById('edit-modal').classList.remove('active');
+    }
+
+    function saveEdit() {
+      const id = Number(document.getElementById('edit-id').value);
+      const title = document.getElementById('edit-title').value.trim();
+      const note = document.getElementById('edit-note').value.trim();
+      const priority = document.getElementById('edit-priority').value;
+      if (!title) {
+        alert('标题不能为空');
+        return;
+      }
+      const task = tasks.find(t => t.id === id);
+      if (task) {
+        task.title = title;
+        task.note = note;
+        task.priority = priority;
+        saveTasks();
+        renderBoard();
+        closeEditModal();
+      }
+    }
+
+    // ---------- 事件绑定 ----------
+    function init() {
+      // 新增任务表单
+      document.getElementById('add-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const title = document.getElementById('title-input').value.trim();
+        if (!title) {
+          alert('标题不能为空');
+          return;
+        }
+        const note = document.getElementById('note-input').value;
+        const priority = document.getElementById('priority-select').value;
+        addTask(title, note, priority);
+        this.reset();
+        // 重置后默认选中“中”
+        document.getElementById('priority-select').value = 'medium';
+      });
+
+      // 搜索输入
+      document.getElementById('search-input').addEventListener('input', function() {
+        searchKeyword = this.value;
+        renderBoard();
+      });
+
+      // 优先级筛选
+      document.getElementById('priority-filter').addEventListener('change', function() {
+        priorityFilter = this.value;
+        renderBoard();
+      });
+
+      // 编辑模态框 - 提交
+      document.getElementById('edit-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        saveEdit();
+      });
+
+      // 编辑模态框 - 取消
+      document.getElementById('cancel-edit').addEventListener('click', closeEditModal);
+
+      // 点击模态背景关闭
+      document.getElementById('edit-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeEditModal();
+      });
+
+      // 使用事件委托处理卡片区域的点击（移动、编辑、删除）和拖拽
+      const board = document.getElementById('board');
+
+      // 按钮点击
+      board.addEventListener('click', function(e) {
+        const button = e.target.closest('button');
+        if (!button) return;
+        const card = button.closest('.card');
+        if (!card) return;
+        const taskId = Number(card.dataset.id);
+
+        if (button.dataset.action === 'edit') {
+          openEditModal(taskId);
+        } else if (button.dataset.action === 'delete') {
+          deleteTask(taskId);
+        } else if (button.classList.contains('btn-move')) {
+          const newStatus = button.dataset.moveTo;
+          if (newStatus) moveTask(taskId, newStatus);
+        }
+      });
+
+      // 拖拽：开始拖动
+      board.addEventListener('dragstart', function(e) {
+        const card = e.target.closest('.card');
+        if (card && card.draggable) {
+          e.dataTransfer.setData('text/plain', card.dataset.id);
+          e.dataTransfer.effectAllowed = 'move';
+          card.classList.add('dragging');
+        }
+      });
+
+      // 拖拽：结束
+      board.addEventListener('dragend', function(e) {
+        const card = e.target.closest('.card');
+        if (card) card.classList.remove('dragging');
+      });
+
+      // 拖拽：经过列时允许放置
+      board.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      });
+
+      // 拖拽：放下
+      board.addEventListener('drop', function(e) {
+        e.preventDefault();
+        const column = e.target.closest('[data-status]');
+        if (!column) return;
+        const newStatus = column.dataset.status;
+        const id = e.dataTransfer.getData('text/plain');
+        if (id) moveTask(Number(id), newStatus);
+      });
+
+      // 初始渲染
+      renderBoard();
+    }
+
+    // 页面加载后启动
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  })();
+</script>
+</body>
+</html>

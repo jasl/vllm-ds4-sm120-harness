@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>极简挂钟 · 北京时间</title>
+    <style>
+        /* ===== 全局重置 & 背景 ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #f0f2f5;
+            font-family: 'SF Pro Display', 'Segoe UI', 'PingFang SC', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            user-select: none;
+        }
+
+        /* ===== 钟表容器 ===== */
+        .clock {
+            position: relative;
+            width: 420px;
+            height: 420px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 2px solid #2c2c2c;
+            box-shadow:
+                0 16px 48px rgba(0, 0, 0, 0.18),
+                0 8px 24px rgba(0, 0, 0, 0.12),
+                inset 0 2px 8px rgba(255, 255, 255, 0.6),
+                inset 0 -4px 12px rgba(0, 0, 0, 0.06);
+            /* 让内部所有元素都居中 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        /* ===== 钟面 (承载刻度、数字、指针、文字) ===== */
+        .clock-face {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            overflow: hidden;
+            /* 裁剪多余指针尾部 */
+        }
+
+        /* ===== 刻度通用 ===== */
+        .tick {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 2px;
+            height: 16px;
+            background: #b0b0b0;
+            transform-origin: 50% 100%;
+            /* 底部固定在圆心 */
+            margin-left: -1px;
+            border-radius: 1px;
+            pointer-events: none;
+        }
+
+        /* 整点刻度 (每5个) */
+        .tick-hour {
+            width: 3.2px;
+            height: 26px;
+            margin-left: -1.6px;
+            background: #2c2c2c;
+            border-radius: 2px;
+        }
+
+        /* ===== 数字 ===== */
+        .number {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            font-size: 18px;
+            font-weight: 500;
+            color: #1e1e1e;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            line-height: 1;
+            letter-spacing: 0.5px;
+        }
+
+        /* ===== 指针共用 ===== */
+        .hand {
+            position: absolute;
+            bottom: 50%;
+            /* 指针根部在圆心 */
+            left: 50%;
+            transform-origin: 50% 100%;
+            /* 绕底部旋转 */
+            border-radius: 999px;
+            pointer-events: none;
+            transition: none;
+        }
+
+        /* 时针 */
+        .hour-hand {
+            width: 7px;
+            height: 95px;
+            margin-left: -3.5px;
+            background: #1e1e1e;
+            border-radius: 7px 7px 4px 4px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            z-index: 3;
+        }
+
+        /* 分针 */
+        .minute-hand {
+            width: 5px;
+            height: 140px;
+            margin-left: -2.5px;
+            background: #1e1e1e;
+            border-radius: 5px 5px 3px 3px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+            z-index: 4;
+        }
+
+        /* 秒针 */
+        .second-hand {
+            width: 2.5px;
+            height: 150px;
+            margin-left: -1.25px;
+            background: #e74c3c;
+            border-radius: 2px;
+            box-shadow: 0 0 8px rgba(231, 76, 60, 0.35);
+            z-index: 5;
+            transition: none;
+        }
+
+        /* 秒针尾部配重 (小圆盘) */
+        .second-hand::after {
+            content: '';
+            position: absolute;
+            bottom: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 10px;
+            height: 10px;
+            background: #e74c3c;
+            border-radius: 50%;
+            box-shadow: 0 0 6px rgba(231, 76, 60, 0.3);
+        }
+
+        /* 中心圆盖 */
+        .center-dot {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 14px;
+            height: 14px;
+            margin-left: -7px;
+            margin-top: -7px;
+            background: #1e1e1e;
+            border-radius: 50%;
+            z-index: 6;
+            box-shadow: 0 0 0 3px #ffffff, 0 2px 8px rgba(0, 0, 0, 0.18);
+        }
+
+        /* ===== 文本信息 (上半 / 下半) ===== */
+        .info-upper,
+        .info-lower {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            pointer-events: none;
+            z-index: 7;
+            white-space: nowrap;
+        }
+
+        .info-upper {
+            top: 26%;
+            font-size: 28px;
+            font-weight: 600;
+            color: #1a1a1a;
+            letter-spacing: 0.5px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        }
+
+        .info-lower {
+            bottom: 28%;
+            font-size: 15px;
+            font-weight: 400;
+            color: #555555;
+            letter-spacing: 0.3px;
+        }
+
+        /* 微调中文日期显示 */
+        .info-lower span {
+            display: inline-block;
+        }
+
+        /* ===== 响应式 ===== */
+        @media (max-width: 480px) {
+            .clock {
+                width: 88vw;
+                height: 88vw;
+                max-width: 420px;
+                max-height: 420px;
+            }
+            .info-upper {
+                font-size: 5.2vw;
+                max-font-size: 28px;
+            }
+            .info-lower {
+                font-size: 3.2vw;
+                max-font-size: 15px;
+            }
+            .number {
+                font-size: 3.8vw;
+                max-font-size: 18px;
+            }
+            .hour-hand {
+                height: 22%;
+                width: 1.6%;
+            }
+            .minute-hand {
+                height: 33%;
+                width: 1.1%;
+            }
+            .second-hand {
+                height: 35%;
+                width: 0.6%;
+            }
+        }
+
+        /* 确保 Edge 浏览器平滑渲染 */
+        @supports (-ms-ime-align: auto) {
+            .clock {
+                border: 3px solid #2c2c2c;
+            }
+            .hand {
+                will-change: transform;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="clock" id="clock">
+        <div class="clock-face" id="clockFace">
+            <!-- 刻度 & 数字 由 JavaScript 动态生成 -->
+            <!-- 指针 -->
+            <div class="hand hour-hand" id="hourHand"></div>
+            <div class="hand minute-hand" id="minuteHand"></div>
+            <div class="hand second-hand" id="secondHand"></div>
+            <!-- 中心盖 -->
+            <div class="center-dot"></div>
+            <!-- 文字信息 -->
+            <div class="info-upper" id="timeText">00:00:00</div>
+            <div class="info-lower" id="dateText">----年--月--日 星期-</div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ----- DOM 引用 -----
+            const hourHand = document.getElementById('hourHand');
+            const minuteHand = document.getElementById('minuteHand');
+            const secondHand = document.getElementById('secondHand');
+            const timeText = document.getElementById('timeText');
+            const dateText = document.getElementById('dateText');
+            const clockFace = document.getElementById('clockFace');
+
+            // ----- 常量 -----
+            const TICK_COUNT = 60;
+            const HOUR_TICK_INTERVAL = 5; // 每 5 个刻度为整点
+            const CLOCK_RADIUS_RATIO = 0.5; // 相对父容器
+
+            // ----- 生成刻度 & 数字 -----
+            function buildDial() {
+                const face = clockFace;
+                const size = face.offsetWidth || 420;
+                const radius = size * CLOCK_RADIUS_RATIO;
+
+                // 清除已有刻度/数字 (保留指针、中心点、文字)
+                const existing = face.querySelectorAll('.tick, .number');
+                for (let el of existing) el.remove();
+
+                // 创建 60 个刻度
+                for (let i = 0; i < TICK_COUNT; i++) {
+                    const angle = i * 6; // 每个刻度 6°
+                    const isHour = (i % HOUR_TICK_INTERVAL === 0);
+
+                    const tick = document.createElement('div');
+                    tick.className = 'tick' + (isHour ? ' tick-hour' : '');
+                    // 用 transform 旋转
+                    tick.style.transform = 'rotate(' + angle + 'deg)';
+                    face.appendChild(tick);
+                }
+
+                // 创建 12 个数字 (1-12)
+                const numberRadius = radius * 0.84;
+                for (let i = 1; i <= 12; i++) {
+                    // 角度：12点方向为 0°，顺时针递增
+                    // 数字 i 对应角度 = i * 30°
+                    const angleDeg = i * 30;
+                    const rad = (angleDeg - 90) * Math.PI / 180;
+                    const x = Math.cos(rad) * numberRadius;
+                    const y = Math.sin(rad) * numberRadius;
+
+                    const num = document.createElement('div');
+                    num.className = 'number';
+                    num.textContent = i;
+                    num.style.transform = 'translate(-50%, -50%) translate(' + x + 'px, ' + y + 'px)';
+                    face.appendChild(num);
+                }
+            }
+
+            // 初始构建 & 窗口变化时重建
+            buildDial();
+            window.addEventListener('resize', buildDial);
+
+            // ----- 获取北京时间的辅助函数 -----
+            function getBeijingTime() {
+                // 使用 toLocaleString 获取北京时间字符串，再解析
+                const str = new Date().toLocaleString('en-US', {
+                    timeZone: 'Asia/Shanghai',
+                    hour12: false,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+                // 输出格式: "MM/DD/YYYY, HH:MM:SS"
+                const parts = str.split(', ');
+                const datePart = parts[0]; // "MM/DD/YYYY"
+                const timePart = parts[1]; // "HH:MM:SS"
+
+                const [month, day, year] = datePart.split('/').map(Number);
+                const [hour, minute, second] = timePart.split(':').map(Number);
+
+                // 同时获取毫秒（toLocaleString 不包含毫秒，需要从原始 Date 取）
+                const now = new Date();
+                const ms = now.getMilliseconds();
+
+                return {
+                    year,
+                    month,
+                    day,
+                    hour,
+                    minute,
+                    second,
+                    ms,
+                    // 星期几 (0=周日, 1=周一 ...)
+                    weekday: new Date(year, month - 1, day).getDay()
+                };
+            }
+
+            // ----- 星期名称 (中文) -----
+            const WEEK_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
+
+            // ----- 更新时钟 -----
+            function updateClock() {
+                const t = getBeijingTime();
+
+                // --- 1. 指针角度 (平滑) ---
+                // 秒针: 包含毫秒实现平滑
+                const smoothSec = t.second + t.ms / 1000;
+                const secAngle = smoothSec * 6; // 每秒 6°
+
+                // 分针: 包含秒
+                const smoothMin = t.minute + smoothSec / 60;
+                const minAngle = smoothMin * 6; // 每分 6°
+
+                // 时针: 包含分
+                const smoothHour = (t.hour % 12) + smoothMin / 60;
+                const hourAngle = smoothHour * 30; // 每小时 30°
+
+                // 应用旋转 (禁用过渡以实现即时响应)
+                hourHand.style.transition = 'none';
+                minuteHand.style.transition = 'none';
+                secondHand.style.transition = 'none';
+
+                hourHand.style.transform = 'rotate(' + hourAngle + 'deg)';
+                minuteHand.style.transform = 'rotate(' + minAngle + 'deg)';
+                secondHand.style.transform = 'rotate(' + secAngle + 'deg)';
+
+                // --- 2. 上半部分：时间文本 (24小时制 HH:MM:SS) ---
+                const hh = String(t.hour).padStart(2, '0');
+                const mm = String(t.minute).padStart(2, '0');
+                const ss = String(t.second).padStart(2, '0');
+                timeText.textContent = hh + ':' + mm + ':' + ss;
+
+                // --- 3. 下半部分：日期 & 星期 ---
+                const y = t.year;
+                const m = String(t.month).padStart(2, '0');
+                const d = String(t.day).padStart(2, '0');
+                const w = WEEK_NAMES[t.weekday];
+                dateText.textContent = y + '年' + m + '月' + d + '日  星期' + w;
+            }
+
+            // ----- 启动循环 (requestAnimationFrame) -----
+            let lastTime = 0;
+
+            function loop(timestamp) {
+                // 每帧更新 (约 16ms 间隔，保证秒针平滑)
+                if (timestamp - lastTime >= 16) {
+                    updateClock();
+                    lastTime = timestamp;
+                }
+                requestAnimationFrame(loop);
+            }
+
+            // 首次立即更新，然后启动循环
+            updateClock();
+            requestAnimationFrame(loop);
+
+            // ----- 边缘情况: 页面可见性变化时强制刷新 -----
+            document.addEventListener('visibilitychange', function() {
+                if (!document.hidden) {
+                    updateClock();
+                }
+            });
+
+            // 也支持 setInterval 作为 fallback (但 requestAnimationFrame 已足够)
+            // 额外每 1 秒确保同步 (防止标签页休眠导致的偏差)
+            setInterval(function() {
+                // 仅做修正，不依赖它驱动动画
+                const now = Date.now();
+                // 如果距离上次更新超过 2 秒，强制更新
+                if (now - lastTime > 2000) {
+                    updateClock();
+                    lastTime = now;
+                }
+            }, 1000);
+
+        })();
+    </script>
+
+</body>
+</html>

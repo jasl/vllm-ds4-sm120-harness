@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中国标准时间 · 精致时钟</title>
+    <style>
+        /* ----- 全局重置 ----- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f0f2f5;
+            font-family: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* ----- 时钟容器（提供深色边框与 3D 阴影） ----- */
+        .clock-wrapper {
+            padding: 6px;
+            background: #1a1a1a;
+            border-radius: 50%;
+            box-shadow:
+                0 16px 48px rgba(0, 0, 0, 0.22),
+                0 6px 16px rgba(0, 0, 0, 0.12),
+                inset 0 1px 2px rgba(255, 255, 255, 0.06);
+            transition: box-shadow 0.2s;
+            /* 保证容器尺寸由 canvas 撑起 */
+            display: inline-flex;
+        }
+
+        .clock-wrapper:hover {
+            box-shadow:
+                0 20px 56px rgba(0, 0, 0, 0.28),
+                0 8px 24px rgba(0, 0, 0, 0.16),
+                inset 0 1px 2px rgba(255, 255, 255, 0.08);
+        }
+
+        /* ----- Canvas 时钟画布 ----- */
+        #clockCanvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-width: 580px;
+            max-height: 580px;
+            border-radius: 50%;
+            background: #ffffff;
+            /* 确保 canvas 在容器内完全填充 */
+            aspect-ratio: 1 / 1;
+            /* 微妙的画布内阴影，增加层次 */
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.03);
+            /* 让 canvas 尺寸适应 wrapper */
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ----- 小屏幕适配 ----- */
+        @media (max-width: 620px) {
+            .clock-wrapper {
+                padding: 4px;
+                margin: 12px;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .clock-wrapper {
+                padding: 3px;
+                margin: 8px;
+                border-radius: 50%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="clock-wrapper">
+        <canvas id="clockCanvas" width="800" height="800"></canvas>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ============================================================
+            //  1. 获取 Canvas 与上下文
+            // ============================================================
+            const canvas = document.getElementById('clockCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // 高分辨率绘制：物理像素 800×800，再通过 CSS 缩放至合适尺寸
+            const SIZE = 800; // 画布物理尺寸
+            const CX = SIZE / 2; // 中心点 X
+            const CY = SIZE / 2; // 中心点 Y
+            const RADIUS = 370; // 表盘半径（留出边距，避免被 CSS 边框遮挡）
+
+            // ============================================================
+            //  2. 工具函数
+            // ============================================================
+
+            /**
+             * 获取中国标准时间（北京时区 Asia/Shanghai）
+             * 返回一个 Date 对象，其时间已被偏移至 UTC+8
+             */
+            function getBeijingTime() {
+                const now = new Date();
+                // 本地时间与 UTC 的偏移（分钟），中国标准时间 UTC+8
+                const localOffset = now.getTimezoneOffset(); // 例如中国是 -480
+                const utcMs = now.getTime() + localOffset * 60000;
+                const beijingMs = utcMs + 8 * 3600000;
+                return new Date(beijingMs);
+            }
+
+            /**
+             * 数字补零（两位数）
+             */
+            function pad2(num) {
+                return num < 10 ? '0' + num : String(num);
+            }
+
+            /**
+             * 获取中文星期
+             */
+            function getChineseWeekday(dayIndex) {
+                const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+                return weekdays[dayIndex];
+            }
+
+            // ============================================================
+            //  3. 核心绘制函数 updateClock()
+            // ============================================================
+
+            function updateClock() {
+                // ----- 3a. 获取当前北京时间（包含毫秒，用于平滑） -----
+                const beijing = getBeijingTime();
+
+                const hours = beijing.getHours();
+                const minutes = beijing.getMinutes();
+                const seconds = beijing.getSeconds();
+                const milliseconds = beijing.getMilliseconds();
+
+                const year = beijing.getFullYear();
+                const month = beijing.getMonth() + 1;
+                const day = beijing.getDate();
+                const weekday = beijing.getDay();
+
+                // ----- 3b. 计算指针角度（弧度）-----
+                // 秒针：平滑包含毫秒 (0~60秒)
+                const smoothSeconds = seconds + milliseconds / 1000;
+                const secondAngle = (smoothSeconds / 60) * 2 * Math.PI - Math.PI / 2;
+
+                // 分针：平滑包含秒 (0~60分)
+                const smoothMinutes = minutes + smoothSeconds / 60;
+                const minuteAngle = (smoothMinutes / 60) * 2 * Math.PI - Math.PI / 2;
+
+                // 时针：平滑包含分 (0~12小时)
+                const smoothHours = (hours % 12) + smoothMinutes / 60;
+                const hourAngle = (smoothHours / 12) * 2 * Math.PI - Math.PI / 2;
+
+                // ----- 3c. 清空画布，绘制表盘底色 -----
+                ctx.clearRect(0, 0, SIZE, SIZE);
+
+                // 表盘白色背景（先铺满整圆，确保无透明区域）
+                ctx.beginPath();
+                ctx.arc(CX, CY, RADIUS, 0, 2 * Math.PI);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+
+                // ----- 3d. 绘制 60 个刻度（整点更粗更深）-----
+                for (let i = 0; i < 60; i++) {
+                    const angle = (i / 60) * 2 * Math.PI - Math.PI / 2;
+                    const isHourMark = (i % 5 === 0);
+
+                    // 刻度起点和终点半径
+                    const innerR = isHourMark ? RADIUS - 44 : RADIUS - 28;
+                    const outerR = RADIUS - 14;
+
+                    const x1 = CX + innerR * Math.cos(angle);
+                    const y1 = CY + innerR * Math.sin(angle);
+                    const x2 = CX + outerR * Math.cos(angle);
+                    const y2 = CY + outerR * Math.sin(angle);
+
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.lineCap = 'round';
+
+                    if (isHourMark) {
+                        // 整点刻度：粗、深
+                        ctx.strokeStyle = '#1e1e1e';
+                        ctx.lineWidth = 5.4;
+                    } else {
+                        // 非整点刻度：细、浅
+                        ctx.strokeStyle = '#b0b8c0';
+                        ctx.lineWidth = 2.4;
+                    }
+                    ctx.stroke();
+                }
+
+                // ----- 3e. 绘制数字 1~12 -----
+                ctx.fillStyle = '#1e1e1e';
+                ctx.font = '500 40px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                const numberRadius = RADIUS - 82;
+
+                for (let i = 1; i <= 12; i++) {
+                    const angle = (i / 12) * 2 * Math.PI - Math.PI / 2;
+                    const x = CX + numberRadius * Math.cos(angle);
+                    const y = CY + numberRadius * Math.sin(angle);
+                    ctx.fillText(String(i), x, y);
+                }
+
+                // ----- 3f. 在表盘内部显示数字时钟与日期（位于中心偏下）-----
+                const timeStr = pad2(hours) + ':' + pad2(minutes) + ':' + pad2(seconds);
+                const dateStr = year + '年' + month + '月' + day + '日 ' + getChineseWeekday(weekday);
+
+                // 时间文字（大号）
+                ctx.fillStyle = '#1e1e1e';
+                ctx.font = '500 44px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(timeStr, CX, CY + 102);
+
+                // 日期文字（小号，灰色）
+                ctx.fillStyle = '#8a939f';
+                ctx.font = '400 28px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif';
+                ctx.fillText(dateStr, CX, CY + 162);
+
+                // 在时间上下添加两条装饰细线，增加精致感
+                ctx.strokeStyle = '#e6eaef';
+                ctx.lineWidth = 1.6;
+                ctx.lineCap = 'round';
+
+                const lineY1 = CY + 72;
+                const lineY2 = CY + 194;
+                const lineLen = 80;
+
+                ctx.beginPath();
+                ctx.moveTo(CX - lineLen / 2, lineY1);
+                ctx.lineTo(CX + lineLen / 2, lineY1);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(CX - lineLen / 2, lineY2);
+                ctx.lineTo(CX + lineLen / 2, lineY2);
+                ctx.stroke();
+
+                // ----- 3g. 绘制指针（时针 → 分针 → 秒针，逐层叠加）-----
+
+                // --- 辅助函数：绘制单根指针（带柔和阴影）---
+                function drawHand(angle, length, width, color, tailLength) {
+                    const tail = tailLength || 0;
+
+                    ctx.save();
+                    // 给指针加一点轻微阴影，增加立体感
+                    ctx.shadowColor = 'rgba(0,0,0,0.12)';
+                    ctx.shadowBlur = 14;
+                    ctx.shadowOffsetX = 3;
+                    ctx.shadowOffsetY = 4;
+
+                    ctx.beginPath();
+                    ctx.moveTo(
+                        CX - tail * Math.cos(angle),
+                        CY - tail * Math.sin(angle)
+                    );
+                    ctx.lineTo(
+                        CX + length * Math.cos(angle),
+                        CY + length * Math.sin(angle)
+                    );
+                    ctx.lineCap = 'round';
+                    ctx.lineWidth = width;
+                    ctx.strokeStyle = color;
+                    ctx.stroke();
+
+                    ctx.restore();
+                }
+
+                // --- 时针 ---
+                drawHand(hourAngle, 168, 13, '#1a1c1e', 28);
+
+                // --- 分针 ---
+                drawHand(minuteAngle, 248, 8.5, '#2e3338', 38);
+
+                // --- 秒针（红色，流畅平滑）---
+                // 秒针单独绘制，尾部稍长，颜色亮眼
+                ctx.save();
+                ctx.shadowColor = 'rgba(229,57,53,0.25)';
+                ctx.shadowBlur = 18;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 4;
+
+                ctx.beginPath();
+                ctx.moveTo(
+                    CX - 36 * Math.cos(secondAngle),
+                    CY - 36 * Math.sin(secondAngle)
+                );
+                ctx.lineTo(
+                    CX + 285 * Math.cos(secondAngle),
+                    CY + 285 * Math.sin(secondAngle)
+                );
+                ctx.lineCap = 'round';
+                ctx.lineWidth = 3.8;
+                ctx.strokeStyle = '#e53935';
+                ctx.stroke();
+
+                // 秒针末端的小圆点（增加精致感）
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(
+                    CX + 285 * Math.cos(secondAngle),
+                    CY + 285 * Math.sin(secondAngle),
+                    6.5, 0, 2 * Math.PI
+                );
+                ctx.fillStyle = '#e53935';
+                ctx.fill();
+
+                ctx.restore();
+
+                // --- 中心轴心（多层圆点）---
+                // 外层（深色环）
+                ctx.beginPath();
+                ctx.arc(CX, CY, 18, 0, 2 * Math.PI);
+                ctx.fillStyle = '#1a1c1e';
+                ctx.fill();
+
+                // 中层（金属灰）
+                ctx.beginPath();
+                ctx.arc(CX, CY, 10, 0, 2 * Math.PI);
+                ctx.fillStyle = '#c4ccd6';
+                ctx.fill();
+
+                // 内层（深色核心）
+                ctx.beginPath();
+                ctx.arc(CX, CY, 4.5, 0, 2 * Math.PI);
+                ctx.fillStyle = '#1e1e1e';
+                ctx.fill();
+
+                // 高光小点（增加立体感）
+                ctx.beginPath();
+                ctx.arc(CX - 2.5, CY - 3.5, 2, 0, 2 * Math.PI);
+                ctx.fillStyle = 'rgba(255,255,255,0.55)';
+                ctx.fill();
+            }
+
+            // ============================================================
+            //  4. 动画循环 (requestAnimationFrame)
+            // ============================================================
+
+            let animationId = null;
+
+            function animate() {
+                updateClock();
+                animationId = requestAnimationFrame(animate);
+            }
+
+            // 启动动画
+            animate();
+
+            // ============================================================
+            //  5. 窗口尺寸变化自适应（保持 canvas 物理尺寸不变，CSS 自适应）
+            // ============================================================
+
+            // 当窗口 resize 时，CSS 会自动适应，无需额外操作。
+            // 但为了保险，监听 resize 确保无闪烁（实际不需要重绘）
+            window.addEventListener('resize', function() {
+                // 无需操作，requestAnimationFrame 持续运行
+            });
+
+            // ============================================================
+            //  6. 清理（页面卸载时停止动画）
+            // ============================================================
+
+            window.addEventListener('beforeunload', function() {
+                if (animationId) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
+                }
+            });
+
+            // 兼容 Edge：确保所有 API 均为标准用法
+            // - requestAnimationFrame  /  cancelAnimationFrame  标准
+            // - Canvas 2D Context 标准
+            // - Date / getTimezoneOffset 标准
+            // - 所有 ES6 语法均被 Edge 12+ 支持
+
+            console.log('🕐 中国标准时间时钟已启动 (Asia/Shanghai)');
+        })();
+    </script>
+
+</body>
+</html>

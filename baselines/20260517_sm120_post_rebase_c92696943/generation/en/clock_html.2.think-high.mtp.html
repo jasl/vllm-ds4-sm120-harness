@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Minimalist Wall Clock · Beijing Time</title>
+    <style>
+        /* ── reset & base ── */
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #e8ecf1;
+            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            user-select: none;
+        }
+
+        /* ── clock outer vessel ── */
+        .clock {
+            width: 420px;
+            height: 420px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 8px solid #2c2f33;
+            box-shadow:
+                0 20px 35px rgba(0, 0, 0, 0.25),
+                0 6px 12px rgba(0, 0, 0, 0.15),
+                inset 0 2px 8px rgba(0, 0, 0, 0.04);
+            position: relative;
+            flex-shrink: 0;
+            /* crisp rendering */
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ── clock face (layering context) ── */
+        .clock-face {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            position: relative;
+            overflow: hidden;
+            /* clip hands that go too far */
+        }
+
+        /* ── scale marks ── */
+        .mark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform-origin: center center;
+            border-radius: 2px;
+            pointer-events: none;
+        }
+
+        /* ── numbers ── */
+        .number {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform-origin: center center;
+            font-size: 17px;
+            font-weight: 600;
+            color: #2c2f33;
+            pointer-events: none;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+            text-align: center;
+            width: 30px;
+            height: 30px;
+            margin-top: -15px;
+            margin-left: -15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* ── hands ── */
+        .hand {
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: bottom center;
+            border-radius: 4px;
+            pointer-events: none;
+            transition: none;
+        }
+
+        .hand-hour {
+            width: 8px;
+            height: 100px;
+            margin-left: -4px;
+            background: #1f2226;
+            border-radius: 6px;
+            z-index: 10;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        .hand-minute {
+            width: 5px;
+            height: 145px;
+            margin-left: -2.5px;
+            background: #1f2226;
+            border-radius: 4px;
+            z-index: 11;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+        }
+
+        .hand-second {
+            width: 2.5px;
+            height: 160px;
+            margin-left: -1.25px;
+            background: #e03030;
+            border-radius: 2px;
+            z-index: 12;
+            box-shadow: 0 0 8px rgba(224, 48, 48, 0.25);
+        }
+
+        /* second hand counterweight (tiny circle) */
+        .hand-second::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 10px;
+            height: 10px;
+            background: #e03030;
+            border-radius: 50%;
+            box-shadow: 0 0 6px rgba(224, 48, 48, 0.3);
+        }
+
+        /* ── centre cap ── */
+        .centre-pin {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            margin-top: -8px;
+            margin-left: -8px;
+            background: #2c2f33;
+            border-radius: 50%;
+            z-index: 20;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+            border: 2px solid #ffffff;
+        }
+
+        /* ── text displays ── */
+        .info-text {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            pointer-events: none;
+            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            font-weight: 400;
+            line-height: 1.4;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+        }
+
+        .info-top {
+            top: 62px;
+            font-size: 30px;
+            font-weight: 500;
+            color: #1f2226;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.04em;
+        }
+
+        .info-bottom {
+            bottom: 58px;
+            font-size: 16px;
+            font-weight: 400;
+            color: #4a4f56;
+            letter-spacing: 0.03em;
+        }
+
+        /* ── responsive tweaks ── */
+        @media (max-width: 480px) {
+            .clock {
+                width: 88vw;
+                height: 88vw;
+                border-width: 6px;
+            }
+            .info-top {
+                top: 14%;
+                font-size: 5.5vw;
+            }
+            .info-bottom {
+                bottom: 13%;
+                font-size: 3.2vw;
+            }
+            .number {
+                font-size: 3.6vw;
+                width: 7vw;
+                height: 7vw;
+                margin-top: -3.5vw;
+                margin-left: -3.5vw;
+            }
+            .hand-hour {
+                width: 1.8vw;
+                height: 22vw;
+                margin-left: -0.9vw;
+            }
+            .hand-minute {
+                width: 1.2vw;
+                height: 32vw;
+                margin-left: -0.6vw;
+            }
+            .hand-second {
+                width: 0.7vw;
+                height: 36vw;
+                margin-left: -0.35vw;
+            }
+            .hand-second::after {
+                width: 2.4vw;
+                height: 2.4vw;
+                bottom: -2vw;
+            }
+            .centre-pin {
+                width: 3.6vw;
+                height: 3.6vw;
+                margin-top: -1.8vw;
+                margin-left: -1.8vw;
+                border-width: 1px;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .info-top {
+                font-size: 5vw;
+                top: 12%;
+            }
+            .info-bottom {
+                font-size: 2.8vw;
+                bottom: 11%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="clock" id="clock">
+        <div class="clock-face" id="clockFace">
+            <!-- scales, numbers, hands, text → injected by JS -->
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ── clock constants ──
+            const RADIUS = 200; // half of 400px (content area)
+            const MARK_OUTER = 188; // distance from centre to outer tip of mark
+            const MARK_HOUR_LEN = 22;
+            const MARK_MIN_LEN = 13;
+            const NUM_RADIUS = 152;
+            const HAND_HOUR_LEN = 100;
+            const HAND_MINUTE_LEN = 145;
+            const HAND_SECOND_LEN = 160;
+
+            const face = document.getElementById('clockFace');
+
+            // ── build scales (60 marks) ──
+            function buildScales() {
+                const frag = document.createDocumentFragment();
+                for (let i = 0; i < 60; i++) {
+                    const angle = i * 6;
+                    const isHour = (i % 5 === 0);
+                    const len = isHour ? MARK_HOUR_LEN : MARK_MIN_LEN;
+                    const w = isHour ? 3.2 : 1.6;
+                    const color = isHour ? '#2c2f33' : '#b0b5bc';
+
+                    const el = document.createElement('div');
+                    el.className = 'mark';
+                    el.style.width = w + 'px';
+                    el.style.height = len + 'px';
+                    el.style.marginLeft = (w / -2) + 'px';
+                    // position at centre, then rotate & translate outward
+                    // we want the outer tip at distance MARK_OUTER from centre
+                    // the centre of the mark is at distance MARK_OUTER - len/2
+                    const dist = MARK_OUTER - len / 2;
+                    el.style.transform =
+                        'rotate(' + angle + 'deg) translateY(' + (-dist) + 'px)';
+                    el.style.background = color;
+                    if (isHour) {
+                        el.style.borderRadius = '2px';
+                    }
+                    frag.appendChild(el);
+                }
+                face.appendChild(frag);
+            }
+
+            // ── build numbers 1–12 ──
+            function buildNumbers() {
+                const frag = document.createDocumentFragment();
+                for (let i = 1; i <= 12; i++) {
+                    const angleDeg = i * 30;
+                    const rad = angleDeg * Math.PI / 180;
+                    const x = NUM_RADIUS * Math.sin(rad);
+                    const y = -NUM_RADIUS * Math.cos(rad);
+
+                    const el = document.createElement('div');
+                    el.className = 'number';
+                    el.textContent = i;
+                    el.style.transform = 'translate(-50%, -50%) translate(' + x + 'px, ' + y + 'px)';
+                    // reset any inherited transform-origin
+                    el.style.left = '50%';
+                    el.style.top = '50%';
+                    frag.appendChild(el);
+                }
+                face.appendChild(frag);
+            }
+
+            // ── build hands ──
+            function buildHands() {
+                const hour = document.createElement('div');
+                hour.className = 'hand hand-hour';
+                hour.id = 'handHour';
+
+                const minute = document.createElement('div');
+                minute.className = 'hand hand-minute';
+                minute.id = 'handMinute';
+
+                const second = document.createElement('div');
+                second.className = 'hand hand-second';
+                second.id = 'handSecond';
+
+                face.appendChild(hour);
+                face.appendChild(minute);
+                face.appendChild(second);
+
+                // centre pin (on top of hands)
+                const pin = document.createElement('div');
+                pin.className = 'centre-pin';
+                face.appendChild(pin);
+            }
+
+            // ── build info texts ──
+            function buildTexts() {
+                const top = document.createElement('div');
+                top.className = 'info-text info-top';
+                top.id = 'infoTop';
+
+                const bottom = document.createElement('div');
+                bottom.className = 'info-text info-bottom';
+                bottom.id = 'infoBottom';
+
+                face.appendChild(top);
+                face.appendChild(bottom);
+            }
+
+            // ── initialise DOM ──
+            buildScales();
+            buildNumbers();
+            buildHands();
+            buildTexts();
+
+            // grab hand elements
+            const hourHand = document.getElementById('handHour');
+            const minuteHand = document.getElementById('handMinute');
+            const secondHand = document.getElementById('handSecond');
+            const infoTop = document.getElementById('infoTop');
+            const infoBottom = document.getElementById('infoBottom');
+
+            // ── time helpers ──
+            function getBeijingTime() {
+                // Use toLocaleString with Asia/Shanghai to get a reliable string
+                const str = new Date().toLocaleString('en-US', {
+                    timeZone: 'Asia/Shanghai',
+                    hour12: false,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                });
+                // str → "MM/DD/YYYY, HH:MM:SS"
+                const parts = str.split(', ');
+                const datePart = parts[0]; // "MM/DD/YYYY"
+                const timePart = parts[1]; // "HH:MM:SS"
+
+                const [month, day, year] = datePart.split('/').map(Number);
+                const [h, m, s] = timePart.split(':').map(Number);
+
+                // Also grab milliseconds from local Date, then adjust to Beijing
+                const now = new Date();
+                const localMs = now.getTime();
+                const offsetLocal = now.getTimezoneOffset() * 60000;
+                const beijingOffset = 8 * 3600000;
+                const beijingMs = localMs + offsetLocal + beijingOffset;
+                const ms = beijingMs % 1000;
+
+                return { year, month, day, hours: h, minutes: m, seconds: s, ms };
+            }
+
+            function getBeijingDate() {
+                // Build a Date object for Beijing time zone to get day-of-week
+                const now = new Date();
+                const offsetLocal = now.getTimezoneOffset() * 60000;
+                const beijingOffset = 8 * 3600000;
+                const beijingMs = now.getTime() + offsetLocal + beijingOffset;
+                const beijingDate = new Date(beijingMs);
+
+                const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                const months = [
+                    'January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'
+                ];
+
+                const y = beijingDate.getFullYear();
+                const m = months[beijingDate.getMonth()];
+                const d = beijingDate.getDate();
+                const w = days[beijingDate.getDay()];
+
+                return { dateStr: d + ' ' + m + ' ' + y, weekStr: w };
+            }
+
+            // ── update clock ──
+            function updateClock() {
+                const t = getBeijingTime();
+                const { hours, minutes, seconds, ms } = t;
+
+                // smooth second angle (continuous)
+                const smoothSec = seconds + ms / 1000;
+                const secAngle = smoothSec * 6;
+
+                // minute angle (continuous via seconds)
+                const minAngle = minutes * 6 + (seconds / 60) * 6 + (ms / 60000) * 6;
+
+                // hour angle (continuous via minutes & seconds)
+                const hourAngle = (hours % 12) * 30 + (minutes / 60) * 30 + (seconds / 3600) * 30;
+
+                // apply rotations
+                hourHand.style.transform = 'rotate(' + hourAngle + 'deg)';
+                minuteHand.style.transform = 'rotate(' + minAngle + 'deg)';
+                secondHand.style.transform = 'rotate(' + secAngle + 'deg)';
+
+                // ── text info ──
+                // top: 24-hour time with leading zeros
+                const hh = String(hours).padStart(2, '0');
+                const mm = String(minutes).padStart(2, '0');
+                const ss = String(seconds).padStart(2, '0');
+                infoTop.textContent = hh + ':' + mm + ':' + ss;
+
+                // bottom: date + day of week
+                const dateInfo = getBeijingDate();
+                infoBottom.textContent = dateInfo.weekStr + ' · ' + dateInfo.dateStr;
+
+                // smooth loop
+                requestAnimationFrame(updateClock);
+            }
+
+            // ── start ──
+            updateClock();
+
+        })();
+    </script>
+
+</body>
+</html>

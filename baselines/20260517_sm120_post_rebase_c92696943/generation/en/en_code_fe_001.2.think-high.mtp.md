@@ -1,0 +1,1058 @@
+# Generation Transcript
+
+- Case: `en_code_fe_001`
+- Language group: `en`
+- Workload: `coding`
+- Model: `deepseek-ai/DeepSeek-V4-Flash`
+- Round: `2`
+- Thinking mode: `think-high`
+- Thinking strength: `high`
+- Temperature: `1.0`
+- Top P: `1.0`
+- Variant: `mtp`
+- OK: `True`
+- Status: PASS
+- Check: matched expectation
+- Detail: `matched expectation`
+- Elapsed seconds: 38.892096
+- Finish reason: `stop`
+- Usage: `{"prompt_tokens": 226, "total_tokens": 7599, "completion_tokens": 7373, "prompt_tokens_details": null}`
+- Prompt tokens: 226
+- Completion tokens: 7373
+- Total tokens: 7599
+
+## Prompt
+
+```markdown
+Create a single-file frontend app named `index.html`. Do not use external libraries, CDNs, images, or build tools. Keep the total code under 1,000 lines.
+
+Task: build an accessible “meeting notes board” for a small team.
+
+Functional requirements:
+1. Users can add a note with title, owner, meeting date, tags, and body.
+2. Notes appear as cards and can be filtered by owner, tag, and free-text search.
+3. A note can be marked as “Action Required,” “Decision,” or “Reference.”
+4. Users can edit and delete notes.
+5. Persist all data in `localStorage`.
+6. Provide a compact statistics strip: total notes, action-required count, unique owners, and most common tag.
+7. Responsive layout: two-column card grid on wide screens, single column on narrow screens.
+8. Basic accessibility: labels for inputs, keyboard-operable controls, visible focus states.
+
+Output only the complete `index.html` content, including HTML, CSS, and JavaScript. Do not include explanatory text.
+```
+
+## Reasoning Content
+
+```text
+The user wants me to create a single-file frontend app called `index.html` for a "meeting notes board" for a small team. Let me build this step by step.
+
+Key requirements:
+1. Add notes with title, owner, meeting date, tags, and body
+2. Notes as cards, filterable by owner, tag, and free-text search
+3. Notes can be marked as "Action Required", "Decision", or "Reference"
+4. Edit and delete notes
+5. Persist in localStorage
+6. Statistics strip: total notes, action-required count, unique owners, most common tag
+7. Responsive: two-column grid on wide screens, single on narrow
+8. Accessibility: labels, keyboard operable, visible focus states
+
+Let me build this comprehensive single-file app.
+```
+
+## Assistant
+
+````markdown
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meeting Notes Board</title>
+    <style>
+        /* ── Reset & Base ── */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: #f4f6f9;
+            color: #1e293b;
+            line-height: 1.5;
+            padding: 1.25rem;
+            min-height: 100vh;
+        }
+
+        /* ── Focus ── */
+        :focus-visible {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+
+        /* ── Layout ── */
+        .app {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+            color: #0f172a;
+        }
+
+        .subtitle {
+            color: #64748b;
+            margin-bottom: 1.5rem;
+            font-size: 0.95rem;
+        }
+
+        /* ── Stats Strip ── */
+        .stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+            border: 1px solid #e2e8f0;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: baseline;
+            gap: 0.35rem;
+            font-size: 0.9rem;
+            color: #475569;
+        }
+
+        .stat-value {
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: #0f172a;
+        }
+
+        .stat-divider {
+            color: #cbd5e1;
+            font-weight: 300;
+            margin: 0 0.25rem;
+        }
+
+        /* ── Form ── */
+        .note-form {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.75rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+            border: 1px solid #e2e8f0;
+        }
+
+        .note-form h2 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #0f172a;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 0.3rem;
+            color: #334155;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            padding: 0.6rem 0.75rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            background: #fafbfc;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+            outline: none;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: flex-end;
+            margin-top: 1rem;
+            grid-column: 1 / -1;
+        }
+
+        .btn {
+            padding: 0.6rem 1.25rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            font-family: inherit;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: #ffffff;
+        }
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #1e293b;
+        }
+        .btn-secondary:hover {
+            background: #cbd5e1;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: #ffffff;
+        }
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-sm {
+            padding: 0.35rem 0.85rem;
+            font-size: 0.8rem;
+        }
+
+        /* ── Filters ── */
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            align-items: flex-end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 180px;
+            min-width: 140px;
+        }
+
+        .filter-group label {
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-bottom: 0.2rem;
+            color: #475569;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            padding: 0.5rem 0.7rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            background: #ffffff;
+            font-family: inherit;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+            outline: none;
+        }
+
+        .filter-clear {
+            padding: 0.5rem 1rem;
+            background: #e2e8f0;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            font-weight: 500;
+            font-family: inherit;
+            align-self: flex-end;
+        }
+        .filter-clear:hover {
+            background: #cbd5e1;
+        }
+
+        /* ── Cards Grid ── */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+        }
+
+        @media (max-width: 700px) {
+            .cards-grid {
+                grid-template-columns: 1fr;
+            }
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+            .form-group.full-width {
+                grid-column: 1;
+            }
+            .form-actions {
+                grid-column: 1;
+            }
+            .stats {
+                flex-direction: column;
+                gap: 0.4rem;
+            }
+            .filters {
+                flex-direction: column;
+            }
+            .filter-group {
+                flex: 1 1 auto;
+                width: 100%;
+                min-width: unset;
+            }
+            .filter-clear {
+                align-self: stretch;
+                text-align: center;
+            }
+        }
+
+        /* ── Card ── */
+        .note-card {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 1.25rem 1.25rem 1rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+            border: 1px solid #e2e8f0;
+            transition: box-shadow 0.2s, border-color 0.2s;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .note-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            border-color: #cbd5e1;
+        }
+
+        .note-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .note-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #0f172a;
+            word-break: break-word;
+            flex: 1;
+        }
+
+        .note-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            margin-top: 0.15rem;
+        }
+
+        .badge-action {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .badge-decision {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        .badge-reference {
+            background: #e2e8f0;
+            color: #334155;
+        }
+
+        .note-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem 1.25rem;
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-bottom: 0.6rem;
+        }
+
+        .note-meta strong {
+            font-weight: 600;
+            color: #475569;
+        }
+
+        .note-body {
+            font-size: 0.9rem;
+            color: #334155;
+            line-height: 1.55;
+            word-break: break-word;
+            flex: 1;
+            margin-bottom: 0.75rem;
+            white-space: pre-wrap;
+        }
+
+        .note-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .note-tag {
+            background: #f1f5f9;
+            color: #475569;
+            font-size: 0.75rem;
+            padding: 0.15rem 0.55rem;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+
+        .note-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            border-top: 1px solid #f1f5f9;
+            padding-top: 0.75rem;
+            margin-top: auto;
+        }
+
+        .note-actions .btn {
+            font-size: 0.78rem;
+            padding: 0.3rem 0.8rem;
+        }
+
+        /* ── Empty State ── */
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #94a3b8;
+            background: #ffffff;
+            border-radius: 12px;
+            border: 2px dashed #e2e8f0;
+        }
+
+        .empty-state p {
+            font-size: 1rem;
+        }
+        .empty-state .emoji {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ── Utilities ── */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border-width: 0;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app" role="application" aria-label="Meeting Notes Board">
+
+        <!-- Header -->
+        <h1>📋 Meeting Notes Board</h1>
+        <p class="subtitle">Capture and organize your team's meeting outcomes.</p>
+
+        <!-- Stats Strip -->
+        <section class="stats" aria-label="Statistics">
+            <div class="stat-item">
+                <span class="stat-value" id="stat-total">0</span>
+                <span>total notes</span>
+            </div>
+            <span class="stat-divider" aria-hidden="true">|</span>
+            <div class="stat-item">
+                <span class="stat-value" id="stat-action">0</span>
+                <span>action required</span>
+            </div>
+            <span class="stat-divider" aria-hidden="true">|</span>
+            <div class="stat-item">
+                <span class="stat-value" id="stat-owners">0</span>
+                <span>unique owners</span>
+            </div>
+            <span class="stat-divider" aria-hidden="true">|</span>
+            <div class="stat-item">
+                <span class="stat-value" id="stat-top-tag">—</span>
+                <span>most common tag</span>
+            </div>
+        </section>
+
+        <!-- Add / Edit Form -->
+        <section class="note-form" aria-label="Add or edit a note">
+            <h2 id="form-heading">Add New Note</h2>
+            <form id="note-form" novalidate>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="input-title">Title *</label>
+                        <input type="text" id="input-title" required placeholder="e.g. Sprint Review" />
+                    </div>
+                    <div class="form-group">
+                        <label for="input-owner">Owner *</label>
+                        <input type="text" id="input-owner" required placeholder="e.g. Alice" />
+                    </div>
+                    <div class="form-group">
+                        <label for="input-date">Meeting Date *</label>
+                        <input type="date" id="input-date" required />
+                    </div>
+                    <div class="form-group">
+                        <label for="input-category">Category</label>
+                        <select id="input-category">
+                            <option value="">— Select —</option>
+                            <option value="Action Required">Action Required</option>
+                            <option value="Decision">Decision</option>
+                            <option value="Reference">Reference</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="input-tags">Tags (comma-separated)</label>
+                        <input type="text" id="input-tags" placeholder="e.g. frontend, design, api" />
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="input-body">Notes</label>
+                        <textarea id="input-body" rows="3" placeholder="Key points, decisions, action items…"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary hidden" id="cancel-btn">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="submit-btn">Add Note</button>
+                    </div>
+                </div>
+                <input type="hidden" id="edit-id" value="" />
+            </form>
+        </section>
+
+        <!-- Filters -->
+        <section class="filters" aria-label="Filter notes">
+            <div class="filter-group">
+                <label for="filter-search">Search</label>
+                <input type="text" id="filter-search" placeholder="Free‑text search…" />
+            </div>
+            <div class="filter-group">
+                <label for="filter-owner">Owner</label>
+                <select id="filter-owner">
+                    <option value="">All owners</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filter-tag">Tag</label>
+                <select id="filter-tag">
+                    <option value="">All tags</option>
+                </select>
+            </div>
+            <button class="filter-clear" id="filter-clear" type="button">Clear Filters</button>
+        </section>
+
+        <!-- Cards Grid -->
+        <div class="cards-grid" id="cards-grid" role="list" aria-label="Meeting notes">
+            <!-- dynamically rendered -->
+        </div>
+
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ─── State ───────────────────────────────────────────────
+            let notes = [];
+            let editingId = null;
+
+            // ─── DOM refs ────────────────────────────────────────────
+            const form = document.getElementById('note-form');
+            const formHeading = document.getElementById('form-heading');
+            const submitBtn = document.getElementById('submit-btn');
+            const cancelBtn = document.getElementById('cancel-btn');
+            const editIdInput = document.getElementById('edit-id');
+
+            const inputTitle = document.getElementById('input-title');
+            const inputOwner = document.getElementById('input-owner');
+            const inputDate = document.getElementById('input-date');
+            const inputCategory = document.getElementById('input-category');
+            const inputTags = document.getElementById('input-tags');
+            const inputBody = document.getElementById('input-body');
+
+            const filterSearch = document.getElementById('filter-search');
+            const filterOwner = document.getElementById('filter-owner');
+            const filterTag = document.getElementById('filter-tag');
+            const filterClear = document.getElementById('filter-clear');
+
+            const cardsGrid = document.getElementById('cards-grid');
+
+            const statTotal = document.getElementById('stat-total');
+            const statAction = document.getElementById('stat-action');
+            const statOwners = document.getElementById('stat-owners');
+            const statTopTag = document.getElementById('stat-top-tag');
+
+            // ─── Helpers ─────────────────────────────────────────────
+            function formatDate(dateStr) {
+                if (!dateStr) return '—';
+                const d = new Date(dateStr + 'T00:00:00');
+                return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+            }
+
+            function todayStr() {
+                return new Date().toISOString().slice(0, 10);
+            }
+
+            function generateId() {
+                return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+            }
+
+            function sanitize(str) {
+                const el = document.createElement('div');
+                el.textContent = str;
+                return el.innerHTML;
+            }
+
+            function parseTags(str) {
+                return str.split(',')
+                    .map(t => t.trim())
+                    .filter(t => t.length > 0);
+            }
+
+            function tagsToStr(tagsArray) {
+                return tagsArray.join(', ');
+            }
+
+            // ─── localStorage ────────────────────────────────────────
+            function loadNotes() {
+                try {
+                    const data = localStorage.getItem('meeting-notes');
+                    if (data) {
+                        notes = JSON.parse(data);
+                        // ensure tags are arrays
+                        notes.forEach(n => {
+                            if (!Array.isArray(n.tags)) n.tags = [];
+                        });
+                    } else {
+                        notes = [];
+                    }
+                } catch {
+                    notes = [];
+                }
+            }
+
+            function saveNotes() {
+                localStorage.setItem('meeting-notes', JSON.stringify(notes));
+            }
+
+            // ─── Stats ───────────────────────────────────────────────
+            function computeStats() {
+                const total = notes.length;
+                const actionCount = notes.filter(n => n.category === 'Action Required').length;
+
+                const ownerSet = new Set();
+                const tagFreq = {};
+                notes.forEach(n => {
+                    if (n.owner) ownerSet.add(n.owner.trim().toLowerCase());
+                    (n.tags || []).forEach(t => {
+                        const key = t.toLowerCase();
+                        tagFreq[key] = (tagFreq[key] || 0) + 1;
+                    });
+                });
+
+                const uniqueOwners = ownerSet.size;
+
+                let topTag = '—';
+                let topCount = 0;
+                for (const [tag, count] of Object.entries(tagFreq)) {
+                    if (count > topCount) {
+                        topCount = count;
+                        topTag = tag.charAt(0).toUpperCase() + tag.slice(1);
+                    } else if (count === topCount && topTag !== '—') {
+                        // keep alphabetical tie-breaker
+                        const candidate = tag.charAt(0).toUpperCase() + tag.slice(1);
+                        if (candidate < topTag) topTag = candidate;
+                    }
+                }
+                if (topCount === 0) topTag = '—';
+
+                statTotal.textContent = total;
+                statAction.textContent = actionCount;
+                statOwners.textContent = uniqueOwners;
+                statTopTag.textContent = topTag;
+            }
+
+            // ─── Render ──────────────────────────────────────────────
+            function getFilteredNotes() {
+                const search = filterSearch.value.trim().toLowerCase();
+                const ownerVal = filterOwner.value.toLowerCase();
+                const tagVal = filterTag.value.toLowerCase();
+
+                return notes.filter(n => {
+                    // free-text search
+                    if (search) {
+                        const haystack = (n.title + ' ' + n.owner + ' ' + n.body + ' ' + (n.tags || []).join(' '))
+                            .toLowerCase();
+                        if (!haystack.includes(search)) return false;
+                    }
+                    // owner filter
+                    if (ownerVal && n.owner.trim().toLowerCase() !== ownerVal) return false;
+                    // tag filter
+                    if (tagVal) {
+                        const noteTags = (n.tags || []).map(t => t.toLowerCase());
+                        if (!noteTags.includes(tagVal)) return false;
+                    }
+                    return true;
+                });
+            }
+
+            function render() {
+                const filtered = getFilteredNotes();
+
+                if (filtered.length === 0) {
+                    cardsGrid.innerHTML = `
+                        <div class="empty-state" role="status">
+                            <div class="emoji" aria-hidden="true">📭</div>
+                            <p>No notes match your filters. Try a different search or <button class="btn btn-sm btn-secondary" id="empty-reset-btn" type="button">clear filters</button>.</p>
+                        </div>
+                    `;
+                    const resetBtn = document.getElementById('empty-reset-btn');
+                    if (resetBtn) resetBtn.addEventListener('click', clearFilters);
+                } else {
+                    let html = '';
+                    filtered.forEach(n => {
+                        const badgeClass = n.category === 'Action Required' ? 'badge-action' :
+                            n.category === 'Decision' ? 'badge-decision' :
+                            n.category === 'Reference' ? 'badge-reference' : '';
+                        const badgeLabel = n.category || '';
+
+                        const tagsHtml = (n.tags || []).map(t =>
+                            `<span class="note-tag">${sanitize(t)}</span>`
+                        ).join('');
+
+                        html += `
+                            <div class="note-card" role="listitem" data-id="${sanitize(n.id)}">
+                                <div class="note-header">
+                                    <span class="note-title">${sanitize(n.title) || 'Untitled'}</span>
+                                    ${badgeLabel ? `<span class="note-badge ${badgeClass}">${sanitize(badgeLabel)}</span>` : ''}
+                                </div>
+                                <div class="note-meta">
+                                    <span><strong>Owner:</strong> ${sanitize(n.owner) || '—'}</span>
+                                    <span><strong>Date:</strong> ${formatDate(n.date)}</span>
+                                </div>
+                                ${n.body ? `<div class="note-body">${sanitize_breaks(n.body)}</div>` : ''}
+                                ${tagsHtml ? `<div class="note-tags">${tagsHtml}</div>` : ''}
+                                <div class="note-actions">
+                                    <button class="btn btn-sm btn-secondary edit-btn" data-id="${sanitize(n.id)}" type="button">Edit</button>
+                                    <button class="btn btn-sm btn-danger delete-btn" data-id="${sanitize(n.id)}" type="button">Delete</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    cardsGrid.innerHTML = html;
+
+                    // attach event listeners to cards
+                    document.querySelectorAll('.edit-btn').forEach(btn => {
+                        btn.addEventListener('click', () => startEdit(btn.dataset.id));
+                    });
+                    document.querySelectorAll('.delete-btn').forEach(btn => {
+                        btn.addEventListener('click', () => deleteNote(btn.dataset.id));
+                    });
+                    document.querySelectorAll('.note-card').forEach(card => {
+                        card.addEventListener('keydown', (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                const editBtn = card.querySelector('.edit-btn');
+                                if (editBtn) editBtn.click();
+                            }
+                        });
+                        card.setAttribute('tabindex', '0');
+                        card.setAttribute('role', 'listitem');
+                    });
+                }
+
+                computeStats();
+                populateFilterDropdowns();
+            }
+
+            // sanitize that preserves line breaks for display
+            function sanitize_breaks(str) {
+                const el = document.createElement('div');
+                el.textContent = str;
+                return el.innerHTML.replace(/\n/g, '<br>');
+            }
+
+            // ─── Filter Dropdowns ────────────────────────────────────
+            function populateFilterDropdowns() {
+                const owners = new Set();
+                const tags = new Set();
+                notes.forEach(n => {
+                    if (n.owner.trim()) owners.add(n.owner.trim());
+                    (n.tags || []).forEach(t => { if (t.trim()) tags.add(t.trim()); });
+                });
+
+                // owner dropdown (keep selected if possible)
+                const prevOwner = filterOwner.value;
+                filterOwner.innerHTML = '<option value="">All owners</option>';
+                [...owners].sort().forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o.toLowerCase();
+                    opt.textContent = o;
+                    filterOwner.appendChild(opt);
+                });
+                if ([...owners].some(o => o.toLowerCase() === prevOwner.toLowerCase())) {
+                    filterOwner.value = prevOwner.toLowerCase();
+                } else {
+                    filterOwner.value = '';
+                }
+
+                // tag dropdown
+                const prevTag = filterTag.value;
+                filterTag.innerHTML = '<option value="">All tags</option>';
+                [...tags].sort().forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.toLowerCase();
+                    opt.textContent = t;
+                    filterTag.appendChild(opt);
+                });
+                if ([...tags].some(t => t.toLowerCase() === prevTag.toLowerCase())) {
+                    filterTag.value = prevTag.toLowerCase();
+                } else {
+                    filterTag.value = '';
+                }
+            }
+
+            // ─── CRUD ────────────────────────────────────────────────
+            function addNote(data) {
+                const note = {
+                    id: generateId(),
+                    title: data.title.trim(),
+                    owner: data.owner.trim(),
+                    date: data.date,
+                    category: data.category || '',
+                    tags: data.tags,
+                    body: data.body.trim(),
+                    created: Date.now(),
+                };
+                notes.push(note);
+                saveNotes();
+                render();
+                resetForm();
+            }
+
+            function updateNote(id, data) {
+                const idx = notes.findIndex(n => n.id === id);
+                if (idx === -1) return;
+                notes[idx] = {
+                    ...notes[idx],
+                    title: data.title.trim(),
+                    owner: data.owner.trim(),
+                    date: data.date,
+                    category: data.category || '',
+                    tags: data.tags,
+                    body: data.body.trim(),
+                };
+                saveNotes();
+                render();
+                resetForm();
+            }
+
+            function deleteNote(id) {
+                if (!confirm('Delete this note?')) return;
+                notes = notes.filter(n => n.id !== id);
+                saveNotes();
+                if (editingId === id) resetForm();
+                render();
+            }
+
+            // ─── Form handling ───────────────────────────────────────
+            function resetForm() {
+                form.reset();
+                editIdInput.value = '';
+                editingId = null;
+                formHeading.textContent = 'Add New Note';
+                submitBtn.textContent = 'Add Note';
+                cancelBtn.classList.add('hidden');
+                inputDate.value = todayStr();
+                // clear validation styling
+                document.querySelectorAll('.form-group input, .form-group textarea, .form-group select')
+                    .forEach(el => el.setCustomValidity(''));
+            }
+
+            function startEdit(id) {
+                const note = notes.find(n => n.id === id);
+                if (!note) return;
+                editingId = id;
+                editIdInput.value = id;
+                formHeading.textContent = 'Edit Note';
+                submitBtn.textContent = 'Save Changes';
+                cancelBtn.classList.remove('hidden');
+
+                inputTitle.value = note.title;
+                inputOwner.value = note.owner;
+                inputDate.value = note.date || '';
+                inputCategory.value = note.category || '';
+                inputTags.value = tagsToStr(note.tags || []);
+                inputBody.value = note.body || '';
+
+                // scroll to form
+                form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                inputTitle.focus();
+            }
+
+            function getFormData() {
+                return {
+                    title: inputTitle.value,
+                    owner: inputOwner.value,
+                    date: inputDate.value,
+                    category: inputCategory.value,
+                    tags: parseTags(inputTags.value),
+                    body: inputBody.value,
+                };
+            }
+
+            function validateForm(data) {
+                let valid = true;
+                if (!data.title.trim()) {
+                    inputTitle.setCustomValidity('Title is required');
+                    inputTitle.reportValidity();
+                    valid = false;
+                } else {
+                    inputTitle.setCustomValidity('');
+                }
+                if (!data.owner.trim()) {
+                    inputOwner.setCustomValidity('Owner is required');
+                    inputOwner.reportValidity();
+                    valid = false;
+                } else {
+                    inputOwner.setCustomValidity('');
+                }
+                if (!data.date) {
+                    inputDate.setCustomValidity('Meeting date is required');
+                    inputDate.reportValidity();
+                    valid = false;
+                } else {
+                    inputDate.setCustomValidity('');
+                }
+                return valid;
+            }
+
+            function handleFormSubmit(e) {
+                e.preventDefault();
+                const data = getFormData();
+                if (!validateForm(data)) return;
+
+                if (editingId) {
+                    updateNote(editingId, data);
+                } else {
+                    addNote(data);
+                }
+            }
+
+            function cancelEdit() {
+                if (editingId) {
+                    if (!confirm('Cancel editing? Changes will be lost.')) return;
+                }
+                resetForm();
+                render();
+            }
+
+            // ─── Filters ─────────────────────────────────────────────
+            function clearFilters() {
+                filterSearch.value = '';
+                filterOwner.value = '';
+                filterTag.value = '';
+                render();
+            }
+
+            // ─── Init ────────────────────────────────────────────────
+            function init() {
+                loadNotes();
+
+                // set default date
+                inputDate.value = todayStr();
+
+                // populate filter dropdowns
+                populateFilterDropdowns();
+
+                render();
+
+                // ─── Events ──
+                form.addEventListener('submit', handleFormSubmit);
+                cancelBtn.addEventListener('click', cancelEdit);
+
+                // filter events
+                filterSearch.addEventListener('input', render);
+                filterOwner.addEventListener('change', render);
+                filterTag.addEventListener('change', render);
+                filterClear.addEventListener('click', clearFilters);
+
+                // keyboard: ESC to cancel edit
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && editingId) {
+                        cancelEdit();
+                    }
+                });
+
+                // Save on page hide
+                window.addEventListener('beforeunload', saveNotes);
+            }
+
+            init();
+
+        })();
+    </script>
+
+</body>
+</html>
+```
+````

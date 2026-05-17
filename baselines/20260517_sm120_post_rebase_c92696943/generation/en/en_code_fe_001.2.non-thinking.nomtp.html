@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>meeting notes · team board</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            background: #f4f7fb;
+            color: #1e293b;
+            padding: 1.5rem;
+            line-height: 1.5;
+        }
+        h1, h2, h3 {
+            font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.75rem;
+        }
+        /* focus & accessibility */
+        :focus-visible {
+            outline: 3px solid #2563eb;
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+        button, input, select, textarea {
+            font: inherit;
+            color: inherit;
+        }
+        /* layout containers */
+        .app-wrapper {
+            max-width: 1280px;
+            margin: 0 auto;
+        }
+        .stats-strip {
+            background: white;
+            padding: 1rem 1.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.2rem 2.5rem;
+            margin-bottom: 1.8rem;
+            border: 1px solid #e9edf2;
+        }
+        .stat-item {
+            display: flex;
+            align-items: baseline;
+            gap: 0.4rem;
+        }
+        .stat-value {
+            font-weight: 700;
+            font-size: 1.3rem;
+            color: #0b3b5e;
+        }
+        .stat-label {
+            font-size: 0.9rem;
+            color: #4b5a6a;
+        }
+        .action-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.8rem 1.2rem;
+            background: white;
+            padding: 1rem 1.5rem;
+            border-radius: 1rem;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 1.8rem;
+            align-items: center;
+        }
+        .filter-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem 1rem;
+            flex: 2 1 300px;
+        }
+        .filter-group label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .filter-group input, .filter-group select {
+            padding: 0.4rem 0.6rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background: white;
+            min-width: 120px;
+        }
+        .btn {
+            background: #eef2f6;
+            border: none;
+            padding: 0.5rem 1.1rem;
+            border-radius: 40px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.1s ease;
+            border: 1px solid transparent;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+        }
+        .btn-primary {
+            background: #1e4a6b;
+            color: white;
+            border-color: #1a3f5c;
+        }
+        .btn-primary:hover {
+            background: #14364e;
+        }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #b9c7da;
+        }
+        .btn-outline:hover {
+            background: #e9edf4;
+        }
+        .btn-sm {
+            padding: 0.2rem 0.9rem;
+            font-size: 0.8rem;
+        }
+        .btn-danger {
+            background: #d92d2d;
+            color: white;
+            border-color: #b31f1f;
+        }
+        .btn-danger:hover {
+            background: #b11e1e;
+        }
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.2rem;
+        }
+        @media (max-width: 680px) {
+            .card-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .note-card {
+            background: white;
+            padding: 1.2rem 1.4rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.02);
+            border: 1px solid #e2e8f0;
+            transition: 0.1s;
+            display: flex;
+            flex-direction: column;
+        }
+        .note-card:hover {
+            border-color: #bdd3eb;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.4rem;
+        }
+        .card-title {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        .card-badge {
+            font-size: 0.7rem;
+            background: #dce7f5;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .badge-action { background: #fde6d2; color: #9b4a00; }
+        .badge-decision { background: #d1e6ff; color: #0a4b7a; }
+        .badge-reference { background: #e2e8f0; color: #2f4055; }
+        .card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem 1.2rem;
+            font-size: 0.8rem;
+            color: #3c5068;
+            margin: 0.4rem 0 0.5rem;
+        }
+        .card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem 0.5rem;
+            margin: 0.4rem 0 0.6rem;
+        }
+        .tag-chip {
+            background: #eef2f8;
+            padding: 0.1rem 0.7rem;
+            border-radius: 30px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: #1e3b5a;
+        }
+        .card-body {
+            font-size: 0.9rem;
+            color: #1f2a3f;
+            background: #f8fafd;
+            padding: 0.6rem 0.8rem;
+            border-radius: 8px;
+            margin: 0.3rem 0 0.7rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .card-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: auto;
+            padding-top: 0.7rem;
+            flex-wrap: wrap;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(18, 28, 40, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-card {
+            background: white;
+            width: 90%;
+            max-width: 550px;
+            max-height: 90vh;
+            overflow-y: auto;
+            border-radius: 1.5rem;
+            padding: 1.8rem 1.8rem 1.5rem;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
+        .modal-card h2 {
+            margin-bottom: 1rem;
+        }
+        .form-field {
+            margin-bottom: 1rem;
+        }
+        .form-field label {
+            display: block;
+            font-weight: 500;
+            font-size: 0.85rem;
+            margin-bottom: 0.2rem;
+        }
+        .form-field input, .form-field select, .form-field textarea {
+            width: 100%;
+            padding: 0.5rem 0.7rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: #fcfdff;
+        }
+        .form-field textarea {
+            min-height: 65px;
+            resize: vertical;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 0.8rem;
+            justify-content: flex-end;
+            margin-top: 1rem;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .gap-space {
+            flex: 1;
+        }
+        .empty-message {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 2rem;
+            color: #4d627a;
+        }
+    </style>
+</head>
+<body>
+<div class="app-wrapper">
+    <h1>📋 meeting notes board</h1>
+
+    <!-- stats strip -->
+    <div class="stats-strip" id="statsStrip" aria-label="statistics summary">
+        <div class="stat-item"><span class="stat-value" id="statTotal">0</span><span class="stat-label">notes</span></div>
+        <div class="stat-item"><span class="stat-value" id="statAction">0</span><span class="stat-label">action required</span></div>
+        <div class="stat-item"><span class="stat-value" id="statOwners">0</span><span class="stat-label">unique owners</span></div>
+        <div class="stat-item"><span class="stat-value" id="statTopTag">—</span><span class="stat-label">most used tag</span></div>
+    </div>
+
+    <!-- filters & add -->
+    <div class="action-bar" role="toolbar" aria-label="filters and add note">
+        <div class="filter-group">
+            <label>🔍 search <input type="search" id="filterSearch" placeholder="title, body..." aria-label="free text search"></label>
+            <label>👤 owner <select id="filterOwner" aria-label="filter by owner"><option value="">all</option></select></label>
+            <label>🏷️ tag <select id="filterTag" aria-label="filter by tag"><option value="">all</option></select></label>
+        </div>
+        <button class="btn btn-primary" id="addNoteBtn" aria-label="add new note">+ add note</button>
+    </div>
+
+    <!-- notes grid -->
+    <div class="card-grid" id="notesGrid" role="list" aria-label="meeting notes cards"></div>
+</div>
+
+<!-- modal (hidden) -->
+<div class="modal-overlay hidden" id="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-card">
+        <h2 id="modalTitle">new note</h2>
+        <form id="noteForm" novalidate>
+            <div class="form-field">
+                <label for="noteTitle">title *</label>
+                <input type="text" id="noteTitle" required>
+            </div>
+            <div class="form-field">
+                <label for="noteOwner">owner *</label>
+                <input type="text" id="noteOwner" required>
+            </div>
+            <div class="form-field">
+                <label for="noteDate">meeting date *</label>
+                <input type="date" id="noteDate" required>
+            </div>
+            <div class="form-field">
+                <label for="noteTags">tags (comma separated)</label>
+                <input type="text" id="noteTags" placeholder="e.g. design, sprint">
+            </div>
+            <div class="form-field">
+                <label for="noteCategory">category</label>
+                <select id="noteCategory">
+                    <option value="Action Required">Action Required</option>
+                    <option value="Decision">Decision</option>
+                    <option value="Reference">Reference</option>
+                </select>
+            </div>
+            <div class="form-field">
+                <label for="noteBody">body</label>
+                <textarea id="noteBody" rows="3"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-outline" id="modalCancelBtn">cancel</button>
+                <button type="submit" class="btn btn-primary" id="modalSaveBtn">save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    (function() {
+        // ----- state -----
+        let notesData = [];
+        let editingId = null;          // null = add mode, string = edit
+
+        const STORAGE_KEY = 'meeting_notes_board';
+
+        // DOM refs
+        const grid = document.getElementById('notesGrid');
+        const statsTotal = document.getElementById('statTotal');
+        const statsAction = document.getElementById('statAction');
+        const statsOwners = document.getElementById('statOwners');
+        const statsTopTag = document.getElementById('statTopTag');
+
+        const filterSearch = document.getElementById('filterSearch');
+        const filterOwner = document.getElementById('filterOwner');
+        const filterTag = document.getElementById('filterTag');
+
+        const addBtn = document.getElementById('addNoteBtn');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const noteForm = document.getElementById('noteForm');
+        const cancelBtn = document.getElementById('modalCancelBtn');
+
+        const inpTitle = document.getElementById('noteTitle');
+        const inpOwner = document.getElementById('noteOwner');
+        const inpDate = document.getElementById('noteDate');
+        const inpTags = document.getElementById('noteTags');
+        const inpCategory = document.getElementById('noteCategory');
+        const inpBody = document.getElementById('noteBody');
+
+        // ----- helpers -----
+        function generateId() {
+            return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+        }
+
+        function parseTags(raw) {
+            if (!raw.trim()) return [];
+            return raw.split(',').map(t => t.trim().toLowerCase()).filter(t => t.length > 0);
+        }
+
+        function serialize(notes) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+        }
+
+        function loadFromStorage() {
+            try {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                return stored ? JSON.parse(stored) : [];
+            } catch { return []; }
+        }
+
+        // ----- render & filters -----
+        function getFilteredNotes() {
+            const search = filterSearch.value.toLowerCase().trim();
+            const owner = filterOwner.value;
+            const tag = filterTag.value;
+
+            return notesData.filter(note => {
+                if (owner && note.owner !== owner) return false;
+                if (tag && !note.tags.includes(tag)) return false;
+                if (search) {
+                    const inTitle = note.title.toLowerCase().includes(search);
+                    const inBody = (note.body || '').toLowerCase().includes(search);
+                    const inOwner = note.owner.toLowerCase().includes(search);
+                    if (!inTitle && !inBody && !inOwner) return false;
+                }
+                return true;
+            });
+        }
+
+        function updateFiltersDropdowns() {
+            const owners = [...new Set(notesData.map(n => n.owner).filter(Boolean))];
+            const tags = [...new Set(notesData.flatMap(n => n.tags).filter(Boolean))];
+
+            // preserve selected values if possible
+            const prevOwner = filterOwner.value;
+            const prevTag = filterTag.value;
+            filterOwner.innerHTML = '<option value="">all</option>' + owners.map(o => `<option value="${o}">${o}</option>`).join('');
+            filterTag.innerHTML = '<option value="">all</option>' + tags.map(t => `<option value="${t}">${t}</option>`).join('');
+            if (owners.includes(prevOwner)) filterOwner.value = prevOwner;
+            if (tags.includes(prevTag)) filterTag.value = prevTag;
+        }
+
+        function computeStats() {
+            const total = notesData.length;
+            const actionCount = notesData.filter(n => n.category === 'Action Required').length;
+            const uniqueOwners = new Set(notesData.map(n => n.owner)).size;
+            // most common tag
+            const tagFreq = {};
+            notesData.forEach(n => n.tags.forEach(t => { tagFreq[t] = (tagFreq[t] || 0) + 1; }));
+            let topTag = '—';
+            let maxCount = 0;
+            for (const [tag, count] of Object.entries(tagFreq)) {
+                if (count > maxCount) { maxCount = count; topTag = tag; }
+            }
+            statsTotal.textContent = total;
+            statsAction.textContent = actionCount;
+            statsOwners.textContent = uniqueOwners;
+            statsTopTag.textContent = topTag;
+        }
+
+        function renderCards() {
+            const filtered = getFilteredNotes();
+            if (filtered.length === 0) {
+                grid.innerHTML = `<div class="empty-message">📭 no notes match your filters</div>`;
+                return;
+            }
+            let html = '';
+            filtered.forEach(note => {
+                const badgeClass = note.category === 'Action Required' ? 'badge-action' :
+                                   note.category === 'Decision' ? 'badge-decision' : 'badge-reference';
+                const tagsHtml = note.tags.map(t => `<span class="tag-chip">${t}</span>`).join('');
+                const bodyPreview = note.body ? note.body.slice(0, 200) : '';
+                const dateStr = note.meetingDate || '';
+                html += `
+                    <div class="note-card" role="listitem" data-id="${note.id}">
+                        <div class="card-header">
+                            <span class="card-title">${escapeHtml(note.title)}</span>
+                            <span class="card-badge ${badgeClass}">${note.category}</span>
+                        </div>
+                        <div class="card-meta">
+                            <span>👤 ${escapeHtml(note.owner)}</span>
+                            <span>📅 ${dateStr}</span>
+                        </div>
+                        ${tagsHtml ? `<div class="card-tags">${tagsHtml}</div>` : ''}
+                        <div class="card-body">${escapeHtml(bodyPreview) || '—'}</div>
+                        <div class="card-actions">
+                            <button class="btn btn-outline btn-sm edit-btn" data-id="${note.id}" aria-label="edit note">edit</button>
+                            <button class="btn btn-danger btn-sm delete-btn" data-id="${note.id}" aria-label="delete note">delete</button>
+                        </div>
+                    </div>
+                `;
+            });
+            grid.innerHTML = html;
+            // attach event listeners for edit/delete
+            grid.querySelectorAll('.edit-btn').forEach(btn => btn.addEventListener('click', onEdit));
+            grid.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', onDelete));
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function fullRender() {
+            updateFiltersDropdowns();
+            renderCards();
+            computeStats();
+        }
+
+        // ----- CRUD -----
+        function loadData() {
+            notesData = loadFromStorage();
+            if (notesData.length === 0) {
+                // seed demo notes
+                const now = new Date();
+                const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                notesData = [
+                    { id: generateId(), title: 'Sprint review', owner: 'Alina', meetingDate: ymd(now), tags: ['sprint','design'], category: 'Decision', body: 'Approved new home page layout.' },
+                    { id: generateId(), title: 'architectural sync', owner: 'Bob', meetingDate: ymd(new Date(now.getTime() - 86400000*1)), tags: ['backend','api'], category: 'Action Required', body: 'Need to finalize rate limiting' },
+                    { id: generateId(), title: 'design critique', owner: 'Carol', meetingDate: ymd(new Date(now.getTime() - 86400000*2)), tags: ['ui','ux'], category: 'Reference', body: 'Component library v2 draft.' },
+                    { id: generateId(), title: 'qa triage', owner: 'Alina', meetingDate: ymd(new Date(now.getTime() - 86400000*3)), tags: ['bug','critical'], category: 'Action Required', body: 'Fix login crash on Android.' },
+                ];
+                serialize(notesData);
+            }
+            fullRender();
+        }
+
+        function saveNote(e) {
+            e.preventDefault();
+            const title = inpTitle.value.trim();
+            const owner = inpOwner.value.trim();
+            const meetingDate = inpDate.value;
+            const rawTags = inpTags.value.trim();
+            const category = inpCategory.value;
+            const body = inpBody.value.trim();
+
+            if (!title || !owner || !meetingDate) {
+                alert('Title, owner, and meeting date are required.');
+                return;
+            }
+
+            const tags = parseTags(rawTags);
+            if (editingId) {
+                const idx = notesData.findIndex(n => n.id === editingId);
+                if (idx !== -1) {
+                    notesData[idx] = { ...notesData[idx], title, owner, meetingDate, tags, category, body };
+                }
+            } else {
+                notesData.push({ id: generateId(), title, owner, meetingDate, tags, category, body });
+            }
+            serialize(notesData);
+            fullRender();
+            closeModal();
+        }
+
+        function onEdit(e) {
+            const id = e.currentTarget.dataset.id;
+            const note = notesData.find(n => n.id === id);
+            if (!note) return;
+            editingId = note.id;
+            modalTitle.textContent = 'edit note';
+            inpTitle.value = note.title;
+            inpOwner.value = note.owner;
+            inpDate.value = note.meetingDate;
+            inpTags.value = note.tags.join(', ');
+            inpCategory.value = note.category;
+            inpBody.value = note.body || '';
+            openModal();
+        }
+
+        function onDelete(e) {
+            const id = e.currentTarget.dataset.id;
+            if (!confirm('Delete this note?')) return;
+            notesData = notesData.filter(n => n.id !== id);
+            serialize(notesData);
+            fullRender();
+        }
+
+        function openModal() {
+            modalOverlay.classList.remove('hidden');
+            inpTitle.focus();
+        }
+
+        function closeModal() {
+            modalOverlay.classList.add('hidden');
+            editingId = null;
+            noteForm.reset();
+            modalTitle.textContent = 'new note';
+            inpCategory.value = 'Action Required';
+        }
+
+        function resetAndOpenAdd() {
+            editingId = null;
+            modalTitle.textContent = 'new note';
+            noteForm.reset();
+            inpCategory.value = 'Action Required';
+            // set default date to today
+            const today = new Date().toISOString().slice(0,10);
+            inpDate.value = today;
+            openModal();
+        }
+
+        // ----- event binding -----
+        function init() {
+            loadData();
+
+            addBtn.addEventListener('click', resetAndOpenAdd);
+            cancelBtn.addEventListener('click', closeModal);
+            modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+            noteForm.addEventListener('submit', saveNote);
+
+            // filter listeners
+            filterSearch.addEventListener('input', renderCards);
+            filterOwner.addEventListener('change', renderCards);
+            filterTag.addEventListener('change', renderCards);
+
+            // keyboard escape
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && !modalOverlay.classList.contains('hidden')) closeModal();
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    })();
+</script>
+</body>
+</html>

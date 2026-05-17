@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Wall Clock</title>
+    <!-- Clean sans-serif typeface -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500&display=swap" rel="stylesheet">
+    <style>
+        /* Reset & Base */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #eaf0f6;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
+        }
+
+        /* Clock Container */
+        .clock {
+            width: 350px;
+            height: 350px;
+        }
+
+        .clock-face {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 8px solid #1e272e;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.15),
+                        0 0 0 1px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Scale Ticks (generated dynamically) */
+        .mark {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            border-radius: 2px;
+        }
+
+        .mark-minute {
+            width: 2px;
+            height: 12px;
+            margin-left: -1px;
+            top: 15px;
+            background: #d1d8e0;
+            transform-origin: 50% 160px;
+        }
+
+        .mark-hour {
+            width: 4px;
+            height: 20px;
+            margin-left: -2px;
+            top: 10px;
+            background: #1e272e;
+            transform-origin: 50% 165px;
+        }
+
+        /* Hour Numbers */
+        .number {
+            position: absolute;
+            top: 35px;
+            left: 50%;
+            width: 30px;
+            height: 30px;
+            margin-left: -15px;
+            text-align: center;
+            line-height: 30px;
+            font-weight: 500;
+            font-size: 1.1em;
+            color: #1e272e;
+            transform-origin: 50% 140px;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .number span {
+            display: block;
+            transform-origin: 50% 50%;
+        }
+
+        /* Clock Hands */
+        .hand {
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: 50% 100%;
+            border-radius: 4px;
+            pointer-events: none;
+        }
+
+        .hour-hand {
+            width: 6px;
+            height: 80px;
+            margin-left: -3px;
+            background: #1e272e;
+            z-index: 5;
+        }
+
+        .minute-hand {
+            width: 4px;
+            height: 110px;
+            margin-left: -2px;
+            background: #1e272e;
+            z-index: 6;
+        }
+
+        .second-hand {
+            width: 2px;
+            height: 130px;
+            margin-left: -1px;
+            background: #e74c3c;
+            z-index: 7;
+        }
+
+        .center-dot {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #1e272e;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 8;
+        }
+
+        /* Text Information Display */
+        .time-text {
+            position: absolute;
+            top: 105px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 2.4em;
+            font-weight: 300;
+            color: #1e272e;
+            text-align: center;
+            z-index: 4;
+            pointer-events: none;
+            user-select: none;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+
+        .date-text {
+            position: absolute;
+            top: 225px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8em;
+            font-weight: 500;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-align: center;
+            z-index: 4;
+            pointer-events: none;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="clock">
+        <div class="clock-face">
+            <!-- Scale marks will be injected here -->
+            <div class="marks"></div>
+
+            <!-- Numbers 1–12 -->
+            <div class="number" style="transform: rotate(30deg);"><span style="transform: rotate(-30deg);">1</span></div>
+            <div class="number" style="transform: rotate(60deg);"><span style="transform: rotate(-60deg);">2</span></div>
+            <div class="number" style="transform: rotate(90deg);"><span style="transform: rotate(-90deg);">3</span></div>
+            <div class="number" style="transform: rotate(120deg);"><span style="transform: rotate(-120deg);">4</span></div>
+            <div class="number" style="transform: rotate(150deg);"><span style="transform: rotate(-150deg);">5</span></div>
+            <div class="number" style="transform: rotate(180deg);"><span style="transform: rotate(-180deg);">6</span></div>
+            <div class="number" style="transform: rotate(210deg);"><span style="transform: rotate(-210deg);">7</span></div>
+            <div class="number" style="transform: rotate(240deg);"><span style="transform: rotate(-240deg);">8</span></div>
+            <div class="number" style="transform: rotate(270deg);"><span style="transform: rotate(-270deg);">9</span></div>
+            <div class="number" style="transform: rotate(300deg);"><span style="transform: rotate(-300deg);">10</span></div>
+            <div class="number" style="transform: rotate(330deg);"><span style="transform: rotate(-330deg);">11</span></div>
+            <div class="number" style="transform: rotate(360deg);"><span style="transform: rotate(-360deg);">12</span></div>
+
+            <!-- Hands -->
+            <div class="hand hour-hand" id="hour-hand"></div>
+            <div class="hand minute-hand" id="minute-hand"></div>
+            <div class="hand second-hand" id="second-hand"></div>
+            <div class="center-dot"></div>
+
+            <!-- Text info -->
+            <div class="time-text" id="time-text"></div>
+            <div class="date-text" id="date-text"></div>
+        </div>
+    </div>
+
+    <script>
+        // ------------------------------------------------------------------
+        // 1. Dynamically generate 60 scale marks
+        // ------------------------------------------------------------------
+        const marksContainer = document.querySelector('.marks');
+        for (let i = 0; i < 60; i++) {
+            const mark = document.createElement('div');
+            // Full hour marks are thicker and darker
+            mark.className = (i % 5 === 0) ? 'mark mark-hour' : 'mark mark-minute';
+            mark.style.transform = 'rotate(' + (i * 6) + 'deg)';
+            marksContainer.appendChild(mark);
+        }
+
+        // ------------------------------------------------------------------
+        // 2. DOM element references
+        // ------------------------------------------------------------------
+        const hourHand = document.getElementById('hour-hand');
+        const minuteHand = document.getElementById('minute-hand');
+        const secondHand = document.getElementById('second-hand');
+        const timeEl = document.getElementById('time-text');
+        const dateEl = document.getElementById('date-text');
+
+        // ------------------------------------------------------------------
+        // 3. updateClock function (called every frame)
+        // ------------------------------------------------------------------
+        function updateClock() {
+            // --- Convert local time to China Standard Time (UTC+8) ---
+            // The prompt suggests using .toLocaleString() with timeZone for the text,
+            // and parsing it. To achieve the required smooth second‑hand movement
+            // we need millisecond precision, so we combine a UTC offset calculation
+            // with locale‑sensitive formatting for the display.
+            //
+            //   // Suggested method (returns a string, ideal for display):
+            //   const timeStr = new Date().toLocaleString("en-US", { timeZone: "Asia/Shanghai" });
+            //
+            //   // Robust method (Date object with exact ms, used for angles):
+            const now = new Date();
+            const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+            const cstMs = utcMs + 8 * 3600000;
+            const cstDate = new Date(cstMs);
+
+            // --- Calculate rotation angles (smooth movement) ---
+            const hours = cstDate.getHours() % 12;
+            const minutes = cstDate.getMinutes();
+            const seconds = cstDate.getSeconds();
+            const milliseconds = cstDate.getMilliseconds();
+
+            // Smooth sweeping second hand
+            const secondAngle = (seconds + milliseconds / 1000) * 6;
+            // Minute hand moves continuously with the seconds
+            const minuteAngle = (minutes + seconds / 60 + milliseconds / 60000) * 6;
+            // Hour hand moves continuously with the minutes
+            const hourAngle = (hours + minutes / 60 + seconds / 3600 + milliseconds / 3600000) * 30;
+
+            // Apply transforms
+            hourHand.style.transform = 'rotate(' + hourAngle + 'deg)';
+            minuteHand.style.transform = 'rotate(' + minuteAngle + 'deg)';
+            secondHand.style.transform = 'rotate(' + secondAngle + 'deg)';
+
+            // --- Update text displays ---
+            // 24‑hour format time (upper half)
+            const timeString = cstDate.toLocaleTimeString('en-GB', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+            // Date with weekday (lower half)
+            const dateString = cstDate.toLocaleDateString('en-GB', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+
+            timeEl.textContent = timeString;
+            dateEl.textContent = dateString;
+        }
+
+        // ------------------------------------------------------------------
+        // 4. Start the animation loop
+        // ------------------------------------------------------------------
+        function tick() {
+            updateClock();
+            requestAnimationFrame(tick);
+        }
+        tick();
+    </script>
+</body>
+</html>

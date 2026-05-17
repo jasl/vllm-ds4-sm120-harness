@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minimalist Wall Clock</title>
+<style>
+    /* Reset & Base */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: #f5f5f7;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+
+    /* Clock Dial */
+    #clock {
+        width: 350px;
+        height: 350px;
+        border-radius: 50%;
+        background: #ffffff;
+        border: 8px solid #1c1c1e;
+        position: relative;
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2),
+                    0 10px 20px rgba(0, 0, 0, 0.1),
+                    inset 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Scale Marks */
+    .scales {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    .tick {
+        position: absolute;
+        top: 6px;
+        left: 50%;
+        width: 1.5px;
+        height: 12px;
+        background: #c7c7cc;
+        transform-origin: 50% 169px;  /* 175px radius - 6px top offset */
+        margin-left: -0.75px;
+        border-radius: 1px;
+    }
+
+    .tick.tick-hour {
+        width: 4px;
+        height: 22px;
+        background: #1c1c1e;
+        margin-left: -2px;
+        border-radius: 2px;
+    }
+
+    /* Hour Numbers */
+    .numbers {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    .num {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 32px;
+        height: 32px;
+        margin: -16px 0 0 -16px;
+        text-align: center;
+        line-height: 32px;
+        font-size: 15px;
+        font-weight: 500;
+        color: #1c1c1e;
+        pointer-events: none;
+    }
+
+    /* Clock Hands */
+    .hands {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    .hand {
+        position: absolute;
+        bottom: 50%;
+        left: 50%;
+        transform-origin: bottom center;
+        border-radius: 4px;
+        transition: none;
+    }
+
+    .hour-hand {
+        width: 5px;
+        height: 80px;
+        margin-left: -2.5px;
+        background: #1c1c1e;
+        z-index: 3;
+        border-radius: 4px 4px 0 0;
+    }
+
+    .minute-hand {
+        width: 3px;
+        height: 120px;
+        margin-left: -1.5px;
+        background: #1c1c1e;
+        z-index: 4;
+        border-radius: 3px 3px 0 0;
+    }
+
+    .second-hand {
+        width: 2px;
+        height: 135px;
+        margin-left: -1px;
+        background: #e63946;
+        z-index: 5;
+        border-radius: 2px 2px 0 0;
+    }
+
+    .second-hand::after {
+        content: '';
+        position: absolute;
+        bottom: -25px;
+        left: 50%;
+        width: 4px;
+        height: 25px;
+        background: #e63946;
+        transform: translateX(-50%);
+        border-radius: 0 0 2px 2px;
+    }
+
+    .center-dot {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 14px;
+        height: 14px;
+        margin: -7px 0 0 -7px;
+        background: #1c1c1e;
+        border-radius: 50%;
+        z-index: 10;
+    }
+
+    .center-dot::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 6px;
+        height: 6px;
+        margin: -3px 0 0 -3px;
+        background: #e63946;
+        border-radius: 50%;
+    }
+
+    /* Text Information */
+    .info-text {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+        z-index: 2;
+        width: 80%;
+        pointer-events: none;
+    }
+
+    .time-text {
+        top: 32%;
+        font-size: 32px;
+        font-weight: 200;
+        color: #1c1c1e;
+        letter-spacing: 3px;
+    }
+
+    .date-text {
+        top: 68%;
+        font-size: 14px;
+        font-weight: 400;
+        color: #8e8e93;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+    }
+</style>
+</head>
+<body>
+
+<div id="clock">
+    <!-- Scales and numbers are dynamically generated -->
+    <div class="scales" id="scales"></div>
+    <div class="numbers" id="numbers"></div>
+
+    <!-- Clock hands -->
+    <div class="hands">
+        <div class="hand hour-hand" id="hourHand"></div>
+        <div class="hand minute-hand" id="minuteHand"></div>
+        <div class="hand second-hand" id="secondHand"></div>
+        <div class="center-dot"></div>
+    </div>
+
+    <!-- Text displays -->
+    <div class="info-text time-text" id="timeDisplay">--:--:--</div>
+    <div class="info-text date-text" id="dateDisplay">---</div>
+</div>
+
+<script>
+    (function() {
+        'use strict';
+
+        // Generate the 60 scale marks using transform: rotate()
+        function createTicks() {
+            var container = document.getElementById('scales');
+            for (var i = 0; i < 60; i++) {
+                var tick = document.createElement('div');
+                tick.className = 'tick';
+                // Whole hour marks are thicker and darker
+                if (i % 5 === 0) {
+                    tick.classList.add('tick-hour');
+                }
+                tick.style.transform = 'rotate(' + (i * 6) + 'deg)';
+                container.appendChild(tick);
+            }
+        }
+
+        // Generate the 12 hour numbers
+        function createNumbers() {
+            var container = document.getElementById('numbers');
+            var radius = 128; // distance from the center
+            for (var i = 1; i <= 12; i++) {
+                var num = document.createElement('span');
+                num.className = 'num';
+                num.textContent = i;
+                var angle = i * 30;
+                // Rotate to position, translate outward, then rotate back to keep upright
+                num.style.transform = 'rotate(' + angle + 'deg) translate(0, -' + radius + 'px) rotate(-' + angle + 'deg)';
+                container.appendChild(num);
+            }
+        }
+
+        // Update the clock display with Beijing time (CST, UTC+8)
+        function updateClock() {
+            var now = new Date();
+            var ms = now.getMilliseconds();
+
+            // Parse the Beijing time string exactly as prompted
+            var localeStr = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' });
+            var parts = localeStr.split(', ');
+            var dateStr = parts[0];
+            var timeStr = parts[1];
+
+            var dateParts = dateStr.split('/').map(Number);
+            var month = dateParts[0];
+            var day = dateParts[1];
+            var year = dateParts[2]; // retained for completeness
+
+            var timeParts = timeStr.split(' ');
+            var time = timeParts[0];
+            var modifier = timeParts[1];
+
+            var timeNumbers = time.split(':').map(Number);
+            var hours = timeNumbers[0];
+            var minutes = timeNumbers[1];
+            var seconds = timeNumbers[2];
+
+            // Convert 12-hour format to 24-hour format
+            if (modifier === 'PM' && hours !== 12) {
+                hours += 12;
+            }
+            if (modifier === 'AM' && hours === 12) {
+                hours = 0;
+            }
+
+            // Calculate rotation angles with smooth sub-second movement
+            var secondsAngle = (seconds + ms / 1000) * 6;
+            var minutesAngle = (minutes + seconds / 60 + ms / 60000) * 6;
+            var hoursAngle = ((hours % 12) + minutes / 60 + seconds / 3600 + ms / 3600000) * 30;
+
+            // Update the three hands
+            document.getElementById('hourHand').style.transform = 'rotate(' + hoursAngle + 'deg)';
+            document.getElementById('minuteHand').style.transform = 'rotate(' + minutesAngle + 'deg)';
+            document.getElementById('secondHand').style.transform = 'rotate(' + secondsAngle + 'deg)';
+
+            // Update the digital time text (24-hour format)
+            var pad = function(n) { return String(n).padStart(2, '0'); };
+            document.getElementById('timeDisplay').textContent = pad(hours) + ':' + pad(minutes) + ':' + pad(seconds);
+
+            // Update the date and day of the week
+            var dateOptions = {
+                timeZone: 'Asia/Shanghai',
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric'
+            };
+            var dateStrFormatted = new Intl.DateTimeFormat('en-US', dateOptions).format(now);
+            document.getElementById('dateDisplay').textContent = dateStrFormatted;
+        }
+
+        // Initialize the clock face elements
+        createTicks();
+        createNumbers();
+        updateClock();
+
+        // Start the smooth continuous loop using requestAnimationFrame
+        function tick() {
+            updateClock();
+            requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+
+    })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高级时钟 · 北京时区</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f0f2f5;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .clock-wrapper {
+            background: #ffffff;
+            border-radius: 50%;
+            padding: 18px;
+            box-shadow:
+                0 20px 60px rgba(0, 0, 0, 0.15),
+                0 8px 24px rgba(0, 0, 0, 0.10),
+                inset 0 2px 4px rgba(255, 255, 255, 0.6);
+            border: 2px solid #1a1a2e;
+            transition: box-shadow 0.3s ease;
+        }
+
+        .clock-wrapper:hover {
+            box-shadow:
+                0 28px 72px rgba(0, 0, 0, 0.20),
+                0 10px 28px rgba(0, 0, 0, 0.12),
+                inset 0 2px 4px rgba(255, 255, 255, 0.6);
+        }
+
+        canvas {
+            display: block;
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            background: #fcfcfc;
+            box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.04);
+        }
+
+        /* 响应式 */
+        @media (max-width: 560px) {
+            .clock-wrapper {
+                padding: 12px;
+            }
+            canvas {
+                width: 340px;
+                height: 340px;
+            }
+        }
+
+        @media (max-width: 400px) {
+            canvas {
+                width: 280px;
+                height: 280px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="clock-wrapper">
+        <canvas id="clockCanvas" width="600" height="600"></canvas>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            const canvas = document.getElementById('clockCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // ---- 尺寸设定 ----
+            const SIZE = 600;
+            const CENTER = SIZE / 2; // 300
+            const RADIUS = 270; // 表盘半径
+            const OUTER_RIM = RADIUS + 6; // 外装饰环
+
+            // 刻度参数
+            const TICK_OUTER = RADIUS - 8;
+            const TICK_INNER_MAJOR = RADIUS - 40; // 整点刻度内圈
+            const TICK_INNER_MINOR = RADIUS - 22; // 普通刻度内圈
+
+            // 数字参数
+            const NUM_RADIUS = RADIUS - 62;
+
+            // 指针长度
+            const HOUR_LENGTH = 160;
+            const MINUTE_LENGTH = 220;
+            const SECOND_LENGTH = 250;
+            const HOUR_TAIL = 28;
+            const MINUTE_TAIL = 20;
+            const SECOND_TAIL = 14;
+
+            // ---- 获取上海时间 (Asia/Shanghai) ----
+            function getShanghaiTime() {
+                const now = new Date();
+                // 本地时间与 UTC 的偏移（分钟）
+                const localOffset = now.getTimezoneOffset();
+                // UTC 时间戳 (毫秒)
+                const utcMs = now.getTime() + localOffset * 60000;
+                // 上海时区 UTC+8
+                const shanghaiMs = utcMs + 8 * 3600000;
+                return new Date(shanghaiMs);
+            }
+
+            // ---- 绘制表盘静态部分 (离屏缓存) ----
+            // 为了提高性能，将刻度、数字等静态元素绘制到离屏 canvas
+            const offscreen = document.createElement('canvas');
+            offscreen.width = SIZE;
+            offscreen.height = SIZE;
+            const offCtx = offscreen.getContext('2d');
+
+            function drawStaticFace() {
+                const cx = CENTER,
+                    cy = CENTER;
+
+                // --- 背景 (透明，因为主canvas已经有背景) ---
+                offCtx.clearRect(0, 0, SIZE, SIZE);
+
+                // --- 外装饰环 (极细的灰色环) ---
+                offCtx.beginPath();
+                offCtx.arc(cx, cy, OUTER_RIM, 0, Math.PI * 2);
+                offCtx.strokeStyle = '#d0d0d8';
+                offCtx.lineWidth = 1.5;
+                offCtx.stroke();
+
+                // --- 表盘外圈细边框 ---
+                offCtx.beginPath();
+                offCtx.arc(cx, cy, RADIUS + 2, 0, Math.PI * 2);
+                offCtx.strokeStyle = '#c8c8d0';
+                offCtx.lineWidth = 1;
+                offCtx.stroke();
+
+                // --- 刻度 ---
+                for (let i = 0; i < 60; i++) {
+                    const isMajor = (i % 5 === 0);
+                    const angle = (i * 6 - 90) * Math.PI / 180;
+
+                    const outerX = cx + TICK_OUTER * Math.cos(angle);
+                    const outerY = cy + TICK_OUTER * Math.sin(angle);
+
+                    let innerR = isMajor ? TICK_INNER_MAJOR : TICK_INNER_MINOR;
+                    const innerX = cx + innerR * Math.cos(angle);
+                    const innerY = cy + innerR * Math.sin(angle);
+
+                    offCtx.beginPath();
+                    offCtx.moveTo(outerX, outerY);
+                    offCtx.lineTo(innerX, innerY);
+
+                    if (isMajor) {
+                        offCtx.strokeStyle = '#1a1a2e';
+                        offCtx.lineWidth = 3.2;
+                        offCtx.shadowColor = 'rgba(0,0,0,0.06)';
+                        offCtx.shadowBlur = 2;
+                    } else {
+                        offCtx.strokeStyle = '#7a7a8a';
+                        offCtx.lineWidth = 1.4;
+                        offCtx.shadowColor = 'transparent';
+                        offCtx.shadowBlur = 0;
+                    }
+                    offCtx.stroke();
+                }
+                offCtx.shadowColor = 'transparent';
+                offCtx.shadowBlur = 0;
+
+                // --- 数字 1 - 12 ---
+                offCtx.font = '500 30px "Helvetica Neue", Arial, sans-serif';
+                offCtx.textAlign = 'center';
+                offCtx.textBaseline = 'middle';
+                offCtx.fillStyle = '#1a1a2e';
+                offCtx.shadowColor = 'rgba(0,0,0,0.04)';
+                offCtx.shadowBlur = 2;
+
+                for (let n = 1; n <= 12; n++) {
+                    const angle = (n * 30 - 90) * Math.PI / 180;
+                    const x = cx + NUM_RADIUS * Math.cos(angle);
+                    const y = cy + NUM_RADIUS * Math.sin(angle);
+                    offCtx.fillText(String(n), x, y);
+                }
+                offCtx.shadowColor = 'transparent';
+                offCtx.shadowBlur = 0;
+
+                // --- 中心装饰圆 (外圈) ---
+                offCtx.beginPath();
+                offCtx.arc(cx, cy, 14, 0, Math.PI * 2);
+                offCtx.fillStyle = '#1a1a2e';
+                offCtx.shadowColor = 'rgba(0,0,0,0.10)';
+                offCtx.shadowBlur = 6;
+                offCtx.fill();
+                offCtx.shadowColor = 'transparent';
+                offCtx.shadowBlur = 0;
+
+                offCtx.beginPath();
+                offCtx.arc(cx, cy, 5, 0, Math.PI * 2);
+                offCtx.fillStyle = '#c0392b';
+                offCtx.shadowColor = 'rgba(192,57,43,0.25)';
+                offCtx.shadowBlur = 8;
+                offCtx.fill();
+                offCtx.shadowColor = 'transparent';
+                offCtx.shadowBlur = 0;
+            }
+
+            // 预先绘制静态表盘
+            drawStaticFace();
+
+            // ---- 主绘制函数 ----
+            function updateClock() {
+                const shanghai = getShanghaiTime();
+
+                const hours = shanghai.getHours();
+                const minutes = shanghai.getMinutes();
+                const seconds = shanghai.getSeconds();
+                const millis = shanghai.getMilliseconds();
+
+                // 平滑时间值
+                const smoothSec = seconds + millis / 1000;
+                const smoothMin = minutes + smoothSec / 60;
+                const smoothHour = (hours % 12) + smoothMin / 60;
+
+                // 角度 (弧度)
+                const hourAngle = (smoothHour * 30 - 90) * Math.PI / 180;
+                const minAngle = (smoothMin * 6 - 90) * Math.PI / 180;
+                const secAngle = (smoothSec * 6 - 90) * Math.PI / 180;
+
+                const cx = CENTER,
+                    cy = CENTER;
+
+                // --- 清空主画布 (用极浅的背景) ---
+                ctx.clearRect(0, 0, SIZE, SIZE);
+
+                // --- 绘制离屏缓存 (静态表盘) ---
+                ctx.drawImage(offscreen, 0, 0);
+
+                // --- 绘制指针 (带轻微阴影) ---
+                ctx.shadowColor = 'rgba(0,0,0,0.08)';
+                ctx.shadowBlur = 12;
+                ctx.lineCap = 'round';
+
+                // ---- 时针 ----
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(hourAngle);
+                ctx.beginPath();
+                ctx.moveTo(-HOUR_TAIL, 0);
+                ctx.lineTo(HOUR_LENGTH, 0);
+                ctx.strokeStyle = '#1a1a2e';
+                ctx.lineWidth = 8;
+                ctx.stroke();
+                ctx.restore();
+
+                // ---- 分针 ----
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(minAngle);
+                ctx.beginPath();
+                ctx.moveTo(-MINUTE_TAIL, 0);
+                ctx.lineTo(MINUTE_LENGTH, 0);
+                ctx.strokeStyle = '#1a1a2e';
+                ctx.lineWidth = 5;
+                ctx.stroke();
+                ctx.restore();
+
+                // ---- 秒针 (红色) ----
+                ctx.shadowColor = 'rgba(192,57,43,0.20)';
+                ctx.shadowBlur = 10;
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(secAngle);
+                ctx.beginPath();
+                ctx.moveTo(-SECOND_TAIL, 0);
+                ctx.lineTo(SECOND_LENGTH, 0);
+                ctx.strokeStyle = '#c0392b';
+                ctx.lineWidth = 2.4;
+                ctx.stroke();
+                // 秒针尖端小圆点
+                ctx.beginPath();
+                ctx.arc(SECOND_LENGTH + 2, 0, 4, 0, Math.PI * 2);
+                ctx.fillStyle = '#c0392b';
+                ctx.shadowColor = 'rgba(192,57,43,0.30)';
+                ctx.shadowBlur = 10;
+                ctx.fill();
+                ctx.restore();
+
+                // 重置阴影
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+
+                // ---- 绘制中心小圆 (覆盖指针根部) ----
+                ctx.beginPath();
+                ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+                ctx.fillStyle = '#1a1a2e';
+                ctx.shadowColor = 'rgba(0,0,0,0.10)';
+                ctx.shadowBlur = 6;
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+
+                ctx.beginPath();
+                ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#c0392b';
+                ctx.shadowColor = 'rgba(192,57,43,0.25)';
+                ctx.shadowBlur = 6;
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+
+                // ---- 显示日期和时间 (在表盘内部下方) ----
+                const year = shanghai.getFullYear();
+                const month = String(shanghai.getMonth() + 1).padStart(2, '0');
+                const day = String(shanghai.getDate()).padStart(2, '0');
+                const weekNames = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+                const weekDay = weekNames[shanghai.getDay()];
+
+                const hourStr = String(shanghai.getHours()).padStart(2, '0');
+                const minStr = String(shanghai.getMinutes()).padStart(2, '0');
+                const secStr = String(shanghai.getSeconds()).padStart(2, '0');
+
+                const dateText = `${year}年${month}月${day}日 ${weekDay}`;
+                const timeText = `${hourStr}:${minStr}:${secStr}`;
+
+                // 日期文本
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.font = '18px "Helvetica Neue", Arial, sans-serif';
+                ctx.fillStyle = '#4a4a5a';
+                ctx.shadowColor = 'rgba(0,0,0,0.02)';
+                ctx.shadowBlur = 2;
+                ctx.fillText(dateText, cx, cy + 92);
+
+                // 时间文本 (更明显)
+                ctx.font = '600 34px "Helvetica Neue", Arial, sans-serif';
+                ctx.fillStyle = '#1a1a2e';
+                ctx.shadowColor = 'rgba(0,0,0,0.04)';
+                ctx.shadowBlur = 4;
+                ctx.fillText(timeText, cx, cy + 132);
+
+                // 时间文本下方加一条细线装饰
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.beginPath();
+                ctx.moveTo(cx - 40, cy + 152);
+                ctx.lineTo(cx + 40, cy + 152);
+                ctx.strokeStyle = '#d8d8e0';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // 在表盘最外圈加一个极细的装饰圈 (增强层次)
+                ctx.beginPath();
+                ctx.arc(cx, cy, RADIUS + 2, 0, Math.PI * 2);
+                ctx.strokeStyle = '#e8e8f0';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+
+            // ---- 动画循环 ----
+            let animId = null;
+
+            function tick() {
+                updateClock();
+                animId = requestAnimationFrame(tick);
+            }
+
+            // ---- 启动 ----
+            tick();
+
+            // ---- 窗口大小变化时，canvas 自适应 (由 CSS 处理) ----
+            // 但为了高清显示，保持 canvas 内部分辨率不变
+
+            // ---- 页面可见性变化时，优化性能 ----
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    if (animId) {
+                        cancelAnimationFrame(animId);
+                        animId = null;
+                    }
+                } else {
+                    if (!animId) {
+                        tick();
+                    }
+                }
+            });
+
+            // ---- 兼容 Edge 浏览器 (Edge 支持 requestAnimationFrame 和 Canvas) ----
+            // 无需额外 polyfill
+
+            console.log('🕐 高级时钟已启动 · 北京时间 (Asia/Shanghai)');
+
+        })();
+    </script>
+
+</body>
+</html>

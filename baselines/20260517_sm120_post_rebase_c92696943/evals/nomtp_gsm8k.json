@@ -1,0 +1,48 @@
+{
+  "ok": true,
+  "returncode": 0,
+  "command": [
+    "<home-path>",
+    "--model",
+    "local-completions",
+    "--model_args",
+    "model=deepseek-ai/DeepSeek-V4-Flash,base_url=http://127.0.0.1:8000/v1/completions,num_concurrent=4,max_retries=10,tokenized_requests=False,tokenizer_backend=none,max_gen_toks=2048,timeout=60000",
+    "--tasks",
+    "gsm8k",
+    "--num_fewshot",
+    "5",
+    "--batch_size",
+    "auto",
+    "--output_path",
+    "<home-path>",
+    "--limit",
+    "200"
+  ],
+  "config": {
+    "tasks": [
+      "gsm8k"
+    ],
+    "num_fewshot": 5,
+    "num_concurrent": 4,
+    "max_retries": 10,
+    "max_gen_toks": 2048,
+    "eval_timeout_ms": 60000,
+    "tokenizer_backend": "none",
+    "batch_size": "auto",
+    "limit": "200"
+  },
+  "tasks": [
+    {
+      "task": "gsm8k",
+      "version": 3.0,
+      "alias": "gsm8k",
+      "exact_match_flexible": 0.955,
+      "exact_match_strict": 0.955,
+      "exact_match_flexible_stderr": 0.014695399751940952,
+      "exact_match_strict_stderr": 0.014695399751940952,
+      "acc": null,
+      "acc_stderr": null
+    }
+  ],
+  "raw_results_found": true
+}

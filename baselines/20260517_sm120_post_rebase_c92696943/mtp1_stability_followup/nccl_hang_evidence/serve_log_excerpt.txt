@@ -1,0 +1,60 @@
+(APIServer pid=182240) INFO:     Application shutdown complete.
+(APIServer pid=182240) INFO:     Finished server process [182240]
+[rank0]:[E517 20:17:34.985814210 ProcessGroupNCCL.cpp:689] [Rank 0] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=1901719, OpType=_ALLGATHER_BASE, NumelIn=387840, NumelOut=775680, Timeout(ms)=600000) ran for 600001 milliseconds before timing out.
+[rank0]:[E517 20:17:34.985901862 ProcessGroupNCCL.cpp:2303] [PG ID 2 PG GUID 3 Rank 0]  failure detected by watchdog at work sequence id: 1901719 PG status: last enqueued work: 1901720, last completed work: 1901718
+[rank0]:[E517 20:17:34.986222364 ProcessGroupNCCL.cpp:733] Stack trace of the failed collective: 
+#0 all_gather_into_tensor from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/distributed/distributed_c10d.py:4186
+#1 wrapper from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/distributed/c10d_logger.py:83
+#2 all_gather from /home/jasl/Workspace/vllm/vllm/distributed/device_communicators/base_device_communicator.py:198
+#3 _all_gather_out_place from /home/jasl/Workspace/vllm/vllm/distributed/parallel_state.py:550
+#4 all_gather from /home/jasl/Workspace/vllm/vllm/distributed/parallel_state.py:167
+#5 __call__ from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/_ops.py:1269
+#6 all_gather from /home/jasl/Workspace/vllm/vllm/distributed/parallel_state.py:541
+#7 tensor_model_parallel_all_gather from /home/jasl/Workspace/vllm/vllm/distributed/communication_op.py:21
+#8 _gather_logits from /home/jasl/Workspace/vllm/vllm/model_executor/layers/logits_processor.py:83
+#9 _get_logits from /home/jasl/Workspace/vllm/vllm/model_executor/layers/logits_processor.py:99
+#10 forward from /home/jasl/Workspace/vllm/vllm/model_executor/layers/logits_processor.py:64
+#11 _call_impl from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py:1790
+#12 _wrapped_call_impl from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py:1779
+#13 compute_logits from /home/jasl/Workspace/vllm/vllm/model_executor/models/deepseek_v4.py:1682
+#14 execute_model from /home/jasl/Workspace/vllm/vllm/v1/worker/gpu_model_runner.py:4209
+#15 decorate_context from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/utils/_contextlib.py:124
+#16 execute_model from /home/jasl/Workspace/vllm/vllm/v1/worker/gpu_worker.py:843
+#17 decorate_context from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/utils/_contextlib.py:124
+#18 execute_model from /home/jasl/Workspace/vllm/vllm/v1/worker/worker_base.py:345
+#19 worker_busy_loop from /home/jasl/Workspace/vllm/vllm/v1/executor/multiproc_executor.py:957
+#20 worker_main from /home/jasl/Workspace/vllm/vllm/v1/executor/multiproc_executor.py:861
+#21 run from /home/jasl/.local/share/uv/python/cpython-3.13.13-linux-x86_64-gnu/lib/python3.13/multiprocessing/process.py:108
+#22 _bootstrap from /home/jasl/.local/share/uv/python/cpython-3.13.13-linux-x86_64-gnu/lib/python3.13/multiprocessing/process.py:313
+#23 _main from /home/jasl/.local/share/uv/python/cpython-3.13.13-linux-x86_64-gnu/lib/python3.13/multiprocessing/spawn.py:135
+#24 spawn_main from /home/jasl/.local/share/uv/python/cpython-3.13.13-linux-x86_64-gnu/lib/python3.13/multiprocessing/spawn.py:122
+#25 <module> from <string>:1
+
+[rank0]:[E517 20:17:34.986263897 ProcessGroupNCCL.cpp:2636] [PG ID 2 PG GUID 3 Rank 0] First PG on this rank to signal dumping.
+[rank1]:[E517 20:17:34.053343342 ProcessGroupNCCL.cpp:689] [Rank 1] Watchdog caught collective operation timeout: WorkNCCL(SeqNum=1901719, OpType=_ALLGATHER_BASE, NumelIn=387840, NumelOut=775680, Timeout(ms)=600000) ran for 600068 milliseconds before timing out.
+[rank1]:[E517 20:17:34.053397033 ProcessGroupNCCL.cpp:2303] [PG ID 2 PG GUID 3 Rank 1]  failure detected by watchdog at work sequence id: 1901719 PG status: last enqueued work: 1901720, last completed work: 1901718
+[rank1]:[E517 20:17:34.053648792 ProcessGroupNCCL.cpp:733] Stack trace of the failed collective: 
+#0 all_gather_into_tensor from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/distributed/distributed_c10d.py:4186
+#1 wrapper from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/distributed/c10d_logger.py:83
+#2 all_gather from /home/jasl/Workspace/vllm/vllm/distributed/device_communicators/base_device_communicator.py:198
+#3 _all_gather_out_place from /home/jasl/Workspace/vllm/vllm/distributed/parallel_state.py:550
+#4 all_gather from /home/jasl/Workspace/vllm/vllm/distributed/parallel_state.py:167
+#5 __call__ from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/_ops.py:1269
+#6 all_gather from /home/jasl/Workspace/vllm/vllm/distributed/parallel_state.py:541
+#7 tensor_model_parallel_all_gather from /home/jasl/Workspace/vllm/vllm/distributed/communication_op.py:21
+#8 _gather_logits from /home/jasl/Workspace/vllm/vllm/model_executor/layers/logits_processor.py:83
+#9 _get_logits from /home/jasl/Workspace/vllm/vllm/model_executor/layers/logits_processor.py:99
+#10 forward from /home/jasl/Workspace/vllm/vllm/model_executor/layers/logits_processor.py:64
+#11 _call_impl from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py:1790
+#12 _wrapped_call_impl from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/nn/modules/module.py:1779
+#13 compute_logits from /home/jasl/Workspace/vllm/vllm/model_executor/models/deepseek_v4.py:1682
+#14 execute_model from /home/jasl/Workspace/vllm/vllm/v1/worker/gpu_model_runner.py:4209
+#15 decorate_context from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/utils/_contextlib.py:124
+#16 execute_model from /home/jasl/Workspace/vllm/vllm/v1/worker/gpu_worker.py:843
+#17 decorate_context from /home/jasl/Workspace/vllm/.venv/lib/python3.13/site-packages/torch/utils/_contextlib.py:124
+#18 execute_model from /home/jasl/Workspace/vllm/vllm/v1/worker/worker_base.py:345
+#19 worker_busy_loop from /home/jasl/Workspace/vllm/vllm/v1/executor/multiproc_executor.py:957
+#20 worker_main from /home/jasl/Workspace/vllm/vllm/v1/executor/multiproc_executor.py:861
+#21 run from /home/jasl/.local/share/uv/python/cpython-3.13.13-linux-x86_64-gnu/lib/python3.13/multiprocessing/process.py:108
+#22 _bootstrap from /home/jasl/.local/share/uv/python/cpython-3.13.13-linux-x86_64-gnu/lib/python3.13/multiprocessing/process.py:313
+#23 _main from /home/jasl/.local/share/uv/python/cpython-3.13.13-linux-x86_64-gnu/lib/python3.13/multiprocessing/spawn.py:135

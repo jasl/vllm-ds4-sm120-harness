@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beijing Time Wall Clock</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background: #f0f4f8;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+
+    /* ---------- Clock Face ---------- */
+    .clock {
+      width: 400px;
+      height: 400px;
+      max-width: 90vmin;
+      max-height: 90vmin;
+      background: #ffffff;
+      border-radius: 50%;
+      border: 10px solid #2c3e50;
+      position: relative;
+      box-shadow:
+        0 20px 40px rgba(0, 0, 0, 0.15),
+        0 8px 16px rgba(0, 0, 0, 0.1),
+        inset 0 2px 4px rgba(255, 255, 255, 0.8);
+    }
+
+    /* Inner decorative ring */
+    .clock::after {
+      content: '';
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      bottom: 14px;
+      border-radius: 50%;
+      border: 2px solid #e0e0e0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ---------- Scales ---------- */
+    .scales-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    .scale {
+      position: absolute;
+      bottom: 50%;
+      left: 50%;
+      width: 3px;
+      height: 18px;
+      background: #b0b0b0;
+      transform-origin: bottom center;
+      border-radius: 2px;
+    }
+
+    .hour-scale {
+      width: 6px;
+      height: 26px;
+      background: #2c3e50;
+    }
+
+    /* ---------- Numbers ---------- */
+    .numbers-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+    }
+
+    .clock-number {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 32px;
+      height: 32px;
+      margin-left: -16px;
+      margin-top: -16px;
+      font-weight: bold;
+      font-size: 1.3rem;
+      color: #2c3e50;
+      text-align: center;
+      line-height: 32px;
+      transform-origin: center center;
+    }
+
+    /* ---------- Hands ---------- */
+    .hands-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 3;
+    }
+
+    .hand {
+      position: absolute;
+      bottom: 50%;
+      left: 50%;
+      transform-origin: bottom center;
+      border-radius: 4px;
+    }
+
+    .hour-hand {
+      width: 8px;
+      height: 30%;
+      background: #2c3e50;
+      z-index: 10;
+    }
+
+    .minute-hand {
+      width: 6px;
+      height: 40%;
+      background: #2c3e50;
+      z-index: 11;
+    }
+
+    .second-hand {
+      width: 3px;
+      height: 45%;
+      background: #e74c3c;
+      z-index: 12;
+    }
+
+    /* Center dot */
+    .center-dot {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 16px;
+      height: 16px;
+      background: #2c3e50;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 20;
+    }
+    .center-dot-inner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 6px;
+      height: 6px;
+      background: #e74c3c;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 21;
+    }
+
+    /* ---------- Text Displays ---------- */
+    .digital-display {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 30;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .time-display {
+      top: 28%;
+      font-size: 2.6rem;
+      font-weight: 300;
+      color: #2c3e50;
+      letter-spacing: 2px;
+    }
+
+    .date-display {
+      bottom: 28%;
+      font-size: 1rem;
+      font-weight: 400;
+      color: #7f8c8d;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+  <div class="clock">
+
+    <!-- Scales -->
+    <div class="scales-container" id="scalesContainer"></div>
+
+    <!-- Numbers -->
+    <div class="numbers-container" id="numbersContainer"></div>
+
+    <!-- Hands -->
+    <div class="hands-container">
+      <div class="hand hour-hand" id="hourHand"></div>
+      <div class="hand minute-hand" id="minuteHand"></div>
+      <div class="hand second-hand" id="secondHand"></div>
+      <div class="center-dot">
+        <div class="center-dot-inner"></div>
+      </div>
+    </div>
+
+    <!-- Digital Displays -->
+    <div class="digital-display time-display" id="timeDisplay">--:--:--</div>
+    <div class="digital-display date-display" id="dateDisplay">---, --- --</div>
+  </div>
+
+  <script>
+    (function () {
+      // DOM references
+      const hourHand = document.getElementById('hourHand');
+      const minuteHand = document.getElementById('minuteHand');
+      const secondHand = document.getElementById('secondHand');
+      const timeDisplay = document.getElementById('timeDisplay');
+      const dateDisplay = document.getElementById('dateDisplay');
+
+      // Data helpers
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+      /**
+       * Updates the clock hands and digital displays to the current
+       * China Standard Time (UTC+8).
+       */
+      function updateClock() {
+        const now = new Date();
+        // Shift to Beijing time (UTC+8)
+        const utcMillis = now.getTime() + now.getTimezoneOffset() * 60000;
+        const beijingTime = new Date(utcMillis + 8 * 3600000);
+
+        const hours = beijingTime.getHours();
+        const minutes = beijingTime.getMinutes();
+        const seconds = beijingTime.getSeconds();
+        const milliseconds = beijingTime.getMilliseconds();
+
+        // ----- Analog hands (smooth movement) -----
+        const secondAngle = (seconds / 60 + milliseconds / 60000) * 360;
+        const minuteAngle = (minutes / 60 + seconds / 3600) * 360;
+        const hourAngle = ((hours % 12) / 12) * 360 + (minutes / 60) * 30;
+
+        secondHand.style.transform = 'translateX(-50%) rotate(' + secondAngle + 'deg)';
+        minuteHand.style.transform = 'translateX(-50%) rotate(' + minuteAngle + 'deg)';
+        hourHand.style.transform = 'translateX(-50%) rotate(' + hourAngle + 'deg)';
+
+        // ----- Digital time (24‑hour format) -----
+        timeDisplay.textContent =
+          String(hours).padStart(2, '0') + ':' +
+          String(minutes).padStart(2, '0') + ':' +
+          String(seconds).padStart(2, '0');
+
+        // ----- Date and weekday -----
+        const dayName = dayNames[beijingTime.getDay()];
+        const monthName = monthNames[beijingTime.getMonth()];
+        const dayNumber = beijingTime.getDate();
+        dateDisplay.textContent = dayName + ', ' + monthName + ' ' + dayNumber;
+      }
+
+      // ----- Generate 60 scale ticks -----
+      const scalesContainer = document.getElementById('scalesContainer');
+      for (let i = 0; i < 60; i++) {
+        const scale = document.createElement('div');
+        scale.classList.add('scale');
+        if (i % 5 === 0) {
+          scale.classList.add('hour-scale');
+        }
+        scale.style.transform = 'translateX(-50%) rotate(' + (i * 6) + 'deg)';
+        scalesContainer.appendChild(scale);
+      }
+
+      // ----- Generate 12 numbers -----
+      const numbersContainer = document.getElementById('numbersContainer');
+      const radius = 140; // distance from centre
+      for (let i = 1; i <= 12; i++) {
+        const number = document.createElement('span');
+        number.classList.add('clock-number');
+        number.textContent = i;
+        const angle = i * 30;
+        number.style.transform = 'rotate(' + angle + 'deg) translate(0, -' + radius + 'px) rotate(-' + angle + 'deg)';
+        numbersContainer.appendChild(number);
+      }
+
+      // ----- Start the animation loop -----
+      function clockLoop() {
+        updateClock();
+        requestAnimationFrame(clockLoop);
+      }
+      requestAnimationFrame(clockLoop);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Notes Board</title>
+    <style>
+        /* ---- CSS Reset & Variables ---- */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --color-primary: #4361ee;
+            --color-action: #ef476f;
+            --color-decision: #06d6a0;
+            --color-reference: #ffd166;
+            --color-bg: #f4f6f8;
+            --color-card-bg: #ffffff;
+            --color-text: #1a1a2e;
+            --color-muted: #6c757d;
+            --color-border: #dee2e6;
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.10);
+            --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--color-bg);
+            color: var(--color-text);
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+            border-radius: 2px;
+        }
+
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+            border-color: var(--color-primary);
+        }
+
+        /* ---- Layout ---- */
+        header {
+            background: var(--color-card-bg);
+            padding: 1.25rem 2rem;
+            box-shadow: var(--shadow-sm);
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        header h1 {
+            margin: 0 0 0.75rem 0;
+            font-size: 1.6rem;
+            color: var(--color-text);
+        }
+
+        .stats {
+            display: flex;
+            gap: 1.5rem 2rem;
+            flex-wrap: wrap;
+            padding: 0.65rem 1rem;
+            background: #f8f9fa;
+            border-radius: var(--radius-sm);
+            font-size: 0.9rem;
+        }
+
+        .stats span {
+            color: var(--color-muted);
+        }
+
+        .stats strong {
+            color: var(--color-text);
+            font-weight: 600;
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* ---- Filters ---- */
+        .filters {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            margin-bottom: 1.5rem;
+            padding: 1.25rem 1.5rem;
+            background: var(--color-card-bg);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-group label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            color: var(--color-muted);
+            margin-bottom: 0.25rem;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            font-size: 0.9rem;
+            background: var(--color-card-bg);
+            min-width: 160px;
+            font-family: inherit;
+        }
+
+        .filter-group input[type="search"] {
+            min-width: 220px;
+        }
+
+        /* ---- Controls ---- */
+        .controls {
+            margin-bottom: 1.5rem;
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+            color: #fff;
+            border: none;
+            padding: 0.7rem 1.5rem;
+            border-radius: var(--radius-sm);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .btn-primary:hover,
+        .btn-primary:focus-visible {
+            background: #3651d4;
+        }
+
+        /* ---- Notes Grid ---- */
+        .notes-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .notes-grid {
+                grid-template-columns: 1fr;
+            }
+            main {
+                padding: 1.25rem;
+            }
+            header {
+                padding: 1rem 1.25rem;
+            }
+            .stats {
+                gap: 1rem;
+            }
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            color: var(--color-muted);
+            padding: 3rem 1rem;
+            background: var(--color-card-bg);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* ---- Note Card ---- */
+        .note-card {
+            background: var(--color-card-bg);
+            border-radius: var(--radius-md);
+            padding: 1.5rem;
+            box-shadow: var(--shadow-sm);
+            border-left: 5px solid var(--color-border);
+            display: flex;
+            flex-direction: column;
+            transition: box-shadow 0.15s ease;
+        }
+
+        .note-card:hover {
+            box-shadow: var(--shadow-md);
+        }
+
+        .note-card.type-action {
+            border-left-color: var(--color-action);
+        }
+        .note-card.type-decision {
+            border-left-color: var(--color-decision);
+        }
+        .note-card.type-reference {
+            border-left-color: var(--color-reference);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-title {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .card-type {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            padding: 0.2rem 0.6rem;
+            border-radius: var(--radius-sm);
+            white-space: nowrap;
+            flex-shrink: 0;
+            color: #fff;
+        }
+
+        .note-card.type-action .card-type {
+            background: var(--color-action);
+        }
+        .note-card.type-decision .card-type {
+            background: var(--color-decision);
+            color: #1a1a2e;
+        }
+        .note-card.type-reference .card-type {
+            background: var(--color-reference);
+            color: #1a1a2e;
+        }
+
+        .card-meta {
+            font-size: 0.85rem;
+            color: var(--color-muted);
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 0.6rem;
+        }
+
+        .card-meta span {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .card-tags .tag {
+            background: #eef2ff;
+            color: #4338ca;
+            padding: 0.15rem 0.55rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .card-body {
+            font-size: 0.92rem;
+            color: #333;
+            line-height: 1.6;
+            margin: 0 0 1rem 0;
+            flex-grow: 1;
+            word-break: break-word;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 0.6rem;
+            justify-content: flex-end;
+            border-top: 1px solid var(--color-border);
+            padding-top: 1rem;
+            margin-top: auto;
+        }
+
+        .card-actions button {
+            padding: 0.4rem 0.9rem;
+            border: 1px solid var(--color-border);
+            background: var(--color-card-bg);
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.1s ease, border-color 0.1s ease;
+            font-family: inherit;
+        }
+
+        .card-actions button:hover {
+            background: #f0f2f5;
+            border-color: #bbb;
+        }
+
+        .card-actions .btn-delete {
+            color: #b91c1c;
+            border-color: #fecaca;
+        }
+
+        .card-actions .btn-delete:hover {
+            background: #fef2f2;
+            border-color: #fca5a5;
+        }
+
+        /* ---- Modal ---- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 1rem;
+        }
+
+        .modal-content {
+            background: var(--color-card-bg);
+            border-radius: var(--radius-md);
+            padding: 2rem 2.25rem;
+            max-width: 600px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+            position: relative;
+        }
+
+        .modal-content h2 {
+            margin: 0 0 1.25rem 0;
+            font-size: 1.4rem;
+            color: var(--color-text);
+        }
+
+        /* ---- Form ---- */
+        .note-form {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            font-size: 0.92rem;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            padding: 0.6rem 0.75rem;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            font-size: 0.95rem;
+            font-family: inherit;
+            transition: border-color 0.15s ease;
+        }
+
+        .form-group textarea {
+            min-height: 90px;
+            resize: vertical;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            border-color: var(--color-primary);
+        }
+
+        .form-row {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+            min-width: 140px;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: flex-end;
+            margin-top: 0.5rem;
+        }
+
+        .form-actions button {
+            padding: 0.6rem 1.5rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            transition: background 0.1s ease;
+        }
+
+        .form-actions .btn-secondary {
+            background: var(--color-card-bg);
+            border: 1px solid var(--color-border);
+            color: var(--color-text);
+        }
+
+        .form-actions .btn-secondary:hover {
+            background: #f0f2f5;
+        }
+
+        .form-actions .btn-primary {
+            border: none;
+        }
+
+        .form-actions .btn-primary:hover {
+            background: #3651d4;
+        }
+
+        /* ---- Required field indicator ---- */
+        .required::after {
+            content: " *";
+            color: var(--color-action);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <h1>Meeting Notes Board</h1>
+        <div class="stats" aria-live="polite">
+            <span><strong id="stat-total">0</strong> total notes</span>
+            <span><strong id="stat-actions">0</strong> action required</span>
+            <span><strong id="stat-owners">0</strong> unique owners</span>
+            <span>Top tag: <strong id="stat-top-tag">N/A</strong></span>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Filters -->
+        <section class="filters" aria-label="Filters for notes">
+            <div class="filter-group">
+                <label for="filter-owner">Owner</label>
+                <select id="filter-owner">
+                    <option value="">All Owners</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filter-tag">Tag</label>
+                <select id="filter-tag">
+                    <option value="">All Tags</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filter-search">Search</label>
+                <input type="search" id="filter-search" placeholder="Search title, body, owner…">
+            </div>
+        </section>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button id="open-add-modal" class="btn-primary">+ Add Note</button>
+        </div>
+
+        <!-- Notes Grid -->
+        <section class="notes-grid" id="notes-grid" aria-label="Notes">
+            <!-- Cards rendered by JavaScript -->
+        </section>
+    </main>
+
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-content">
+            <h2 id="modal-title">Add Note</h2>
+            <form class="note-form" id="note-form" novalidate>
+                <input type="hidden" id="note-id" value="">
+
+                <div class="form-group">
+                    <label for="note-title" class="required">Title</label>
+                    <input type="text" id="note-title" required autocomplete="off">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="note-owner" class="required">Owner</label>
+                        <input type="text" id="note-owner" required autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="note-date">Meeting Date</label>
+                        <input type="date" id="note-date">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="note-tags">Tags</label>
+                    <input type="text" id="note-tags" placeholder="e.g. design, frontend, sprint" autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label for="note-body">Body</label>
+                    <textarea id="note-body"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="note-type">Note Type</label>
+                    <select id="note-type">
+                        <option value="reference">Reference</option>
+                        <option value="action">Action Required</option>
+                        <option value="decision">Decision</option>
+                    </select>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" id="cancel-modal" class="btn-secondary">Cancel</button>
+                    <button type="submit" id="submit-modal" class="btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        /* ---- Data Management ---- */
+        const STORAGE_KEY = 'meetingNotesBoardData';
+        let data = { notes: [] };
+        let editingNoteId = null;
+        let previousOwningButton = null;
+
+        function loadData() {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                try {
+                    data = JSON.parse(raw);
+                } catch (e) {
+                    data = { notes: [] };
+                }
+            }
+            if (!data.notes) data.notes = [];
+        }
+
+        function saveData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+        }
+
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe.toString()
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        /* ---- Statistics ---- */
+        function getStats() {
+            const notes = data.notes;
+            const total = notes.length;
+            const actionCount = notes.filter(n => n.type === 'action').length;
+            const uniqueOwners = new Set(notes.map(n => n.owner.trim().toLowerCase()).filter(Boolean)).size;
+
+            const tagCounts = {};
+            notes.forEach(n => {
+                (n.tags || []).forEach(t => {
+                    const tag = t.trim().toLowerCase();
+                    if (tag) {
+                        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                    }
+                });
+            });
+
+            let mostCommonTag = null;
+            let maxCount = 0;
+            for (const [tag, count] of Object.entries(tagCounts)) {
+                if (count > maxCount) {
+                    mostCommonTag = tag;
+                    maxCount = count;
+                }
+            }
+            return { total, actionCount, uniqueOwners, mostCommonTag };
+        }
+
+        function renderStats() {
+            const stats = getStats();
+            document.getElementById('stat-total').textContent = stats.total;
+            document.getElementById('stat-actions').textContent = stats.actionCount;
+            document.getElementById('stat-owners').textContent = stats.uniqueOwners;
+            document.getElementById('stat-top-tag').textContent = stats.mostCommonTag || 'N/A';
+        }
+
+        /* ---- Filtering ---- */
+        function getFilteredNotes() {
+            const ownerFilter = document.getElementById('filter-owner').value.trim().toLowerCase();
+            const tagFilter = document.getElementById('filter-tag').value.trim().toLowerCase();
+            const searchFilter = document.getElementById('filter-search').value.trim().toLowerCase();
+
+            return data.notes.filter(note => {
+                // Owner filter (exact match)
+                if (ownerFilter && note.owner.trim().toLowerCase() !== ownerFilter) {
+                    return false;
+                }
+                // Tag filter (exact match)
+                if (tagFilter && !(note.tags || []).some(t => t.trim().toLowerCase() === tagFilter)) {
+                    return false;
+                }
+                // Free-text search (title, body, owner, tags)
+                if (searchFilter) {
+                    const titleMatch = note.title.toLowerCase().includes(searchFilter);
+                    const bodyMatch = (note.body || '').toLowerCase().includes(searchFilter);
+                    const ownerMatch = note.owner.toLowerCase().includes(searchFilter);
+                    const tagsMatch = (note.tags || []).some(t => t.toLowerCase().includes(searchFilter));
+                    if (!titleMatch && !bodyMatch && !ownerMatch && !tagsMatch) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+
+        function populateFilterDropdowns() {
+            const owners = [...new Set(data.notes.map(n => n.owner.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+            const tags = [...new Set(data.notes.flatMap(n => n.tags || []).map(t => t.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+            const ownerSelect = document.getElementById('filter-owner');
+            const tagSelect = document.getElementById('filter-tag');
+
+            const selectedOwner = ownerSelect.value;
+            const selectedTag = tagSelect.value;
+
+            ownerSelect.innerHTML = '<option value="">All Owners</option>' +
+                owners.map(o => `<option value="${escapeHtml(o)}" ${o === selectedOwner ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('');
+            if (selectedOwner && !owners.includes(selectedOwner)) {
+                ownerSelect.value = '';
+            }
+
+            tagSelect.innerHTML = '<option value="">All Tags</option>' +
+                tags.map(t => `<option value="${escapeHtml(t)}" ${t === selectedTag ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('');
+            if (selectedTag && !tags.includes(selectedTag)) {
+                tagSelect.value = '';
+            }
+        }
+
+        /* ---- Rendering ---- */
+        function renderNotes() {
+            const filteredNotes = getFilteredNotes();
+            const grid = document.getElementById('notes-grid');
+            grid.innerHTML = '';
+
+            if (data.notes.length === 0) {
+                grid.innerHTML = '<p class="empty-state">No notes yet. Click "Add Note" to get started!</p>';
+                return;
+            }
+
+            if (filteredNotes.length === 0) {
+                grid.innerHTML = '<p class="empty-state">No notes match your filters.</p>';
+                return;
+            }
+
+            filteredNotes.forEach(note => {
+                const typeLabels = { action: 'Action Required', decision: 'Decision', reference: 'Reference' };
+                const typeLabel = typeLabels[note.type] || 'Reference';
+
+                const card = document.createElement('article');
+                card.className = `note-card type-${note.type || 'reference'}`;
+                card.setAttribute('aria-label', `Note: ${escapeHtml(note.title)}`);
+
+                const tagsHtml = (note.tags || [])
+                    .filter(t => t.trim())
+                    .map(t => `<span class="tag">${escapeHtml(t.trim())}</span>`)
+                    .join('');
+
+                card.innerHTML = `
+                        <div class="card-header">
+                            <h3 class="card-title">${escapeHtml(note.title)}</h3>
+                            <span class="card-type">${escapeHtml(typeLabel)}</span>
+                        </div>
+                        <div class="card-meta">
+                            <span>👤 ${escapeHtml(note.owner)}</span>
+                            <span>📅 ${note.date || 'N/A'}</span>
+                        </div>
+                        ${tagsHtml ? `<div class="card-tags">${tagsHtml}</div>` : ''}
+                        <p class="card-body">${escapeHtml(note.body) || '…'}</p>
+                        <div class="card-actions">
+                            <button class="btn-edit" data-id="${escapeHtml(note.id)}" aria-label="Edit ${escapeHtml(note.title)}">Edit</button>
+                            <button class="btn-delete" data-id="${escapeHtml(note.id)}" aria-label="Delete ${escapeHtml(note.title)}">Delete</button>
+                        </div>
+                    `;
+
+                grid.appendChild(card);
+            });
+
+            // Attach event listeners to cards
+            document.querySelectorAll('.btn-edit').forEach(btn => {
+                btn.addEventListener('click', () => openModalForEdit(btn.dataset.id));
+            });
+            document.querySelectorAll('.btn-delete').forEach(btn => {
+                btn.addEventListener('click', () => handleDelete(btn.dataset.id));
+            });
+        }
+
+        function refreshUI() {
+            populateFilterDropdowns();
+            renderNotes();
+            renderStats();
+        }
+
+        /* ---- Modal Logic ---- */
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalTitle = document.getElementById('modal-title');
+        const noteForm = document.getElementById('note-form');
+        const noteIdInput = document.getElementById('note-id');
+        const titleInput = document.getElementById('note-title');
+        const ownerInput = document.getElementById('note-owner');
+        const dateInput = document.getElementById('note-date');
+        const tagInput = document.getElementById('note-tags');
+        const bodyTextarea = document.getElementById('note-body');
+        const typeSelect = document.getElementById('note-type');
+        const cancelBtn = document.getElementById('cancel-modal');
+        const addNoteBtn = document.getElementById('open-add-modal');
+
+        function openModalForAdd() {
+            editingNoteId = null;
+            modalTitle.textContent = 'Add Note';
+            noteForm.reset();
+            noteIdInput.value = '';
+            dateInput.value = new Date().toISOString().split('T')[0];
+            modalOverlay.style.display = 'flex';
+            previousOwningButton = addNoteBtn;
+            titleInput.focus();
+        }
+
+        function openModalForEdit(id) {
+            const note = data.notes.find(n => n.id === id);
+            if (!note) return;
+            editingNoteId = id;
+            modalTitle.textContent = 'Edit Note';
+            noteIdInput.value = id;
+            titleInput.value = note.title || '';
+            ownerInput.value = note.owner || '';
+            dateInput.value = note.date || '';
+            tagInput.value = (note.tags || []).join(', ');
+            bodyTextarea.value = note.body || '';
+            typeSelect.value = note.type || 'reference';
+            modalOverlay.style.display = 'flex';
+            previousOwningButton = document.querySelector(`.btn-edit[data-id="${id}"]`);
+            titleInput.focus();
+        }
+
+        function closeModal() {
+            modalOverlay.style.display = 'none';
+            if (previousOwningButton && document.contains(previousOwningButton)) {
+                previousOwningButton.focus();
+            } else {
+                addNoteBtn.focus();
+            }
+            previousOwningButton = null;
+        }
+
+        /* ---- Event Handlers ---- */
+        addNoteBtn.addEventListener('click', openModalForAdd);
+        cancelBtn.addEventListener('click', closeModal);
+
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) closeModal();
+        });
+
+        document.querySelector('.modal-content').addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modalOverlay.style.display === 'flex') {
+                closeModal();
+            }
+        });
+
+        // Form submission
+        noteForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const title = titleInput.value.trim();
+            const owner = ownerInput.value.trim();
+            const date = dateInput.value;
+            const tags = tagInput.value.split(',').map(t => t.trim()).filter(Boolean);
+            const body = bodyTextarea.value.trim();
+            const type = typeSelect.value;
+
+            if (!title || !owner) {
+                alert('Title and Owner are required.');
+                return;
+            }
+
+            const noteData = { title, owner, date, tags, body, type };
+
+            if (editingNoteId) {
+                const index = data.notes.findIndex(n => n.id === editingNoteId);
+                if (index > -1) {
+                    data.notes[index] = { ...data.notes[index], ...noteData };
+                }
+            } else {
+                noteData.id = generateId();
+                noteData.createdAt = new Date().toISOString();
+                data.notes.push(noteData);
+            }
+
+            saveData();
+            closeModal();
+            refreshUI();
+        });
+
+        // Delete handler
+        function handleDelete(id) {
+            if (!confirm('Are you sure you want to delete this note?')) return;
+            data.notes = data.notes.filter(n => n.id !== id);
+            saveData();
+            refreshUI();
+        }
+
+        // Filter change handlers
+        document.getElementById('filter-owner').addEventListener('change', renderNotes);
+        document.getElementById('filter-tag').addEventListener('change', renderNotes);
+        document.getElementById('filter-search').addEventListener('input', renderNotes);
+
+        /* ---- Initialization ---- */
+        function init() {
+            loadData();
+
+            // Seed sample data if board is empty
+            if (!data.notes || data.notes.length === 0) {
+                data.notes = [{
+                    id: generateId(),
+                    title: 'Sprint Planning',
+                    owner: 'Alice',
+                    date: new Date().toISOString().split('T')[0],
+                    tags: ['sprint', 'planning'],
+                    body: 'Plan the upcoming sprint goals and distribute tasks among the team.',
+                    type: 'decision',
+                    createdAt: new Date().toISOString()
+                }, {
+                    id: generateId(),
+                    title: 'Bug Triage Results',
+                    owner: 'Bob',
+                    date: new Date().toISOString().split('T')[0],
+                    tags: ['bugs', 'testing'],
+                    body: 'Address the critical bugs found in the latest release candidate.',
+                    type: 'action',
+                    createdAt: new Date().toISOString()
+                }, {
+                    id: generateId(),
+                    title: 'Architecture Sync',
+                    owner: 'Charlie',
+                    date: new Date().toISOString().split('T')[0],
+                    tags: ['architecture'],
+                    body: 'Reviewed the new service boundaries and data flow diagrams.',
+                    type: 'reference',
+                    createdAt: new Date().toISOString()
+                }];
+                saveData();
+            }
+
+            refreshUI();
+        }
+
+        init();
+    </script>
+</body>
+</html>

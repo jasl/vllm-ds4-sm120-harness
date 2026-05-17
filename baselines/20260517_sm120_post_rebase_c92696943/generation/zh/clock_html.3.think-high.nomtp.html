@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>高级时钟 · 上海时刻</title>
+    <style>
+        /* ----- 全局样式 & 背景 ----- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #ececec;
+            /* 暖灰基底，衬托白色表盘 */
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            padding: 20px;
+            margin: 0;
+        }
+
+        /* ----- 时钟容器：提供外层 3D 阴影与深色边框 ----- */
+        .clock-wrapper {
+            position: relative;
+            width: 460px;
+            height: 460px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 4px solid #1e2a3a;
+            box-shadow:
+                0 25px 60px rgba(0, 0, 0, 0.20),
+                0 8px 24px rgba(0, 0, 0, 0.12),
+                inset 0 2px 8px rgba(255, 255, 255, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: box-shadow 0.2s;
+        }
+
+        /* 钟面 Canvas */
+        #clockCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: transparent;
+            /* 背景由 wrapper 提供 */;
+        }
+
+        /* ----- 简单响应式适配 ----- */
+        @media (max-width: 520px) {
+            .clock-wrapper {
+                width: 92vw;
+                height: 92vw;
+                border-width: 3px;
+                box-shadow: 0 15px 40px rgba(0, 0, 0, 0.18);
+            }
+        }
+
+        @media (max-width: 360px) {
+            .clock-wrapper {
+                width: 95vw;
+                height: 95vw;
+                border-width: 2px;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="clock-wrapper">
+        <canvas id="clockCanvas" width="800" height="800"></canvas>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ----- 获取 Canvas 与上下文 -----
+            const canvas = document.getElementById('clockCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // ----- 尺寸参数（基于 800×800 画布） -----
+            const SIZE = 800;
+            const CX = SIZE / 2; // 圆心 X
+            const CY = SIZE / 2; // 圆心 Y
+            const RADIUS = 370; // 表盘半径
+
+            // 刻度参数
+            const TICK_OUTER = RADIUS - 8; // 刻度外端点
+            const TICK_INNER_MAJOR = RADIUS - 42; // 整点刻度内端点
+            const TICK_INNER_MINOR = RADIUS - 24; // 非整点刻度内端点
+
+            // 数字参数
+            const NUM_RADIUS = RADIUS - 70;
+
+            // 指针长度
+            const HOUR_LEN = 220;
+            const MIN_LEN = 300;
+            const SEC_LEN = 340;
+
+            // 指针宽度
+            const HOUR_WIDTH = 12;
+            const MIN_WIDTH = 7;
+            const SEC_WIDTH = 3;
+
+            // 中心装饰
+            const CENTER_DOT_RADIUS = 16;
+            const CENTER_DOT_INNER = 7;
+
+            // 文字区域
+            const TEXT_Y_OFFSET = 82; // 时间文字距圆心
+            const DATE_Y_OFFSET = 124; // 日期文字距圆心
+
+            // ----- 工具：获取上海时间 (Asia/Shanghai) -----
+            function getShanghaiTime() {
+                const now = new Date();
+                // 本地时间与 UTC 的偏移（分钟）
+                const localOffset = now.getTimezoneOffset();
+                // UTC 时间戳（毫秒）
+                const utcMs = now.getTime() + localOffset * 60000;
+                // 上海时区 UTC+8
+                return new Date(utcMs + 8 * 3600000);
+            }
+
+            // ----- 工具：角度转弧度 -----
+            function toRad(deg) {
+                return deg * Math.PI / 180;
+            }
+
+            // ----- 绘制表盘（刻度、数字、日期时间等）-----
+            function drawFace() {
+                ctx.clearRect(0, 0, SIZE, SIZE);
+
+                // ------ 1. 表盘背景 (带细腻径向渐变) -----
+                const grad = ctx.createRadialGradient(CX - 40, CY - 60, 40, CX, CY, RADIUS);
+                grad.addColorStop(0, '#fefefe');
+                grad.addColorStop(0.75, '#fafafa');
+                grad.addColorStop(1, '#f0f0f0');
+                ctx.beginPath();
+                ctx.arc(CX, CY, RADIUS, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                // 轻微内阴影 (凸起感)
+                ctx.shadowColor = 'rgba(0,0,0,0.06)';
+                ctx.shadowBlur = 30;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 8;
+                ctx.beginPath();
+                ctx.arc(CX, CY, RADIUS - 2, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+
+                // ------ 2. 深色边框 (内侧) -----
+                ctx.beginPath();
+                ctx.arc(CX, CY, RADIUS - 1, 0, Math.PI * 2);
+                ctx.strokeStyle = '#1e2a3a';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+
+                // 第二层细边框 (增加层次)
+                ctx.beginPath();
+                ctx.arc(CX, CY, RADIUS - 8, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(30,42,58,0.25)';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                // ------ 3. 生成 60 个刻度 -----
+                for (let i = 0; i < 60; i++) {
+                    const angle = i * 6; // 每个刻度 6°
+                    const isMajor = (i % 5 === 0); // 整点刻度
+
+                    const innerR = isMajor ? TICK_INNER_MAJOR : TICK_INNER_MINOR;
+                    const outerR = TICK_OUTER;
+                    const width = isMajor ? 4.5 : 1.8;
+                    const color = isMajor ? '#1e2a3a' : '#b0b8c4';
+
+                    const rad = toRad(angle - 90);
+                    const x1 = CX + innerR * Math.cos(rad);
+                    const y1 = CY + innerR * Math.sin(rad);
+                    const x2 = CX + outerR * Math.cos(rad);
+                    const y2 = CY + outerR * Math.sin(rad);
+
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = width;
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+                }
+
+                // ------ 4. 数字 1–12 (简洁无衬线) -----
+                ctx.fillStyle = '#1e2a3a';
+                ctx.font = '500 46px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                for (let i = 1; i <= 12; i++) {
+                    const angle = i * 30 - 90; // 12 点方向为起始
+                    const rad = toRad(angle);
+                    const x = CX + NUM_RADIUS * Math.cos(rad);
+                    const y = CY + NUM_RADIUS * Math.sin(rad);
+                    ctx.fillText(String(i), x, y + 2);
+                }
+
+                // ------ 5. 品牌 / 装饰文字 (极淡) -----
+                ctx.fillStyle = 'rgba(30,42,58,0.10)';
+                ctx.font = '200 22px "Inter", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('· SHANGHAI ·', CX, CY - 56);
+            }
+
+            // ----- 绘制指针（时针、分针、秒针）-----
+            function drawHands(hours, minutes, seconds, millis) {
+                // 计算平滑角度
+                // 时针：每小时 30° + 每分钟 0.5° + 每秒 0.00833°
+                const hourAngle = (hours % 12) * 30 + minutes * 0.5 + (seconds + millis / 1000) * 0.008333;
+                // 分针：每分钟 6° + 每秒 0.1°
+                const minAngle = minutes * 6 + (seconds + millis / 1000) * 0.1;
+                // 秒针：每秒 6°（含毫秒平滑）
+                const secAngle = (seconds + millis / 1000) * 6;
+
+                // ----- 时针 (深色) -----
+                drawHand(hourAngle, HOUR_LEN, HOUR_WIDTH, '#1e2a3a', 0.85);
+                // ----- 分针 (深色) -----
+                drawHand(minAngle, MIN_LEN, MIN_WIDTH, '#1e2a3a', 0.70);
+                // ----- 秒针 (红色，平滑) -----
+                drawHand(secAngle, SEC_LEN, SEC_WIDTH, '#c0392b', 0.95);
+
+                // ----- 秒针尾部小圆点 (增加精致感) -----
+                const secRad = toRad(secAngle - 90);
+                const tailX = CX - 32 * Math.cos(secRad);
+                const tailY = CY - 32 * Math.sin(secRad);
+                ctx.beginPath();
+                ctx.arc(tailX, tailY, 5, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(192,57,43,0.35)';
+                ctx.fill();
+
+                // ----- 中心装饰圆 -----
+                // 外圈
+                ctx.shadowColor = 'rgba(0,0,0,0.10)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 3;
+                ctx.beginPath();
+                ctx.arc(CX, CY, CENTER_DOT_RADIUS, 0, Math.PI * 2);
+                ctx.fillStyle = '#1e2a3a';
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+
+                // 内圈 (红色)
+                ctx.beginPath();
+                ctx.arc(CX, CY, CENTER_DOT_INNER, 0, Math.PI * 2);
+                ctx.fillStyle = '#c0392b';
+                ctx.fill();
+
+                // 高光小点
+                ctx.beginPath();
+                ctx.arc(CX - 4, CY - 5, 3, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255,255,255,0.50)';
+                ctx.fill();
+            }
+
+            // ----- 辅助：绘制单根指针 (带圆角 & 轻微阴影) -----
+            function drawHand(angleDeg, length, width, color, opacity) {
+                const rad = toRad(angleDeg - 90);
+                const x = CX + length * Math.cos(rad);
+                const y = CY + length * Math.sin(rad);
+
+                // 指针杆
+                ctx.save();
+                ctx.shadowColor = 'rgba(0,0,0,0.12)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 4;
+
+                ctx.beginPath();
+                ctx.moveTo(CX, CY);
+                ctx.lineTo(x, y);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.lineCap = 'round';
+                ctx.globalAlpha = opacity;
+                ctx.stroke();
+
+                ctx.restore();
+
+                // 指针根部加粗 (更稳固的视觉效果)
+                ctx.beginPath();
+                ctx.arc(CX, CY, width * 0.70, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.globalAlpha = opacity * 0.60;
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+
+            // ----- 绘制时间 & 日期文字 (位于表盘中心偏下) -----
+            function drawTimeText(hours, minutes, seconds, year, month, day, weekday) {
+                // 时间字符串 (两位数)
+                const hh = String(hours).padStart(2, '0');
+                const mm = String(minutes).padStart(2, '0');
+                const ss = String(seconds).padStart(2, '0');
+                const timeStr = hh + ':' + mm + ':' + ss;
+
+                // 日期字符串
+                const dateStr = year + '年' + month + '月' + day + '日  周' + weekday;
+
+                // ----- 时间 (大号, 深色) -----
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                // 文字背景 (半透明白色柔光, 增强可读性)
+                ctx.shadowColor = 'rgba(255,255,255,0.7)';
+                ctx.shadowBlur = 20;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+
+                ctx.font = '500 58px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+                ctx.fillStyle = '#1e2a3a';
+                ctx.fillText(timeStr, CX, CY + TEXT_Y_OFFSET);
+
+                // ----- 日期 (稍小, 灰色) -----
+                ctx.font = '400 30px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+                ctx.fillStyle = '#5a6a7e';
+                ctx.fillText(dateStr, CX, CY + DATE_Y_OFFSET);
+
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+            }
+
+            // ----- 主更新函数：计算角度并重绘 -----
+            function updateClock() {
+                // 获取上海时间
+                const shanghai = getShanghaiTime();
+
+                const hours = shanghai.getHours();
+                const minutes = shanghai.getMinutes();
+                const seconds = shanghai.getSeconds();
+                const millis = shanghai.getMilliseconds();
+
+                const year = shanghai.getFullYear();
+                const month = shanghai.getMonth() + 1;
+                const day = shanghai.getDate();
+                const weekDay = shanghai.getDay();
+                const weekNames = ['日', '一', '二', '三', '四', '五', '六'];
+                const weekStr = weekNames[weekDay];
+
+                // 1. 绘制表盘 (刻度、数字、背景)
+                drawFace();
+
+                // 2. 绘制指针 (含平滑秒针)
+                drawHands(hours, minutes, seconds, millis);
+
+                // 3. 绘制时间 & 日期文字
+                drawTimeText(hours, minutes, seconds, year, month, day, weekStr);
+            }
+
+            // ----- 动画循环 (requestAnimationFrame 实现平滑) -----
+            let animId = null;
+
+            function tick() {
+                updateClock();
+                animId = requestAnimationFrame(tick);
+            }
+
+            // ----- 启动时钟 -----
+            function startClock() {
+                if (animId) {
+                    cancelAnimationFrame(animId);
+                }
+                tick();
+            }
+
+            // ----- 页面加载后启动 -----
+            if (document.readyState === 'complete') {
+                startClock();
+            } else {
+                window.addEventListener('load', startClock);
+            }
+
+            // ----- 窗口尺寸变化时，利用 ResizeObserver 保持锐利 (无需重绘，仅防模糊) -----
+            // 由于 Canvas 是矢量绘制，无需额外操作。但为了保证在极端缩放下的清晰度，
+            // 我们不做额外处理，因为 Canvas 已固定 800×800，CSS 缩放由浏览器处理。
+
+            // ----- (可选) 边缘浏览器兼容：确保所有 API 存在 -----
+            // 所有使用到的 API (Canvas, requestAnimationFrame, Intl, Date) 均兼容 Edge。
+            // 此处无额外 polyfill 需求。
+
+            console.log('🕐 高级时钟已启动 · 上海时间 (Asia/Shanghai)');
+
+        })();
+    </script>
+</body>
+</html>

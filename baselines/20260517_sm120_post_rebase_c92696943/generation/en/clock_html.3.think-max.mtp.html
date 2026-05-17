@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>High-End Wall Clock</title>
+    <style>
+        /* ----- Reset & Base ----- */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f0f2f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ----- Dial Container ----- */
+        .clock-container {
+            padding: 20px;
+        }
+
+        .clock-dial {
+            box-sizing: content-box;          /* Keep content area exactly 350x350 */
+            width: 350px;
+            height: 350px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 8px solid #2c3e50;
+            box-shadow:
+                0 20px 35px rgba(0, 0, 0, 0.25),
+                0 5px 15px rgba(0, 0, 0, 0.1),
+                inset 0 5px 10px rgba(0, 0, 0, 0.04);
+            position: relative;
+        }
+
+        /* ----- Scales & Numbers Containers ----- */
+        .scale-container,
+        .number-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+        }
+
+        /* ----- 60 Scales ----- */
+        .scale {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform-origin: 50% 165px;      /* Pivot at the exact center of the dial */
+        }
+
+        /* Exact hour: thicker, darker */
+        .scale.hour-tick {
+            width: 4px;
+            height: 16px;
+            background: #2c3e50;
+            margin-left: -2px;
+            border-radius: 2px;
+        }
+
+        /* Non‑integer hour: thinner, lighter */
+        .scale.minute-tick {
+            width: 2px;
+            height: 8px;
+            background: #95a5a6;
+            margin-left: -1px;
+            border-radius: 1px;
+        }
+
+        /* ----- Roman / Arabic Numbers ----- */
+        .number {
+            position: absolute;
+            font-size: 15px;
+            font-weight: 700;
+            color: #2c3e50;
+            transform: translate(-50%, -50%);
+        }
+
+        /* ----- Hands ----- */
+        .hand {
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: bottom center;
+            border-radius: 4px;
+            transition: none;                 /* Ensure smooth rAF updates */
+        }
+
+        .hour-hand {
+            width: 6px;
+            height: 80px;
+            background: #2c3e50;
+            margin-left: -3px;
+            z-index: 10;
+            border-radius: 3px 3px 1px 1px;
+        }
+
+        .minute-hand {
+            width: 4px;
+            height: 110px;
+            background: #2c3e50;
+            margin-left: -2px;
+            z-index: 11;
+            border-radius: 2px 2px 1px 1px;
+        }
+
+        .second-hand {
+            width: 2px;
+            height: 135px;
+            background: #e74c3c;
+            margin-left: -1px;
+            z-index: 12;
+            border-radius: 1px;
+            position: relative;
+        }
+
+        /* Counter-weight tail on the second hand */
+        .second-hand::after {
+            content: '';
+            position: absolute;
+            bottom: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 6px;
+            height: 20px;
+            background: #e74c3c;
+            border-radius: 0 0 3px 3px;
+        }
+
+        /* Center cap / pin */
+        .center-dot {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #2c3e50;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 13;
+        }
+
+        /* ----- Text Information (Upper & Lower) ----- */
+        .time-text {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #2c3e50;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            z-index: 20;
+            pointer-events: none;
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        .upper-text {
+            top: 22%;
+            font-size: 26px;
+            font-weight: 600;
+            letter-spacing: 2px;
+        }
+
+        .lower-text {
+            bottom: 22%;
+            font-size: 13px;
+            font-weight: 400;
+            color: #7f8c8d;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+    <div class="clock-container">
+        <div class="clock-dial">
+            <!-- Dynamically generated scales & numbers -->
+            <div class="scale-container" id="scaleContainer"></div>
+            <div class="number-container" id="numberContainer"></div>
+
+            <!-- Clock hands -->
+            <div class="hand hour-hand" id="hourHand"></div>
+            <div class="hand minute-hand" id="minuteHand"></div>
+            <div class="hand second-hand" id="secondHand"></div>
+            <div class="center-dot"></div>
+
+            <!-- Text displays -->
+            <div class="time-text upper-text" id="upperText">00:00:00</div>
+            <div class="time-text lower-text" id="lowerText">0000-00-00 Saturday</div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ----- Build the 60 ticks -----
+            function createScales() {
+                const container = document.getElementById('scaleContainer');
+                for (let i = 0; i < 60; i++) {
+                    const scale = document.createElement('div');
+                    scale.classList.add('scale');
+                    // Exact hour marks every 5th tick
+                    if (i % 5 === 0) {
+                        scale.classList.add('hour-tick');
+                    } else {
+                        scale.classList.add('minute-tick');
+                    }
+                    const angle = i * 6;
+                    scale.style.transform = 'rotate(' + angle + 'deg)';
+                    container.appendChild(scale);
+                }
+            }
+
+            // ----- Build the 12 numbers (Arabic) -----
+            function createNumbers() {
+                const container = document.getElementById('numberContainer');
+                const centerX = 175;
+                const centerY = 175;
+                const radius = 115;
+
+                for (let i = 1; i <= 12; i++) {
+                    const angleDeg = i * 30;
+                    const angleRad = angleDeg * Math.PI / 180;
+                    const x = centerX + radius * Math.sin(angleRad);
+                    const y = centerY - radius * Math.cos(angleRad);
+
+                    const num = document.createElement('div');
+                    num.classList.add('number');
+                    num.textContent = i;
+                    num.style.left = x + 'px';
+                    num.style.top = y + 'px';
+                    container.appendChild(num);
+                }
+            }
+
+            // ----- Core clock update -----
+            function updateClock() {
+                // Current time in Beijing (China Standard Time, UTC+8)
+                const now = new Date();
+                const localOffsetMs = now.getTimezoneOffset() * 60000;
+                const utcMs = now.getTime() + localOffsetMs;
+                const cstMs = utcMs + 8 * 3600000;
+                const cst = new Date(cstMs);
+
+                const hours = cst.getHours();
+                const minutes = cst.getMinutes();
+                const seconds = cst.getSeconds();
+                const ms = cst.getMilliseconds();
+
+                // Smooth continuous rotation (sub‑second precision)
+                const totalSeconds = seconds + ms / 1000;
+                const totalMinutes = minutes + totalSeconds / 60;
+                const hours12 = hours % 12;
+
+                const secondAngle = totalSeconds * 6;
+                const minuteAngle = totalMinutes * 6;
+                const hourAngle = (hours12 + totalMinutes / 60) * 30;
+
+                document.getElementById('secondHand').style.transform = 'rotate(' + secondAngle + 'deg)';
+                document.getElementById('minuteHand').style.transform = 'rotate(' + minuteAngle + 'deg)';
+                document.getElementById('hourHand').style.transform = 'rotate(' + hourAngle + 'deg)';
+
+                // Upper text: 24‑hour time
+                var timeStr = pad(hours) + ':' + pad(minutes) + ':' + pad(seconds);
+                document.getElementById('upperText').textContent = timeStr;
+
+                // Lower text: date + weekday
+                var weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                var weekday = weekdays[cst.getDay()];
+                var dateStr = cst.getFullYear() + '-' + pad(cst.getMonth() + 1) + '-' + pad(cst.getDate()) + ' ' + weekday;
+                document.getElementById('lowerText').textContent = dateStr;
+            }
+
+            // Helper: zero‑pad a number to two digits
+            function pad(num) {
+                return String(num).padStart(2, '0');
+            }
+
+            // ----- RequestAnimationFrame loop (smooth & battery‑friendly) -----
+            function tick() {
+                updateClock();
+                requestAnimationFrame(tick);
+            }
+
+            // ----- Initialise everything on DOM ready -----
+            document.addEventListener('DOMContentLoaded', function() {
+                createScales();
+                createNumbers();
+                tick();
+            });
+        })();
+    </script>
+</body>
+</html>

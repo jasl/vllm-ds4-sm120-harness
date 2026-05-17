@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>aquarium · fish & food</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: linear-gradient(145deg, #0b1f2e, #0a1a24);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+        }
+        .aquarium-wrapper {
+            border-radius: 40px 40px 20px 20px;
+            background: #153243;
+            padding: 20px 20px 25px;
+            box-shadow: 0 20px 30px rgba(0,0,0,0.7), inset 0 0 0 1px rgba(255,255,240,0.08);
+        }
+        canvas {
+            display: block;
+            width: 900px;
+            height: 550px;
+            border-radius: 28px;
+            box-shadow: inset 0 0 30px #0a1f2b, 0 8px 18px rgba(0,0,0,0.6);
+            cursor: crosshair;
+            background: radial-gradient(circle at 20% 30%, #1b4b5e, #0c2f3f);
+            transition: box-shadow 0.2s;
+        }
+        canvas:active {
+            box-shadow: inset 0 0 40px #3e7f96, 0 8px 18px #000;
+        }
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 14px;
+            padding: 0 12px 0 18px;
+            color: #b3d9e8;
+            font-weight: 400;
+            letter-spacing: 0.5px;
+            text-shadow: 0 2px 3px #041016;
+        }
+        .food-count {
+            background: #203f4e;
+            padding: 6px 18px;
+            border-radius: 60px;
+            font-size: 0.9rem;
+            border: 1px solid #387485;
+            backdrop-filter: blur(2px);
+            box-shadow: inset 0 0 6px #5b9aae;
+        }
+        .hint {
+            background: #1a3a48;
+            padding: 6px 18px;
+            border-radius: 60px;
+            font-size: 0.8rem;
+            border: 1px solid #3b7285;
+            opacity: 0.9;
+        }
+        .hint i {
+            font-style: normal;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        @media (max-width: 940px) {
+            canvas { width: 100%; height: auto; aspect-ratio: 900/550; }
+            .aquarium-wrapper { padding: 12px; }
+        }
+    </style>
+</head>
+<body>
+<div class="aquarium-wrapper">
+    <canvas id="aquariumCanvas" width="900" height="550"></canvas>
+    <div class="status-bar">
+        <span class="food-count">🍕 food: <span id="foodCounter">0</span></span>
+        <span class="hint"><i>🖱️</i> left click → drop food</span>
+    </div>
+</div>
+<script>
+    (function(){
+        const canvas = document.getElementById('aquariumCanvas');
+        const ctx = canvas.getContext('2d');
+        const foodSpan = document.getElementById('foodCounter');
+
+        // ---------- AQUARIUM DIMENSIONS ----------
+        const W = 900, H = 550;
+        const BORDER = 14;  // aesthetic boundary (fish avoid strict edges)
+
+        // ---------- FISH DATA ----------
+        const fishColors = [
+            '#f7c35c', '#e8845a', '#6fc1b0', '#e3657a', '#f2b84e',
+            '#6fa3d6', '#c09ad8', '#ea9a6a', '#b0d483', '#e6839b',
+            '#5fc3c9', '#d9a0d4', '#f5b06b', '#8bc1d9', '#d9c06b'
+        ];
+
+        // each fish: position, velocity, size, color, phase for tail/body wave
+        let fishes = [];
+
+        // ---------- FOOD ----------
+        let foodPieces = [];   // { x, y }
+
+        // ---------- CLICK HANDLER ----------
+        function addFood(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const canvasX = (clientX - rect.left) * scaleX;
+            const canvasY = (clientY - rect.top) * scaleY;
+
+            // keep food inside visible area (with small margin)
+            const x = Math.min(W - 12, Math.max(12, canvasX));
+            const y = Math.min(H - 12, Math.max(12, canvasY));
+            foodPieces.push({ x, y });
+            updateFoodCounter();
+        }
+
+        canvas.addEventListener('click', (e) => {
+            addFood(e.clientX, e.clientY);
+        });
+
+        // ---------- HELPERS ----------
+        function updateFoodCounter() {
+            foodSpan.textContent = foodPieces.length;
+        }
+
+        // ---------- FISH FACTORY ----------
+        function createFish(partial = {}) {
+            const baseSpeed = 0.35 + Math.random() * 0.55;
+            const size = 10 + Math.random() * 18;   // 10..28
+            const color = partial.color || fishColors[Math.floor(Math.random() * fishColors.length)];
+            const x = partial.x ?? (20 + Math.random() * (W - 40));
+            const y = partial.y ?? (20 + Math.random() * (H - 40));
+            // random direction (unit vector)
+            let angle = Math.random() * 2 * Math.PI;
+            let vx = Math.cos(angle) * baseSpeed;
+            let vy = Math.sin(angle) * baseSpeed;
+            return {
+                x, y, vx, vy,
+                size: size,
+                color: color,
+                phase: Math.random() * 100,  // for wavy motion
+                speed: baseSpeed,
+            };
+        }
+
+        // ---------- INITIALIZE FISH (15 individuals, varied) ----------
+        function initFish(count = 15) {
+            fishes = [];
+            for (let i = 0; i < count; i++) {
+                let color = fishColors[i % fishColors.length];
+                // shift hue a bit for more variety (some golden, some teal)
+                if (i % 3 === 0) color = '#e8b85e';
+                if (i % 5 === 0) color = '#9ac7d9';
+                const fish = createFish({ color, x: 40 + Math.random() * (W-80), y: 40 + Math.random() * (H-80) });
+                fishes.push(fish);
+            }
+        }
+        initFish(16);  // 16 little swimmers
+
+        // ---------- PHYSICS & BEHAVIOR ----------
+        // helper: distance
+        function dist(a, b) {
+            return Math.hypot(a.x - b.x, a.y - b.y);
+        }
+
+        // each frame: move fish, handle food chasing
+        function updatePhysics() {
+            const foodAvailable = foodPieces.length > 0;
+
+            for (let f of fishes) {
+                let targetX = null, targetY = null;
+                let chaseMode = false;
+
+                if (foodAvailable) {
+                    // find nearest food to this fish
+                    let minDist = Infinity;
+                    let nearest = null;
+                    for (let fp of foodPieces) {
+                        const d = dist(f, fp);
+                        if (d < minDist) {
+                            minDist = d;
+                            nearest = fp;
+                        }
+                    }
+                    if (nearest && minDist < 500) { // far food ignored? but still chase if close enough
+                        targetX = nearest.x;
+                        targetY = nearest.y;
+                        chaseMode = true;
+                    }
+                }
+
+                // ----- COMPUTE STEERING / VELOCITY -----
+                let desiredVx = f.vx, desiredVy = f.vy;
+                const baseSpeed = f.speed;
+
+                if (chaseMode && targetX !== null) {
+                    // direction to food
+                    const dx = targetX - f.x;
+                    const dy = targetY - f.y;
+                    const len = Math.hypot(dx, dy);
+                    if (len > 0.5) {
+                        const normX = dx / len;
+                        const normY = dy / len;
+                        // blend smoothly: 65% toward food, 35% keep original (avoids jitter)
+                        desiredVx = normX * baseSpeed * 0.80 + f.vx * 0.20;
+                        desiredVy = normY * baseSpeed * 0.80 + f.vy * 0.20;
+                        // renormalize to base speed
+                        const desiredLen = Math.hypot(desiredVx, desiredVy);
+                        if (desiredLen > 0.01) {
+                            desiredVx = (desiredVx / desiredLen) * baseSpeed;
+                            desiredVy = (desiredVy / desiredLen) * baseSpeed;
+                        }
+                    }
+                } else {
+                    // FREE SWIMMING: gentle wandering + occasional turn
+                    f.phase += 0.008 + Math.random() * 0.005;
+                    const wiggle = Math.sin(f.phase) * 0.20;
+                    const angleNoise = (Math.random() - 0.5) * 0.06;
+                    let angle = Math.atan2(f.vy, f.vx);
+                    angle += wiggle * 0.04 + angleNoise;
+                    desiredVx = Math.cos(angle) * baseSpeed;
+                    desiredVy = Math.sin(angle) * baseSpeed;
+                }
+
+                // apply smoothing (inertia)
+                f.vx += (desiredVx - f.vx) * 0.18;
+                f.vy += (desiredVy - f.vy) * 0.18;
+
+                // speed capping (just in case)
+                const sp = Math.hypot(f.vx, f.vy);
+                if (sp > 1.6) {
+                    f.vx = (f.vx / sp) * 1.6;
+                    f.vy = (f.vy / sp) * 1.6;
+                } else if (sp < 0.2 && !chaseMode) {
+                    // avoid complete stop
+                    f.vx += (Math.random() - 0.5) * 0.08;
+                    f.vy += (Math.random() - 0.5) * 0.08;
+                }
+
+                // move fish
+                f.x += f.vx;
+                f.y += f.vy;
+
+                // ----- BOUNDARIES (soft elastic + turn) -----
+                const margin = 6 + f.size * 0.7;
+                if (f.x < margin) { f.x = margin; f.vx *= -0.45; }
+                if (f.x > W - margin) { f.x = W - margin; f.vx *= -0.45; }
+                if (f.y < margin) { f.y = margin; f.vy *= -0.45; }
+                if (f.y > H - margin) { f.y = H - margin; f.vy *= -0.45; }
+
+                // extra push away from walls if stuck
+                if (f.x < BORDER) f.vx += 0.06;
+                if (f.x > W - BORDER) f.vx -= 0.06;
+                if (f.y < BORDER) f.vy += 0.06;
+                if (f.y > H - BORDER) f.vy -= 0.06;
+            }
+
+            // ----- FOOD EATING (if fish close enough) -----
+            if (foodPieces.length > 0) {
+                const eatenIndices = new Set();
+                for (let i = 0; i < fishes.length; i++) {
+                    const f = fishes[i];
+                    let closestDist = 18 + f.size * 0.5; // eating range
+                    let toEat = -1;
+                    for (let j = 0; j < foodPieces.length; j++) {
+                        const d = dist(f, foodPieces[j]);
+                        if (d < closestDist) {
+                            closestDist = d;
+                            toEat = j;
+                        }
+                    }
+                    if (toEat !== -1) {
+                        eatenIndices.add(toEat);
+                    }
+                }
+                // remove eaten food (largest index first to avoid splicing issues)
+                if (eatenIndices.size > 0) {
+                    const sorted = Array.from(eatenIndices).sort((a,b)=>b-a);
+                    for (let idx of sorted) {
+                        foodPieces.splice(idx, 1);
+                    }
+                    updateFoodCounter();
+                }
+            }
+        }
+
+        // ---------- RENDERING (pretty aquarium + fish) ----------
+        function drawScene() {
+            ctx.clearRect(0, 0, W, H);
+
+            // ---- background gradient & decor ----
+            const grad = ctx.createRadialGradient(120, 120, 40, 400, 300, 600);
+            grad.addColorStop(0, '#296e82');
+            grad.addColorStop(0.5, '#144b5e');
+            grad.addColorStop(1, '#0b2938');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            // water caustics (gentle)
+            ctx.globalAlpha = 0.06;
+            for (let i = 0; i < 14; i++) {
+                ctx.beginPath();
+                ctx.arc(80 + i*70 + Math.sin(Date.now()*0.0006 + i)*16,
+                        40 + i*37 + Math.cos(i*2 + Date.now()*0.0005)*12,
+                        34 + i*5, 0, Math.PI*2);
+                ctx.fillStyle = '#d4f2ff';
+                ctx.fill();
+            }
+            ctx.globalAlpha = 0.12;
+            for (let i = 0; i < 8; i++) {
+                ctx.beginPath();
+                ctx.arc(350 + i*80 + Math.sin(Date.now()*0.0003 + i)*20,
+                        120 + i*50 + Math.cos(i+ Date.now()*0.0004)*14,
+                        46 + i*3, 0, Math.PI*2);
+                ctx.fillStyle = '#bae1f0';
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1.0;
+
+            // subtle bubbles
+            ctx.fillStyle = '#c2e2f0';
+            ctx.shadowColor = '#7bbfd0';
+            ctx.shadowBlur = 14;
+            for (let i=0; i<8; i++) {
+                let x = 40 + i*110 + Math.sin(i*2+Date.now()*0.0007)*8;
+                let y = 480 - i*40 + Math.cos(i+Date.now()*0.0007)*6;
+                ctx.beginPath();
+                ctx.arc(x, y, 4 + i%3, 0, Math.PI*2);
+                ctx.fillStyle = `rgba(210, 240, 255, ${0.2+Math.sin(Date.now()*0.001+i)*0.06})`;
+                ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+            ctx.shadowColor = 'transparent';
+
+            // ---- draw food pieces (glowing) ----
+            for (let fp of foodPieces) {
+                ctx.beginPath();
+                ctx.arc(fp.x, fp.y, 8, 0, 2 * Math.PI);
+                const gradient = ctx.createRadialGradient(fp.x-2, fp.y-3, 2, fp.x, fp.y, 12);
+                gradient.addColorStop(0, '#ffe484');
+                gradient.addColorStop(0.5, '#f5b342');
+                gradient.addColorStop(1, '#b46f1a');
+                ctx.fillStyle = gradient;
+                ctx.shadowColor = '#fdd27a';
+                ctx.shadowBlur = 20;
+                ctx.fill();
+                // inner spark
+                ctx.beginPath();
+                ctx.arc(fp.x-2, fp.y-3, 3, 0, 2*Math.PI);
+                ctx.fillStyle = '#fff6cf';
+                ctx.shadowBlur = 25;
+                ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+
+            // ---- draw fishes ----
+            for (let f of fishes) {
+                const angle = Math.atan2(f.vy, f.vx);
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                const size = f.size;
+
+                // body wave effect (tail oscillation)
+                const wave = Math.sin(Date.now() * 0.008 + f.phase) * 0.25;
+
+                ctx.save();
+                ctx.translate(f.x, f.y);
+                ctx.rotate(angle);
+
+                // ---- fish body (ellipse) ----
+                ctx.beginPath();
+                ctx.ellipse(0, 0, size * 0.9, size * 0.43, 0, 0, Math.PI * 2);
+                // gradient for body volume
+                const bodyGrad = ctx.createRadialGradient(-2, -4, 2, 0, 0, size*0.9);
+                bodyGrad.addColorStop(0, lightenColor(f.color, 30));
+                bodyGrad.addColorStop(0.7, f.color);
+                bodyGrad.addColorStop(1, darkenColor(f.color, 30));
+                ctx.fillStyle = bodyGrad;
+                ctx.shadowColor = '#1f353f';
+                ctx.shadowBlur = 14;
+                ctx.fill();
+
+                // ---- tail (asymmetric wave) ----
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                const tailX = -size * 0.9 - 4;
+                const tailYUp = -size * 0.35 + wave * size * 0.3;
+                const tailYDown = size * 0.35 + wave * size * 0.3;
+                ctx.moveTo(tailX, tailYUp);
+                ctx.lineTo(tailX - size * 0.45, tailYUp * 1.4 - wave * 4);
+                ctx.lineTo(tailX, tailYDown);
+                ctx.closePath();
+                ctx.fillStyle = darkenColor(f.color, 25);
+                ctx.fill();
+
+                // ---- eye ----
+                ctx.shadowBlur = 6;
+                ctx.beginPath();
+                ctx.arc(size * 0.35, -size * 0.09, size * 0.12, 0, 2 * Math.PI);
+                ctx.fillStyle = '#f4f9ff';
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(size * 0.4, -size * 0.13, size * 0.06, 0, 2 * Math.PI);
+                ctx.fillStyle = '#04141c';
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(size * 0.44, -size * 0.17, size * 0.025, 0, 2 * Math.PI);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            // ---- aquarium glass reflection ----
+            ctx.strokeStyle = 'rgba(255,255,250,0.08)';
+            ctx.lineWidth = 6;
+            ctx.strokeRect(6, 6, W-12, H-12);
+            ctx.strokeStyle = 'rgba(210, 235, 245, 0.04)';
+            ctx.lineWidth = 15;
+            ctx.strokeRect(0, 0, W, H);
+
+            // vignette
+            const vignette = ctx.createRadialGradient(450, 280, 220, 450, 280, 540);
+            vignette.addColorStop(0, 'rgba(10,30,40,0)');
+            vignette.addColorStop(1, 'rgba(4,14,22,0.35)');
+            ctx.fillStyle = vignette;
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        // ---- color helpers ----
+        function lightenColor(color, percent) {
+            const num = parseInt(color.replace('#',''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = Math.min(255, (num >> 16) + amt);
+            const G = Math.min(255, ((num >> 8) & 0x00FF) + amt);
+            const B = Math.min(255, (num & 0x0000FF) + amt);
+            return `rgb(${R},${G},${B})`;
+        }
+        function darkenColor(color, percent) {
+            const num = parseInt(color.replace('#',''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = Math.max(0, (num >> 16) - amt);
+            const G = Math.max(0, ((num >> 8) & 0x00FF) - amt);
+            const B = Math.max(0, (num & 0x0000FF) - amt);
+            return `rgb(${R},${G},${B})`;
+        }
+
+        // ---------- ANIMATION LOOP ----------
+        function animate() {
+            updatePhysics();
+            drawScene();
+            requestAnimationFrame(animate);
+        }
+        animate();
+    })();
+</script>
+</body>
+</html>

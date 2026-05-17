@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>北京时区 · 高级时钟</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #f0f2f5;
+            font-family: 'Arial', 'Helvetica Neue', sans-serif;
+            padding: 20px;
+        }
+
+        /* 时钟容器 — 白色底、深色边框、3D 阴影 */
+        .clock-frame {
+            width: 520px;
+            height: 520px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 5px solid #2c3e50;
+            box-shadow:
+                0 16px 48px rgba(0, 0, 0, 0.18),
+                0 4px 12px rgba(0, 0, 0, 0.08),
+                inset 0 2px 4px rgba(0, 0, 0, 0.02);
+            overflow: hidden;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        #clockCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            /* canvas 内部不绘制背景，使用容器背景 */;
+        }
+
+        /* 响应式缩放 */
+        @media (max-width: 560px) {
+            .clock-frame {
+                width: 92vw;
+                height: 92vw;
+                max-width: 520px;
+                max-height: 520px;
+                border-width: 4px;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .clock-frame {
+                border-width: 3px;
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="clock-frame">
+        <canvas id="clockCanvas" width="520" height="520"></canvas>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // -------- 画布 & 上下文 --------
+            const canvas = document.getElementById('clockCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // 尺寸常量 (基于 520x520 画布)
+            const SIZE = 520;
+            const CX = SIZE / 2; // 260
+            const CY = SIZE / 2;
+            const RADIUS = 222; // 表盘绘制半径
+
+            // -------- 工具函数：北京时间 --------
+            function getBeijingTime() {
+                const now = new Date();
+                // 本地时间与 UTC 的偏移（分钟）
+                const localOffset = now.getTimezoneOffset();
+                // 北京时区 UTC+8，即偏移 -480 分钟
+                const beijingOffset = -480;
+                const diff = beijingOffset - (-localOffset);
+                return new Date(now.getTime() + diff * 60000);
+            }
+
+            // -------- 绘制静态元素（刻度 + 数字）只绘制一次，用离屏 Canvas 缓存 --------
+            function createStaticLayer() {
+                const offscreen = document.createElement('canvas');
+                offscreen.width = SIZE;
+                offscreen.height = SIZE;
+                const offCtx = offscreen.getContext('2d');
+
+                // ---- 刻度 ----
+                for (let i = 0; i < 60; i++) {
+                    const angle = (i / 60) * Math.PI * 2 - Math.PI / 2;
+                    const isHour = (i % 5 === 0);
+
+                    // 整点：更粗更深，且更长
+                    const length = isHour ? 28 : 14;
+                    const width = isHour ? 3.6 : 1.2;
+                    const color = isHour ? '#2c3e50' : '#b8bcc0';
+
+                    const outerR = RADIUS - 4; // 留边距
+                    const innerR = outerR - length;
+
+                    const x1 = CX + innerR * Math.cos(angle);
+                    const y1 = CY + innerR * Math.sin(angle);
+                    const x2 = CX + outerR * Math.cos(angle);
+                    const y2 = CY + outerR * Math.sin(angle);
+
+                    offCtx.beginPath();
+                    offCtx.moveTo(x1, y1);
+                    offCtx.lineTo(x2, y2);
+                    offCtx.strokeStyle = color;
+                    offCtx.lineWidth = width;
+                    offCtx.lineCap = 'round';
+                    offCtx.stroke();
+                }
+
+                // ---- 数字 1~12 ----
+                const numRadius = RADIUS * 0.78;
+                offCtx.fillStyle = '#2c3e50';
+                offCtx.textAlign = 'center';
+                offCtx.textBaseline = 'middle';
+                offCtx.font = '500 22px "Arial", "Helvetica Neue", sans-serif';
+
+                for (let i = 1; i <= 12; i++) {
+                    const angle = (i / 12) * Math.PI * 2 - Math.PI / 2;
+                    const x = CX + numRadius * Math.cos(angle);
+                    const y = CY + numRadius * Math.sin(angle);
+                    offCtx.fillText(String(i), x, y);
+                }
+
+                // ---- 品牌 / 装饰小字 (可选) ----
+                offCtx.fillStyle = '#c0c4c8';
+                offCtx.font = '400 10px "Arial", sans-serif';
+                offCtx.textAlign = 'center';
+                offCtx.textBaseline = 'middle';
+                offCtx.fillText('· SHANGHAI ·', CX, CY + RADIUS * 0.48);
+
+                return offscreen;
+            }
+
+            const staticLayer = createStaticLayer();
+
+            // -------- 主更新函数 --------
+            function updateClock() {
+                const bt = getBeijingTime();
+
+                const h = bt.getHours();
+                const m = bt.getMinutes();
+                const s = bt.getSeconds();
+                const ms = bt.getMilliseconds();
+
+                // 平滑角度计算 (包含毫秒)
+                // 时针: 每小时 30° + 每分钟 0.5° + 每秒 0.5/60°
+                const hourAngle = ((h % 12) + m / 60 + s / 3600 + ms / 3600000) * 30;
+                // 分针: 每分钟 6° + 每秒 0.1°
+                const minAngle = (m + s / 60 + ms / 60000) * 6;
+                // 秒针: 每秒 6° (包含毫秒实现平滑)
+                const secAngle = (s + ms / 1000) * 6;
+
+                // ----- 清空画布 (透明) 容器白色背景会透出 -----
+                ctx.clearRect(0, 0, SIZE, SIZE);
+
+                // ----- 绘制静态层 (刻度 + 数字) -----
+                ctx.drawImage(staticLayer, 0, 0);
+
+                // ----- 绘制中心信息底板 (在指针下方) -----
+                const panelR = 42;
+                // 柔和阴影
+                ctx.save();
+                ctx.shadowColor = 'rgba(0,0,0,0.06)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 2;
+                ctx.beginPath();
+                ctx.arc(CX, CY, panelR, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                ctx.restore();
+
+                // 边框
+                ctx.beginPath();
+                ctx.arc(CX, CY, panelR, 0, Math.PI * 2);
+                ctx.strokeStyle = '#e3e6e8';
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+
+                // ----- 指针 (时针 → 分针 → 秒针) -----
+                // 时针
+                drawHand(ctx, CX, CY, hourAngle, 115, 5.2, '#2c3e50', 0.92);
+                // 分针
+                drawHand(ctx, CX, CY, minAngle, 165, 3.0, '#2c3e50', 0.94);
+                // 秒针 (红色，细长)
+                drawHand(ctx, CX, CY, secAngle, 190, 1.6, '#e74c3c', 0.96);
+
+                // ----- 中心信息面板 (文字) 在指针上方绘制，但保留指针穿透感 -----
+                // 实际上面板底板已在指针下方，但文字在指针上方以确保清晰
+                // 但为避免文字被指针完全遮挡，我们在指针之上再写一次文字（无背景）
+                // 更好的做法：文字单独在指针之上绘制，保证可读
+                // 但为了视觉层次，我们让指针在文字上，但文字用深色粗体
+                // 这里采用折中：面板底板在指针下，文字在指针上（重新绘制文字）
+                // 这样指针会穿过文字区域，但文字始终在最上层。
+
+                // 重新在指针之上绘制文字（无背景，但颜色鲜明）
+                drawTimeText(ctx, CX, CY, bt);
+
+                // ----- 中心轴心 (在最上层) -----
+                ctx.save();
+                ctx.shadowColor = 'rgba(0,0,0,0.10)';
+                ctx.shadowBlur = 6;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 1;
+                ctx.beginPath();
+                ctx.arc(CX, CY, 5.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#2c3e50';
+                ctx.fill();
+                ctx.restore();
+
+                // 轴心高光小点
+                ctx.beginPath();
+                ctx.arc(CX - 1, CY - 2, 1.8, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255,255,255,0.50)';
+                ctx.fill();
+            }
+
+            // -------- 绘制单根指针 --------
+            function drawHand(ctx, cx, cy, angleDeg, length, width, color, tailRatio) {
+                const rad = (angleDeg - 90) * Math.PI / 180;
+                const tailLen = length * (1 - tailRatio); // 尾部长度
+
+                // 尾部端点 (反方向)
+                const xTail = cx - tailLen * Math.cos(rad);
+                const yTail = cy - tailLen * Math.sin(rad);
+                // 尖端
+                const xTip = cx + length * Math.cos(rad);
+                const yTip = cy + length * Math.sin(rad);
+
+                ctx.save();
+                ctx.shadowColor = 'rgba(0,0,0,0.08)';
+                ctx.shadowBlur = 8;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 2;
+
+                ctx.beginPath();
+                ctx.moveTo(xTail, yTail);
+                ctx.lineTo(xTip, yTip);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // -------- 在中心面板绘制时间 / 日期 (在指针之上) --------
+            function drawTimeText(ctx, cx, cy, timeObj) {
+                const h = timeObj.getHours();
+                const m = timeObj.getMinutes();
+                const s = timeObj.getSeconds();
+
+                const timeStr = String(h).padStart(2, '0') + ':' +
+                    String(m).padStart(2, '0') + ':' +
+                    String(s).padStart(2, '0');
+
+                const year = timeObj.getFullYear();
+                const month = String(timeObj.getMonth() + 1).padStart(2, '0');
+                const day = String(timeObj.getDate()).padStart(2, '0');
+                const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+                const wd = weekdays[timeObj.getDay()];
+                const dateStr = year + '.' + month + '.' + day + '  周' + wd;
+
+                // 文字绘制 (带轻微阴影增强可读)
+                ctx.save();
+                ctx.shadowColor = 'rgba(255,255,255,0.8)';
+                ctx.shadowBlur = 6;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+
+                // 时间 — 大号，粗体，深色
+                ctx.fillStyle = '#2c3e50';
+                ctx.font = '600 18px "Courier New", "Arial", monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(timeStr, cx, cy - 7);
+
+                // 日期 — 小号，灰色
+                ctx.fillStyle = '#7f8c8d';
+                ctx.font = '400 10px "Arial", "Helvetica Neue", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(dateStr, cx, cy + 19);
+
+                ctx.restore();
+            }
+
+            // -------- 驱动：requestAnimationFrame --------
+            let animId = null;
+
+            function tick() {
+                updateClock();
+                animId = requestAnimationFrame(tick);
+            }
+
+            // -------- 启动 --------
+            function start() {
+                if (animId) {
+                    cancelAnimationFrame(animId);
+                    animId = null;
+                }
+                tick();
+            }
+
+            // 等待 DOM 完全就绪
+            if (document.readyState === 'complete') {
+                start();
+            } else {
+                window.addEventListener('load', start);
+            }
+
+            // 页面可见性变化时保持稳定 (可选)
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    if (animId) {
+                        cancelAnimationFrame(animId);
+                        animId = null;
+                    }
+                } else {
+                    if (!animId) {
+                        tick();
+                    }
+                }
+            });
+
+            // 兼容性: Edge 浏览器已基于 Chromium，支持所有现代 API
+            // 若需要兼容旧版 Edge (EdgeHTML)，requestAnimationFrame 和 Canvas 均受支持
+
+        })();
+    </script>
+</body>
+</html>

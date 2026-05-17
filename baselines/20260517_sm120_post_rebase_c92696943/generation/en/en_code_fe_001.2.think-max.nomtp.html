@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Notes Board</title>
+    <style>
+        /* reset & base */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f8f9fa;
+            color: #212529;
+        }
+
+        /* header & stats */
+        header {
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin: 0 0 10px;
+        }
+        .stats-strip {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .stat-item {
+            background: #fff;
+            padding: 8px 16px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            font-size: 0.9rem;
+        }
+        .stat-item strong {
+            font-weight: 700;
+        }
+
+        /* controls & filters */
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: end;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .filters {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            flex: 1;
+        }
+        .filters input,
+        .filters select {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background: #fff;
+        }
+        .filters input#search-input {
+            min-width: 180px;
+            flex: 1;
+        }
+        #add-note-btn {
+            padding: 8px 18px;
+            background: #0d6efd;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        /* notes grid */
+        .notes-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .notes-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* note card */
+        .note-card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+            border-left: 5px solid transparent;
+            display: flex;
+            flex-direction: column;
+        }
+        .note-card.note-category-action-required {
+            border-left-color: #dc3545;
+        }
+        .note-card.note-category-decision {
+            border-left-color: #ffc107;
+        }
+        .note-card.note-category-reference {
+            border-left-color: #0d6efd;
+        }
+        .note-card h3 {
+            margin: 0 0 8px;
+            font-size: 1.15rem;
+        }
+        .note-card .note-meta {
+            font-size: 0.85rem;
+            color: #6c757d;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .note-card .note-category {
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+        .note-card>p {
+            margin: 0 0 10px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .note-card .note-tags {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-top: auto;
+            padding-top: 10px;
+        }
+        .note-card .tag {
+            background: #e9ecef;
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+        .card-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #eee;
+        }
+        .card-actions button {
+            padding: 5px 14px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .card-actions button:hover {
+            background: #f1f3f5;
+        }
+
+        /* dialog / modal */
+        dialog {
+            border: none;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 540px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+        }
+        dialog::backdrop {
+            background: rgba(0, 0, 0, 0.4);
+        }
+        dialog form p {
+            margin: 0 0 16px;
+        }
+        dialog label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        dialog input:not([type="radio"]):not([type="checkbox"]),
+        dialog select,
+        dialog textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            font-family: inherit;
+        }
+        dialog textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }
+        .form-actions button {
+            padding: 10px 24px;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        #save-note-btn {
+            background: #0d6efd;
+            color: #fff;
+            border: none;
+        }
+        #cancel-btn {
+            background: #fff;
+            border: 1px solid #ced4da;
+        }
+
+        /* accessibility */
+        :focus-visible {
+            outline: 2px solid #0d6efd;
+            outline-offset: 2px;
+        }
+        .visually-hidden:not(:focus):not(:active) {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            margin: -1px;
+            padding: 0;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Meeting Notes Board</h1>
+        <div class="stats-strip" id="stats-strip" aria-label="Note statistics">
+            <span class="stat-item">Total Notes: <strong id="stat-total">0</strong></span>
+            <span class="stat-item">Action Required: <strong id="stat-actions">0</strong></span>
+            <span class="stat-item">Unique Owners: <strong id="stat-owners">0</strong></span>
+            <span class="stat-item">Top Tag: <strong id="stat-tag">N/A</strong></span>
+        </div>
+    </header>
+
+    <main>
+        <section class="controls" aria-label="Controls and filters">
+            <div class="filters">
+                <input type="search" id="search-input" aria-label="Search notes" placeholder="Search by text…">
+                <select id="owner-filter" aria-label="Filter by owner">
+                    <option value="">All Owners</option>
+                </select>
+                <select id="tag-filter" aria-label="Filter by tag">
+                    <option value="">All Tags</option>
+                </select>
+                <select id="category-filter" aria-label="Filter by category">
+                    <option value="">All Categories</option>
+                    <option value="action-required">Action Required</option>
+                    <option value="decision">Decision</option>
+                    <option value="reference">Reference</option>
+                </select>
+            </div>
+            <button id="add-note-btn">+ Add Note</button>
+        </section>
+
+        <section class="notes-grid" id="notes-grid" role="list" aria-label="Meeting notes" aria-live="polite">
+            <!-- notes rendered by JS -->
+        </section>
+    </main>
+
+    <dialog id="note-modal">
+        <form id="note-form" method="dialog">
+            <h2 id="modal-title">Add Note</h2>
+            <p>
+                <label for="note-title">Title *</label>
+                <input type="text" id="note-title" required autocomplete="off">
+            </p>
+            <p>
+                <label for="note-owner">Owner *</label>
+                <input type="text" id="note-owner" required autocomplete="off">
+            </p>
+            <p>
+                <label for="note-date">Meeting Date</label>
+                <input type="date" id="note-date">
+            </p>
+            <p>
+                <label for="note-tags">Tags (comma-separated)</label>
+                <input type="text" id="note-tags" placeholder="e.g. sprint, design" autocomplete="off">
+            </p>
+            <p>
+                <label for="note-category">Category</label>
+                <select id="note-category">
+                    <option value="action-required">Action Required</option>
+                    <option value="decision">Decision</option>
+                    <option value="reference">Reference</option>
+                </select>
+            </p>
+            <p>
+                <label for="note-body">Body</label>
+                <textarea id="note-body" rows="4"></textarea>
+            </p>
+            <div class="form-actions">
+                <button type="submit" id="save-note-btn">Save</button>
+                <button type="button" id="cancel-btn">Cancel</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script>
+        const STORAGE_KEY = 'meetingNotesBoardData';
+        let notes = [];
+        let editingId = null;
+
+        // ----- helpers -----
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
+        }
+
+        // ----- storage -----
+        function loadNotes() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                try {
+                    notes = JSON.parse(stored);
+                } catch {
+                    notes = [];
+                }
+            } else {
+                notes = [];
+            }
+        }
+
+        function saveNotes() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+        }
+
+        // ----- filtering & stats -----
+        function getFilteredNotes() {
+            const searchTerm = document.getElementById('search-input').value.toLowerCase().trim();
+            const ownerFilter = document.getElementById('owner-filter').value;
+            const tagFilter = document.getElementById('tag-filter').value;
+            const categoryFilter = document.getElementById('category-filter').value;
+
+            return notes.filter(note => {
+                if (searchTerm) {
+                    const haystack = (
+                        note.title + ' ' +
+                        note.owner + ' ' +
+                        (note.body || '') + ' ' +
+                        (note.tags || []).join(' ')
+                    ).toLowerCase();
+                    if (!haystack.includes(searchTerm)) return false;
+                }
+                if (ownerFilter && note.owner !== ownerFilter) return false;
+                if (tagFilter && !(note.tags || []).includes(tagFilter)) return false;
+                if (categoryFilter && note.category !== categoryFilter) return false;
+                return true;
+            });
+        }
+
+        function getMostCommonTag() {
+            const allTags = notes.flatMap(n => n.tags || []);
+            if (allTags.length === 0) return { name: 'N/A', count: 0 };
+            const counts = {};
+            allTags.forEach(t => {
+                const lower = t.toLowerCase();
+                counts[lower] = (counts[lower] || 0) + 1;
+            });
+            let maxCount = 0;
+            let mostCommon = 'N/A';
+            for (const [tag, count] of Object.entries(counts)) {
+                if (count > maxCount) {
+                    maxCount = count;
+                    mostCommon = tag;
+                }
+            }
+            return { name: mostCommon, count: maxCount };
+        }
+
+        function updateStats() {
+            const total = notes.length;
+            const actionRequired = notes.filter(n => n.category === 'action-required').length;
+            const uniqueOwners = new Set(notes.map(n => n.owner.toLowerCase())).size;
+            const topTag = getMostCommonTag();
+
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-actions').textContent = actionRequired;
+            document.getElementById('stat-owners').textContent = uniqueOwners;
+            document.getElementById('stat-tag').textContent = topTag.name + (topTag.count > 0 ? ' (' + topTag.count + ')' : '');
+        }
+
+        function updateFilterOptions() {
+            const owners = [...new Set(notes.map(n => n.owner))];
+            const tags = [...new Set(notes.flatMap(n => n.tags || []))];
+
+            const ownerSelect = document.getElementById('owner-filter');
+            const currentOwner = ownerSelect.value;
+            ownerSelect.innerHTML = '<option value="">All Owners</option>';
+            owners.forEach(o => {
+                ownerSelect.innerHTML += '<option value="' + escapeHtml(o) + '">' + escapeHtml(o) + '</option>';
+            });
+            if ([...ownerSelect.options].some(o => o.value === currentOwner)) {
+                ownerSelect.value = currentOwner;
+            }
+
+            const tagSelect = document.getElementById('tag-filter');
+            const currentTag = tagSelect.value;
+            tagSelect.innerHTML = '<option value="">All Tags</option>';
+            tags.forEach(t => {
+                tagSelect.innerHTML += '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>';
+            });
+            if ([...tagSelect.options].some(o => o.value === currentTag)) {
+                tagSelect.value = currentTag;
+            }
+        }
+
+        // ----- render -----
+        function render() {
+            updateFilterOptions();
+            const filteredNotes = getFilteredNotes();
+            const grid = document.getElementById('notes-grid');
+            grid.innerHTML = '';
+
+            if (filteredNotes.length === 0) {
+                grid.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:#6c757d;">No notes found.</p>';
+            } else {
+                filteredNotes.forEach(note => {
+                    const card = document.createElement('article');
+                    card.className = 'note-card';
+                    if (note.category) {
+                        card.classList.add('note-category-' + note.category);
+                    }
+                    card.setAttribute('role', 'listitem');
+                    card.dataset.id = note.id;
+
+                    const safeTitle = escapeHtml(note.title);
+                    const safeOwner = escapeHtml(note.owner);
+                    const safeDate = escapeHtml(note.date || 'N/A');
+                    const safeCategory = escapeHtml((note.category || '').replace('-', ' '));
+                    const safeBody = escapeHtml(note.body || '');
+                    const tagsHtml = (note.tags || [])
+                        .map(t => '<span class="tag">' + escapeHtml(t) + '</span>')
+                        .join(' ');
+
+                    card.innerHTML = `
+                            <h3>${safeTitle}</h3>
+                            <p class="note-meta">
+                                <span>Owner: ${safeOwner}</span>
+                                <span>Date: ${safeDate}</span>
+                                <span class="note-category">${safeCategory}</span>
+                            </p>
+                            <p>${safeBody}</p>
+                            <p class="note-tags">${tagsHtml}</p>
+                            <div class="card-actions">
+                                <button class="edit-btn" data-id="${note.id}" aria-label="Edit note: ${safeTitle}">Edit</button>
+                                <button class="delete-btn" data-id="${note.id}" aria-label="Delete note: ${safeTitle}">Delete</button>
+                            </div>
+                        `;
+                    grid.appendChild(card);
+                });
+            }
+            updateStats();
+        }
+
+        // ----- modal -----
+        function openAddModal() {
+            editingId = null;
+            document.getElementById('modal-title').textContent = 'Add Note';
+            document.getElementById('note-form').reset();
+            document.getElementById('note-category').value = 'action-required';
+            document.getElementById('note-modal').showModal();
+        }
+
+        function openEditModal(id) {
+            const note = notes.find(n => n.id == id);
+            if (!note) return;
+            editingId = id;
+            document.getElementById('modal-title').textContent = 'Edit Note';
+            document.getElementById('note-title').value = note.title || '';
+            document.getElementById('note-owner').value = note.owner || '';
+            document.getElementById('note-date').value = note.date || '';
+            document.getElementById('note-tags').value = (note.tags || []).join(', ');
+            document.getElementById('note-category').value = note.category || 'action-required';
+            document.getElementById('note-body').value = note.body || '';
+            document.getElementById('note-modal').showModal();
+        }
+
+        function closeModal() {
+            document.getElementById('note-modal').close();
+        }
+
+        function handleFormSubmit(event) {
+            event.preventDefault();
+            const title = document.getElementById('note-title').value.trim();
+            const owner = document.getElementById('note-owner').value.trim();
+            if (!title || !owner) return; // required validation
+
+            const date = document.getElementById('note-date').value;
+            const tags = document.getElementById('note-tags').value
+                .split(',')
+                .map(t => t.trim())
+                .filter(t => t);
+            const category = document.getElementById('note-category').value;
+            const body = document.getElementById('note-body').value.trim();
+
+            const noteData = { title, owner, date, tags, category, body };
+
+            if (editingId) {
+                const index = notes.findIndex(n => n.id == editingId);
+                if (index !== -1) {
+                    notes[index] = { ...notes[index], ...noteData };
+                }
+            } else {
+                noteData.id = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                notes.push(noteData);
+            }
+
+            saveNotes();
+            render();
+            closeModal();
+        }
+
+        function deleteNote(id) {
+            if (confirm('Delete this note permanently?')) {
+                notes = notes.filter(n => n.id != id);
+                saveNotes();
+                if (editingId == id) closeModal();
+                render();
+            }
+        }
+
+        // ----- event wiring -----
+        document.getElementById('add-note-btn').addEventListener('click', openAddModal);
+        document.getElementById('note-form').addEventListener('submit', handleFormSubmit);
+        document.getElementById('cancel-btn').addEventListener('click', closeModal);
+
+        document.getElementById('search-input').addEventListener('input', render);
+        document.getElementById('owner-filter').addEventListener('change', render);
+        document.getElementById('tag-filter').addEventListener('change', render);
+        document.getElementById('category-filter').addEventListener('change', render);
+
+        document.getElementById('notes-grid').addEventListener('click', function(e) {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            const id = btn.dataset.id;
+            if (btn.classList.contains('edit-btn')) {
+                openEditModal(id);
+            } else if (btn.classList.contains('delete-btn')) {
+                deleteNote(id);
+            }
+        });
+
+        // ----- init -----
+        loadNotes();
+        render();
+    </script>
+</body>
+</html>

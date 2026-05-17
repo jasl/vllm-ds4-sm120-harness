@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Notes Board</title>
+    <style>
+        /* ---- Reset & Base ---- */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg: #f1f5f9;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --action-bg: #fee2e2;
+            --action-text: #991b1b;
+            --decision-bg: #fef3c7;
+            --decision-text: #92400e;
+            --reference-bg: #f3f4f6;
+            --reference-text: #374151;
+            --tag-bg: #e0e7ff;
+            --tag-text: #3730a3;
+            --radius: 0.5rem;
+            --shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+            --focus-ring: 3px solid var(--primary);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 1rem;
+            min-height: 100vh;
+        }
+
+        /* ---- Accessibility Helpers ---- */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: var(--primary);
+            color: #fff;
+            padding: 0.5rem 1rem;
+            z-index: 100;
+            text-decoration: none;
+        }
+        .skip-link:focus {
+            top: 0;
+            outline: var(--focus-ring);
+            outline-offset: 2px;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        /* ---- Focus Styles ---- */
+        :focus-visible {
+            outline: var(--focus-ring);
+            outline-offset: 2px;
+        }
+        input:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible,
+        button:focus-visible {
+            outline: var(--focus-ring);
+            outline-offset: 2px;
+        }
+
+        /* ---- Header & Stats ---- */
+        #app-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        #app-header h1 {
+            font-size: 1.75rem;
+            color: var(--primary);
+            margin-bottom: 0.75rem;
+        }
+
+        #stats {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1rem 2.5rem;
+            padding: 1rem 1.5rem;
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 90px;
+        }
+
+        .stat-value {
+            font-size: 1.35rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        /* ---- Main Layout ---- */
+        #main-content {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* ---- Search & Filter Controls ---- */
+        #controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: end;
+            margin-bottom: 1.5rem;
+            padding: 1rem 1.5rem;
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 180px;
+            min-width: 140px;
+        }
+
+        .control-group label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+            color: var(--text-muted);
+        }
+
+        .control-group input,
+        .control-group select {
+            padding: 0.5rem 0.6rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 0.95rem;
+            background: var(--card-bg);
+            color: var(--text);
+        }
+
+        .control-group input::placeholder {
+            color: #94a3b8;
+        }
+
+        /* ---- Form Section ---- */
+        #note-form-section {
+            margin-bottom: 1.5rem;
+        }
+
+        #note-form-section h2 {
+            font-size: 1.25rem;
+            margin-bottom: 0.75rem;
+        }
+
+        #note-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem 1rem;
+            padding: 1.5rem;
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group.full-width {
+            grid-column: span 2;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            padding: 0.5rem 0.6rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            background: var(--card-bg);
+            color: var(--text);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        fieldset {
+            grid-column: span 2;
+            border: none;
+            padding: 0;
+        }
+
+        fieldset legend {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 0.4rem;
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .radio-group input[type="radio"] {
+            width: auto;
+            accent-color: var(--primary);
+        }
+
+        .form-actions {
+            grid-column: span 2;
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            margin-top: 0.5rem;
+        }
+
+        .btn-primary {
+            padding: 0.65rem 1.5rem;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-cancel {
+            padding: 0.65rem 1.25rem;
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .btn-cancel:hover {
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        /* ---- Notes Section ---- */
+        #notes-section h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        #notes-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+
+        /* ---- Note Cards ---- */
+        .note-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            transition: box-shadow 0.15s;
+        }
+
+        .note-card:focus-within {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .card-header h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .note-type {
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 0.2em 0.6em;
+            border-radius: 4px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            letter-spacing: 0.02em;
+        }
+
+        .type-action {
+            background: var(--action-bg);
+            color: var(--action-text);
+        }
+        .type-decision {
+            background: var(--decision-bg);
+            color: var(--decision-text);
+        }
+        .type-reference {
+            background: var(--reference-bg);
+            color: var(--reference-text);
+        }
+
+        .card-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            gap: 0.5rem;
+        }
+
+        .card-meta time {
+            flex-shrink: 0;
+        }
+
+        .card-body {
+            font-size: 0.85rem;
+            color: var(--text);
+            line-height: 1.5;
+            word-break: break-word;
+            max-height: 110px;
+            overflow-y: auto;
+            background: var(--bg);
+            padding: 0.5rem 0.6rem;
+            border-radius: 4px;
+        }
+
+        .card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+        }
+
+        .tag {
+            background: var(--tag-bg);
+            color: var(--tag-text);
+            font-size: 0.7rem;
+            padding: 0.1em 0.6em;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: auto;
+            padding-top: 0.25rem;
+        }
+
+        .card-actions button {
+            padding: 0.35rem 0.8rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--card-bg);
+            font-size: 0.85rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.1s;
+        }
+
+        .card-actions button:hover {
+            background: var(--bg);
+        }
+
+        .btn-edit {
+            color: var(--primary);
+        }
+
+        .btn-delete {
+            color: var(--action-text);
+        }
+
+        .placeholder {
+            grid-column: 1 / -1;
+            text-align: center;
+            color: var(--text-muted);
+            padding: 2rem;
+            font-size: 1rem;
+        }
+
+        /* ---- Responsive ---- */
+        @media (max-width: 768px) {
+            #note-form {
+                grid-template-columns: 1fr;
+            }
+
+            .form-group.full-width {
+                grid-column: span 1;
+            }
+
+            fieldset {
+                grid-column: span 1;
+            }
+
+            .form-actions {
+                grid-column: span 1;
+                flex-direction: column;
+            }
+
+            .form-actions button {
+                width: 100%;
+            }
+
+            #notes-container {
+                grid-template-columns: 1fr;
+            }
+
+            #controls {
+                flex-direction: column;
+            }
+
+            .control-group {
+                flex: 1 1 auto;
+                min-width: 0;
+            }
+
+            #stats {
+                gap: 0.75rem 1.5rem;
+            }
+
+            .stat {
+                min-width: 70px;
+            }
+
+            .stat-value {
+                font-size: 1.1rem;
+            }
+
+            .stat-label {
+                font-size: 0.6rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 0.5rem;
+            }
+
+            #stats {
+                padding: 0.75rem 1rem;
+                gap: 0.5rem 1rem;
+            }
+
+            .stat {
+                min-width: 60px;
+            }
+
+            #controls {
+                padding: 0.75rem 1rem;
+            }
+
+            #note-form {
+                padding: 1rem;
+            }
+
+            .note-card {
+                padding: 1rem;
+            }
+
+            .card-meta {
+                flex-direction: column;
+                gap: 0.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <header id="app-header">
+        <h1>📋 Meeting Notes Board</h1>
+        <section id="stats" aria-label="Notes Statistics" role="status">
+            <div class="stat">
+                <span class="stat-value" id="stat-total">0</span>
+                <span class="stat-label">Total Notes</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-action">0</span>
+                <span class="stat-label">Action Required</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-owners">0</span>
+                <span class="stat-label">Unique Owners</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="stat-tag">N/A</span>
+                <span class="stat-label">Most Common Tag</span>
+            </div>
+        </section>
+    </header>
+
+    <main id="main-content">
+
+        <section id="controls" aria-label="Search and filter controls">
+            <div class="control-group">
+                <label for="search">Search</label>
+                <input type="search" id="search" placeholder="Search notes…" autocomplete="off">
+            </div>
+            <div class="control-group">
+                <label for="filter-owner">Owner</label>
+                <select id="filter-owner">
+                    <option value="">All Owners</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="filter-tag">Tag</label>
+                <select id="filter-tag">
+                    <option value="">All Tags</option>
+                </select>
+            </div>
+        </section>
+
+        <section id="note-form-section" aria-label="Add or edit a note">
+            <h2 id="form-title">Add New Note</h2>
+            <form id="note-form" novalidate>
+                <div class="form-group">
+                    <label for="title">Title *</label>
+                    <input type="text" id="title" required>
+                </div>
+                <div class="form-group">
+                    <label for="owner">Owner *</label>
+                    <input type="text" id="owner" required>
+                </div>
+                <div class="form-group">
+                    <label for="date">Meeting Date *</label>
+                    <input type="date" id="date" required>
+                </div>
+                <div class="form-group">
+                    <label for="tags">Tags (comma separated)</label>
+                    <input type="text" id="tags" placeholder="e.g. sprint, frontend">
+                </div>
+                <div class="form-group full-width">
+                    <label for="body">Body</label>
+                    <textarea id="body" rows="4"></textarea>
+                </div>
+
+                <fieldset>
+                    <legend>Note Type</legend>
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="type" value="action" checked>
+                            Action Required
+                        </label>
+                        <label>
+                            <input type="radio" name="type" value="decision">
+                            Decision
+                        </label>
+                        <label>
+                            <input type="radio" name="type" value="reference">
+                            Reference
+                        </label>
+                    </div>
+                </fieldset>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary">Add Note</button>
+                    <button type="button" id="cancel-edit" class="btn-cancel" style="display:none;">Cancel</button>
+                </div>
+            </form>
+        </section>
+
+        <section id="notes-section" aria-label="Notes list">
+            <h2>Notes</h2>
+            <div id="notes-container" role="list">
+                <!-- Cards are dynamically inserted here -->
+            </div>
+        </section>
+
+        <div id="announcements" class="sr-only" aria-live="polite"></div>
+
+    </main>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ---- State ----
+            let notes = [];
+            let editingId = null;
+            const currentFilters = {
+                query: '',
+                owner: '',
+                tag: ''
+            };
+
+            // ---- DOM refs ----
+            const statsTotal = document.getElementById('stat-total');
+            const statsAction = document.getElementById('stat-action');
+            const statsOwners = document.getElementById('stat-owners');
+            const statsTag = document.getElementById('stat-tag');
+            const filterOwner = document.getElementById('filter-owner');
+            const filterTag = document.getElementById('filter-tag');
+            const searchInput = document.getElementById('search');
+            const notesContainer = document.getElementById('notes-container');
+            const noteForm = document.getElementById('note-form');
+            const formTitle = document.getElementById('form-title');
+            const submitBtn = noteForm.querySelector('button[type="submit"]');
+            const cancelEditBtn = document.getElementById('cancel-edit');
+            const titleInput = document.getElementById('title');
+            const ownerInput = document.getElementById('owner');
+            const dateInput = document.getElementById('date');
+            const tagsInput = document.getElementById('tags');
+            const bodyInput = document.getElementById('body');
+            const typeRadios = noteForm.querySelectorAll('input[name="type"]');
+            const announcer = document.getElementById('announcements');
+
+            // ---- Storage helpers ----
+            function saveNotes(data) {
+                try {
+                    localStorage.setItem('meetingNotes', JSON.stringify(data));
+                } catch (e) {
+                    console.error('localStorage save failed:', e);
+                }
+            }
+
+            function loadNotes() {
+                try {
+                    const data = localStorage.getItem('meetingNotes');
+                    return data ? JSON.parse(data) : [];
+                } catch (e) {
+                    console.error('localStorage load failed:', e);
+                    return [];
+                }
+            }
+
+            // ---- Announce for screen readers ----
+            function announce(message) {
+                if (announcer) {
+                    announcer.textContent = '';
+                    setTimeout(function() {
+                        announcer.textContent = message;
+                    }, 100);
+                }
+            }
+
+            // ---- Escape HTML ----
+            function escapeHtml(unsafe) {
+                if (!unsafe && unsafe !== 0) return '';
+                return String(unsafe)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+            }
+
+            // ---- Filter logic ----
+            function getFilteredNotes() {
+                return notes.filter(function(note) {
+                    var searchStr = (
+                        (note.title || '') + ' ' +
+                        (note.body || '') + ' ' +
+                        (note.owner || '') + ' ' +
+                        (note.tags || '')
+                    ).toLowerCase();
+                    var queryMatch = !currentFilters.query ||
+                        searchStr.includes(currentFilters.query.toLowerCase());
+                    var ownerMatch = !currentFilters.owner ||
+                        note.owner === currentFilters.owner;
+                    var tagMatch = !currentFilters.tag ||
+                        (note.tags && note.tags.split(',').map(function(t) { return t.trim(); })
+                            .includes(currentFilters.tag));
+                    return queryMatch && ownerMatch && tagMatch;
+                });
+            }
+
+            // ---- Render Stats ----
+            function renderStats(notesData) {
+                var total = notesData.length;
+                var actionCount = notesData.filter(function(n) { return n.type === 'action'; }).length;
+                var uniqueOwners = new Set(notesData.map(function(n) { return n.owner; })).size;
+
+                var tagCounts = {};
+                notesData.forEach(function(n) {
+                    if (n.tags) {
+                        n.tags.split(',').map(function(t) { return t.trim(); }).filter(Boolean).forEach(
+                        function(t) {
+                            tagCounts[t] = (tagCounts[t] || 0) + 1;
+                        });
+                    }
+                });
+                var mostCommonTag = 'N/A';
+                var maxCount = 0;
+                for (var tag in tagCounts) {
+                    if (tagCounts.hasOwnProperty(tag) && tagCounts[tag] > maxCount) {
+                        maxCount = tagCounts[tag];
+                        mostCommonTag = tag;
+                    }
+                }
+
+                statsTotal.textContent = total;
+                statsAction.textContent = actionCount;
+                statsOwners.textContent = uniqueOwners;
+                statsTag.textContent = mostCommonTag;
+            }
+
+            // ---- Populate filter dropdowns ----
+            function populateFilters() {
+                var owners = [];
+                var tags = [];
+                notes.forEach(function(n) {
+                    if (n.owner && owners.indexOf(n.owner) === -1) owners.push(n.owner);
+                    if (n.tags) {
+                        n.tags.split(',').map(function(t) { return t.trim(); }).filter(Boolean).forEach(
+                        function(t) {
+                            if (tags.indexOf(t) === -1) tags.push(t);
+                        });
+                    }
+                });
+                owners.sort();
+                tags.sort();
+
+                var prevOwner = filterOwner.value;
+                var prevTag = filterTag.value;
+
+                var ownerHtml = '<option value="">All Owners</option>';
+                owners.forEach(function(o) {
+                    ownerHtml += '<option value="' + escapeHtml(o) + '">' + escapeHtml(o) + '</option>';
+                });
+                filterOwner.innerHTML = ownerHtml;
+                filterOwner.value = prevOwner;
+
+                var tagHtml = '<option value="">All Tags</option>';
+                tags.forEach(function(t) {
+                    tagHtml += '<option value="' + escapeHtml(t) + '">' + escapeHtml(t) + '</option>';
+                });
+                filterTag.innerHTML = tagHtml;
+                filterTag.value = prevTag;
+            }
+
+            // ---- Render Notes ----
+            function renderNotes(notesData) {
+                if (notesData.length === 0) {
+                    notesContainer.innerHTML = '<p class="placeholder" role="listitem">No notes found. Create one above!</p>';
+                    return;
+                }
+
+                var html = '';
+                notesData.forEach(function(note) {
+                    var tagsHtml = '';
+                    if (note.tags) {
+                        tagsHtml = note.tags.split(',').map(function(t) {
+                            return '<span class="tag">' + escapeHtml(t.trim()) + '</span>';
+                        }).join('');
+                    }
+
+                    html +=
+                        '<article class="note-card" role="listitem">' +
+                        '<div class="card-header">' +
+                        '<h3>' + escapeHtml(note.title) + '</h3>' +
+                        '<span class="note-type type-' + escapeHtml(note.type) + '">' + escapeHtml(note.type) +
+                        '</span>' +
+                        '</div>' +
+                        '<div class="card-meta">' +
+                        '<span>Owner: ' + escapeHtml(note.owner) + '</span>' +
+                        '<time datetime="' + escapeHtml(note.date) + '">' + escapeHtml(note.date) + '</time>' +
+                        '</div>' +
+                        '<div class="card-body">' + escapeHtml(note.body) + '</div>' +
+                        '<div class="card-tags">' + tagsHtml + '</div>' +
+                        '<div class="card-actions">' +
+                        '<button class="btn-edit" data-id="' + note.id + '" aria-label="Edit note: ' + escapeHtml(note
+                            .title) + '">Edit</button>' +
+                        '<button class="btn-delete" data-id="' + note.id + '" aria-label="Delete note: ' + escapeHtml(
+                            note.title) + '">Delete</button>' +
+                        '</div>' +
+                        '</article>';
+                });
+                notesContainer.innerHTML = html;
+
+                // Attach listeners
+                notesContainer.querySelectorAll('.btn-edit').forEach(function(btn) {
+                    btn.addEventListener('click', function() { editNote(btn.dataset.id); });
+                });
+                notesContainer.querySelectorAll('.btn-delete').forEach(function(btn) {
+                    btn.addEventListener('click', function() { deleteNote(btn.dataset.id); });
+                });
+
+                announce('Showing ' + notesData.length + ' note' + (notesData.length !== 1 ? 's' : '') + '.');
+            }
+
+            // ---- Update whole UI ----
+            function updateUI() {
+                var filtered = getFilteredNotes();
+                renderStats(filtered);
+                populateFilters();
+                renderNotes(filtered);
+            }
+
+            // ---- CRUD: Add / Update ----
+            function handleFormSubmit(e) {
+                e.preventDefault();
+
+                var title = titleInput.value.trim();
+                var owner = ownerInput.value.trim();
+                var date = dateInput.value;
+                var tags = tagsInput.value.trim();
+                var body = bodyInput.value.trim();
+                var typeEl = noteForm.querySelector('input[name="type"]:checked');
+                var type = typeEl ? typeEl.value : 'action';
+
+                if (!title || !owner || !date) {
+                    announce('Please fill in Title, Owner, and Date.');
+                    return;
+                }
+
+                if (editingId) {
+                    var index = -1;
+                    for (var i = 0; i < notes.length; i++) {
+                        if (notes[i].id === editingId) { index = i; break; }
+                    }
+                    if (index !== -1) {
+                        notes[index] = {
+                            ...notes[index],
+                            title: title,
+                            owner: owner,
+                            date: date,
+                            tags: tags,
+                            body: body,
+                            type: type,
+                            updatedAt: new Date().toISOString()
+                        };
+                        announce('Note "' + title + '" updated.');
+                    }
+                    cancelEdit();
+                } else {
+                    var newNote = {
+                        id: Date.now().toString(36) + Math.random().toString(36).substring(2, 8),
+                        title: title,
+                        owner: owner,
+                        date: date,
+                        tags: tags,
+                        body: body,
+                        type: type,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    };
+                    notes.push(newNote);
+                    announce('Note "' + title + '" added.');
+                    noteForm.reset();
+                }
+
+                saveNotes(notes);
+                updateUI();
+            }
+
+            // ---- CRUD: Edit ----
+            function editNote(id) {
+                var note = null;
+                for (var i = 0; i < notes.length; i++) {
+                    if (notes[i].id === id) { note = notes[i]; break; }
+                }
+                if (!note) return;
+
+                titleInput.value = note.title;
+                ownerInput.value = note.owner;
+                dateInput.value = note.date;
+                tagsInput.value = note.tags || '';
+                bodyInput.value = note.body || '';
+                for (var j = 0; j < typeRadios.length; j++) {
+                    if (typeRadios[j].value === note.type) {
+                        typeRadios[j].checked = true;
+                        break;
+                    }
+                }
+
+                editingId = id;
+                formTitle.textContent = 'Edit Note';
+                submitBtn.textContent = 'Save Changes';
+                cancelEditBtn.style.display = 'inline-block';
+                document.getElementById('note-form-section').scrollIntoView({ behavior: 'smooth' });
+                titleInput.focus();
+            }
+
+            // ---- CRUD: Cancel Edit ----
+            function cancelEdit() {
+                editingId = null;
+                noteForm.reset();
+                formTitle.textContent = 'Add New Note';
+                submitBtn.textContent = 'Add Note';
+                cancelEditBtn.style.display = 'none';
+                announce('Edit cancelled.');
+            }
+
+            // ---- CRUD: Delete ----
+            function deleteNote(id) {
+                var note = null;
+                for (var i = 0; i < notes.length; i++) {
+                    if (notes[i].id === id) { note = notes[i]; break; }
+                }
+                if (!note) return;
+                if (!confirm('Delete note "' + note.title + '"?')) return;
+
+                notes = notes.filter(function(n) { return n.id !== id; });
+                saveNotes(notes);
+                updateUI();
+                announce('Note "' + note.title + '" deleted.');
+            }
+
+            // ---- Init ----
+            function init() {
+                notes = loadNotes();
+
+                noteForm.addEventListener('submit', handleFormSubmit);
+                cancelEditBtn.addEventListener('click', cancelEdit);
+
+                searchInput.addEventListener('input', function(e) {
+                    currentFilters.query = e.target.value;
+                    updateUI();
+                });
+                filterOwner.addEventListener('change', function(e) {
+                    currentFilters.owner = e.target.value;
+                    updateUI();
+                });
+                filterTag.addEventListener('change', function(e) {
+                    currentFilters.tag = e.target.value;
+                    updateUI();
+                });
+
+                updateUI();
+            }
+
+            document.addEventListener('DOMContentLoaded', init);
+        })();
+    </script>
+
+</body>
+</html>

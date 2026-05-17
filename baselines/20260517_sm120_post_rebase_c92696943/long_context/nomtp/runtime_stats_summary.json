@@ -1,0 +1,34 @@
+{
+  "metrics": {
+    "available": true,
+    "sample_count": 5,
+    "prefill_tokens_delta": 0.0,
+    "decode_tokens_delta": 0.0,
+    "successful_requests_delta": 0.0,
+    "running_requests_max": 1.0,
+    "running_requests_avg": 0.8,
+    "waiting_requests_max": 0.0,
+    "waiting_requests_avg": 0.0,
+    "gpu_kv_cache_usage_percent_max": 33.09,
+    "gpu_kv_cache_usage_percent_avg": 21.32,
+    "prefix_cache_queries_delta": 0.0,
+    "prefix_cache_hits_delta": 0.0,
+    "preemptions_delta": 0.0
+  },
+  "serve_log": {
+    "available": true,
+    "samples": 1,
+    "prefill_throughput_tok_s_max": 0.0,
+    "prefill_throughput_tok_s_avg": 0.0,
+    "decode_throughput_tok_s_max": 0.0,
+    "decode_throughput_tok_s_avg": 0.0,
+    "running_requests_max": 1.0,
+    "running_requests_avg": 1.0,
+    "waiting_requests_max": 0.0,
+    "waiting_requests_avg": 0.0,
+    "gpu_kv_cache_usage_percent_max": 32.5,
+    "gpu_kv_cache_usage_percent_avg": 32.5,
+    "prefix_cache_hit_rate_percent_max": 0.0,
+    "prefix_cache_hit_rate_percent_avg": 0.0
+  }
+}

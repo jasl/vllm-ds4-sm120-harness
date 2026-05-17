@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "label": "20260517_sm120_post_rebase_c92696943",
+  "date": "20260517",
+  "generated_at_utc": "2026-05-17T12:58:02.169089+00:00",
+  "source": {
+    "primary_run": "v6b",
+    "raw_artifacts_are_not_required": true
+  },
+  "model": "deepseek-ai/DeepSeek-V4-Flash",
+  "gpu": {
+    "available": true,
+    "reason": null,
+    "count": 2,
+    "topology_slug": "2x_nvidia_rtx_pro_6000_blackwell_workstation_edition",
+    "configured_topology_slug": "2x_nvidia_rtx_pro_6000_blackwell_workstation_edition",
+    "models": [
+      {
+        "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+        "count": 2,
+        "memory_total_mib_each": 97887.0
+      }
+    ],
+    "devices": [
+      {
+        "index": "0",
+        "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+        "memory_total_mib": 97887.0
+      },
+      {
+        "index": "1",
+        "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+        "memory_total_mib": 97887.0
+      }
+    ]
+  },
+  "collect_env": {
+    "os": "Ubuntu 26.04 LTS (x86_64)",
+    "pytorch_version": "2.11.0+cu130",
+    "pytorch_cuda_build": "13.0",
+    "python_version": "3.13.13 (main, Apr 14 2026, 14:28:56) [Clang 22.1.3 ] (64-bit runtime)",
+    "cuda_runtime_version": "13.1.115",
+    "nvidia_driver_version": "595.58.03",
+    "transformers_version": "5.8.0",
+    "triton_version": "3.6.0",
+    "vllm_version": "0.1.dev16678+gd99ffa034",
+    "vllm_cuda_archs": "Not Set",
+    "vllm_git_sha": "d99ffa034"
+  },
+  "serve_commands": {
+    "nomtp": "#!/usr/bin/env bash\nexport VLLM_ENGINE_READY_TIMEOUT_S=3600\n<home-path> serve deepseek-ai/DeepSeek-V4-Flash --trust-remote-code --kv-cache-dtype fp8 --block-size 256 --max-model-len 65536 --tensor-parallel-size 2 --host 127.0.0.1 --port 8000 --no-enable-flashinfer-autotune --reasoning-parser deepseek_v4 --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --enable-auto-tool-choice --reasoning-config \\{\\\"reasoning_parser\\\":\\\"deepseek_v4\\\"\\,\\\"reasoning_start_str\\\":\\\"\\<think\\>\\\"\\,\\\"reasoning_end_str\\\":\\\"\\</think\\>\\\"\\} --enable-expert-parallel --gpu-memory-utilization 0.98 --no-enable-prefix-caching --compilation-config \\{\\\"cudagraph_mode\\\":\\\"FULL_AND_PIECEWISE\\\"\\,\\\"custom_ops\\\":\\[\\\"all\\\"\\]\\}",
+    "mtp": "#!/usr/bin/env bash\nexport VLLM_ENGINE_READY_TIMEOUT_S=3600\n<home-path> serve deepseek-ai/DeepSeek-V4-Flash --trust-remote-code --kv-cache-dtype fp8 --block-size 256 --max-model-len 65536 --tensor-parallel-size 2 --host 127.0.0.1 --port 8000 --no-enable-flashinfer-autotune --reasoning-parser deepseek_v4 --tokenizer-mode deepseek_v4 --tool-call-parser deepseek_v4 --enable-auto-tool-choice --reasoning-config \\{\\\"reasoning_parser\\\":\\\"deepseek_v4\\\"\\,\\\"reasoning_start_str\\\":\\\"\\<think\\>\\\"\\,\\\"reasoning_end_str\\\":\\\"\\</think\\>\\\"\\} --speculative_config \\{\\\"method\\\":\\\"mtp\\\"\\,\\\"num_speculative_tokens\\\":2\\} --enable-expert-parallel --gpu-memory-utilization 0.98 --no-enable-prefix-caching --compilation-config \\{\\\"cudagraph_mode\\\":\\\"FULL_AND_PIECEWISE\\\"\\,\\\"custom_ops\\\":\\[\\\"all\\\"\\]\\}"
+  },
+  "phase_exit_codes": [
+    {
+      "variant": "nomtp",
+      "phase": "server_startup",
+      "exit_code": 0,
+      "artifact": "nomtp/server_startup"
+    },
+    {
+      "variant": "nomtp",
+      "phase": "acceptance",
+      "exit_code": 1,
+      "artifact": "nomtp/acceptance"
+    },
+    {
+      "variant": "nomtp",
+      "phase": "long_context_probe",
+      "exit_code": 0,
+      "artifact": "nomtp/long_context_probe"
+    },
+    {
+      "variant": "nomtp",
+      "phase": "bench_hf_mt_bench",
+      "exit_code": 0,
+      "artifact": "nomtp/bench_hf_mt_bench"
+    },
+    {
+      "variant": "nomtp",
+      "phase": "eval_gsm8k",
+      "exit_code": 0,
+      "artifact": "nomtp/eval_gsm8k"
+    },
+    {
+      "variant": "nomtp",
+      "phase": "decode_profile",
+      "exit_code": 0,
+      "artifact": "nomtp/decode_profile"
+    },
+    {
+      "variant": "mtp",
+      "phase": "server_startup",
+      "exit_code": 0,
+      "artifact": "mtp/server_startup"
+    },
+    {
+      "variant": "mtp",
+      "phase": "acceptance",
+      "exit_code": 1,
+      "artifact": "mtp/acceptance"
+    },
+    {
+      "variant": "mtp",
+      "phase": "long_context_probe",
+      "exit_code": 0,
+      "artifact": "mtp/long_context_probe"
+    },
+    {
+      "variant": "mtp",
+      "phase": "bench_hf_mt_bench",
+      "exit_code": 0,
+      "artifact": "mtp/bench_hf_mt_bench"
+    },
+    {
+      "variant": "mtp",
+      "phase": "eval_gsm8k",
+      "exit_code": 0,
+      "artifact": "mtp/eval_gsm8k"
+    },
+    {
+      "variant": "mtp",
+      "phase": "decode_profile",
+      "exit_code": 0,
+      "artifact": "mtp/decode_profile"
+    }
+  ],
+  "contents": {
+    "report": "Readable baseline report with correctness, performance, and cost metrics.",
+    "generation": "Directory-driven writing, translation, and coding transcripts plus coding source sidecars.",
+    "smoke": "no-MTP and MTP chat smoke request/response captures.",
+    "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
+    "kv_layout": "Synthetic packed KV byte-layout snapshots for indexer-cache regressions.",
+    "long_context": "Long-context sentinel retrieval probes for cache-layout regressions.",
+    "prefix_cache": "Concurrent long-prefix cache reuse probes with request-level timing plus KV/runtime telemetry.",
+    "streaming_pressure": "Optional short concurrent streaming-pressure soak with request timing plus KV/runtime telemetry.",
+    "evals": "Optional lm_eval accuracy summaries such as GSM8K exact match.",
+    "performance": "Benchmark, runtime, and GPU telemetry summaries."
+  }
+}

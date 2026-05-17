@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Notes Board</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --color-primary: #1a73e8;
+            --color-primary-dark: #1557b0;
+            --color-primary-light: #e8f0fe;
+            --color-action: #d93025;
+            --color-action-bg: #fce8e6;
+            --color-decision: #1a73e8;
+            --color-decision-bg: #e8f0fe;
+            --color-reference: #188038;
+            --color-reference-bg: #e6f4ea;
+            --color-bg: #f8f9fa;
+            --color-surface: #ffffff;
+            --color-text: #202124;
+            --color-text-secondary: #5f6368;
+            --color-border: #dadce0;
+            --color-focus: #1a73e8;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+            --radius: 12px;
+            --radius-sm: 8px;
+            --transition: 0.2s ease;
+            --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        html {
+            font-size: 16px;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.5;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        :focus-visible {
+            outline: 3px solid var(--color-focus);
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+
+        button {
+            font-family: inherit;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 0.9rem;
+            padding: 8px 16px;
+            border-radius: var(--radius-sm);
+            transition: background var(--transition), transform var(--transition);
+        }
+
+        button:active {
+            transform: scale(0.97);
+        }
+
+        input,
+        select,
+        textarea {
+            font-family: inherit;
+            font-size: 0.95rem;
+            padding: 10px 12px;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            background: var(--color-surface);
+            color: var(--color-text);
+            transition: border-color var(--transition), box-shadow var(--transition);
+            width: 100%;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            border-color: var(--color-focus);
+            box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+            outline: none;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        label {
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: var(--color-text-secondary);
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .app-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .app-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .app-header h1 {
+            font-size: 1.6rem;
+            font-weight: 600;
+            color: var(--color-text);
+            letter-spacing: -0.3px;
+        }
+
+        .app-header .header-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+            color: #fff;
+            padding: 10px 22px;
+            font-weight: 500;
+            border-radius: var(--radius-sm);
+            transition: background var(--transition), transform var(--transition);
+        }
+
+        .btn-primary:hover {
+            background: var(--color-primary-dark);
+        }
+
+        .btn-secondary {
+            background: var(--color-surface);
+            color: var(--color-text);
+            border: 1px solid var(--color-border);
+            padding: 10px 22px;
+            font-weight: 500;
+            border-radius: var(--radius-sm);
+        }
+
+        .btn-secondary:hover {
+            background: #f1f3f4;
+        }
+
+        .btn-danger {
+            background: transparent;
+            color: var(--color-action);
+            padding: 6px 12px;
+            font-weight: 500;
+            border-radius: var(--radius-sm);
+        }
+
+        .btn-danger:hover {
+            background: var(--color-action-bg);
+        }
+
+        .btn-edit {
+            background: transparent;
+            color: var(--color-primary);
+            padding: 6px 12px;
+            font-weight: 500;
+            border-radius: var(--radius-sm);
+        }
+
+        .btn-edit:hover {
+            background: var(--color-primary-light);
+        }
+
+        /* Stats Strip */
+        .stats-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 24px;
+            background: var(--color-surface);
+            padding: 14px 20px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 24px;
+            border: 1px solid var(--color-border);
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.9rem;
+            color: var(--color-text-secondary);
+        }
+
+        .stat-item .stat-icon {
+            font-size: 1.1rem;
+            line-height: 1;
+        }
+
+        .stat-item .stat-value {
+            font-weight: 600;
+            color: var(--color-text);
+            margin-left: 2px;
+        }
+
+        /* Filters */
+        .filters-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-end;
+            margin-bottom: 24px;
+            background: var(--color-surface);
+            padding: 16px 20px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--color-border);
+        }
+
+        .filter-group {
+            flex: 1 1 180px;
+            min-width: 140px;
+        }
+
+        .filter-group label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 8px 10px;
+            font-size: 0.9rem;
+        }
+
+        .filter-search {
+            flex: 2 1 240px;
+        }
+
+        /* Notes Grid */
+        .notes-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--color-text-secondary);
+            background: var(--color-surface);
+            border-radius: var(--radius);
+            border: 2px dashed var(--color-border);
+        }
+
+        .empty-state .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+        .empty-state h3 {
+            font-size: 1.2rem;
+            color: var(--color-text);
+            margin-bottom: 6px;
+        }
+        .empty-state p {
+            font-size: 0.95rem;
+        }
+
+        /* Note Card */
+        .note-card {
+            background: var(--color-surface);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+            padding: 20px;
+            border: 1px solid var(--color-border);
+            transition: box-shadow var(--transition), transform var(--transition);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .note-card:hover {
+            box-shadow: var(--shadow-md);
+        }
+
+        .note-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .note-card .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--color-text);
+            word-break: break-word;
+            flex: 1;
+        }
+
+        .note-card .card-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 20px;
+            white-space: nowrap;
+            flex-shrink: 0;
+            margin-top: 2px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+
+        .badge-action {
+            background: var(--color-action-bg);
+            color: var(--color-action);
+        }
+        .badge-decision {
+            background: var(--color-decision-bg);
+            color: var(--color-decision);
+        }
+        .badge-reference {
+            background: var(--color-reference-bg);
+            color: var(--color-reference);
+        }
+
+        .note-card .card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            font-size: 0.82rem;
+            color: var(--color-text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .note-card .card-meta span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .note-card .card-body {
+            font-size: 0.92rem;
+            color: var(--color-text);
+            line-height: 1.6;
+            word-break: break-word;
+            flex: 1;
+            margin-bottom: 12px;
+            max-height: 120px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .note-card .card-body::-webkit-scrollbar {
+            width: 4px;
+        }
+        .note-card .card-body::-webkit-scrollbar-thumb {
+            background: var(--color-border);
+            border-radius: 4px;
+        }
+
+        .note-card .card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+
+        .note-card .tag {
+            font-size: 0.75rem;
+            background: #f1f3f4;
+            color: var(--color-text-secondary);
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+
+        .note-card .card-actions {
+            display: flex;
+            gap: 6px;
+            justify-content: flex-end;
+            border-top: 1px solid var(--color-border);
+            padding-top: 12px;
+            margin-top: auto;
+        }
+
+        .note-card .card-actions button {
+            font-size: 0.8rem;
+            padding: 6px 14px;
+        }
+
+        /* Dialog / Modal */
+        dialog {
+            border: none;
+            border-radius: var(--radius);
+            padding: 0;
+            background: transparent;
+            max-width: 560px;
+            width: 90vw;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+            animation: dialogIn 0.2s ease;
+        }
+
+        dialog::backdrop {
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(2px);
+        }
+
+        @keyframes dialogIn {
+            from {
+                opacity: 0;
+                transform: scale(0.96) translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .dialog-content {
+            background: var(--color-surface);
+            padding: 28px 28px 24px;
+            border-radius: var(--radius);
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+
+        .dialog-content h2 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--color-text);
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            font-weight: 500;
+            font-size: 0.85rem;
+            color: var(--color-text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .form-group .hint {
+            font-size: 0.75rem;
+            color: var(--color-text-secondary);
+            margin-top: 2px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+
+        .form-row .form-group {
+            flex: 1 1 140px;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--color-border);
+        }
+
+        .form-actions .btn-primary {
+            min-width: 100px;
+        }
+
+        .form-actions .btn-secondary {
+            min-width: 80px;
+        }
+
+        /* Confirm dialog */
+        .confirm-text {
+            font-size: 1rem;
+            margin-bottom: 20px;
+            color: var(--color-text);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+
+            .app-header h1 {
+                font-size: 1.3rem;
+            }
+
+            .app-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+
+            .app-header .header-actions {
+                justify-content: stretch;
+            }
+
+            .app-header .header-actions button {
+                flex: 1;
+            }
+
+            .stats-strip {
+                padding: 12px 16px;
+                gap: 8px 16px;
+                font-size: 0.85rem;
+            }
+
+            .stat-item {
+                font-size: 0.82rem;
+            }
+
+            .filters-bar {
+                padding: 12px 16px;
+                gap: 10px;
+            }
+
+            .filter-group {
+                flex: 1 1 100%;
+                min-width: unset;
+            }
+
+            .notes-grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+
+            .note-card {
+                padding: 16px;
+            }
+
+            .dialog-content {
+                padding: 20px 18px 18px;
+            }
+
+            .form-row {
+                flex-direction: column;
+                gap: 0;
+            }
+
+            .form-row .form-group {
+                flex: 1 1 auto;
+            }
+
+            dialog {
+                width: 95vw;
+                margin: 10px auto;
+            }
+        }
+
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .notes-grid {
+                gap: 16px;
+            }
+        }
+
+        /* Utility */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+        }
+
+        .tag-input-wrapper {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+            padding: 6px 8px;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            background: var(--color-surface);
+            min-height: 42px;
+            cursor: text;
+            transition: border-color var(--transition), box-shadow var(--transition);
+        }
+
+        .tag-input-wrapper:focus-within {
+            border-color: var(--color-focus);
+            box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+            outline: none;
+        }
+
+        .tag-input-wrapper .tag-pill {
+            font-size: 0.78rem;
+            background: #e8f0fe;
+            color: var(--color-primary);
+            padding: 2px 10px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 500;
+        }
+
+        .tag-input-wrapper .tag-pill .tag-remove {
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+            color: var(--color-primary);
+            background: none;
+            border: none;
+            padding: 0 2px;
+            font-weight: 600;
+        }
+
+        .tag-input-wrapper .tag-pill .tag-remove:hover {
+            color: var(--color-action);
+        }
+
+        .tag-input-wrapper input {
+            border: none;
+            padding: 4px 2px;
+            flex: 1;
+            min-width: 80px;
+            font-size: 0.9rem;
+            background: transparent;
+        }
+
+        .tag-input-wrapper input:focus {
+            box-shadow: none;
+            outline: none;
+            border-color: transparent;
+        }
+
+        .tag-suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .tag-suggestions button {
+            font-size: 0.72rem;
+            padding: 2px 10px;
+            background: #f1f3f4;
+            border-radius: 12px;
+            color: var(--color-text-secondary);
+            border: 1px solid transparent;
+        }
+
+        .tag-suggestions button:hover {
+            background: #e8eaed;
+            border-color: var(--color-border);
+        }
+
+        .note-card .card-date {
+            white-space: nowrap;
+        }
+
+        /* Scroll container for long content */
+        .note-card .card-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <h1>📋 Meeting Notes Board</h1>
+            <div class="header-actions">
+                <button class="btn-primary" id="addNoteBtn" aria-label="Add a new meeting note">+ Add Note</button>
+            </div>
+        </header>
+
+        <!-- Statistics Strip -->
+        <section class="stats-strip" aria-label="Statistics overview">
+            <div class="stat-item">
+                <span class="stat-icon" aria-hidden="true">📝</span>
+                <span>Total:</span>
+                <span class="stat-value" id="statTotal">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-icon" aria-hidden="true">⚠️</span>
+                <span>Action Required:</span>
+                <span class="stat-value" id="statAction">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-icon" aria-hidden="true">👥</span>
+                <span>Unique Owners:</span>
+                <span class="stat-value" id="statOwners">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-icon" aria-hidden="true">🏷️</span>
+                <span>Most Common Tag:</span>
+                <span class="stat-value" id="statTag">—</span>
+            </div>
+        </section>
+
+        <!-- Filters -->
+        <section class="filters-bar" aria-label="Filter notes">
+            <div class="filter-group">
+                <label for="filterOwner">Owner</label>
+                <select id="filterOwner" aria-label="Filter by owner">
+                    <option value="all">All Owners</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filterTag">Tag</label>
+                <select id="filterTag" aria-label="Filter by tag">
+                    <option value="all">All Tags</option>
+                </select>
+            </div>
+            <div class="filter-group filter-search">
+                <label for="filterSearch">Search</label>
+                <input type="search" id="filterSearch" placeholder="Search titles, body, tags…" aria-label="Search notes by text">
+            </div>
+        </section>
+
+        <!-- Notes Grid -->
+        <div class="notes-grid" id="notesGrid" role="list" aria-label="Meeting notes">
+            <!-- Cards rendered by JS -->
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon" aria-hidden="true">📄</div>
+                <h3>No notes yet</h3>
+                <p>Click "Add Note" to create your first meeting note.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add / Edit Dialog -->
+    <dialog id="noteDialog" aria-labelledby="dialogTitle">
+        <div class="dialog-content">
+            <h2 id="dialogTitle">Add Meeting Note</h2>
+            <form id="noteForm" novalidate>
+                <input type="hidden" id="noteId" value="">
+
+                <div class="form-group">
+                    <label for="noteTitle">Title <span aria-hidden="true">*</span></label>
+                    <input type="text" id="noteTitle" required placeholder="e.g. Sprint Planning" autocomplete="off">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="noteOwner">Owner <span aria-hidden="true">*</span></label>
+                        <input type="text" id="noteOwner" required placeholder="e.g. Alice" list="ownerList" autocomplete="off">
+                        <datalist id="ownerList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label for="noteDate">Meeting Date <span aria-hidden="true">*</span></label>
+                        <input type="date" id="noteDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="noteType">Type <span aria-hidden="true">*</span></label>
+                        <select id="noteType" required>
+                            <option value="action">Action Required</option>
+                            <option value="decision">Decision</option>
+                            <option value="reference">Reference</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="noteTags">Tags</label>
+                    <div class="tag-input-wrapper" id="tagWrapper">
+                        <div id="tagPills" role="list" aria-label="Added tags"></div>
+                        <input type="text" id="noteTagsInput" placeholder="Type tag and press comma or Enter…" aria-label="Add a tag">
+                    </div>
+                    <div class="tag-suggestions" id="tagSuggestions" role="list" aria-label="Suggested tags"></div>
+                    <div class="hint">Press comma, Enter, or Tab to add a tag. Click a suggestion to add.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="noteBody">Body</label>
+                    <textarea id="noteBody" rows="4" placeholder="Key points, decisions, action items…"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="dialogCancelBtn">Cancel</button>
+                    <button type="submit" class="btn-primary" id="dialogSubmitBtn">Save Note</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <dialog id="deleteDialog" aria-labelledby="deleteDialogTitle">
+        <div class="dialog-content">
+            <h2 id="deleteDialogTitle">Delete Note</h2>
+            <p class="confirm-text" id="deleteConfirmText">Are you sure you want to delete this note? This action cannot be undone.</p>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="deleteCancelBtn">Cancel</button>
+                <button type="button" class="btn-danger" id="deleteConfirmBtn" style="background:var(--color-action);color:#fff;padding:10px 22px;">Delete</button>
+            </div>
+        </div>
+    </dialog>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ---- State ----
+            let notes = [];
+            let deleteTargetId = null;
+            let currentEditId = null;
+            let pendingTags = [];
+
+            // ---- DOM refs ----
+            const grid = document.getElementById('notesGrid');
+            const emptyState = document.getElementById('emptyState');
+            const addBtn = document.getElementById('addNoteBtn');
+            const dialog = document.getElementById('noteDialog');
+            const deleteDialog = document.getElementById('deleteDialog');
+            const form = document.getElementById('noteForm');
+            const noteId = document.getElementById('noteId');
+            const noteTitle = document.getElementById('noteTitle');
+            const noteOwner = document.getElementById('noteOwner');
+            const noteDate = document.getElementById('noteDate');
+            const noteType = document.getElementById('noteType');
+            const noteBody = document.getElementById('noteBody');
+            const noteTagsInput = document.getElementById('noteTagsInput');
+            const tagPills = document.getElementById('tagPills');
+            const tagSuggestions = document.getElementById('tagSuggestions');
+            const ownerList = document.getElementById('ownerList');
+            const dialogTitle = document.getElementById('dialogTitle');
+            const submitBtn = document.getElementById('dialogSubmitBtn');
+            const cancelBtn = document.getElementById('dialogCancelBtn');
+            const deleteCancelBtn = document.getElementById('deleteCancelBtn');
+            const deleteConfirmBtn = document.getElementById('deleteConfirmBtn');
+            const deleteConfirmText = document.getElementById('deleteConfirmText');
+
+            const filterOwner = document.getElementById('filterOwner');
+            const filterTag = document.getElementById('filterTag');
+            const filterSearch = document.getElementById('filterSearch');
+
+            const statTotal = document.getElementById('statTotal');
+            const statAction = document.getElementById('statAction');
+            const statOwners = document.getElementById('statOwners');
+            const statTag = document.getElementById('statTag');
+
+            // ---- Helpers ----
+            function generateId() {
+                return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+            }
+
+            function formatDate(dateStr) {
+                if (!dateStr) return '';
+                const d = new Date(dateStr + 'T00:00:00');
+                return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+            }
+
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            function getTodayStr() {
+                const d = new Date();
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${y}-${m}-${day}`;
+            }
+
+            // ---- localStorage ----
+            function loadNotes() {
+                try {
+                    const data = localStorage.getItem('meetingNotes');
+                    if (data) {
+                        notes = JSON.parse(data);
+                        if (!Array.isArray(notes)) notes = [];
+                    } else {
+                        notes = [];
+                    }
+                } catch {
+                    notes = [];
+                }
+                // Ensure every note has a tags array
+                notes = notes.map(n => {
+                    if (!n.tags) n.tags = [];
+                    if (!n.type) n.type = 'reference';
+                    if (!n.meetingDate) n.meetingDate = getTodayStr();
+                    return n;
+                });
+            }
+
+            function saveNotes() {
+                try {
+                    localStorage.setItem('meetingNotes', JSON.stringify(notes));
+                } catch (e) {
+                    console.warn('Failed to save notes:', e);
+                }
+            }
+
+            // ---- CRUD ----
+            function addNote(data) {
+                const note = {
+                    id: generateId(),
+                    title: data.title.trim(),
+                    owner: data.owner.trim(),
+                    meetingDate: data.meetingDate,
+                    type: data.type,
+                    tags: data.tags.filter(t => t.trim() !== ''),
+                    body: data.body ? data.body.trim() : '',
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+                notes.push(note);
+                saveNotes();
+                return note;
+            }
+
+            function updateNote(id, data) {
+                const idx = notes.findIndex(n => n.id === id);
+                if (idx === -1) return null;
+                notes[idx].title = data.title.trim();
+                notes[idx].owner = data.owner.trim();
+                notes[idx].meetingDate = data.meetingDate;
+                notes[idx].type = data.type;
+                notes[idx].tags = data.tags.filter(t => t.trim() !== '');
+                notes[idx].body = data.body ? data.body.trim() : '';
+                notes[idx].updatedAt = new Date().toISOString();
+                saveNotes();
+                return notes[idx];
+            }
+
+            function deleteNote(id) {
+                notes = notes.filter(n => n.id !== id);
+                saveNotes();
+            }
+
+            function getNote(id) {
+                return notes.find(n => n.id === id) || null;
+            }
+
+            // ---- Derived data ----
+            function getAllOwners() {
+                const set = new Set();
+                notes.forEach(n => { if (n.owner) set.add(n.owner); });
+                return Array.from(set).sort();
+            }
+
+            function getAllTags() {
+                const set = new Set();
+                notes.forEach(n => { (n.tags || []).forEach(t => { if (t) set.add(t); }); });
+                return Array.from(set).sort();
+            }
+
+            function getFilteredNotes() {
+                const owner = filterOwner.value;
+                const tag = filterTag.value;
+                const search = filterSearch.value.toLowerCase().trim();
+
+                return notes.filter(n => {
+                    if (owner !== 'all' && n.owner !== owner) return false;
+                    if (tag !== 'all' && !(n.tags || []).includes(tag)) return false;
+                    if (search) {
+                        const haystack = (n.title + ' ' + n.owner + ' ' + n.body + ' ' + (n.tags || []).join(' ')).toLowerCase();
+                        if (!haystack.includes(search)) return false;
+                    }
+                    return true;
+                });
+            }
+
+            function getStats() {
+                const total = notes.length;
+                const actionCount = notes.filter(n => n.type === 'action').length;
+                const uniqueOwners = getAllOwners().length;
+
+                // Most common tag
+                const tagCounts = {};
+                notes.forEach(n => {
+                    (n.tags || []).forEach(t => {
+                        if (t) {
+                            tagCounts[t] = (tagCounts[t] || 0) + 1;
+                        }
+                    });
+                });
+                let mostCommonTag = '—';
+                let maxCount = 0;
+                Object.keys(tagCounts).forEach(t => {
+                    if (tagCounts[t] > maxCount) {
+                        maxCount = tagCounts[t];
+                        mostCommonTag = t;
+                    }
+                });
+                if (maxCount === 0) mostCommonTag = '—';
+
+                return { total, actionCount, uniqueOwners, mostCommonTag };
+            }
+
+            // ---- Render ----
+            function renderStats() {
+                const stats = getStats();
+                statTotal.textContent = stats.total;
+                statAction.textContent = stats.actionCount;
+                statOwners.textContent = stats.uniqueOwners;
+                statTag.textContent = stats.mostCommonTag;
+            }
+
+            function renderFilters() {
+                const owners = getAllOwners();
+                const tags = getAllTags();
+
+                const currentOwner = filterOwner.value;
+                const currentTag = filterTag.value;
+
+                // Preserve selection if possible
+                filterOwner.innerHTML = '<option value="all">All Owners</option>';
+                owners.forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o;
+                    opt.textContent = o;
+                    if (o === currentOwner) opt.selected = true;
+                    filterOwner.appendChild(opt);
+                });
+
+                filterTag.innerHTML = '<option value="all">All Tags</option>';
+                tags.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t;
+                    opt.textContent = t;
+                    if (t === currentTag) opt.selected = true;
+                    filterTag.appendChild(opt);
+                });
+            }
+
+            function renderNotes() {
+                const filtered = getFilteredNotes();
+
+                // Remove old cards but keep emptyState
+                const cards = grid.querySelectorAll('.note-card');
+                cards.forEach(c => c.remove());
+
+                if (filtered.length === 0) {
+                    emptyState.style.display = 'block';
+                    return;
+                }
+                emptyState.style.display = 'none';
+
+                filtered.forEach(n => {
+                    const card = document.createElement('div');
+                    card.className = 'note-card';
+                    card.setAttribute('role', 'listitem');
+                    card.dataset.id = n.id;
+
+                    const badgeClass = n.type === 'action' ? 'badge-action' : n.type === 'decision' ? 'badge-decision' :
+                        'badge-reference';
+                    const badgeLabel = n.type === 'action' ? 'Action Required' : n.type === 'decision' ? 'Decision' :
+                        'Reference';
+
+                    const tagsHtml = (n.tags || []).map(t =>
+                        `<span class="tag">${escapeHtml(t)}</span>`
+                    ).join('');
+
+                    const bodyTruncated = n.body ? (n.body.length > 200 ? n.body.slice(0, 200) + '…' : n.body) : '';
+
+                    card.innerHTML = `
+                        <div class="card-header">
+                            <span class="card-title">${escapeHtml(n.title)}</span>
+                            <span class="card-badge ${badgeClass}">${badgeLabel}</span>
+                        </div>
+                        <div class="card-meta">
+                            <span>👤 ${escapeHtml(n.owner)}</span>
+                            <span class="card-date">📅 ${formatDate(n.meetingDate)}</span>
+                        </div>
+                        ${bodyTruncated ? `<div class="card-body">${escapeHtml(bodyTruncated)}</div>` : ''}
+                        ${tagsHtml ? `<div class="card-tags">${tagsHtml}</div>` : ''}
+                        <div class="card-actions">
+                            <button class="btn-edit" data-action="edit" data-id="${n.id}" aria-label="Edit note: ${escapeHtml(n.title)}">✎ Edit</button>
+                            <button class="btn-danger" data-action="delete" data-id="${n.id}" aria-label="Delete note: ${escapeHtml(n.title)}">✕ Delete</button>
+                        </div>
+                    `;
+
+                    // Event delegation for edit/delete
+                    card.querySelectorAll('[data-action]').forEach(btn => {
+                        btn.addEventListener('click', function(e) {
+                            const action = this.dataset.action;
+                            const id = this.dataset.id;
+                            if (action === 'edit') {
+                                openEditDialog(id);
+                            } else if (action === 'delete') {
+                                openDeleteDialog(id);
+                            }
+                        });
+                    });
+
+                    grid.appendChild(card);
+                });
+            }
+
+            function renderAll() {
+                renderStats();
+                renderFilters();
+                renderNotes();
+                updateOwnerDatalist();
+            }
+
+            // ---- Tag input management ----
+            function renderTagPills() {
+                tagPills.innerHTML = '';
+                pendingTags.forEach((t, i) => {
+                    const pill = document.createElement('span');
+                    pill.className = 'tag-pill';
+                    pill.setAttribute('role', 'listitem');
+                    pill.innerHTML = `${escapeHtml(t)} <button type="button" class="tag-remove" data-index="${i}" aria-label="Remove tag ${escapeHtml(t)}">×</button>`;
+                    pill.querySelector('.tag-remove').addEventListener('click', function() {
+                        const idx = parseInt(this.dataset.index);
+                        pendingTags.splice(idx, 1);
+                        renderTagPills();
+                        updateTagSuggestions();
+                    });
+                    tagPills.appendChild(pill);
+                });
+            }
+
+            function updateTagSuggestions() {
+                const allTags = getAllTags();
+                const inputVal = noteTagsInput.value.toLowerCase().trim();
+                let suggestions = allTags.filter(t => !pendingTags.includes(t) && t.toLowerCase().includes(inputVal) && t !== '');
+                // Also show if input matches partially
+                if (inputVal && !allTags.some(t => t.toLowerCase() === inputVal)) {
+                    // Also show the raw input as an option if not already in pending
+                    if (!pendingTags.includes(inputVal) && inputVal) {
+                        // Only show if not already in allTags exactly
+                        if (!allTags.some(t => t.toLowerCase() === inputVal)) {
+                            // We'll show it as a suggestion
+                        }
+                    }
+                }
+                // Limit to 6
+                suggestions = suggestions.slice(0, 6);
+                tagSuggestions.innerHTML = '';
+                suggestions.forEach(s => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.textContent = s;
+                    btn.setAttribute('role', 'listitem');
+                    btn.addEventListener('click', function() {
+                        if (!pendingTags.includes(s)) {
+                            pendingTags.push(s);
+                            renderTagPills();
+                            noteTagsInput.value = '';
+                            updateTagSuggestions();
+                        }
+                    });
+                    tagSuggestions.appendChild(btn);
+                });
+            }
+
+            function addTagFromInput() {
+                const raw = noteTagsInput.value.trim();
+                if (!raw) return;
+                // Split by comma
+                const parts = raw.split(',').map(s => s.trim()).filter(s => s);
+                let changed = false;
+                parts.forEach(p => {
+                    if (p && !pendingTags.includes(p)) {
+                        pendingTags.push(p);
+                        changed = true;
+                    }
+                });
+                if (changed) {
+                    noteTagsInput.value = '';
+                    renderTagPills();
+                    updateTagSuggestions();
+                }
+            }
+
+            function resetTags() {
+                pendingTags = [];
+                renderTagPills();
+                updateTagSuggestions();
+                noteTagsInput.value = '';
+            }
+
+            function loadTagsIntoTags(tags) {
+                pendingTags = tags.filter(t => t);
+                renderTagPills();
+                updateTagSuggestions();
+            }
+
+            // ---- Owner datalist ----
+            function updateOwnerDatalist() {
+                const owners = getAllOwners();
+                ownerList.innerHTML = '';
+                owners.forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o;
+                    ownerList.appendChild(opt);
+                });
+            }
+
+            // ---- Dialog open / close ----
+            function openAddDialog() {
+                currentEditId = null;
+                dialogTitle.textContent = 'Add Meeting Note';
+                submitBtn.textContent = 'Save Note';
+                form.reset();
+                noteId.value = '';
+                noteDate.value = getTodayStr();
+                noteType.value = 'action';
+                resetTags();
+                updateOwnerDatalist();
+                dialog.showModal();
+                setTimeout(() => noteTitle.focus(), 100);
+            }
+
+            function openEditDialog(id) {
+                const note = getNote(id);
+                if (!note) return;
+                currentEditId = id;
+                dialogTitle.textContent = 'Edit Meeting Note';
+                submitBtn.textContent = 'Update Note';
+                noteId.value = id;
+                noteTitle.value = note.title;
+                noteOwner.value = note.owner;
+                noteDate.value = note.meetingDate || getTodayStr();
+                noteType.value = note.type || 'reference';
+                noteBody.value = note.body || '';
+                loadTagsIntoTags(note.tags || []);
+                updateOwnerDatalist();
+                dialog.showModal();
+                setTimeout(() => noteTitle.focus(), 100);
+            }
+
+            function closeDialog() {
+                dialog.close();
+                currentEditId = null;
+                resetTags();
+                addBtn.focus();
+            }
+
+            function openDeleteDialog(id) {
+                const note = getNote(id);
+                if (!note) return;
+                deleteTargetId = id;
+                deleteConfirmText.textContent = `Are you sure you want to delete "${note.title}"? This action cannot be undone.`;
+                deleteDialog.showModal();
+                setTimeout(() => deleteConfirmBtn.focus(), 100);
+            }
+
+            function closeDeleteDialog() {
+                deleteDialog.close();
+                deleteTargetId = null;
+                addBtn.focus();
+            }
+
+            // ---- Form submission ----
+            function handleFormSubmit(e) {
+                e.preventDefault();
+
+                const title = noteTitle.value.trim();
+                const owner = noteOwner.value.trim();
+                const meetingDate = noteDate.value;
+                const type = noteType.value;
+                const body = noteBody.value.trim();
+
+                if (!title || !owner || !meetingDate || !type) {
+                    // Highlight missing fields
+                    if (!title) noteTitle.focus();
+                    else if (!owner) noteOwner.focus();
+                    else if (!meetingDate) noteDate.focus();
+                    return;
+                }
+
+                const tags = [...pendingTags];
+
+                if (currentEditId) {
+                    updateNote(currentEditId, { title, owner, meetingDate, type, tags, body });
+                } else {
+                    addNote({ title, owner, meetingDate, type, tags, body });
+                }
+
+                closeDialog();
+                renderAll();
+            }
+
+            // ---- Event listeners ----
+            addBtn.addEventListener('click', openAddDialog);
+
+            cancelBtn.addEventListener('click', closeDialog);
+            dialog.addEventListener('cancel', function(e) {
+                // Just close, reset handled by closeDialog
+            });
+            dialog.addEventListener('close', function() {
+                if (!currentEditId) {
+                    // If closed without saving, reset
+                }
+                addBtn.focus();
+            });
+
+            form.addEventListener('submit', handleFormSubmit);
+
+            // Delete dialog
+            deleteCancelBtn.addEventListener('click', closeDeleteDialog);
+            deleteDialog.addEventListener('cancel', closeDeleteDialog);
+            deleteConfirmBtn.addEventListener('click', function() {
+                if (deleteTargetId) {
+                    deleteNote(deleteTargetId);
+                    deleteTargetId = null;
+                    closeDeleteDialog();
+                    renderAll();
+                }
+            });
+
+            // Tag input
+            noteTagsInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
+                    e.preventDefault();
+                    addTagFromInput();
+                }
+                if (e.key === 'Backspace' && this.value === '' && pendingTags.length > 0) {
+                    pendingTags.pop();
+                    renderTagPills();
+                    updateTagSuggestions();
+                }
+            });
+
+            noteTagsInput.addEventListener('input', function() {
+                updateTagSuggestions();
+            });
+
+            noteTagsInput.addEventListener('blur', function() {
+                // Add any remaining text on blur
+                addTagFromInput();
+            });
+
+            // Filters
+            filterOwner.addEventListener('change', renderNotes);
+            filterTag.addEventListener('change', renderNotes);
+            filterSearch.addEventListener('input', renderNotes);
+
+            // Keyboard: Escape to close dialogs
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    if (dialog.open) {
+                        closeDialog();
+                        e.preventDefault();
+                    } else if (deleteDialog.open) {
+                        closeDeleteDialog();
+                        e.preventDefault();
+                    }
+                }
+            });
+
+            // Click outside to close delete dialog (backdrop)
+            deleteDialog.addEventListener('click', function(e) {
+                if (e.target === deleteDialog) {
+                    closeDeleteDialog();
+                }
+            });
+
+            dialog.addEventListener('click', function(e) {
+                if (e.target === dialog) {
+                    closeDialog();
+                }
+            });
+
+            // ---- Initialization ----
+            loadNotes();
+            renderAll();
+
+            // If no notes exist, pre-fill with a sample for demo
+            if (notes.length === 0) {
+                const sample = [
+                    { title: 'Sprint Kickoff', owner: 'Alice', meetingDate: getTodayStr(), type: 'decision',
+                        tags: ['sprint', 'planning'], body: 'Decided to focus on payment flow improvements this sprint.' },
+                    { title: 'Design Review', owner: 'Bob', meetingDate: getTodayStr(), type: 'action',
+                        tags: ['design', 'ux'], body: 'Update the onboarding screens to match new brand guidelines.' },
+                    { title: 'Weekly Sync', owner: 'Carol', meetingDate: getTodayStr(), type: 'reference',
+                        tags: ['sync'], body: 'Discussed progress on all active projects.' },
+                ];
+                sample.forEach(s => {
+                    addNote(s);
+                });
+                renderAll();
+            }
+
+        })();
+    </script>
+
+</body>
+</html>

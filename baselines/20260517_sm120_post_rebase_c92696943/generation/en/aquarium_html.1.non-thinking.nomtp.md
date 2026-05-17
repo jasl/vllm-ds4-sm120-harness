@@ -1,0 +1,536 @@
+# Generation Transcript
+
+- Case: `aquarium_html`
+- Language group: `en`
+- Workload: `coding`
+- Model: `deepseek-ai/DeepSeek-V4-Flash`
+- Round: `1`
+- Thinking mode: `non-thinking`
+- Thinking strength: `default`
+- Temperature: `1.0`
+- Top P: `1.0`
+- Variant: `nomtp`
+- OK: `True`
+- Status: PASS
+- Check: matched expectation
+- Detail: `matched expectation`
+- Elapsed seconds: 51.037434
+- Finish reason: `stop`
+- Usage: `{"prompt_tokens": 74, "total_tokens": 5152, "completion_tokens": 5078, "prompt_tokens_details": null}`
+- Prompt tokens: 74
+- Completion tokens: 5078
+- Total tokens: 5152
+
+## Prompt
+
+```markdown
+Make an html animation of fishes in an aquarium. The aquarium is pretty, the fishes vary in colors and sizes and swim realistically. You can left click to place a piece of fish food in aquarium. Each fish chases a food piece closest to it, trying to eat it. Once there are no more food pieces, fishes resume swimming as usual.
+```
+
+## Assistant
+
+````markdown
+This is a complete HTML document that creates an interactive aquarium simulation. You can click to add fish food, and the colorful fish will swim and chase the nearest piece.
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐟 Aquarium · Fish & Food</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: linear-gradient(145deg, #0b1a2e, #0a1a2a);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+        }
+        .aquarium-wrapper {
+            background: #1c3e4f;
+            padding: 20px 20px 30px;
+            border-radius: 48px 48px 28px 28px;
+            box-shadow: 0 20px 30px rgba(0,0,0,0.7), inset 0 0 0 2px #7faabc;
+            border-bottom: 6px solid #3d6f7f;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            width: 900px;
+            height: 550px;
+            border-radius: 28px;
+            box-shadow: inset 0 0 30px #0d2c38, 0 10px 18px rgba(0,0,0,0.5);
+            cursor: crosshair;
+            background: radial-gradient(circle at 20% 30%, #2d7a8f, #12455b);
+            transition: box-shadow 0.2s;
+        }
+        canvas:active {
+            box-shadow: inset 0 0 30px #6fc3d4, 0 10px 18px rgba(0,0,0,0.6);
+        }
+        .ui-tip {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+            padding: 0 12px;
+            color: #b4d9e6;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            text-shadow: 0 2px 2px #0a1a26;
+        }
+        .food-count {
+            background: #112b36;
+            padding: 6px 16px;
+            border-radius: 40px;
+            box-shadow: inset 0 3px 8px #051217;
+            font-size: 0.95rem;
+            border: 1px solid #418296;
+        }
+        .hint {
+            background: #183946;
+            padding: 6px 18px;
+            border-radius: 40px;
+            font-size: 0.9rem;
+            border: 1px solid #4e8fa3;
+            backdrop-filter: blur(1px);
+        }
+        .hint i {
+            font-style: normal;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        @media (max-width: 940px) {
+            canvas {
+                width: 100%;
+                height: auto;
+                aspect-ratio: 900/550;
+            }
+            .aquarium-wrapper {
+                padding: 12px;
+                border-radius: 32px;
+                margin: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="aquarium-wrapper">
+    <canvas id="aquariumCanvas" width="900" height="550"></canvas>
+    <div class="ui-tip">
+        <span class="food-count">🍕 food <span id="foodCounter">0</span></span>
+        <span class="hint"><i>🖱️</i> left click → drop food</span>
+    </div>
+</div>
+<script>
+    (function() {
+        const canvas = document.getElementById('aquariumCanvas');
+        const ctx = canvas.getContext('2d');
+        const foodSpan = document.getElementById('foodCounter');
+
+        // ---------- aquarium dimensions ----------
+        const W = 900, H = 550;
+
+        // ---------- fish food ----------
+        let foodPellets = [];
+
+        // ---------- fish population ----------
+        const FISH_COUNT = 14;
+        let fishes = [];
+
+        // ---------- utilities ----------
+        function random(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function distance(x1, y1, x2, y2) {
+            return Math.hypot(x2 - x1, y2 - y1);
+        }
+
+        // ---------- Fish class (realistic sine swimming) ----------
+        class Fish {
+            constructor(id) {
+                this.id = id;
+                // position
+                this.x = random(60, W - 60);
+                this.y = random(40, H - 40);
+                // velocity vector (for smooth steering)
+                this.vx = random(-0.8, 0.8);
+                this.vy = random(-0.6, 0.6);
+                // size & color
+                this.bodyLength = random(22, 46);
+                this.bodyHeight = this.bodyLength * random(0.38, 0.52);
+                this.hue = Math.floor(random(0, 360));
+                this.saturation = random(60, 95);
+                this.lightness = random(40, 70);
+                // secondary color (tail/fin accent)
+                this.finHue = (this.hue + random(20, 50)) % 360;
+                // swimming phase (for tail wave and body undulation)
+                this.phase = random(0, Math.PI * 2);
+                this.phaseSpeed = random(0.02, 0.045);
+                // personality: slight variation in chase speed
+                this.chaseBoost = random(0.85, 1.2);
+                // target (food or null)
+                this.targetFood = null;
+                // wander steering offset
+                this.wanderAngle = random(0, Math.PI * 2);
+            }
+
+            // choose closest food pellet (if any)
+            selectTarget(foodArray) {
+                if (foodArray.length === 0) {
+                    this.targetFood = null;
+                    return;
+                }
+                let closest = null;
+                let minDist = Infinity;
+                for (let i = 0; i < foodArray.length; i++) {
+                    const food = foodArray[i];
+                    const d = distance(this.x, this.y, food.x, food.y);
+                    if (d < minDist) {
+                        minDist = d;
+                        closest = food;
+                    }
+                }
+                this.targetFood = closest;
+            }
+
+            // update: movement, chase or wander, eat if close
+            update(foodArray) {
+                // select best target (closest food)
+                this.selectTarget(foodArray);
+
+                // steering force
+                let steerX = 0, steerY = 0;
+                const maxSpeed = 1.4 + (this.bodyLength / 50) * 0.5;
+                const chaseSpeed = maxSpeed * (0.8 + 0.3 * this.chaseBoost);
+
+                if (this.targetFood) {
+                    // ----- chase mode -----
+                    const dx = this.targetFood.x - this.x;
+                    const dy = this.targetFood.y - this.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < 10) {
+                        // eat food (remove from array)
+                        const idx = foodArray.indexOf(this.targetFood);
+                        if (idx !== -1) {
+                            foodArray.splice(idx, 1);
+                            // after eating, target becomes invalid
+                        }
+                        this.targetFood = null;
+                        // slight random joy
+                        this.phase += 0.8;
+                    } else {
+                        const targetDirX = dx / dist;
+                        const targetDirY = dy / dist;
+                        const desiredVx = targetDirX * chaseSpeed;
+                        const desiredVy = targetDirY * chaseSpeed;
+                        const steerStrength = 0.06;
+                        steerX = (desiredVx - this.vx) * steerStrength;
+                        steerY = (desiredVy - this.vy) * steerStrength;
+
+                        // increase phase for tail beat when chasing
+                        this.phase += this.phaseSpeed * 1.8;
+                    }
+                } else {
+                    // ----- free swimming (wander + gentle turning) -----
+                    this.wanderAngle += random(-0.15, 0.15);
+                    const wanderForce = 0.08;
+                    const wx = Math.cos(this.wanderAngle) * wanderForce;
+                    const wy = Math.sin(this.wanderAngle) * wanderForce;
+                    steerX += wx;
+                    steerY += wy;
+
+                    // also add a weak return-to-center (avoid edges)
+                    const margin = 60;
+                    const cx = W / 2, cy = H / 2;
+                    const dxCenter = cx - this.x;
+                    const dyCenter = cy - this.y;
+                    const distCenter = Math.hypot(dxCenter, dyCenter);
+                    if (distCenter > 180) {
+                        const pull = 0.008;
+                        steerX += (dxCenter / distCenter) * pull * (distCenter / 200);
+                        steerY += (dyCenter / distCenter) * pull * (distCenter / 200);
+                    }
+
+                    // edge wall avoidance (stronger near borders)
+                    const edge = 35;
+                    if (this.x < edge) steerX += 0.06;
+                    if (this.x > W - edge) steerX -= 0.06;
+                    if (this.y < edge) steerY += 0.06;
+                    if (this.y > H - edge) steerY -= 0.06;
+
+                    // phase for idle swimming (slow undulation)
+                    this.phase += this.phaseSpeed * 0.7;
+                }
+
+                // apply steering (with damping)
+                this.vx += steerX;
+                this.vy += steerY;
+
+                // limit velocity (max speed)
+                const speed = Math.hypot(this.vx, this.vy);
+                const speedLimit = (this.targetFood) ? chaseSpeed * 1.1 : maxSpeed;
+                if (speed > speedLimit) {
+                    this.vx = (this.vx / speed) * speedLimit;
+                    this.vy = (this.vy / speed) * speedLimit;
+                }
+
+                // move
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // soft boundary (reflect with damping)
+                const pad = 18;
+                if (this.x < pad) { this.x = pad; this.vx *= -0.45; }
+                if (this.x > W - pad) { this.x = W - pad; this.vx *= -0.45; }
+                if (this.y < pad) { this.y = pad; this.vy *= -0.45; }
+                if (this.y > H - pad) { this.y = H - pad; this.vy *= -0.45; }
+
+                // re-select target if current food was eaten
+                if (this.targetFood && !foodArray.includes(this.targetFood)) {
+                    this.targetFood = null;
+                }
+            }
+
+            // draw fish (pretty, with pectoral fins, tail, and eye)
+            draw(ctx) {
+                const angle = Math.atan2(this.vy, this.vx);
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(angle);
+
+                const len = this.bodyLength;
+                const height = this.bodyHeight;
+                const tailLen = len * 0.38;
+                const headLen = len * 0.28;
+
+                // body color
+                const mainColor = `hsl(${this.hue}, ${this.saturation}%, ${this.lightness}%)`;
+                const darkColor = `hsl(${this.hue}, ${this.saturation}%, ${this.lightness - 18}%)`;
+                const finColor = `hsl(${this.finHue}, 75%, 55%)`;
+
+                // ---- tail (with wave) ----
+                const tailWave = Math.sin(this.phase * 2.5) * 0.25;
+                ctx.save();
+                ctx.translate(-len * 0.45, 0);
+                ctx.rotate(tailWave * 0.7);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(-tailLen * 0.7, -height * 0.5, -tailLen * 1.2, -height * 0.3);
+                ctx.quadraticCurveTo(-tailLen * 0.9, 0, -tailLen * 1.2, height * 0.3);
+                ctx.quadraticCurveTo(-tailLen * 0.7, height * 0.5, 0, 0);
+                ctx.fillStyle = finColor;
+                ctx.shadowColor = 'rgba(0,20,30,0.4)';
+                ctx.shadowBlur = 6;
+                ctx.fill();
+                ctx.restore();
+
+                // ---- body (ellipse with slight distortion) ----
+                ctx.save();
+                const bodyScaleX = 1.0 + Math.sin(this.phase * 1.2) * 0.04;
+                ctx.scale(bodyScaleX, 1.0);
+                ctx.beginPath();
+                ctx.ellipse(0, 0, len * 0.5, height * 0.5, 0, 0, Math.PI * 2);
+                // gradient body
+                const grad = ctx.createRadialGradient(len*0.1, -height*0.15, 2, 0, 0, len*0.6);
+                grad.addColorStop(0, `hsl(${this.hue}, ${this.saturation+8}%, ${this.lightness+12}%)`);
+                grad.addColorStop(1, mainColor);
+                ctx.fillStyle = grad;
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = 'rgba(0,0,0,0.3)';
+                ctx.fill();
+                // body outline
+                ctx.strokeStyle = darkColor;
+                ctx.lineWidth = 1.4;
+                ctx.stroke();
+                ctx.restore();
+
+                // ---- pectoral fin (bottom) ----
+                ctx.save();
+                ctx.translate(len * 0.05, height * 0.3);
+                ctx.rotate(0.4 + Math.sin(this.phase * 0.9) * 0.2);
+                ctx.beginPath();
+                ctx.ellipse(0, 0, len * 0.18, height * 0.12, 0, 0, Math.PI * 2);
+                ctx.fillStyle = `hsl(${this.finHue}, 65%, 60%)`;
+                ctx.shadowBlur = 4;
+                ctx.fill();
+                ctx.restore();
+
+                // ---- second pectoral fin (top) ----
+                ctx.save();
+                ctx.translate(len * 0.05, -height * 0.3);
+                ctx.rotate(-0.4 + Math.sin(this.phase * 0.9 + 1) * 0.2);
+                ctx.beginPath();
+                ctx.ellipse(0, 0, len * 0.18, height * 0.12, 0, 0, Math.PI * 2);
+                ctx.fillStyle = `hsl(${this.finHue}, 65%, 55%)`;
+                ctx.fill();
+                ctx.restore();
+
+                // ---- eye ----
+                ctx.save();
+                ctx.translate(len * 0.28, -height * 0.1);
+                ctx.beginPath();
+                ctx.arc(0, 0, len * 0.075, 0, Math.PI * 2);
+                ctx.fillStyle = '#f5f9ff';
+                ctx.shadowBlur = 0;
+                ctx.fill();
+                ctx.strokeStyle = '#0a1a22';
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+                // pupil
+                ctx.beginPath();
+                ctx.arc(2.5, -1, len * 0.04, 0, Math.PI * 2);
+                ctx.fillStyle = '#11212e';
+                ctx.fill();
+                ctx.restore();
+
+                ctx.restore(); // global transform
+            }
+        }
+
+        // ---------- initialize fishes ----------
+        function initFishes() {
+            fishes = [];
+            for (let i = 0; i < FISH_COUNT; i++) {
+                fishes.push(new Fish(i));
+            }
+        }
+        initFishes();
+
+        // ---------- add food on click ----------
+        function addFood(x, y) {
+            const count = 3 + Math.floor(Math.random() * 5); // 3~7 pieces
+            for (let i = 0; i < count; i++) {
+                const offsetX = random(-14, 14);
+                const offsetY = random(-12, 12);
+                const size = random(5, 10);
+                foodPellets.push({
+                    x: Math.min(W - 20, Math.max(20, x + offsetX)),
+                    y: Math.min(H - 20, Math.max(20, y + offsetY)),
+                    radius: size,
+                    brightness: 70 + Math.floor(Math.random() * 30)
+                });
+            }
+            updateFoodCounter();
+        }
+
+        // handle click on canvas
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const mouseX = (e.clientX - rect.left) * scaleX;
+            const mouseY = (e.clientY - rect.top) * scaleY;
+            addFood(mouseX, mouseY);
+        });
+
+        // update UI counter
+        function updateFoodCounter() {
+            foodSpan.textContent = foodPellets.length;
+        }
+
+        // ---------- animation loop ----------
+        function animate() {
+            // update fishes (each fish may eat food during its update)
+            for (let f of fishes) {
+                f.update(foodPellets);
+            }
+
+            // (optional) if a food pellet was eaten — f.update removes it from array.
+            // just update counter
+            updateFoodCounter();
+
+            // draw everything
+            drawScene();
+
+            requestAnimationFrame(animate);
+        }
+
+        // ----- drawing -----
+        function drawScene() {
+            ctx.clearRect(0, 0, W, H);
+
+            // underwater caustics / background detail
+            ctx.fillStyle = 'rgba(10, 50, 70, 0.2)';
+            for (let i = 0; i < 30; i++) {
+                ctx.beginPath();
+                ctx.arc(80 + i * 37 + Math.sin(Date.now()/2000 + i)*8,
+                        40 + (i%7)*70 + Math.cos(Date.now()/1500 + i)*6,
+                        16 + i%5, 0, Math.PI*2);
+                ctx.fillStyle = `rgba(150, 210, 240, ${0.03 + Math.sin(Date.now()/1000 + i)*0.02})`;
+                ctx.fill();
+            }
+
+            // draw food pellets (glowing)
+            for (let f of foodPellets) {
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
+                const glow = ctx.createRadialGradient(f.x-2, f.y-2, 2, f.x, f.y, f.radius+5);
+                glow.addColorStop(0, `hsl(30, 100%, ${f.brightness}%)`);
+                glow.addColorStop(0.7, `hsl(25, 90%, ${f.brightness-15}%)`);
+                glow.addColorStop(1, 'rgba(200,120,30,0.2)');
+                ctx.fillStyle = glow;
+                ctx.shadowBlur = 18;
+                ctx.shadowColor = `hsla(30, 100%, 70%, 0.5)`;
+                ctx.fill();
+                // inner bright core
+                ctx.beginPath();
+                ctx.arc(f.x-1.5, f.y-1.5, f.radius*0.3, 0, 2*Math.PI);
+                ctx.fillStyle = '#ffebc0';
+                ctx.shadowBlur = 8;
+                ctx.fill();
+            }
+
+            // draw fishes (in order, no overlap sorting for performance)
+            for (let f of fishes) {
+                f.draw(ctx);
+            }
+
+            // extra water highlight (top)
+            ctx.fillStyle = 'rgba(180, 230, 255, 0.05)';
+            ctx.fillRect(0, 0, W, 10);
+            // bottom sand/pebbles suggestion
+            ctx.fillStyle = 'rgba(60, 45, 30, 0.15)';
+            ctx.beginPath();
+            ctx.ellipse(120, H-12, 200, 14, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(700, H-8, 280, 18, 0, 0, Math.PI*2);
+            ctx.fillStyle = 'rgba(50, 40, 30, 0.2)';
+            ctx.fill();
+        }
+
+        // ----- start animation -----
+        animate();
+
+        // ----- reset trick (optional but nice to not have too many food) -----
+        // limit total food to 65 items (avoid overcrowding)
+        setInterval(() => {
+            if (foodPellets.length > 65) {
+                foodPellets.splice(65, foodPellets.length - 65);
+                updateFoodCounter();
+            }
+        }, 2000);
+
+        // also, window resize won't break positions (canvas fixed size)
+        console.log('🐟 Aquarium ready! Click to drop food.');
+    })();
+</script>
+</body>
+</html>
+```
+### Interactive Aquarium Mechanics
+Here's how the simulation works and how you can interact with it.
+*   **Realistic Fish Behavior:** Each fish has unique size, color, and swimming style. They use a steering algorithm to swim smoothly, with a gentle wavy motion for their tails and fins.
+*   **Chasing Food:** When you left-click on the aquarium, several pieces of food appear. Each fish will automatically identify and swim toward the food pellet closest to it, increasing its speed.
+*   **Eating and Resuming:** Once a fish reaches its target food, the pellet disappears. After all food pieces are eaten, the fish will return to their normal, relaxed swimming pattern until you drop more food.
+````

@@ -1,0 +1,7 @@
+variant	phase	exit_code	artifact_dir
+mtp1	server_startup	0	/home/jasl/Workspace/ds4-sm120-harness/artifacts/unknown-branch/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/sm120_post_rebase_c92696943/20260517-164751/mtp1/server_startup
+mtp1	acceptance	1	/home/jasl/Workspace/ds4-sm120-harness/artifacts/unknown-branch/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/sm120_post_rebase_c92696943/20260517-164751/mtp1/acceptance
+mtp1	long_context_probe	0	/home/jasl/Workspace/ds4-sm120-harness/artifacts/unknown-branch/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/sm120_post_rebase_c92696943/20260517-164751/mtp1/long_context_probe
+mtp1	bench_hf_mt_bench	1	/home/jasl/Workspace/ds4-sm120-harness/artifacts/unknown-branch/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/sm120_post_rebase_c92696943/20260517-164751/mtp1/bench_hf_mt_bench
+mtp1	eval_gsm8k	143	/home/jasl/Workspace/ds4-sm120-harness/artifacts/unknown-branch/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/sm120_post_rebase_c92696943/20260517-164751/mtp1/eval_gsm8k
+mtp1	decode_profile	0	/home/jasl/Workspace/ds4-sm120-harness/artifacts/unknown-branch/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/sm120_post_rebase_c92696943/20260517-164751/mtp1/decode_profile
