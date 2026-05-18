@@ -38,6 +38,11 @@ not at a simple GDDR7 bandwidth ceiling:
 - NCU observations for late-context FP8 MQA logits show register / occupancy /
   eligible-warp / long-scoreboard pressure. Treat memory throughput counters as
   GDDR7 memory-subsystem evidence, not HBM evidence.
+- Single-run long-context matrices are sensitive to runtime and Triton compile
+  cache state. A follow-up same-service `autotune_on` first/second matrix did
+  not show the second run getting faster, but both runs were materially faster
+  than an earlier one-shot matrix in the same session. Treat repeat-count-1
+  latency as a development signal, not a publishable number.
 
 ## Successful Optimization Notes
 
@@ -183,6 +188,33 @@ proof of a correctness improvement without repeated correctness gates.
 Decision: keep upstream's fixed autotune behavior available, but do not spend
 more 128K prefill optimization time here unless a later profile shows this
 path is actually on the critical path.
+
+### Long-Context Matrix Warmup Sensitivity
+
+A same-service follow-up ran the default `autotune_on` configuration twice
+without restarting vLLM. The first pass included the usual 4K prewarm; the
+second pass reused the same service process and skipped that prewarm.
+
+| Prompt Shape | Concurrency | Earlier `autotune_on` | Same-Service First | Same-Service Second |
+| --- | ---: | ---: | ---: | ---: |
+| 64K synthetic | 1 | 13.911 s | 12.054 s | 12.522 s |
+| 64K synthetic | 2 | 19.876 s | 18.633 s | 19.386 s |
+| 64K synthetic | 4 | 33.492 s | 32.540 s | 33.793 s |
+| 128K synthetic | 1 | 33.590 s | 29.866 s | 29.941 s |
+| 128K synthetic | 2 | 48.265 s | 45.358 s | 45.541 s |
+| 128K synthetic | 4 | 81.556 s | 76.016 s | 78.073 s |
+
+The same-service second pass was not faster than the first, so this is not
+evidence that prefix reuse or repeated prompt cache effects are driving the
+result. It is evidence that one-shot long-context latency is sensitive to
+process, compile-cache, or system state. The serve logs still reported first
+inference-time JIT events for the FP8 MQA logits, rowwise logits, top-k
+combiner, FP8 einsum, and prefill metadata kernels.
+
+Decision: use repeated measurements, preferably reporting min/median and
+failures, before putting 64K/128K numbers in the PR body. Separately evaluate a
+startup warmup plan that deliberately covers the late-context kernel shapes
+instead of relying only on the current 4K prewarm.
 
 ## External Reference: DeepGEMM PR 324
 
