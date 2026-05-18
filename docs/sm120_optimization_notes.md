@@ -216,6 +216,48 @@ failures, before putting 64K/128K numbers in the PR body. Separately evaluate a
 startup warmup plan that deliberately covers the late-context kernel shapes
 instead of relying only on the current 4K prewarm.
 
+### Long-Context MTP Correctness Recheck
+
+A repeat-count-3 long-context gate was run after the same-service warmup
+finding, still using the active default: prefix cache disabled, 131K
+max-model-len, 4096 max-num-batched-tokens, TP=2, MTP=2, and 64-token
+synthetic completions. Artifact label:
+`repeat_gate_20260519032549`.
+
+| Prompt Shape | Concurrency | Requests | Failures | Mean TTFT | Min TTFT | Max TTFT |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 64K synthetic | 1 | 3 | 0 | 12.106 s | 12.065 s | 12.166 s |
+| 64K synthetic | 2 | 6 | 0 | 19.015 s | 12.923 s | 25.191 s |
+| 64K synthetic | 4 | 12 | 2 | 32.321 s | 13.385 s | 51.614 s |
+| 128K synthetic | 1 | 3 | 0 | 30.063 s | 30.024 s | 30.119 s |
+| 128K synthetic | 2 | 6 | 0 | 45.732 s | 30.588 s | 61.830 s |
+| 128K synthetic | 4 | 12 | 0 | 77.252 s | 30.997 s | 129.329 s |
+
+The two failures were both 64K C=4 retrieval misses for the middle sentinel.
+Because those completions hit the 64-token output cap, a targeted 64K C=4
+rerun increased the completion cap to 128 tokens. Artifact label:
+`target_64k_c4_max128_20260519034448`. It still failed 2 of 12 requests.
+The failed responses ended normally and had enough room to answer, but returned
+`beta-epsilon-29` for the middle indexer instead of the expected
+`beta-quartz-29`. That makes this a correctness miss, not an output-budget
+artifact.
+
+The same targeted 64K C=4 shape without MTP passed 12 of 12 requests at
+`max_tokens=128` (`target_64k_c4_nomtp_max128_20260519034951`), although
+elapsed time was slower because there was no speculative decode speedup.
+Trying MTP=1 as a conservative fallback was not usable:
+`target_64k_c4_mtp1_max128_20260519035535` failed all matrix requests after
+EngineCore hit `RPC call to sample_tokens timed out`. The scheduler snapshot in
+the failure log showed concurrent cached requests with
+`scheduled_spec_decode_tokens` values of `[-1]`.
+
+Decision: do not promote MTP=2 long-context C=4 as correctness-clean yet, and
+do not use MTP=1 as the fallback. Keep no-MTP as the correctness control while
+investigating whether the C=4 miss is in speculative acceptance, draft logits,
+or scheduler interaction. PR-facing 64K/128K numbers should include repeated
+failure counts or be limited to configurations that pass the fixed correctness
+gate.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
@@ -256,10 +298,12 @@ Ideas to avoid carrying over blindly:
 
 ## Near-Term Work Queue
 
-1. Profile the active FP8 MQA logits Triton path with NCU on representative
+1. Investigate the MTP=2 64K C=4 correctness miss with no-MTP as the control
+   path before promoting PR-facing long-context numbers.
+2. Profile the active FP8 MQA logits Triton path with NCU on representative
    late-context 128K launches.
-2. Sweep small tile/register-pressure changes around `BLOCK_M`, `BLOCK_N`,
+3. Sweep small tile/register-pressure changes around `BLOCK_M`, `BLOCK_N`,
    `BLOCK_H`, and `num_warps`, keeping each candidate small enough to revert.
-3. Gate candidates with the short + 64K/128K + GSM8K matrix before promotion.
-4. After prefill is stable, move to paged MQA decode and small-M GEMM/BMM
+4. Gate candidates with the short + 64K/128K + GSM8K matrix before promotion.
+5. After prefill is stable, move to paged MQA decode and small-M GEMM/BMM
    experiments for long-context multi-turn latency.
