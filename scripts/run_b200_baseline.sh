@@ -66,6 +66,19 @@ KV_LAYOUT_SCALE_BYTES="${KV_LAYOUT_SCALE_BYTES:-8}"
 KV_LAYOUT_REQUIRE_HELPER_MATCH="${KV_LAYOUT_REQUIRE_HELPER_MATCH:-1}"
 KV_LAYOUT_TIMEOUT="${KV_LAYOUT_TIMEOUT:-120}"
 RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"
+RUN_LONG_CONTEXT_LATENCY_MATRIX="${RUN_LONG_CONTEXT_LATENCY_MATRIX:-1}"
+LONG_CONTEXT_LATENCY_CASE_NAME="${LONG_CONTEXT_LATENCY_CASE_NAME:-long_context_mtp_reliability}"
+LONG_CONTEXT_LATENCY_LINE_COUNTS="${LONG_CONTEXT_LATENCY_LINE_COUNTS:-2000}"
+LONG_CONTEXT_LATENCY_PROMPT_FILES="${LONG_CONTEXT_LATENCY_PROMPT_FILES:-}"
+LONG_CONTEXT_LATENCY_CONCURRENCY="${LONG_CONTEXT_LATENCY_CONCURRENCY:-4}"
+LONG_CONTEXT_LATENCY_CACHE_MODES="${LONG_CONTEXT_LATENCY_CACHE_MODES:-cold}"
+LONG_CONTEXT_LATENCY_REPEAT_COUNT="${LONG_CONTEXT_LATENCY_REPEAT_COUNT:-3}"
+LONG_CONTEXT_LATENCY_MAX_TOKENS="${LONG_CONTEXT_LATENCY_MAX_TOKENS:-128}"
+LONG_CONTEXT_LATENCY_TEMPERATURE="${LONG_CONTEXT_LATENCY_TEMPERATURE:-0.0}"
+LONG_CONTEXT_LATENCY_TOP_P="${LONG_CONTEXT_LATENCY_TOP_P:-1.0}"
+LONG_CONTEXT_LATENCY_THINKING_MODE="${LONG_CONTEXT_LATENCY_THINKING_MODE:-non-thinking}"
+LONG_CONTEXT_LATENCY_TIMEOUT="${LONG_CONTEXT_LATENCY_TIMEOUT:-1800}"
+LONG_CONTEXT_LATENCY_PREWARM="${LONG_CONTEXT_LATENCY_PREWARM:-0}"
 # decode_profile is OFF by default because it tears down the variant's
 # running serve and launches a profiler-instrumented one (torch profiler
 # hooks must be installed at serve startup time). Production wrappers opt
@@ -197,6 +210,13 @@ export LM_EVAL_GATE_MIN_DELTA
 export RUN_LONG_CONTEXT_PROBE LONG_CONTEXT_CASE_NAME LONG_CONTEXT_LINE_COUNT
 export LONG_CONTEXT_MAX_TOKENS LONG_CONTEXT_TEMPERATURE LONG_CONTEXT_TOP_P
 export LONG_CONTEXT_THINKING_MODE LONG_CONTEXT_TIMEOUT LONG_CONTEXT_REQUEST_RETRIES
+export RUN_LONG_CONTEXT_LATENCY_MATRIX LONG_CONTEXT_LATENCY_CASE_NAME
+export LONG_CONTEXT_LATENCY_LINE_COUNTS LONG_CONTEXT_LATENCY_PROMPT_FILES
+export LONG_CONTEXT_LATENCY_CONCURRENCY LONG_CONTEXT_LATENCY_CACHE_MODES
+export LONG_CONTEXT_LATENCY_REPEAT_COUNT LONG_CONTEXT_LATENCY_MAX_TOKENS
+export LONG_CONTEXT_LATENCY_TEMPERATURE LONG_CONTEXT_LATENCY_TOP_P
+export LONG_CONTEXT_LATENCY_THINKING_MODE LONG_CONTEXT_LATENCY_TIMEOUT
+export LONG_CONTEXT_LATENCY_PREWARM
 export RUN_DECODE_PROFILE DECODE_PROFILE_MAX_TOKENS DECODE_PROFILE_WARMUP_TOKENS
 export DECODE_PROFILE_TEMPERATURE DECODE_PROFILE_PROMPT DECODE_PROFILE_LABEL
 export RUN_LONGBENCH2 LONGBENCH2_TASKS LONGBENCH2_LIMIT LONGBENCH2_BATCH_SIZE
@@ -238,6 +258,7 @@ VALID_BASELINE_PHASES=(
   kv_layout_probe
   acceptance
   long_context_probe
+  long_context_latency_matrix
   prefix_cache_probe
   streaming_pressure_soak
   bench_hf_mt_bench
@@ -270,7 +291,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,prefix_cache_probe,streaming_pressure_soak,bench_hf_mt_bench,eval_gsm8k,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,prefix_cache_probe,streaming_pressure_soak,bench_hf_mt_bench,eval_gsm8k,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
   done
@@ -656,6 +677,11 @@ write_summary() {
     printf -- '- long_context_probe: `%s`, lines `%s`, max tokens `%s`, thinking `%s`\n' \
       "${RUN_LONG_CONTEXT_PROBE}" "${LONG_CONTEXT_LINE_COUNT:-1900}" \
       "${LONG_CONTEXT_MAX_TOKENS:-128}" "${LONG_CONTEXT_THINKING_MODE:-non-thinking}"
+    printf -- '- long_context_latency_matrix: `%s`, lines `%s`, concurrency `%s`, cache `%s`, repeats `%s`, max tokens `%s`, thinking `%s`\n' \
+      "${RUN_LONG_CONTEXT_LATENCY_MATRIX}" "${LONG_CONTEXT_LATENCY_LINE_COUNTS}" \
+      "${LONG_CONTEXT_LATENCY_CONCURRENCY}" "${LONG_CONTEXT_LATENCY_CACHE_MODES}" \
+      "${LONG_CONTEXT_LATENCY_REPEAT_COUNT}" "${LONG_CONTEXT_LATENCY_MAX_TOKENS}" \
+      "${LONG_CONTEXT_LATENCY_THINKING_MODE}"
     printf -- '- prefix_cache_probe: `%s`, lines `%s`, max tokens `%s`, thinking `%s`, fail_on_regression `%s`\n' \
       "${RUN_PREFIX_CACHE_PROBE}" "${PREFIX_CACHE_LINE_COUNT:-1900}" \
       "${PREFIX_CACHE_MAX_TOKENS:-64}" "${PREFIX_CACHE_THINKING_MODE:-non-thinking}" \
@@ -1015,6 +1041,31 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_long_context_probe.sh"
+  fi
+
+  if phase_enabled "long_context_latency_matrix" && { [[ "${RUN_LONG_CONTEXT_LATENCY_MATRIX}" == "1" ]] || [[ "${RUN_LONG_CONTEXT_LATENCY_MATRIX}" == "true" ]]; }; then
+    run_phase "${variant}" "long_context_latency_matrix" "${variant_dir}/long_context_latency_matrix" \
+      env OUT_DIR="${variant_dir}/long_context_latency_matrix" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
+        LONG_CONTEXT_LATENCY_VARIANT="${variant}" \
+        LONG_CONTEXT_LATENCY_CASE_NAME="${LONG_CONTEXT_LATENCY_CASE_NAME}" \
+        LONG_CONTEXT_LATENCY_LINE_COUNTS="${LONG_CONTEXT_LATENCY_LINE_COUNTS}" \
+        LONG_CONTEXT_LATENCY_PROMPT_FILES="${LONG_CONTEXT_LATENCY_PROMPT_FILES}" \
+        LONG_CONTEXT_LATENCY_CONCURRENCY="${LONG_CONTEXT_LATENCY_CONCURRENCY}" \
+        LONG_CONTEXT_LATENCY_CACHE_MODES="${LONG_CONTEXT_LATENCY_CACHE_MODES}" \
+        LONG_CONTEXT_LATENCY_REPEAT_COUNT="${LONG_CONTEXT_LATENCY_REPEAT_COUNT}" \
+        LONG_CONTEXT_LATENCY_MAX_TOKENS="${LONG_CONTEXT_LATENCY_MAX_TOKENS}" \
+        LONG_CONTEXT_LATENCY_TEMPERATURE="${LONG_CONTEXT_LATENCY_TEMPERATURE}" \
+        LONG_CONTEXT_LATENCY_TOP_P="${LONG_CONTEXT_LATENCY_TOP_P}" \
+        LONG_CONTEXT_LATENCY_THINKING_MODE="${LONG_CONTEXT_LATENCY_THINKING_MODE}" \
+        LONG_CONTEXT_LATENCY_TIMEOUT="${LONG_CONTEXT_LATENCY_TIMEOUT}" \
+        LONG_CONTEXT_LATENCY_PREWARM="${LONG_CONTEXT_LATENCY_PREWARM}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_long_context_latency_matrix.sh"
   fi
 
   if phase_enabled "prefix_cache_probe" && { [[ "${RUN_PREFIX_CACHE_PROBE}" == "1" ]] || [[ "${RUN_PREFIX_CACHE_PROBE}" == "true" ]]; }; then

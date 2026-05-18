@@ -155,6 +155,20 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
         "Long context from /workspace/leak\n",
         encoding="utf-8",
     )
+    long_context_latency_dir = run_dir / "nomtp" / "long_context_latency_matrix"
+    _write_json(
+        long_context_latency_dir / "long_context_latency_matrix.json",
+        {
+            "case": "long_context_mtp_reliability",
+            "variant": "nomtp",
+            "ok": True,
+            "summary": [{"prompt": "synthetic_2000_lines", "detail": "/workspace/leak"}],
+        },
+    )
+    (long_context_latency_dir / "long_context_latency_matrix.md").write_text(
+        "Long-context latency from /workspace/leak\n",
+        encoding="utf-8",
+    )
     prefix_cache_dir = run_dir / "nomtp" / "prefix_cache_probe"
     _write_json(
         prefix_cache_dir / "prefix_cache_probe.json",
@@ -285,6 +299,12 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     assert (out_dir / "kv_layout" / "nomtp" / "probe.md").exists()
     assert (out_dir / "long_context" / "nomtp" / "probe.json").exists()
     assert (out_dir / "long_context" / "nomtp" / "probe.md").exists()
+    assert (
+        out_dir / "long_context_latency" / "nomtp" / "matrix.json"
+    ).exists()
+    assert (
+        out_dir / "long_context_latency" / "nomtp" / "matrix.md"
+    ).exists()
     assert (out_dir / "prefix_cache" / "nomtp" / "probe.json").exists()
     assert (out_dir / "prefix_cache" / "nomtp" / "probe.md").exists()
     assert (
@@ -296,8 +316,10 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     assert not scan_public_bundle(out_dir)
     readme = (out_dir / "README.md").read_text()
     assert "Known Non-Green Gates" in readme
+    assert "`long_context_latency/`" in readme
     assert "`prefix_cache/`" in readme
     manifest = json.loads((out_dir / "manifest.json").read_text())
+    assert "long_context_latency" in manifest["contents"]
     assert "prefix_cache" in manifest["contents"]
     assert load_oracle_cases(out_dir / "oracle")[0].name == (
         "completion_short_math_logprobs20"
@@ -325,6 +347,13 @@ def test_reference_bundle_writes_sanitized_oracle_and_smoke_data(tmp_path):
     assert probe["prompt"]["excerpt"]["head"] == "<workspace>/leak"
     assert "<workspace>/leak" in (
         out_dir / "long_context" / "nomtp" / "probe.md"
+    ).read_text()
+    latency = json.loads(
+        (out_dir / "long_context_latency" / "nomtp" / "matrix.json").read_text()
+    )
+    assert latency["summary"][0]["detail"] == "<workspace>/leak"
+    assert "<workspace>/leak" in (
+        out_dir / "long_context_latency" / "nomtp" / "matrix.md"
     ).read_text()
     prefix_probe = json.loads(
         (out_dir / "prefix_cache" / "nomtp" / "probe.json").read_text()

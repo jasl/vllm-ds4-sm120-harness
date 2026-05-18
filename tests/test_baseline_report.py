@@ -160,6 +160,7 @@ def _write_fixture_run(tmp_path):
     root = tmp_path / "baseline"
     eval_dir = root / "nomtp" / "eval_gsm8k"
     long_context_dir = root / "nomtp" / "long_context_probe"
+    long_context_latency_dir = root / "nomtp" / "long_context_latency_matrix"
     prefix_cache_dir = root / "nomtp" / "prefix_cache_probe"
     _write_json(
         eval_dir / "lm_eval_summary.json",
@@ -185,6 +186,7 @@ def _write_fixture_run(tmp_path):
         ("nomtp", "server_startup", 0, root / "nomtp" / "server_startup"),
         ("nomtp", "acceptance", 1, root / "nomtp" / "acceptance"),
         ("nomtp", "long_context_probe", 0, long_context_dir),
+        ("nomtp", "long_context_latency_matrix", 0, long_context_latency_dir),
         ("nomtp", "prefix_cache_probe", 0, prefix_cache_dir),
         ("nomtp", "bench_hf_mt_bench", 0, _write_fixture_phase(root, "nomtp", "bench_hf_mt_bench")),
         ("nomtp", "eval_gsm8k", 0, eval_dir),
@@ -253,6 +255,37 @@ def _write_fixture_run(tmp_path):
                 "sha256": "abc123",
             },
             "missing_terms": [],
+        },
+    )
+    _write_json(
+        long_context_latency_dir / "long_context_latency_matrix.json",
+        {
+            "case": "long_context_mtp_reliability",
+            "variant": "nomtp",
+            "model": "deepseek-ai/DeepSeek-V4-Flash",
+            "ok": True,
+            "thinking_mode": "non-thinking",
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "max_tokens": 128,
+            "repeat_count": 3,
+            "concurrencies": [4],
+            "cache_modes": ["cold"],
+            "summary": [
+                {
+                    "prompt": "synthetic_2000_lines",
+                    "cache_mode": "cold",
+                    "concurrency": 4,
+                    "request_count": 12,
+                    "failure_count": 0,
+                    "ttft_seconds_mean": 32.0697,
+                    "ttft_seconds_max": 34.1111,
+                    "elapsed_seconds_mean": 46.3548,
+                    "prompt_tokens_mean": 62080,
+                    "completion_tokens_mean": 70,
+                    "cached_prompt_tokens_mean": 0,
+                }
+            ],
         },
     )
     _write_json(
@@ -517,6 +550,11 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert (
         "| `nomtp` | `kv_indexer_long_context` | yes | 2400 | 47000 | "
         "20 | 3.50 | matched long-context sentinel terms |"
+    ) in report
+    assert "## Long Context Latency Matrix" in report
+    assert (
+        "| `nomtp` | `long_context_mtp_reliability` | `synthetic_2000_lines` | "
+        "cold | 4 | 3 | 12 | 0 | 128 | 32.07 | 34.11 | 46.35 | 62080 | 70 |"
     ) in report
     assert "## Prefix Cache Probes" in report
     assert (

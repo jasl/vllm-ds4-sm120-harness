@@ -16,6 +16,7 @@ PHASE_LABELS = {
     **BENCH_PHASE_LABELS,
     "acceptance": "Acceptance",
     "long_context_probe": "Long Context Probe",
+    "long_context_latency_matrix": "Long Context Latency Matrix",
     "prefix_cache_probe": "Prefix Cache Probe",
     "streaming_pressure_soak": "Streaming Pressure Soak",
     "oracle_export": "Oracle Export",
@@ -966,6 +967,48 @@ def _long_context_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: _variant_sort_key(row["variant"]))
 
 
+def _long_context_latency_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
+    rows = []
+    for record in records:
+        if record.phase != "long_context_latency_matrix":
+            continue
+        data = _load_json(record.artifact_dir / "long_context_latency_matrix.json")
+        if not isinstance(data, dict):
+            continue
+        summary = data.get("summary") if isinstance(data.get("summary"), list) else []
+        for item in summary:
+            if not isinstance(item, dict):
+                continue
+            rows.append(
+                {
+                    "variant": record.variant,
+                    "case": data.get("case"),
+                    "ok": data.get("ok"),
+                    "prompt": item.get("prompt"),
+                    "cache_mode": item.get("cache_mode"),
+                    "concurrency": item.get("concurrency"),
+                    "repeat_count": data.get("repeat_count"),
+                    "request_count": item.get("request_count"),
+                    "failure_count": item.get("failure_count"),
+                    "max_tokens": data.get("max_tokens"),
+                    "ttft_seconds_mean": item.get("ttft_seconds_mean"),
+                    "ttft_seconds_max": item.get("ttft_seconds_max"),
+                    "elapsed_seconds_mean": item.get("elapsed_seconds_mean"),
+                    "prompt_tokens_mean": item.get("prompt_tokens_mean"),
+                    "completion_tokens_mean": item.get("completion_tokens_mean"),
+                }
+            )
+    return sorted(
+        rows,
+        key=lambda row: (
+            _variant_sort_key(row["variant"]),
+            str(row.get("prompt")),
+            str(row.get("cache_mode")),
+            _to_int(row.get("concurrency")) or 0,
+        ),
+    )
+
+
 def _prefix_cache_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
     rows = []
     for record in records:
@@ -1657,6 +1700,41 @@ def _append_long_context(lines: list[str], rows: list[dict[str, Any]]) -> None:
     lines.append("")
 
 
+def _append_long_context_latency(lines: list[str], rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    lines.extend(
+        [
+            "## Long Context Latency Matrix",
+            "",
+            (
+                "These rows exercise long-context streaming requests at small "
+                "interactive concurrency. Use failures here as correctness "
+                "regressions, and TTFT/elapsed values as latency evidence."
+            ),
+            "",
+            "| Variant | Case | Prompt | Cache | C | Repeat | Requests | Failures | Max toks | TTFT mean s | TTFT max s | Elapsed mean s | Prompt tok | Completion tok |",
+            "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            f"| `{row['variant']}` | `{row.get('case', 'n/a')}` | "
+            f"`{row.get('prompt', 'n/a')}` | {row.get('cache_mode', 'n/a')} | "
+            f"{_fmt_int(row.get('concurrency'))} | "
+            f"{_fmt_int(row.get('repeat_count'))} | "
+            f"{_fmt_int(row.get('request_count'))} | "
+            f"{_fmt_int(row.get('failure_count'))} | "
+            f"{_fmt_int(row.get('max_tokens'))} | "
+            f"{_fmt(row.get('ttft_seconds_mean'))} | "
+            f"{_fmt(row.get('ttft_seconds_max'))} | "
+            f"{_fmt(row.get('elapsed_seconds_mean'))} | "
+            f"{_fmt_int(row.get('prompt_tokens_mean'))} | "
+            f"{_fmt_int(row.get('completion_tokens_mean'))} |"
+        )
+    lines.append("")
+
+
 def _append_prefix_cache(lines: list[str], rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
@@ -1836,6 +1914,7 @@ def build_baseline_report(
     acceptance_gate_rows = _acceptance_gate_rows(records)
     toolcall_rows = _toolcall_rows(records)
     long_context_rows = _long_context_rows(records)
+    long_context_latency_rows = _long_context_latency_rows(records)
     prefix_cache_rows = _prefix_cache_rows(records)
     streaming_pressure_rows = _streaming_pressure_rows(records)
     oracle_rows = _oracle_rows(records)
@@ -1891,6 +1970,7 @@ def build_baseline_report(
     _append_benchmark_tables(lines, bench_rows)
     _append_toolcall(lines, toolcall_rows)
     _append_long_context(lines, long_context_rows)
+    _append_long_context_latency(lines, long_context_latency_rows)
     _append_prefix_cache(lines, prefix_cache_rows)
     _append_streaming_pressure(lines, streaming_pressure_rows)
     _append_oracle(lines, oracle_rows)

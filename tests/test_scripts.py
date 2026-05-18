@@ -214,6 +214,13 @@ def test_env_sample_and_local_env_are_configured():
         "VLLM_TRITON_MLA_SPARSE",
         "VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE",
         "VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE",
+        "RUN_LONG_CONTEXT_LATENCY_MATRIX",
+        "LONG_CONTEXT_LATENCY_LINE_COUNTS",
+        "LONG_CONTEXT_LATENCY_CONCURRENCY",
+        "LONG_CONTEXT_LATENCY_CACHE_MODES",
+        "LONG_CONTEXT_LATENCY_REPEAT_COUNT",
+        "LONG_CONTEXT_LATENCY_MAX_TOKENS",
+        "LONG_CONTEXT_LATENCY_THINKING_MODE",
         "RUN_STREAMING_PRESSURE_SOAK",
         "STREAMING_PRESSURE_CONCURRENCY",
         "STREAMING_PRESSURE_ROUND_COUNT",
@@ -261,6 +268,12 @@ def test_env_sample_and_local_env_are_configured():
         "SERVE_MAX_MODEL_LEN": "393216",
         "SERVE_USE_FP4_INDEXER_CACHE": "auto",
         "SERVE_PREFIX_CACHE_MODE": "auto",
+        "RUN_LONG_CONTEXT_LATENCY_MATRIX": "1",
+        "LONG_CONTEXT_LATENCY_LINE_COUNTS": "2000",
+        "LONG_CONTEXT_LATENCY_CONCURRENCY": "4",
+        "LONG_CONTEXT_LATENCY_CACHE_MODES": "cold",
+        "LONG_CONTEXT_LATENCY_REPEAT_COUNT": "3",
+        "LONG_CONTEXT_LATENCY_MAX_TOKENS": "128",
         "RUN_STREAMING_PRESSURE_SOAK": "0",
         "STREAMING_PRESSURE_TEMPERATURE": "1.0",
         "STREAMING_PRESSURE_TOP_P": "1.0",
@@ -602,6 +615,12 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"' in script
     assert 'RUN_KV_LAYOUT_PROBE="${RUN_KV_LAYOUT_PROBE:-1}"' in script
     assert 'RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"' in script
+    assert 'RUN_LONG_CONTEXT_LATENCY_MATRIX="${RUN_LONG_CONTEXT_LATENCY_MATRIX:-1}"' in script
+    assert 'LONG_CONTEXT_LATENCY_LINE_COUNTS="${LONG_CONTEXT_LATENCY_LINE_COUNTS:-2000}"' in script
+    assert 'LONG_CONTEXT_LATENCY_CONCURRENCY="${LONG_CONTEXT_LATENCY_CONCURRENCY:-4}"' in script
+    assert 'LONG_CONTEXT_LATENCY_CACHE_MODES="${LONG_CONTEXT_LATENCY_CACHE_MODES:-cold}"' in script
+    assert 'LONG_CONTEXT_LATENCY_REPEAT_COUNT="${LONG_CONTEXT_LATENCY_REPEAT_COUNT:-3}"' in script
+    assert 'LONG_CONTEXT_LATENCY_MAX_TOKENS="${LONG_CONTEXT_LATENCY_MAX_TOKENS:-128}"' in script
     assert 'RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-1}"' in script
     assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-auto}"' in script
     assert "append_prefix_cache_mode_args" in script
@@ -624,6 +643,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert '"${variant_dir}/acceptance"' in script
     assert '"${variant_dir}/kv_layout_probe"' in script
     assert '"${variant_dir}/long_context_probe"' in script
+    assert '"${variant_dir}/long_context_latency_matrix"' in script
     assert '"${variant_dir}/prefix_cache_probe"' in script
     assert '"${variant_dir}/streaming_pressure_soak"' in script
     assert '"${variant_dir}/bench_hf_mt_bench"' in script
@@ -635,6 +655,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert "run_acceptance.sh" in script
     assert "run_kv_layout_probe.sh" in script
     assert "run_long_context_probe.sh" in script
+    assert "run_long_context_latency_matrix.sh" in script
     assert "run_prefix_cache_probe.sh" in script
     assert "run_streaming_pressure_soak.sh" in script
     assert "run_bench_matrix.sh" in script
@@ -1254,6 +1275,7 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
     assert "nomtp\tkv_layout_probe\t0" in phase_log
     assert "nomtp\tacceptance\t0" in phase_log
     assert "nomtp\tlong_context_probe\t0" in phase_log
+    assert "nomtp\tlong_context_latency_matrix\t0" in phase_log
     assert "nomtp\tprefix_cache_probe\t0" in phase_log
     assert "nomtp\tbench_hf_mt_bench\t0" in phase_log
     assert "nomtp\teval_gsm8k\t0" in phase_log
@@ -1261,6 +1283,7 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
     assert "mtp\tkv_layout_probe\t0" in phase_log
     assert "mtp\tacceptance\t0" in phase_log
     assert "mtp\tlong_context_probe\t0" in phase_log
+    assert "mtp\tlong_context_latency_matrix\t0" in phase_log
     assert "mtp\tprefix_cache_probe\t0" in phase_log
     assert "mtp\tbench_hf_mt_bench\t0" in phase_log
     assert "mtp\teval_gsm8k\t0" in phase_log
@@ -1304,6 +1327,7 @@ def run_minimal_b200_baseline(tmp_path, gpu_topology_slug):
         "RUN_ACCEPTANCE": "0",
         "RUN_KV_LAYOUT_PROBE": "0",
         "RUN_LONG_CONTEXT_PROBE": "0",
+        "RUN_LONG_CONTEXT_LATENCY_MATRIX": "0",
         "RUN_BENCH_HF": "0",
         "RUN_RANDOM_LONG": "0",
         "RUN_LM_EVAL": "0",

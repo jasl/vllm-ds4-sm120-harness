@@ -765,6 +765,15 @@ The default long-context probe uses `LONG_CONTEXT_LINE_COUNT=2400`,
 `LONG_CONTEXT_TOP_P=1.0`, and `LONG_CONTEXT_THINKING_MODE=non-thinking`.
 The GB10 profile overrides this to `LONG_CONTEXT_LINE_COUNT=4226`, which is the
 current required 128K-class GB10 sentinel.
+The baseline driver also runs `long_context_latency_matrix` by default with
+`RUN_LONG_CONTEXT_LATENCY_MATRIX=1`,
+`LONG_CONTEXT_LATENCY_LINE_COUNTS=2000`,
+`LONG_CONTEXT_LATENCY_CONCURRENCY=4`,
+`LONG_CONTEXT_LATENCY_CACHE_MODES=cold`,
+`LONG_CONTEXT_LATENCY_REPEAT_COUNT=3`, and
+`LONG_CONTEXT_LATENCY_MAX_TOKENS=128`. This is the small-concurrency
+64K-class MTP reliability gate that catches failures a single C=1 sentinel
+probe can miss.
 When changing the long-context probe to `think-high` or `think-max`, also set
 `LONG_CONTEXT_TEMPERATURE=1.0`; for `think-max`, keep
 `SERVE_MAX_MODEL_LEN=393216` or larger.
@@ -813,9 +822,10 @@ server starts.
 
 Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
 the requested server variant. Valid phase names are `kv_layout_probe`,
-`acceptance`, `long_context_probe`, `prefix_cache_probe`,
-`streaming_pressure_soak`, `bench_hf_mt_bench`, `eval_gsm8k`,
-`bench_random_8192x512`, and `oracle_export`; the default is `all`. The
+`acceptance`, `long_context_probe`, `long_context_latency_matrix`,
+`prefix_cache_probe`, `streaming_pressure_soak`, `bench_hf_mt_bench`,
+`eval_gsm8k`, `bench_random_8192x512`, and `oracle_export`; the default is
+`all`. The
 `streaming_pressure_soak` phase still requires `RUN_STREAMING_PRESSURE_SOAK=1`
 because it is intentionally opt-in. For example:
 
