@@ -133,6 +133,26 @@ The code change was removed. This result is worth keeping as evidence that
 larger row tiles can help long-context prefill, but correctness and
 short-context gates must be fixed before revisiting it.
 
+### FP8 MQA Logits `BLOCK_D=128`
+
+This variant kept the promoted `BLOCK_M=16`, `BLOCK_N=128` launch shape and
+changed only the dot tile from `BLOCK_D=64` to `BLOCK_D=128`, covering the
+full head dimension in one dot. It looked promising in isolation:
+
+- late-context microbench improved from roughly 14.55 ms to 12.76 ms;
+- a 127K C=1 smoke improved mean TTFT from the `BLOCK_M=16` smoke value of
+  34.196 s to 32.763 s, with zero request failures.
+
+It was still rejected by the first full-gate phase. The short-context 4K
+C=1/C=2/C=4 latency means were positive, but the C=4 row had one failed
+request: the response missed one required retrieval term. Because this is a
+correctness failure in the fixed gate, the long-context and GSM8K phases were
+not promoted as evidence for this candidate.
+
+The code change was removed. Do not revisit this exact `BLOCK_D=128` variant
+unless a later numerical/correctness analysis explains the short-context
+retrieval miss.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
