@@ -1,6 +1,6 @@
 # DeepSeek V4 SM12x Handoff Notes
 
-Last updated: 2026-05-05
+Last updated: 2026-05-18
 
 This directory is the repo-independent validation harness for the SM12x
 DeepSeek V4 work. It is meant to survive context switches and should be copied
@@ -39,7 +39,9 @@ branches.
   PRO 6000 / SM120 workstation data should be discussed as GDDR7
   memory-subsystem data, and SM100/B200/B300 paths that rely on TMEM,
   `tcgen05`, or TMA must not be treated as portable without SM120-specific
-  verification and guards.
+  verification and guards. That document also tracks successful and ineffective
+  optimization experiments so the vLLM branch does not accumulate stale A/B
+  switches.
 - The local macOS machine is for code review, harness edits, docs, and artifact
   organization only. Do not treat local results as GPU-path validation.
 

@@ -39,6 +39,44 @@ not at a simple GDDR7 bandwidth ceiling:
   eligible-warp / long-scoreboard pressure. Treat memory throughput counters as
   GDDR7 memory-subsystem evidence, not HBM evidence.
 
+## Successful Optimization Notes
+
+### FP8 MQA Logits `BLOCK_M=16`
+
+The direct FP8 MQA logits fallback originally launched the Triton kernel with
+`BLOCK_M=8`, `BLOCK_N=128`, and 4 warps. A small tile sweep on a representative
+late-context shape showed that widening the row tile to `BLOCK_M=16` roughly
+halved the standalone kernel runtime while preserving output parity for the
+sampled case. The promoted change keeps the scope narrow: only the wrapper grid
+and `BLOCK_M` meta-parameter change.
+
+Promotion gate, prefix cache disabled, 131K max-model-len, 4096
+max-num-batched-tokens, TP=2, MTP=2:
+
+| Prompt Shape | Concurrency | Prior Mean TTFT | `BLOCK_M=16` Mean TTFT | Delta |
+| --- | ---: | ---: | ---: | ---: |
+| 64K synthetic | 1 | 14.037 s | 13.394 s | -4.6% |
+| 64K synthetic | 2 | 22.088 s | 19.798 s | -10.4% |
+| 64K synthetic | 4 | 37.577 s | 34.065 s | -9.4% |
+| 128K synthetic | 1 | 36.541 s | 33.264 s | -9.0% |
+| 128K synthetic | 2 | 56.902 s | 49.199 s | -13.5% |
+| 128K synthetic | 4 | 96.317 s | 82.181 s | -14.7% |
+
+Correctness gate: GSM8K `exact_match_flexible` stayed at 0.95, matching the
+fixed baseline.
+
+Profiler note: NCU on the same FP8 MQA logits kernel showed higher SM
+throughput and lower issued-instruction spacing despite lower theoretical
+occupancy. The path still does not look GDDR7-bandwidth saturated; continue to
+treat register pressure, eligible warps, and long-scoreboard stalls as the next
+optimization surface.
+
+Caveat: the short-context cold gate saw a first-request Triton compile spike
+after the new specialization. The second short request was in the expected
+steady-state range. Do not count the first-request compile spike as a model
+latency regression, but keep startup warmup in mind before presenting
+user-facing cold-start numbers.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
