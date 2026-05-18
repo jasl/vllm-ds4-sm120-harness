@@ -100,6 +100,39 @@ violate the promotion rule for single-stream and small-concurrency latency.
 The code change was removed; do not reintroduce this tile unless a later change
 also fixes the lower-concurrency regressions.
 
+### FP8 MQA Logits `BLOCK_M=32`, `BLOCK_N=128`
+
+This tile was tested separately after the `BLOCK_M=32`, `BLOCK_N=256`
+rejection because it was a more conservative variant: the standalone
+late-context microbench had shown it faster than `BLOCK_M=16`,
+`BLOCK_N=128`, while keeping the logits column tile at 128. It also passed a
+127K C=1 smoke with a small mean TTFT improvement.
+
+The full latency gate was mixed. Long-context latency improved across all
+64K/128K C=1/2/4 rows:
+
+| Prompt Shape | Concurrency | `BLOCK_M=16`, `BLOCK_N=128` Mean TTFT | `BLOCK_M=32`, `BLOCK_N=128` Mean TTFT | Delta |
+| --- | ---: | ---: | ---: | ---: |
+| 64K synthetic | 1 | 13.394 s | 13.297 s | -0.7% |
+| 64K synthetic | 2 | 19.798 s | 19.459 s | -1.7% |
+| 64K synthetic | 4 | 34.065 s | 33.076 s | -2.9% |
+| 128K synthetic | 1 | 33.264 s | 32.195 s | -3.2% |
+| 128K synthetic | 2 | 49.199 s | 47.900 s | -2.6% |
+| 128K synthetic | 4 | 82.181 s | 78.647 s | -4.3% |
+
+It was still rejected because the fixed promotion gates did not hold:
+
+| Gate | `BLOCK_M=16`, `BLOCK_N=128` | `BLOCK_M=32`, `BLOCK_N=128` | Decision |
+| --- | ---: | ---: | --- |
+| 4K synthetic C=1 mean TTFT | 2.766 s | 1.138 s | positive |
+| 4K synthetic C=2 mean TTFT | 1.455 s | 1.472 s | reject |
+| 4K synthetic C=4 mean TTFT | 1.932 s | 2.186 s | reject |
+| GSM8K `exact_match_flexible` | 0.95 | 0.94 | reject |
+
+The code change was removed. This result is worth keeping as evidence that
+larger row tiles can help long-context prefill, but correctness and
+short-context gates must be fixed before revisiting it.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
