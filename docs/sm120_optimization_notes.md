@@ -290,6 +290,42 @@ One setup mistake is also recorded so it is not reused as evidence: a
 CUDA-graph-disabled run with line count 1000 passed 12 of 12 requests, but the
 prompt was only about 31K tokens, not the intended 64K shape.
 
+### Long-Context MTP History Check
+
+The 64K C=4 `max_tokens=128` correctness miss was checked against historical
+vLLM points to avoid blaming the latest rebase or the later rowwise/logits
+kernel work without evidence.
+
+| Ref / Variant | Requests | Failures | Mean TTFT | Mean Elapsed | Decision |
+| --- | ---: | ---: | ---: | ---: | --- |
+| pre-rebase HEAD `055e9f43c` | 12 | 1 | 31.910 s | 45.563 s | fail, predates latest rebase |
+| `5fb7de094` MTP scheduling, first run | 12 | 0 | 99.204 s | 141.632 s | insufficient sample |
+| `5fb7de094` MTP scheduling, repeat count 6 | 24 | 3 | 99.554 s | 142.650 s | fail, earliest comparable bad point |
+| `215dfa944` MTP warmup | 12 | 2 | 99.312 s | 142.238 s | fail |
+| `f05821715` dense FP8 configs | 12 | 3 | 97.508 s | 139.426 s | fail |
+| `d26d266c8` adaptive MQA logits `BLOCK_M` | 12 | 1 | 97.586 s | 139.013 s | fail |
+| `b301fd8ae` multi-request warmup coverage | 12 | 1 | 97.400 s | 139.976 s | fail |
+| `be62c58ed` rowwise paged-MQA restore | 12 | 1 | 97.288 s | 138.789 s | fail |
+| current, sparse MLA warmup disabled | 12 | 2 | 33.879 s | 48.814 s | fail |
+
+All failures had the same shape: the model answered the first and final
+sentinels correctly but returned a nearby or unrelated middle sentinel instead
+of `beta-quartz-29`. The historical run against the pre-rebase HEAD reproduces
+the miss, so the latest rebase is not the root cause. The wider repeat on
+`5fb7de094` also reproduces the miss, so later rowwise/top-k/logits commits are
+not the sole cause, even if they may affect speed or failure rate.
+
+The direct parent `1ed872206` is not a valid good/bad comparison for this
+shape: it fails engine startup with an Inductor assertion while compiling the
+MTP model (`LayerName` passed where a Tensor is expected). Treat
+`5fb7de094` as the earliest comparable failing point currently available.
+
+Disabling the DeepSeek V4 sparse MLA warmup on the current branch did not fix
+the correctness miss. That makes startup warmup-state pollution an insufficient
+explanation. Keep the investigation centered on the accepted multi-token MTP
+scheduling/verification trajectory, using no-MTP and synthetic-reject-0 as
+controls.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
@@ -330,10 +366,11 @@ Ideas to avoid carrying over blindly:
 
 ## Near-Term Work Queue
 
-1. Investigate the MTP=2 64K C=4 correctness miss inside accepted multi-token
-   target verification. The next useful evidence is request-level tracing of
-   accepted token positions and target argmax values around the failed middle
-   marker, with no-MTP and synthetic-reject-0 as controls.
+1. Investigate the MTP=2 64K C=4 correctness miss inside the accepted
+   multi-token scheduling/verification trajectory. The next useful evidence is
+   request-level tracing of accepted token positions, draft token ids, target
+   token ids, and output offsets around the failed middle marker, with no-MTP
+   and synthetic-reject-0 as controls.
 2. Profile the active FP8 MQA logits Triton path with NCU on representative
    late-context 128K launches.
 3. Sweep small tile/register-pressure changes around `BLOCK_M`, `BLOCK_N`,
