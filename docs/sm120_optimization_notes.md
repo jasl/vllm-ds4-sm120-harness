@@ -77,6 +77,29 @@ steady-state range. Do not count the first-request compile spike as a model
 latency regression, but keep startup warmup in mind before presenting
 user-facing cold-start numbers.
 
+## Ineffective Or Ambiguous Optimization Notes
+
+### FP8 MQA Logits `BLOCK_M=32`, `BLOCK_N=256`
+
+This tile looked better in the standalone late-context microbench than
+`BLOCK_M=16`, `BLOCK_N=128`: the wrapper shape improved from roughly 14.65 ms
+to roughly 11.43 ms, and sampled outputs matched. It was still rejected because
+the end-to-end long-context gate did not preserve all latency targets.
+
+| Prompt Shape | Concurrency | `BLOCK_M=16` Mean TTFT | `BLOCK_M=32`, `BLOCK_N=256` Mean TTFT | Decision |
+| --- | ---: | ---: | ---: | --- |
+| 64K synthetic | 1 | 13.394 s | 13.972 s | reject |
+| 64K synthetic | 2 | 19.798 s | 19.846 s | reject |
+| 64K synthetic | 4 | 34.065 s | 34.336 s | reject |
+| 128K synthetic | 1 | 33.264 s | 33.691 s | reject |
+| 128K synthetic | 2 | 49.199 s | 49.344 s | reject |
+| 128K synthetic | 4 | 82.181 s | 80.187 s | positive but insufficient |
+
+The C=4 128K result was positive, but the 64K and 128K C=1/C=2 regressions
+violate the promotion rule for single-stream and small-concurrency latency.
+The code change was removed; do not reintroduce this tile unless a later change
+also fixes the lower-concurrency regressions.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
