@@ -58,6 +58,7 @@ SERVE_DISABLE_FLASHINFER_AUTOTUNE="${SERVE_DISABLE_FLASHINFER_AUTOTUNE:-0}"
 SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG:-}"
 SERVE_SPECULATIVE_CONFIG="${SERVE_SPECULATIVE_CONFIG:-}"
 SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS="${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS:-}"
+SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-auto}"
 SERVE_EXTRA_ARGS="${SERVE_EXTRA_ARGS:-}"
 
 shell_quote() {
@@ -102,6 +103,7 @@ remote_env_prefix() {
   printf 'SERVE_COMPILATION_CONFIG=%s ' "$(shell_quote "${SERVE_COMPILATION_CONFIG}")"
   printf 'SERVE_SPECULATIVE_CONFIG=%s ' "$(shell_quote "${SERVE_SPECULATIVE_CONFIG}")"
   printf 'SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS=%s ' "$(shell_quote "${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS}")"
+  printf 'SERVE_PREFIX_CACHE_MODE=%s ' "$(shell_quote "${SERVE_PREFIX_CACHE_MODE}")"
   printf 'SERVE_EXTRA_ARGS=%s ' "$(shell_quote "${SERVE_EXTRA_ARGS}")"
   remote_env_optional PYTORCH_CUDA_ALLOC_CONF
   remote_env_optional CUDA_ARCH_LIST
@@ -109,6 +111,8 @@ remote_env_prefix() {
   remote_env_optional CCACHE_NOHASHDIR
   remote_env_optional VLLM_USE_FLASHINFER_SAMPLER
   remote_env_optional VLLM_TRITON_MLA_SPARSE
+  remote_env_optional VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE
+  remote_env_optional VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE
   remote_env_optional VLLM_DISABLE_COMPILE_CACHE
   remote_env_optional NCCL_DEBUG
   remote_env_optional NCCL_DEBUG_SUBSYS
@@ -231,6 +235,21 @@ fi
 if [[ "${SERVE_DISABLE_FLASHINFER_AUTOTUNE}" == "1" ]]; then
   serve_args+=(--no-enable-flashinfer-autotune)
 fi
+case "${SERVE_PREFIX_CACHE_MODE}" in
+  auto|"")
+    ;;
+  1|true|yes|on|enabled|enable)
+    serve_args+=(--enable-prefix-caching)
+    ;;
+  0|false|no|off|disabled|disable)
+    serve_args+=(--no-enable-prefix-caching)
+    ;;
+  *)
+    printf 'invalid SERVE_PREFIX_CACHE_MODE=%s; expected auto, enabled, or disabled\n' \
+      "${SERVE_PREFIX_CACHE_MODE}" >&2
+    exit 2
+    ;;
+esac
 if [[ -n "${SERVE_COMPILATION_CONFIG}" ]]; then
   serve_args+=(--compilation-config "${SERVE_COMPILATION_CONFIG}")
 fi
@@ -303,6 +322,21 @@ fi
 if [[ "${SERVE_DISABLE_FLASHINFER_AUTOTUNE}" == "1" ]]; then
   serve_args+=(--no-enable-flashinfer-autotune)
 fi
+case "${SERVE_PREFIX_CACHE_MODE}" in
+  auto|"")
+    ;;
+  1|true|yes|on|enabled|enable)
+    serve_args+=(--enable-prefix-caching)
+    ;;
+  0|false|no|off|disabled|disable)
+    serve_args+=(--no-enable-prefix-caching)
+    ;;
+  *)
+    printf 'invalid SERVE_PREFIX_CACHE_MODE=%s; expected auto, enabled, or disabled\n' \
+      "${SERVE_PREFIX_CACHE_MODE}" >&2
+    exit 2
+    ;;
+esac
 if [[ -n "${SERVE_COMPILATION_CONFIG}" ]]; then
   serve_args+=(--compilation-config "${SERVE_COMPILATION_CONFIG}")
 fi

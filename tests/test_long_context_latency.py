@@ -1,0 +1,191 @@
+import json
+
+from ds4_harness import cli
+from ds4_harness.long_context_latency import (
+    run_long_context_latency_matrix,
+    write_long_context_latency_markdown,
+)
+
+
+def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
+    calls = []
+
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        metadata = kwargs["probe_metadata"]
+        calls.append((metadata, payload))
+        cached_tokens = 0 if metadata["cache_mode"] == "cold" else 39000
+        return {
+            "response": {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                "alpha-cobalt-17 beta-quartz-29 gamma-onyx-43"
+                            )
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 42000,
+                    "completion_tokens": 9,
+                    "total_tokens": 42009,
+                    "prompt_tokens_details": {"cached_tokens": cached_tokens},
+                },
+            },
+            "assistant_text": "alpha-cobalt-17 beta-quartz-29 gamma-onyx-43",
+            "ttft_seconds": 0.2 if metadata["cache_mode"] == "warm" else 1.0,
+            "elapsed_seconds": 0.8 if metadata["cache_mode"] == "warm" else 2.0,
+            "chunks": 2,
+        }
+
+    row = run_long_context_latency_matrix(
+        base_url="http://127.0.0.1:8000",
+        model="model",
+        variant="mtp",
+        line_counts=[128],
+        concurrencies=[1, 2],
+        cache_modes=["cold", "warm"],
+        stream_func=fake_stream,
+    )
+
+    assert row["ok"] is True
+    assert {item["cache_mode"] for item in row["summary"]} == {"cold", "warm"}
+    assert {item["concurrency"] for item in row["summary"]} == {1, 2}
+    assert any(item["phase"] == "warmup" for item in row["requests"])
+    warm_c2 = next(
+        item
+        for item in row["summary"]
+        if item["cache_mode"] == "warm" and item["concurrency"] == 2
+    )
+    assert warm_c2["cached_prompt_tokens_mean"] == 39000
+    cold_payloads = [
+        payload
+        for metadata, payload in calls
+        if metadata["cache_mode"] == "cold" and metadata["phase"] == "measure"
+    ]
+    assert len({json.dumps(payload["messages"]) for payload in cold_payloads}) == 3
+
+
+def test_long_context_latency_matrix_supports_prompt_files(tmp_path):
+    prompt_file = tmp_path / "long_case.txt"
+    prompt_file.write_text("A local long-context case.\n" * 128, encoding="utf-8")
+
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        assert payload["messages"] == [
+            {"role": "user", "content": prompt_file.read_text(encoding="utf-8")}
+        ]
+        return {
+            "response": {
+                "choices": [
+                    {
+                        "message": {"content": "original prompt answer"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 2000, "completion_tokens": 4},
+            },
+            "assistant_text": "original prompt answer",
+            "ttft_seconds": 0.1,
+            "elapsed_seconds": 0.3,
+            "chunks": 1,
+        }
+
+    row = run_long_context_latency_matrix(
+        base_url="http://127.0.0.1:8000",
+        model="model",
+        variant="nomtp",
+        line_counts=[],
+        prompt_files=[prompt_file],
+        cache_modes=["warm"],
+        stream_func=fake_stream,
+    )
+
+    assert row["ok"] is True
+    assert row["prompts"][0]["source"] == "file"
+    assert row["prompts"][0]["prompt_file"] == str(prompt_file)
+
+
+def test_long_context_latency_markdown_includes_summary(tmp_path):
+    row = {
+        "ok": True,
+        "case": "latency",
+        "variant": "mtp",
+        "model": "model",
+        "thinking_mode": "non-thinking",
+        "max_tokens": 64,
+        "repeat_count": 1,
+        "concurrencies": [1],
+        "cache_modes": ["warm"],
+        "summary": [
+            {
+                "prompt": "synthetic_128_lines",
+                "cache_mode": "warm",
+                "concurrency": 1,
+                "request_count": 1,
+                "failure_count": 0,
+                "ttft_seconds_mean": 0.2,
+                "ttft_seconds_max": 0.2,
+                "elapsed_seconds_mean": 1.0,
+                "prompt_tokens_mean": 1000,
+                "cached_prompt_tokens_mean": 900,
+                "completion_tokens_mean": 4,
+            }
+        ],
+        "prompts": [],
+        "requests": [],
+    }
+
+    output = tmp_path / "latency.md"
+    write_long_context_latency_markdown(output, row)
+
+    report = output.read_text(encoding="utf-8")
+    assert "# Long Context Latency Matrix" in report
+    assert "TTFT mean s" in report
+    assert "synthetic_128_lines" in report
+
+
+def test_long_context_latency_cli_writes_json_and_markdown(monkeypatch, tmp_path):
+    def fake_run_long_context_latency_matrix(**kwargs):
+        return {
+            "case": kwargs["case_name"],
+            "variant": kwargs["variant"],
+            "model": kwargs["model"],
+            "ok": True,
+            "summary": [{"failure_count": 0}],
+            "requests": [],
+            "prompts": [],
+        }
+
+    monkeypatch.setattr(
+        cli, "run_long_context_latency_matrix", fake_run_long_context_latency_matrix
+    )
+    json_output = tmp_path / "latency.json"
+    markdown_output = tmp_path / "latency.md"
+
+    rc = cli.main(
+        [
+            "long-context-latency-matrix",
+            "--model",
+            "model",
+            "--variant",
+            "mtp",
+            "--line-counts",
+            "128,256",
+            "--concurrency",
+            "1,2",
+            "--cache-modes",
+            "cold,warm",
+            "--json-output",
+            str(json_output),
+            "--markdown-output",
+            str(markdown_output),
+        ]
+    )
+
+    assert rc == 0
+    data = json.loads(json_output.read_text(encoding="utf-8"))
+    assert data["variant"] == "mtp"
+    assert "Long Context Latency Matrix" in markdown_output.read_text(
+        encoding="utf-8"
+    )

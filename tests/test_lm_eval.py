@@ -131,3 +131,109 @@ def test_lm_eval_cli_records_failed_launch(tmp_path):
     assert "FileNotFoundError" in (output_dir / "stdout.log").read_text(
         encoding="utf-8"
     )
+
+
+def test_lm_eval_compare_cli_fails_when_candidate_regresses(tmp_path):
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    comparison = tmp_path / "comparison.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "tasks": [
+                    {
+                        "task": "gsm8k",
+                        "exact_match_flexible": 0.95,
+                        "exact_match_strict": 0.95,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "tasks": [
+                    {
+                        "task": "gsm8k",
+                        "exact_match_flexible": 0.945,
+                        "exact_match_strict": 0.955,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = cli.main(
+        [
+            "lm-eval-compare",
+            "--baseline-summary",
+            str(baseline),
+            "--candidate-summary",
+            str(candidate),
+            "--task",
+            "gsm8k",
+            "--metric",
+            "exact_match_flexible",
+            "--json-output",
+            str(comparison),
+        ]
+    )
+
+    assert rc == 1
+    data = json.loads(comparison.read_text(encoding="utf-8"))
+    assert data["ok"] is False
+    assert data["baseline_value"] == 0.95
+    assert data["candidate_value"] == 0.945
+    assert data["required_min_value"] == 0.95
+
+
+def test_lm_eval_compare_cli_accepts_candidate_at_or_above_baseline(tmp_path):
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "tasks": [
+                    {
+                        "task": "gsm8k",
+                        "exact_match_flexible": 0.95,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "tasks": [
+                    {
+                        "task": "gsm8k",
+                        "exact_match_flexible": 0.955,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = cli.main(
+        [
+            "lm-eval-compare",
+            "--baseline-summary",
+            str(baseline),
+            "--candidate-summary",
+            str(candidate),
+            "--task",
+            "gsm8k",
+        ]
+    )
+
+    assert rc == 0

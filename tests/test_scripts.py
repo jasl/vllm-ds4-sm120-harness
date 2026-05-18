@@ -52,6 +52,7 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_lm_eval.sh",
         "run_kv_layout_probe.sh",
         "run_prefix_cache_probe.sh",
+        "run_long_context_latency_matrix.sh",
         "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
@@ -90,6 +91,35 @@ def test_prefix_cache_probe_wrapper_records_kv_runtime_artifacts():
     assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
     assert "start_runtime_stats" in script
     assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
+def test_long_context_latency_matrix_wrapper_records_runtime_artifacts():
+    script = (ROOT / "scripts" / "run_long_context_latency_matrix.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'LONG_CONTEXT_LATENCY_LINE_COUNTS="${LONG_CONTEXT_LATENCY_LINE_COUNTS-1900}"' in script
+    assert "long-context-latency-matrix" in script
+    assert '--json-output "${OUT_DIR}/long_context_latency_matrix.json"' in script
+    assert '--markdown-output "${OUT_DIR}/long_context_latency_matrix.md"' in script
+    assert '--line-counts "${LONG_CONTEXT_LATENCY_LINE_COUNTS}"' in script
+    assert '--concurrency "${LONG_CONTEXT_LATENCY_CONCURRENCY}"' in script
+    assert '--cache-modes "${LONG_CONTEXT_LATENCY_CACHE_MODES}"' in script
+    assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+    assert "start_gpu_stats" in script
+    assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+    assert "start_runtime_stats" in script
+    assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
+def test_b200_baseline_command_file_records_sparse_mla_tuning_env():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE" in script
+    assert "VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE" in script
+    assert 'printf \'export %s=%q\\n\' "${optional_env}" "${!optional_env}"' in script
 
 
 def test_streaming_pressure_soak_wrapper_records_kv_runtime_artifacts():
@@ -180,6 +210,10 @@ def test_env_sample_and_local_env_are_configured():
         "B200_PARALLEL_GPU_GROUPS",
         "SERVE_MAX_MODEL_LEN",
         "SERVE_USE_FP4_INDEXER_CACHE",
+        "SERVE_PREFIX_CACHE_MODE",
+        "VLLM_TRITON_MLA_SPARSE",
+        "VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE",
+        "VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE",
         "RUN_STREAMING_PRESSURE_SOAK",
         "STREAMING_PRESSURE_CONCURRENCY",
         "STREAMING_PRESSURE_ROUND_COUNT",
@@ -198,6 +232,10 @@ def test_env_sample_and_local_env_are_configured():
         "LM_EVAL_BIN",
         "LM_EVAL_TASKS",
         "LM_EVAL_LIMIT",
+        "LM_EVAL_BASELINE_SUMMARY",
+        "LM_EVAL_GATE_TASK",
+        "LM_EVAL_GATE_METRIC",
+        "LM_EVAL_GATE_MIN_DELTA",
         "SERVER_GUARD",
         "SERVER_STARTUP_TIMEOUT",
         "SERVER_HEALTH_TIMEOUT",
@@ -222,6 +260,7 @@ def test_env_sample_and_local_env_are_configured():
         "TOOLCALL15_TOP_P": "1.0",
         "SERVE_MAX_MODEL_LEN": "393216",
         "SERVE_USE_FP4_INDEXER_CACHE": "auto",
+        "SERVE_PREFIX_CACHE_MODE": "auto",
         "RUN_STREAMING_PRESSURE_SOAK": "0",
         "STREAMING_PRESSURE_TEMPERATURE": "1.0",
         "STREAMING_PRESSURE_TOP_P": "1.0",
@@ -249,6 +288,27 @@ def test_gb10_sm121_profile_uses_public_machine_independent_settings():
     assert 'LONG_CONTEXT_THINKING_MODE="${LONG_CONTEXT_THINKING_MODE:-non-thinking}"' in profile
     assert "VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH" not in profile
     assert "PYTORCH_CUDA_ALLOC_CONF" in profile
+    assert "10.0.0." not in profile
+    assert "/home/" not in profile
+    assert "/Users/" not in profile
+
+
+def test_sm120_profile_records_sparse_mla_chunk_tuning():
+    profile = (
+        ROOT / "configs" / "sm120_tp2_serve.env.example"
+    ).read_text(encoding="utf-8")
+
+    assert 'CUDA_ARCH_LIST="120a"' in profile
+    assert 'TORCH_CUDA_ARCH_LIST="12.0a"' in profile
+    assert 'VLLM_TRITON_MLA_SPARSE="${VLLM_TRITON_MLA_SPARSE:-1}"' in profile
+    assert (
+        'VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE="${VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE:-512}"'
+        in profile
+    )
+    assert (
+        'VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE="${VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE:-512}"'
+        in profile
+    )
     assert "10.0.0." not in profile
     assert "/home/" not in profile
     assert "/Users/" not in profile
@@ -329,6 +389,9 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "--enable-expert-parallel" in script
     assert "SERVE_DISABLE_FLASHINFER_AUTOTUNE" in script
     assert "--no-enable-flashinfer-autotune" in script
+    assert "SERVE_PREFIX_CACHE_MODE" in script
+    assert "--enable-prefix-caching" in script
+    assert "--no-enable-prefix-caching" in script
     assert "SERVE_COMPILATION_CONFIG" in script
     assert "--compilation-config" in script
     assert "SERVE_SPECULATIVE_CONFIG" in script
@@ -336,6 +399,8 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "SERVE_EXTRA_ARGS" in script
     assert "VLLM_USE_FLASHINFER_SAMPLER" in script
     assert "VLLM_TRITON_MLA_SPARSE" in script
+    assert "VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE" in script
+    assert "VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE" in script
     assert "VLLM_TRITON_MLA_SPARSE_ALLOW_CUDAGRAPH" not in script
     assert "NCCL_GRAPH_MIXING_SUPPORT" not in script
     assert "CUDA_DEVICE_MAX_CONNECTIONS" not in script
@@ -538,8 +603,15 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'RUN_KV_LAYOUT_PROBE="${RUN_KV_LAYOUT_PROBE:-1}"' in script
     assert 'RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"' in script
     assert 'RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-1}"' in script
+    assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-auto}"' in script
+    assert "append_prefix_cache_mode_args" in script
+    assert "--enable-prefix-caching" in script
+    assert "--no-enable-prefix-caching" in script
+    assert 'serve_prefix_cache_mode: `%s`' in script
     assert 'RUN_STREAMING_PRESSURE_SOAK="${RUN_STREAMING_PRESSURE_SOAK:-0}"' in script
     assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
+    assert 'LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY:-}"' in script
+    assert 'LM_EVAL_GATE_METRIC="${LM_EVAL_GATE_METRIC:-exact_match_flexible}"' in script
     assert 'TOOLCALL15_TEMPERATURE="${TOOLCALL15_TEMPERATURE:-1.0}"' in script
     assert 'TOOLCALL15_TOP_P="${TOOLCALL15_TOP_P:-1.0}"' in script
     assert 'ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-1}"' in script
@@ -567,10 +639,69 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert "run_streaming_pressure_soak.sh" in script
     assert "run_bench_matrix.sh" in script
     assert "run_lm_eval.sh" in script
+    assert 'LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY}"' in script
+    assert 'LM_EVAL_GATE_METRIC="${LM_EVAL_GATE_METRIC}"' in script
     assert "run_oracle_export.sh" in script
     assert 'SERVE_LOG="${serve_log}"' in script
     assert "baseline_summary.md" in script
     assert "phase_exit_codes.tsv" in script
+
+
+def test_prewarm_serve_defaults_to_scheduler_chunk_and_accepts_base_url():
+    script = (ROOT / "scripts" / "prewarm_serve.sh").read_text(encoding="utf-8")
+
+    assert 'PREWARM_ISL="${PREWARM_ISL:-${MAX_NUM_BATCHED_TOKENS:-4096}}"' in script
+    assert (
+        'PREWARM_BASE_URL="${PREWARM_BASE_URL:-${BASE_URL:-http://${API_HOST}:${API_PORT}}}"'
+        in script
+    )
+    assert '--base-url "${PREWARM_BASE_URL}"' in script
+
+
+def test_long_context_latency_matrix_wrapper_can_prewarm_before_measurement():
+    script = (
+        ROOT / "scripts" / "run_long_context_latency_matrix.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'LONG_CONTEXT_LATENCY_PREWARM="${LONG_CONTEXT_LATENCY_PREWARM:-0}"' in script
+    assert '"${SCRIPT_DIR}/prewarm_serve.sh"' in script
+    assert 'PREWARM_BASE_URL="${BASE_URL}"' in script
+    assert 'MODEL_ID="${MODEL}"' in script
+    assert 'PREWARM_LOG="${OUT_DIR}/prewarm.log"' in script
+    assert 'printf \'%s\\n\' "${prewarm_code}" > "${OUT_DIR}/prewarm.exit_code"' in script
+    assert script.index("run_long_context_latency_prewarm") < script.index(
+        '"${PYTHON}" -m ds4_harness.cli long-context-latency-matrix'
+    )
+
+
+def test_long_context_nsys_profile_launcher_captures_request_window():
+    script = (
+        ROOT / "scripts" / "run_long_context_nsys_profile_launch.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'PYTHON="${PYTHON:-python}"' in script
+    assert 'SERVE_COMMAND="${SERVE_COMMAND:?set SERVE_COMMAND}"' in script
+    assert 'PROFILE_LINE_COUNT="${PROFILE_LINE_COUNT:-4096}"' in script
+    assert 'PROFILE_PROMPT_FILE="${PROFILE_PROMPT_FILE:-}"' in script
+    assert 'PROFILE_CONCURRENCY="${PROFILE_CONCURRENCY:-1}"' in script
+    assert 'PROFILE_WARMUP_MODE="${PROFILE_WARMUP_MODE:-none}"' in script
+    assert 'NSYS_CAPTURE_MODE="${NSYS_CAPTURE_MODE:-bench_window}"' in script
+    assert '"${NSYS_BIN}" launch' in script
+    assert "--gpu-metrics-device=none" not in script
+    assert 'kill -0 "${NSYS_PGID}"' in script
+    assert '"${NSYS_BIN}" start' in script
+    assert '--session="${NSYS_SESSION_NAME}"' in script
+    assert "--sample none" in script
+    assert "--cpuctxsw none" in script
+    assert '"${NSYS_BIN}" stop --session="${NSYS_SESSION_NAME}"' in script
+    assert "stop_nsys_agent" in script
+    assert "nsys --start-agent" in script
+    assert 'build_synthetic_latency_prompt' in script
+    assert 'build_file_latency_prompt' in script
+    assert 'stream_chat_completion' in script
+    assert "ThreadPoolExecutor" in script
+    assert "profile_request.json" in script
+    assert "nsys_kernel_summary.md" in script
 
 
 def test_vllm_collect_env_helper_downloads_and_runs_official_script(tmp_path):
@@ -722,7 +853,7 @@ def test_baseline_bundle_script_generates_report_and_public_data():
     assert '--output "${tmp_dir}/report.md"' in script
     assert "scan_public_bundle" in script
     assert "load_oracle_cases" in script
-    assert 'BASELINE_REQUIRE_ORACLE="${BASELINE_REQUIRE_ORACLE:-1}"' in script
+    assert 'BASELINE_REQUIRE_ORACLE="${BASELINE_REQUIRE_ORACLE:-0}"' in script
     assert 'BASELINE_REQUIRE_GENERATION="${BASELINE_REQUIRE_GENERATION:-1}"' in script
     assert 'BASELINE_EXPECT_VARIANTS="${BASELINE_EXPECT_VARIANTS:-nomtp,mtp}"' in script
     assert "BASELINE_EXPECT_GENERATION_CASES_PER_VARIANT" in script
@@ -1520,12 +1651,15 @@ def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
         "  *' env-summary '*) exit 0 ;;\n"
         "  *' health'*) printf '%s\\n' '{\"ok\":true}'; exit 0 ;;\n"
         "  *' lm-eval '*) mkdir -p \"$OUT_DIR\"; printf '%s\\n' \"$@\" > \"$OUT_DIR/lm_eval_args.txt\"; printf '%s\\n' '{}' > \"$OUT_DIR/lm_eval_summary.json\"; exit 0 ;;\n"
+        "  *' lm-eval-compare '*) mkdir -p \"$OUT_DIR\"; printf '%s\\n' \"$@\" > \"$OUT_DIR/lm_eval_compare_args.txt\"; printf '%s\\n' '{\"ok\":true}' > \"$OUT_DIR/lm_eval_compare.json\"; exit 0 ;;\n"
         "esac\n"
         "exit 0\n",
         encoding="utf-8",
     )
     fake_python.chmod(fake_python.stat().st_mode | 0o111)
     out_dir = tmp_path / "eval"
+    baseline_summary = tmp_path / "baseline_lm_eval_summary.json"
+    baseline_summary.write_text('{"ok": true, "tasks": []}\n', encoding="utf-8")
     env = os.environ | {
         "PYTHON": str(fake_python),
         "OUT_DIR": str(out_dir),
@@ -1537,6 +1671,7 @@ def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
         "LM_EVAL_LIMIT": "200",
         "SERVER_STARTUP_INTERVAL_SECONDS": "0",
         "SERVE_LOG": "",
+        "LM_EVAL_BASELINE_SUMMARY": str(baseline_summary),
     }
 
     result = subprocess.run(
@@ -1550,11 +1685,21 @@ def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
     )
 
     assert (out_dir / "lm_eval.exit_code").read_text(encoding="utf-8").strip() == "0"
+    assert (out_dir / "lm_eval_compare.exit_code").read_text(
+        encoding="utf-8"
+    ).strip() == "0"
     assert (out_dir / "lm_eval_summary.json").exists()
+    assert (out_dir / "lm_eval_compare.json").exists()
     args = (out_dir / "lm_eval_args.txt").read_text(encoding="utf-8")
     assert "--limit\n200" in args
     assert "--tokenizer-backend" in args
     assert "none" in args
+    compare_args = (out_dir / "lm_eval_compare_args.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "--baseline-summary" in compare_args
+    assert str(baseline_summary) in compare_args
+    assert "--metric\nexact_match_flexible" in compare_args
     assert f"wrote {out_dir}" in result.stdout
 
 

@@ -34,6 +34,7 @@ B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"
 B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"
 SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-393216}"
 SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-auto}"
+SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-auto}"
 # vLLM requires explicit reasoning_start_str / reasoning_end_str to enable
 # ``thinking_token_budget`` requests; the DeepSeek V4 parser defaults to
 # IdentityReasoningParser at server startup (no request context) so the
@@ -137,6 +138,10 @@ LM_EVAL_TOKENIZER_BACKEND="${LM_EVAL_TOKENIZER_BACKEND:-none}"
 LM_EVAL_BATCH_SIZE="${LM_EVAL_BATCH_SIZE:-auto}"
 LM_EVAL_COMMAND_TIMEOUT="${LM_EVAL_COMMAND_TIMEOUT:-7200}"
 LM_EVAL_EXTRA_ARGS="${LM_EVAL_EXTRA_ARGS:-}"
+LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY:-}"
+LM_EVAL_GATE_TASK="${LM_EVAL_GATE_TASK:-gsm8k}"
+LM_EVAL_GATE_METRIC="${LM_EVAL_GATE_METRIC:-exact_match_flexible}"
+LM_EVAL_GATE_MIN_DELTA="${LM_EVAL_GATE_MIN_DELTA:-0}"
 RANDOM_LONG_CONCURRENCY="${RANDOM_LONG_CONCURRENCY:-1,2}"
 RANDOM_LONG_NUM_PROMPTS="${RANDOM_LONG_NUM_PROMPTS:-8}"
 RANDOM_LONG_INPUT_LEN="${RANDOM_LONG_INPUT_LEN:-8192}"
@@ -174,6 +179,7 @@ export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_PROBE_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT
 export SERVER_FAILURE_GRACE_INTERVAL_SECONDS ARTIFACT_ROOT GPU_TOPOLOGY_SLUG
 export VLLM_ENGINE_READY_TIMEOUT_S SERVE_MAX_MODEL_LEN SERVE_USE_FP4_INDEXER_CACHE
+export SERVE_PREFIX_CACHE_MODE
 export SERVE_REASONING_CONFIG
 export REAL_SCENARIO_REPEAT_COUNT GENERATION_PROMPT_ROOT GENERATION_LANGUAGES
 export GENERATION_THINKING_MODES GENERATION_REPEAT_COUNT GENERATION_TIMEOUT
@@ -186,6 +192,8 @@ export RUN_LM_EVAL LM_EVAL_BIN LM_EVAL_TASKS LM_EVAL_NUM_FEWSHOT
 export LM_EVAL_NUM_CONCURRENT MTP_LM_EVAL_NUM_CONCURRENT LM_EVAL_MAX_RETRIES
 export LM_EVAL_MAX_GEN_TOKS LM_EVAL_TIMEOUT_MS LM_EVAL_TOKENIZER_BACKEND LM_EVAL_BATCH_SIZE
 export LM_EVAL_LIMIT LM_EVAL_COMMAND_TIMEOUT LM_EVAL_EXTRA_ARGS
+export LM_EVAL_BASELINE_SUMMARY LM_EVAL_GATE_TASK LM_EVAL_GATE_METRIC
+export LM_EVAL_GATE_MIN_DELTA
 export RUN_LONG_CONTEXT_PROBE LONG_CONTEXT_CASE_NAME LONG_CONTEXT_LINE_COUNT
 export LONG_CONTEXT_MAX_TOKENS LONG_CONTEXT_TEMPERATURE LONG_CONTEXT_TOP_P
 export LONG_CONTEXT_THINKING_MODE LONG_CONTEXT_TIMEOUT LONG_CONTEXT_REQUEST_RETRIES
@@ -383,6 +391,27 @@ fp4_indexer_cache_enabled() {
   return 1
 }
 
+append_prefix_cache_mode_args() {
+  local mode
+  mode="$(lowercase_value "${SERVE_PREFIX_CACHE_MODE}")"
+  case "${mode}" in
+    auto|"")
+      return 0
+      ;;
+    1|true|yes|on|enabled|enable)
+      OFFICIAL_SERVE_ARGS+=(--enable-prefix-caching)
+      ;;
+    0|false|no|off|disabled|disable)
+      OFFICIAL_SERVE_ARGS+=(--no-enable-prefix-caching)
+      ;;
+    *)
+      printf 'invalid SERVE_PREFIX_CACHE_MODE=%s; expected auto, enabled, or disabled\n' \
+        "${SERVE_PREFIX_CACHE_MODE}" >&2
+      exit 2
+      ;;
+  esac
+}
+
 official_serve_args() {
   local variant="$1"
   OFFICIAL_SERVE_ARGS=(
@@ -405,6 +434,7 @@ official_serve_args() {
   if fp4_indexer_cache_enabled; then
     OFFICIAL_SERVE_ARGS+=(--attention_config.use_fp4_indexer_cache=True)
   fi
+  append_prefix_cache_mode_args
 
   case "${variant}" in
     mtp1)
@@ -434,6 +464,15 @@ write_command_file() {
   {
     printf '#!/usr/bin/env bash\n'
     printf 'export VLLM_ENGINE_READY_TIMEOUT_S=%q\n' "${VLLM_ENGINE_READY_TIMEOUT_S}"
+    local optional_env
+    for optional_env in \
+      VLLM_TRITON_MLA_SPARSE \
+      VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE \
+      VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE; do
+      if [[ -n "${!optional_env:-}" ]]; then
+        printf 'export %s=%q\n' "${optional_env}" "${!optional_env}"
+      fi
+    done
     if [[ -n "${B200_CUDA_VISIBLE_DEVICES}" ]]; then
       local visible_devices="${B200_CUDA_VISIBLE_DEVICES//\\/\\\\}"
       visible_devices="${visible_devices//\"/\\\"}"
@@ -606,6 +645,7 @@ write_summary() {
     fi
     printf -- '- serve_max_model_len: `%s`\n' "${SERVE_MAX_MODEL_LEN}"
     printf -- '- serve_use_fp4_indexer_cache: `%s`\n' "${SERVE_USE_FP4_INDEXER_CACHE}"
+    printf -- '- serve_prefix_cache_mode: `%s`\n' "${SERVE_PREFIX_CACHE_MODE}"
     printf -- '- no_mtp_concurrency: `%s`\n' "${NO_MTP_CONCURRENCY}"
     printf -- '- mtp_concurrency: `%s`\n' "${MTP_CONCURRENCY}"
     printf -- '- num_prompts: `%s`\n' "${NUM_PROMPTS}"
@@ -630,6 +670,10 @@ write_summary() {
       "${RUN_LM_EVAL}" "${LM_EVAL_TASKS}" "${LM_EVAL_NUM_FEWSHOT}" \
       "${LM_EVAL_LIMIT:-none}" "${LM_EVAL_NUM_CONCURRENT}" "${MTP_LM_EVAL_NUM_CONCURRENT}"
     printf -- '- lm_eval_tokenizer_backend: `%s`\n' "${LM_EVAL_TOKENIZER_BACKEND}"
+    if [[ -n "${LM_EVAL_BASELINE_SUMMARY}" ]]; then
+      printf -- '- lm_eval_gate: task `%s`, metric `%s`, min_delta `%s`\n' \
+        "${LM_EVAL_GATE_TASK}" "${LM_EVAL_GATE_METRIC}" "${LM_EVAL_GATE_MIN_DELTA}"
+    fi
     printf -- '- random_long: `%s`, concurrency `%s`, shape `%s/%s`, prompts `%s`\n' \
       "${RUN_RANDOM_LONG}" "${RANDOM_LONG_CONCURRENCY}" "${RANDOM_LONG_INPUT_LEN}" \
       "${RANDOM_LONG_OUTPUT_LEN}" "${RANDOM_LONG_NUM_PROMPTS}"
@@ -1054,6 +1098,10 @@ for variant in ${variant_list}; do
         LM_EVAL_BATCH_SIZE="${LM_EVAL_BATCH_SIZE}" \
         LM_EVAL_COMMAND_TIMEOUT="${LM_EVAL_COMMAND_TIMEOUT}" \
         LM_EVAL_EXTRA_ARGS="${LM_EVAL_EXTRA_ARGS}" \
+        LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY}" \
+        LM_EVAL_GATE_TASK="${LM_EVAL_GATE_TASK}" \
+        LM_EVAL_GATE_METRIC="${LM_EVAL_GATE_METRIC}" \
+        LM_EVAL_GATE_MIN_DELTA="${LM_EVAL_GATE_MIN_DELTA}" \
         SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
         SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
         SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \

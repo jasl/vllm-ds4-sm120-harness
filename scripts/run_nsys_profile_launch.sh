@@ -23,10 +23,36 @@
 #   PROFILE_WARMUP_TOKENS  Default 32. Sent before the captured request to
 #                       force cudagraph warm + first batch JIT.
 #   STARTUP_TIMEOUT_S   Default 600.
+#   NSYS_CAPTURE_MODE   `bench_window` (default) | `full`.
+#                       `bench_window` uses `nsys launch --session-new=NAME`
+#                       to start the serve dormantly, runs warmup with nsys
+#                       still dormant, then `nsys start` to begin capture,
+#                       sends the bench request, and `nsys stop` writes the
+#                       single `.nsys-rep`. Result: a tight trace of just
+#                       the bench window (model load + cudagraph compile +
+#                       JIT warmup are excluded). Typical size ~5-15 MiB.
+#                       `full` keeps the legacy behavior — captures the
+#                       whole serve lifecycle (spawn → SIGTERM), producing
+#                       a ~120 MiB file. Useful when you want to see model
+#                       load / JIT warmup as part of the trace.
 #
-# Capture window: between cudaProfilerStart/Stop in the bench client. We use
-# `--capture-range=cudaProfilerApi --capture-range-end=stop`, so only the
-# tagged request is in the trace; serve startup + warmup are excluded.
+# History / why not `--capture-range`:
+#   * `--capture-range=cudaProfilerApi`: never worked here. The bench
+#     client lives in a separate process tree from the nsys-wrapped serve,
+#     so its `cudaProfilerStart` runs inside an empty CUDA context that
+#     nsys does not observe. Result: "No reports were generated."
+#   * `--capture-range=nvtx --nvtx-capture='gpu_model_runner: forward'
+#      --capture-range-end=repeat`: works in the sense that nsys emits a
+#     report per range fire, but a single bench request triggers ~140
+#     forwards (warmup + bench), producing ~140 separate .nsys-rep files,
+#     ~1 MB each, totaling ~145 MB. Worse UX than the 120 MB single-file
+#     full-lifecycle trace.
+#   * `--capture-range=nvtx ... --capture-range-end=stop`: captures only
+#     the FIRST range fire, which is the warmup's first (prefill) forward
+#     — not a steady-state decode step.
+# The `nsys launch / start / stop` external-session flow used by
+# `bench_window` here is the canonically correct way to scope nsys to a
+# specific application phase.
 
 set -euo pipefail
 
@@ -47,6 +73,16 @@ PROFILE_TEMPERATURE="${PROFILE_TEMPERATURE:-1.0}"
 PROFILE_LABEL="${PROFILE_LABEL:-decode_short}"
 STARTUP_TIMEOUT_S="${STARTUP_TIMEOUT_S:-600}"
 NSYS_TRACE="${NSYS_TRACE:-cuda,nvtx}"
+NSYS_CAPTURE_MODE="${NSYS_CAPTURE_MODE:-bench_window}"
+NSYS_SESSION_NAME="${NSYS_SESSION_NAME:-harness_$$}"
+
+case "${NSYS_CAPTURE_MODE}" in
+  bench_window|full) ;;
+  *)
+    echo "NSYS_CAPTURE_MODE must be 'bench_window' or 'full' (got '${NSYS_CAPTURE_MODE}')" >&2
+    exit 2
+    ;;
+esac
 
 mkdir -p "${OUT_DIR}"
 nsys_rep="${OUT_DIR}/nsys_profile.nsys-rep"
@@ -62,23 +98,37 @@ fi
 # Persist the serve command for reproducibility.
 printf '%s\n' "${SERVE_COMMAND}" > "${OUT_DIR}/serve_command.txt"
 
-echo "starting nsys-wrapped serve, output=${nsys_rep}"
-# Launch serve under nsys with cudaProfilerApi capture range. The serve runs
-# until killed; we kill it after the bench window closes.
-setsid "${NSYS_BIN}" profile \
-  --output "${nsys_rep%.nsys-rep}" \
-  --trace "${NSYS_TRACE}" \
-  --sample none \
-  --cpuctxsw none \
-  --cuda-flush-interval 1000 \
-  --capture-range=cudaProfilerApi \
-  --capture-range-end=stop-shutdown \
-  --gpu-metrics-device=none \
-  --kill=sigterm \
-  --stop-on-exit true \
-  -- bash -c "${SERVE_COMMAND}" > "${serve_log}" 2>&1 &
-NSYS_PGID=$!
-echo "nsys+serve pgid=${NSYS_PGID}, waiting for /health..."
+echo "starting nsys-wrapped serve, mode=${NSYS_CAPTURE_MODE}, output=${nsys_rep}"
+
+if [[ "${NSYS_CAPTURE_MODE}" == "bench_window" ]]; then
+  # Use `nsys launch --session-new=NAME` so the serve starts dormantly
+  # (no profile data collected yet). After warmup we'll `nsys start` to
+  # begin capture, run the bench, then `nsys stop` to write the report.
+  setsid "${NSYS_BIN}" launch \
+    --session-new="${NSYS_SESSION_NAME}" \
+    --trace "${NSYS_TRACE}" \
+    --sample none \
+    --cpuctxsw none \
+    --cuda-flush-interval 1000 \
+    --gpu-metrics-device=none \
+    -- bash -c "${SERVE_COMMAND}" > "${serve_log}" 2>&1 &
+  NSYS_PGID=$!
+  echo "nsys launch pgid=${NSYS_PGID}, session=${NSYS_SESSION_NAME}, waiting for /health..."
+else
+  # full mode: profile from spawn through SIGTERM teardown.
+  setsid "${NSYS_BIN}" profile \
+    --output "${nsys_rep%.nsys-rep}" \
+    --trace "${NSYS_TRACE}" \
+    --sample none \
+    --cpuctxsw none \
+    --cuda-flush-interval 1000 \
+    --gpu-metrics-device=none \
+    --kill=sigterm \
+    --stop-on-exit true \
+    -- bash -c "${SERVE_COMMAND}" > "${serve_log}" 2>&1 &
+  NSYS_PGID=$!
+  echo "nsys profile pgid=${NSYS_PGID}, waiting for /health..."
+fi
 
 # Wait for serve readiness.
 ready=0
@@ -117,14 +167,17 @@ urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(req).encode()
 print(f"warmup done in {time.time()-t0:.2f}s")
 PYEOF
 
-# Captured request: bracket with cudaProfilerStart/Stop.
+# In bench_window mode, this is where we explicitly turn capture ON for
+# just the captured request, so the trace is scoped to exactly that window.
+# In full mode, capture is already active from spawn.
+if [[ "${NSYS_CAPTURE_MODE}" == "bench_window" ]]; then
+  echo "starting nsys capture for session=${NSYS_SESSION_NAME}..."
+  "${NSYS_BIN}" start --session="${NSYS_SESSION_NAME}" 2>&1 | tail -3
+fi
+
+# Captured request: send the bench prompt.
 python3 - <<PYEOF > "${client_log}.client_stdout"
-import ctypes, json, time, urllib.request
-cu = ctypes.CDLL('libcudart.so')
-try:
-    cu.cudaProfilerStart()
-except Exception as e:
-    print('cudaProfilerStart failed:', e)
+import json, time, urllib.request
 url = "${BASE_URL}/v1/chat/completions"
 req = {
     "model": "${PROFILE_MODEL}",
@@ -137,10 +190,6 @@ hdr = {"content-type": "application/json"}
 t0 = time.time()
 r = urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(req).encode(), headers=hdr), timeout=300).read()
 t1 = time.time()
-try:
-    cu.cudaProfilerStop()
-except Exception:
-    pass
 body = json.loads(r)
 usage = body.get('usage', {})
 with open("${client_log}", "w") as f:
@@ -150,10 +199,19 @@ with open("${client_log}", "w") as f:
         "prompt": "${PROFILE_PROMPT}",
         "max_tokens": int("${PROFILE_MAX_TOKENS}"),
         "label": "${PROFILE_LABEL}",
+        "capture_mode": "${NSYS_CAPTURE_MODE}",
+        "session_name": "${NSYS_SESSION_NAME}" if "${NSYS_CAPTURE_MODE}" == "bench_window" else None,
     }, f, indent=2)
 print(f"captured: elapsed={t1-t0:.2f}s prompt_tokens={usage.get('prompt_tokens')} completion_tokens={usage.get('completion_tokens')}")
 PYEOF
 cat "${client_log}.client_stdout"
+
+# bench_window mode: stop capture and write the report file.
+if [[ "${NSYS_CAPTURE_MODE}" == "bench_window" ]]; then
+  echo "stopping nsys capture for session=${NSYS_SESSION_NAME}..."
+  "${NSYS_BIN}" stop --session="${NSYS_SESSION_NAME}" \
+    --output "${nsys_rep%.nsys-rep}" 2>&1 | tail -5
+fi
 
 echo "tearing down nsys+serve pgid=${NSYS_PGID}..."
 kill -TERM "-${NSYS_PGID}" 2>/dev/null || true

@@ -21,6 +21,10 @@ LM_EVAL_BATCH_SIZE="${LM_EVAL_BATCH_SIZE:-auto}"
 LM_EVAL_LIMIT="${LM_EVAL_LIMIT:-}"
 LM_EVAL_COMMAND_TIMEOUT="${LM_EVAL_COMMAND_TIMEOUT:-7200}"
 LM_EVAL_EXTRA_ARGS="${LM_EVAL_EXTRA_ARGS:-}"
+LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY:-}"
+LM_EVAL_GATE_TASK="${LM_EVAL_GATE_TASK:-gsm8k}"
+LM_EVAL_GATE_METRIC="${LM_EVAL_GATE_METRIC:-exact_match_flexible}"
+LM_EVAL_GATE_MIN_DELTA="${LM_EVAL_GATE_MIN_DELTA:-0}"
 SERVER_GUARD="${SERVER_GUARD:-1}"
 SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT:-1800}"
 SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS:-15}"
@@ -39,6 +43,8 @@ export LM_EVAL_NUM_FEWSHOT LM_EVAL_NUM_CONCURRENT LM_EVAL_MAX_RETRIES
 export LM_EVAL_MAX_GEN_TOKS LM_EVAL_TIMEOUT_MS LM_EVAL_TOKENIZER_BACKEND LM_EVAL_BATCH_SIZE
 export LM_EVAL_LIMIT
 export LM_EVAL_COMMAND_TIMEOUT LM_EVAL_EXTRA_ARGS
+export LM_EVAL_BASELINE_SUMMARY LM_EVAL_GATE_TASK LM_EVAL_GATE_METRIC
+export LM_EVAL_GATE_MIN_DELTA
 export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
 export ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME GPU_TOPOLOGY_SLUG OUT_DIR
@@ -107,6 +113,22 @@ set -e
 printf '%s\n' "${code}" > "${OUT_DIR}/lm_eval.exit_code"
 if [[ "${code}" != "0" ]] && ! wait_for_server_ready "${SERVER_FAILURE_GRACE_TIMEOUT}" "${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" "server after lm_eval"; then
   mark_server_unresponsive "lm_eval" "server unresponsive after lm_eval"
+fi
+if [[ "${code}" == "0" && -n "${LM_EVAL_BASELINE_SUMMARY}" ]]; then
+  set +e
+  "${PYTHON}" -m ds4_harness.cli lm-eval-compare \
+    --baseline-summary "${LM_EVAL_BASELINE_SUMMARY}" \
+    --candidate-summary "${OUT_DIR}/lm_eval_summary.json" \
+    --task "${LM_EVAL_GATE_TASK}" \
+    --metric "${LM_EVAL_GATE_METRIC}" \
+    --min-delta "${LM_EVAL_GATE_MIN_DELTA}" \
+    --json-output "${OUT_DIR}/lm_eval_compare.json"
+  compare_code="$?"
+  set -e
+  printf '%s\n' "${compare_code}" > "${OUT_DIR}/lm_eval_compare.exit_code"
+  if [[ "${compare_code}" != "0" ]]; then
+    code="${compare_code}"
+  fi
 fi
 
 echo "wrote ${OUT_DIR}"

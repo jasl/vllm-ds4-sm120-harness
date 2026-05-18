@@ -10,19 +10,18 @@
 # inference pipeline (sampler / spec-decode / indexer) hit a different
 # cache key than the warmup helper and JIT-compile during the first
 # user request. vLLM ships a `jit_monitor` that flags every uncovered
-# kernel in `head.log` as a warning; on the SM12x DSv4-Flash MTP=2
-# build we see nine kernels JIT during the first random-prefill cold
-# bench (eagle_*, _build_prefill_chunk_metadata_kernel,
-# _w8a8_triton_block_scaled_mm at alt shapes, _fp8_paged_mqa_logits_kernel
-# at alt BLOCK_M, etc.), adding ~17 s to the first c=1 long-prefill
-# request.
+# kernel in `head.log` as a warning. This script moves the covered
+# sampler/spec-decode/indexer JITs out of the first user request, but it
+# is not a guarantee that every very-long-prefill specialization is
+# warm; validate exact long-context shapes with the latency matrix.
 #
 # This script issues two `vllm bench serve` rounds against the local
 # API. Because `vllm bench serve` goes through the real OpenAI-style
 # request path, it walks the full sampler / spec-decode / indexer
-# pipeline and triggers exactly the Triton specializations the first
-# real user would. The second user request after this script returns
-# hits a fully warm kernel cache.
+# pipeline and triggers Triton specializations that short warmup hooks
+# often miss. The next request after this script returns should avoid
+# the covered short-prefill/sampler JITs, while longer prefill shapes may
+# still need their own validation.
 #
 # Required env:
 #   MODEL_ID          model identifier (e.g. deepseek-ai/DeepSeek-V4-Flash)
@@ -31,8 +30,9 @@
 # Optional env:
 #   API_HOST          API host (default 127.0.0.1)
 #   API_PORT          API port (default 8000)
-#   PREWARM_ISL       prefill length per request (default 8192;
-#                     set to your scheduler's max_num_batched_tokens)
+#   PREWARM_ISL       prefill length per request (default MAX_NUM_BATCHED_TOKENS,
+#                     falling back to 4096; set to your scheduler's
+#                     max_num_batched_tokens)
 #   PREWARM_OSL       output tokens per request (default 8;
 #                     keeps the prewarm short — only prefill matters)
 #   PREWARM_PROMPTS   total prompts per round (default 4)
@@ -46,9 +46,10 @@ set -euo pipefail
 
 API_HOST="${API_HOST:-127.0.0.1}"
 API_PORT="${API_PORT:-8000}"
+PREWARM_BASE_URL="${PREWARM_BASE_URL:-${BASE_URL:-http://${API_HOST}:${API_PORT}}}"
 MODEL_ID="${MODEL_ID:?set MODEL_ID}"
 VLLM_VENV="${VLLM_VENV:?set VLLM_VENV}"
-PREWARM_ISL="${PREWARM_ISL:-8192}"
+PREWARM_ISL="${PREWARM_ISL:-${MAX_NUM_BATCHED_TOKENS:-4096}}"
 PREWARM_OSL="${PREWARM_OSL:-8}"
 PREWARM_PROMPTS="${PREWARM_PROMPTS:-4}"
 PREWARM_C_HIGH="${PREWARM_C_HIGH:-4}"
@@ -70,7 +71,7 @@ bench_round() {
     --dataset-name random
     --num-prompts "${PREWARM_PROMPTS}"
     --max-concurrency "${concurrency}"
-    --base-url "http://${API_HOST}:${API_PORT}"
+    --base-url "${PREWARM_BASE_URL}"
     --random-input-len "${PREWARM_ISL}"
     --random-output-len "${PREWARM_OSL}"
     --temperature 1.0

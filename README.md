@@ -117,6 +117,8 @@ tool-call turn.
   - defaults to GSM8K with OpenAI-compatible `local-completions`
   - records exact-match metrics, command shape, stdout/stderr, and raw
     `lm_eval` JSON output
+  - can compare a candidate `lm_eval_summary.json` against a reference summary
+    and fail when GSM8K `exact_match_flexible` regresses
   - intended for expensive reference captures and branch-promotion checks, not
     every local edit
 - vLLM `bench serve` matrix wrapper:
@@ -153,6 +155,17 @@ tool-call turn.
   - is diagnostic evidence for concurrent prefix/KV reuse regressions; use
     `runtime_stats_summary.json` for phase-local KV usage, prefix hit rate, and
     preemption counters
+- Long-context interactive latency matrix:
+  - streams controlled synthetic long prompts, and optional prompt files, at
+    configured context lengths and small concurrency levels
+  - records request-level TTFT and elapsed time for cold prefill versus warm
+    prefix-cache reuse; use `SERVE_PREFIX_CACHE_MODE=disabled` with
+    `LONG_CONTEXT_LATENCY_CACHE_MODES=cold` when collecting a pure cold-prefill
+    baseline
+  - includes ds4.c MIT-licensed long-context prompt samples under
+    `prompts/long_context/` for prompt-file mode
+  - is the targeted tool for 64K/128K interactive latency work and chunked
+    prefill sweeps
 - Optional streaming-pressure soak:
   - sends concurrent streaming chat completions over deterministic long
     conversations that grow across several short rounds
@@ -622,6 +635,13 @@ API-capable lm-evaluation-harness extra installed, for example
 `collect_env.py`, server responsiveness guard, and unresponsive-server marker
 behavior used by the benchmark wrapper.
 
+For branch-promotion gates, set `LM_EVAL_BASELINE_SUMMARY` to a reference
+`lm_eval_summary.json`. The wrapper then writes `lm_eval_compare.json` and fails
+when the configured metric drops below the reference. The default gate is
+`LM_EVAL_GATE_TASK=gsm8k`, `LM_EVAL_GATE_METRIC=exact_match_flexible`, and
+`LM_EVAL_GATE_MIN_DELTA=0`; strict exact-match remains recorded in the summary
+for manual review.
+
 For public DeepSeek V4 preview claims, capture GSM8K twice when runtime budget
 allows: once with `--num-fewshot 0 --limit 200`, and once with
 `--num-fewshot 5 --limit 200`. The `--limit` option is deliberately generic and
@@ -714,6 +734,7 @@ Run this script on the reference host, not on a laptop. It defaults to
 `NO_MTP_CONCURRENCY=1,2,4,8,16,24`, `MTP_CONCURRENCY=1,2,4,8,16,24`,
 `SERVE_MAX_MODEL_LEN=393216`, `NUM_PROMPTS=80`, `REAL_SCENARIO_REPEAT_COUNT=3`,
 `API_REQUEST_RETRIES=1`, `SERVE_USE_FP4_INDEXER_CACHE=auto`,
+`SERVE_PREFIX_CACHE_MODE=auto`,
 `GENERATION_LANGUAGES=en,zh`,
 `GENERATION_THINKING_MODES=non-thinking,think-high,think-max`,
 `GENERATION_TEMPERATURE=1.0`, `GENERATION_TOP_P=1.0`,
@@ -740,6 +761,24 @@ current required 128K-class GB10 sentinel.
 When changing the long-context probe to `think-high` or `think-max`, also set
 `LONG_CONTEXT_TEMPERATURE=1.0`; for `think-max`, keep
 `SERVE_MAX_MODEL_LEN=393216` or larger.
+`SERVE_PREFIX_CACHE_MODE=auto` leaves vLLM's model-supported prefix-cache
+default unchanged. Set `SERVE_PREFIX_CACHE_MODE=disabled` with
+`LONG_CONTEXT_LATENCY_CACHE_MODES=cold` for cold prefill and chunked-prefill
+baselines; set `SERVE_PREFIX_CACHE_MODE=enabled` or keep `auto` for
+document/session reuse runs where prefix-cache behavior is part of the product
+path.
+For bundled ds4.c prompt-file latency runs, pass
+`LONG_CONTEXT_LATENCY_LINE_COUNTS=` and
+`LONG_CONTEXT_LATENCY_PROMPT_FILES=${REPO_ROOT}/prompts/long_context/ds4_story_recall.txt,${REPO_ROOT}/prompts/long_context/ds4_security_audit.txt`.
+Set `LONG_CONTEXT_LATENCY_PREWARM=1` to run `scripts/prewarm_serve.sh` after
+the server health gate and before the latency matrix. The prewarm uses real
+OpenAI-style requests, writes `prewarm.log` and `prewarm.exit_code`, and
+defaults `PREWARM_ISL` to `MAX_NUM_BATCHED_TOKENS` or `4096`.
+For SM120 long-context latency experiments, `configs/sm120_tp2_serve.env.example`
+sets `VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE=512` and
+`VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE=512` as a measured candidate. Keep these
+as profile-level serve exports and revalidate them with the latency matrix before
+promoting them to a vLLM default.
 The default prefix-cache probe uses `PREFIX_CACHE_LINE_COUNT=2400`,
 `PREFIX_CACHE_MAX_TOKENS=64`, `PREFIX_CACHE_TEMPERATURE=0.0`,
 `PREFIX_CACHE_TOP_P=1.0`, `PREFIX_CACHE_THINKING_MODE=non-thinking`, and
@@ -960,7 +999,10 @@ Before promoting an optimization:
 - For agent-like tests, prefer production-like serving flags:
   `--enable-auto-tool-choice`, `--tool-call-parser deepseek_v4`,
   `--reasoning-parser deepseek_v4`, and prefix cache when testing production
-  deployment behavior.
+  deployment behavior. For cold long-context latency baselines, set
+  `SERVE_PREFIX_CACHE_MODE=disabled` and
+  `LONG_CONTEXT_LATENCY_CACHE_MODES=cold` so repeated probes cannot reuse
+  cached prefix blocks.
 - MTP should be tested separately from no-MTP. MTP changes generation behavior
   and can expose scheduler/CUDA graph bugs that are not present in the normal
   decode path. High-concurrency MTP failures can also be plain capacity limits;

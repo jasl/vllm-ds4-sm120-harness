@@ -185,3 +185,47 @@ def summarize_lm_eval_results(
         "tasks": tasks,
         "raw_results_found": raw_results is not None,
     }
+
+
+def _summary_task(summary: dict[str, Any], task: str) -> dict[str, Any]:
+    tasks = summary.get("tasks")
+    if not isinstance(tasks, list):
+        raise ValueError("lm_eval summary must contain a tasks list")
+    for item in tasks:
+        if isinstance(item, dict) and item.get("task") == task:
+            return item
+    raise ValueError(f"lm_eval summary does not contain task {task!r}")
+
+
+def _numeric_metric(task: dict[str, Any], metric: str) -> float:
+    value = task.get(metric)
+    if not isinstance(value, int | float):
+        raise ValueError(f"lm_eval metric {metric!r} is missing or non-numeric")
+    return float(value)
+
+
+def compare_lm_eval_summaries(
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+    *,
+    task: str,
+    metric: str = "exact_match_flexible",
+    min_delta: float = 0.0,
+) -> dict[str, Any]:
+    baseline_task = _summary_task(baseline, task)
+    candidate_task = _summary_task(candidate, task)
+    baseline_value = _numeric_metric(baseline_task, metric)
+    candidate_value = _numeric_metric(candidate_task, metric)
+    required_min_value = baseline_value + min_delta
+    delta = candidate_value - baseline_value
+    ok = candidate_value >= required_min_value
+    return {
+        "ok": ok,
+        "task": task,
+        "metric": metric,
+        "baseline_value": baseline_value,
+        "candidate_value": candidate_value,
+        "required_min_value": required_min_value,
+        "delta": delta,
+        "min_delta": min_delta,
+    }

@@ -51,6 +51,7 @@ from ds4_harness.kv_layout_probe import (
 )
 from ds4_harness.lm_eval import (
     build_lm_eval_command,
+    compare_lm_eval_summaries,
     load_lm_eval_results,
     run_lm_eval_command,
     summarize_lm_eval_results,
@@ -59,6 +60,15 @@ from ds4_harness.long_context_probe import (
     DEFAULT_LINE_COUNT as DEFAULT_LONG_CONTEXT_LINE_COUNT,
     run_long_context_probe,
     write_long_context_markdown,
+)
+from ds4_harness.long_context_latency import (
+    DEFAULT_CACHE_MODES as DEFAULT_LONG_CONTEXT_LATENCY_CACHE_MODES,
+    DEFAULT_CASE_NAME as DEFAULT_LONG_CONTEXT_LATENCY_CASE_NAME,
+    DEFAULT_CONCURRENCY as DEFAULT_LONG_CONTEXT_LATENCY_CONCURRENCY,
+    DEFAULT_LINE_COUNTS as DEFAULT_LONG_CONTEXT_LATENCY_LINE_COUNTS,
+    DEFAULT_MAX_TOKENS as DEFAULT_LONG_CONTEXT_LATENCY_MAX_TOKENS,
+    run_long_context_latency_matrix,
+    write_long_context_latency_markdown,
 )
 from ds4_harness.oracle import (
     attach_prompt_token_ids,
@@ -282,6 +292,20 @@ def _parse_extra_body_json(value: str | None) -> dict[str, Any]:
 
 def _validate_request_retries(value: int) -> bool:
     return value >= 0
+
+
+def _parse_int_csv(value: str, *, option: str) -> list[int]:
+    if value.strip() == "":
+        return []
+    try:
+        return [int(item.strip()) for item in value.split(",") if item.strip()]
+    except ValueError as exc:
+        raise ValueError(f"{option} must be a comma-separated integer list") from exc
+
+
+def _parse_str_csv(value: str, *, option: str) -> list[str]:
+    del option
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _thinking_strength_from_extra_body(extra_body: dict[str, Any]) -> str:
@@ -871,6 +895,63 @@ def _cmd_prefix_cache_probe(args: argparse.Namespace) -> int:
     return 0 if row.get("ok") else 1
 
 
+def _cmd_long_context_latency_matrix(args: argparse.Namespace) -> int:
+    try:
+        line_counts = _parse_int_csv(args.line_counts, option="--line-counts")
+        concurrencies = _parse_int_csv(args.concurrency, option="--concurrency")
+        cache_modes = _parse_str_csv(args.cache_modes, option="--cache-modes")
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+        row = run_long_context_latency_matrix(
+            base_url=args.base_url,
+            model=args.model,
+            variant=args.variant,
+            case_name=args.case_name,
+            line_counts=line_counts,
+            prompt_files=args.prompt_file or [],
+            concurrencies=concurrencies,
+            cache_modes=cache_modes,
+            repeat_count=args.repeat_count,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            thinking_mode=args.thinking_mode,
+            timeout=args.timeout,
+            headers=headers,
+            extra_body=extra_body,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_long_context_latency_markdown(args.markdown_output, row)
+
+    status = "PASS" if row.get("ok") else "FAIL"
+    summary = row.get("summary") if isinstance(row.get("summary"), list) else []
+    failures = sum(
+        int(item.get("failure_count") or 0)
+        for item in summary
+        if isinstance(item, dict)
+    )
+    print(
+        f"{status} {row.get('case')} variant={args.variant}: "
+        f"groups={len(summary)} failures={failures}"
+    )
+    return 0 if row.get("ok") else 1
+
+
 def _cmd_streaming_pressure_soak(args: argparse.Namespace) -> int:
     if not _validate_request_retries(args.request_retries):
         print("--request-retries must be >= 0", file=sys.stderr)
@@ -1281,6 +1362,31 @@ def _cmd_lm_eval(args: argparse.Namespace) -> int:
     return 0 if summary["ok"] else 1
 
 
+def _cmd_lm_eval_compare(args: argparse.Namespace) -> int:
+    try:
+        baseline = json.loads(args.baseline_summary.read_text(encoding="utf-8"))
+        candidate = json.loads(args.candidate_summary.read_text(encoding="utf-8"))
+        comparison = compare_lm_eval_summaries(
+            baseline,
+            candidate,
+            task=args.task,
+            metric=args.metric,
+            min_delta=args.min_delta,
+        )
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(comparison, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    print(json.dumps(comparison, ensure_ascii=False))
+    return 0 if comparison["ok"] else 1
+
+
 def _cmd_toolcall15(args: argparse.Namespace) -> int:
     if args.repeat_count < 1:
         print("--repeat-count must be >= 1", file=sys.stderr)
@@ -1661,6 +1767,43 @@ def build_parser() -> argparse.ArgumentParser:
     prefix_cache.add_argument("--markdown-output", type=Path)
     prefix_cache.set_defaults(func=_cmd_prefix_cache_probe)
 
+    long_latency = subparsers.add_parser("long-context-latency-matrix")
+    long_latency.add_argument("--base-url", default="http://127.0.0.1:8000")
+    long_latency.add_argument("--model", default=DEFAULT_MODEL)
+    long_latency.add_argument("--variant", default="manual")
+    long_latency.add_argument(
+        "--case-name", default=DEFAULT_LONG_CONTEXT_LATENCY_CASE_NAME
+    )
+    long_latency.add_argument(
+        "--line-counts",
+        default=",".join(str(value) for value in DEFAULT_LONG_CONTEXT_LATENCY_LINE_COUNTS),
+        help="comma-separated synthetic line counts; use an empty string to disable",
+    )
+    long_latency.add_argument("--prompt-file", type=Path, action="append")
+    long_latency.add_argument(
+        "--concurrency",
+        default=",".join(str(value) for value in DEFAULT_LONG_CONTEXT_LATENCY_CONCURRENCY),
+        help="comma-separated interactive concurrency levels",
+    )
+    long_latency.add_argument(
+        "--cache-modes",
+        default=",".join(DEFAULT_LONG_CONTEXT_LATENCY_CACHE_MODES),
+        help="comma-separated cache modes: cold,warm",
+    )
+    long_latency.add_argument("--repeat-count", type=int, default=1)
+    long_latency.add_argument(
+        "--max-tokens", type=int, default=DEFAULT_LONG_CONTEXT_LATENCY_MAX_TOKENS
+    )
+    long_latency.add_argument("--temperature", type=float, default=0.0)
+    long_latency.add_argument("--top-p", type=float, default=1.0)
+    long_latency.add_argument("--thinking-mode", default="non-thinking")
+    long_latency.add_argument("--timeout", type=float, default=1800.0)
+    long_latency.add_argument("--api-key-env")
+    long_latency.add_argument("--extra-body-json")
+    long_latency.add_argument("--json-output", type=Path)
+    long_latency.add_argument("--markdown-output", type=Path)
+    long_latency.set_defaults(func=_cmd_long_context_latency_matrix)
+
     streaming_soak = subparsers.add_parser("streaming-pressure-soak")
     streaming_soak.add_argument("--base-url", default="http://127.0.0.1:8000")
     streaming_soak.add_argument("--model", default=DEFAULT_MODEL)
@@ -1775,6 +1918,15 @@ def build_parser() -> argparse.ArgumentParser:
     lm_eval.add_argument("--json-output", type=Path)
     lm_eval.add_argument("--extra-lm-eval-arg", action="append")
     lm_eval.set_defaults(func=_cmd_lm_eval)
+
+    lm_eval_compare = subparsers.add_parser("lm-eval-compare")
+    lm_eval_compare.add_argument("--baseline-summary", type=Path, required=True)
+    lm_eval_compare.add_argument("--candidate-summary", type=Path, required=True)
+    lm_eval_compare.add_argument("--task", required=True)
+    lm_eval_compare.add_argument("--metric", default="exact_match_flexible")
+    lm_eval_compare.add_argument("--min-delta", type=float, default=0.0)
+    lm_eval_compare.add_argument("--json-output", type=Path)
+    lm_eval_compare.set_defaults(func=_cmd_lm_eval_compare)
 
     toolcall15 = subparsers.add_parser("toolcall15")
     toolcall15.add_argument("--base-url", default="http://127.0.0.1:8000")
