@@ -145,6 +145,16 @@ def _request_ok(text: str, required_terms: tuple[str, ...]) -> tuple[bool, str]:
     return True, "matched required terms"
 
 
+def _assistant_text_artifact(prompt: LatencyPrompt, text: str) -> Json:
+    artifact: Json = {
+        "assistant_text_sha256": _sha256(text),
+        "assistant_text_length": len(text),
+    }
+    if prompt.source == "synthetic":
+        artifact["assistant_text_excerpt"] = text[:512]
+    return artifact
+
+
 def _build_payload(
     prompt: LatencyPrompt,
     *,
@@ -224,7 +234,7 @@ def _run_stream_request(
         elapsed = result.get("elapsed_seconds")
         if not isinstance(elapsed, int | float):
             elapsed = time.monotonic() - started
-        return {
+        row = {
             "phase": phase,
             "cache_mode": cache_mode,
             "prompt": prompt.name,
@@ -247,6 +257,8 @@ def _run_stream_request(
             "line_count": prompt.line_count,
             "prompt_file": prompt.prompt_file,
         }
+        row.update(_assistant_text_artifact(prompt, text))
+        return row
     except Exception as exc:
         return {
             "phase": phase,

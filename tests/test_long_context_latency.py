@@ -65,6 +65,12 @@ def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
         if metadata["cache_mode"] == "cold" and metadata["phase"] == "measure"
     ]
     assert len({json.dumps(payload["messages"]) for payload in cold_payloads}) == 3
+    first_request = row["requests"][0]
+    assert first_request["assistant_text_sha256"]
+    assert first_request["assistant_text_length"] == len(
+        "alpha-cobalt-17 beta-quartz-29 gamma-onyx-43"
+    )
+    assert "beta-quartz-29" in first_request["assistant_text_excerpt"]
 
 
 def test_long_context_latency_matrix_supports_prompt_files(tmp_path):
@@ -104,6 +110,8 @@ def test_long_context_latency_matrix_supports_prompt_files(tmp_path):
     assert row["ok"] is True
     assert row["prompts"][0]["source"] == "file"
     assert row["prompts"][0]["prompt_file"] == str(prompt_file)
+    assert "assistant_text_sha256" in row["requests"][0]
+    assert "assistant_text_excerpt" not in row["requests"][0]
 
 
 def test_long_context_latency_markdown_includes_summary(tmp_path):
