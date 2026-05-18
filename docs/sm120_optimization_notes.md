@@ -153,6 +153,37 @@ The code change was removed. Do not revisit this exact `BLOCK_D=128` variant
 unless a later numerical/correctness analysis explains the short-context
 retrieval miss.
 
+### FlashInfer Autotune Recheck After vLLM PR 42857
+
+After rebasing onto upstream with vLLM PR 42857, FlashInfer autotune can be
+enabled again without the earlier startup failure. It was rechecked against the
+same 131K long-context gate, prefix cache disabled, 4096 max-num-batched-tokens,
+TP=2, MTP=2.
+
+The long-context TTFT result was neutral to slightly negative for this
+DeepSeek V4 SM120 path:
+
+| Prompt Shape | Concurrency | Autotune Off Mean TTFT | Autotune On Mean TTFT | Delta |
+| --- | ---: | ---: | ---: | ---: |
+| 64K synthetic | 1 | 13.957 s | 13.911 s | -0.3% |
+| 64K synthetic | 2 | 20.077 s | 19.876 s | -1.0% |
+| 64K synthetic | 4 | 33.279 s | 33.492 s | +0.6% |
+| 128K synthetic | 1 | 33.298 s | 33.590 s | +0.9% |
+| 128K synthetic | 2 | 48.198 s | 48.265 s | +0.1% |
+| 128K synthetic | 4 | 80.107 s | 81.556 s | +1.8% |
+
+Both runs reported the same KV budget, about 11.34 GiB available KV cache,
+755,050 GPU KV-cache tokens, and 5.76x maximum concurrency at 131,072 tokens.
+The autotune-on run logged that no FlashInfer autotune cache entries were found
+and fell back to default tactics, so this is not a current optimization lever
+for the active path. The autotune-off comparison run had one 64K C=4 retrieval
+miss; the autotune-on run passed this one-shot matrix, but do not treat that as
+proof of a correctness improvement without repeated correctness gates.
+
+Decision: keep upstream's fixed autotune behavior available, but do not spend
+more 128K prefill optimization time here unless a later profile shows this
+path is actually on the critical path.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
