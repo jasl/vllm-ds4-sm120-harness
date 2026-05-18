@@ -258,6 +258,38 @@ or scheduler interaction. PR-facing 64K/128K numbers should include repeated
 failure counts or be limited to configurations that pass the fixed correctness
 gate.
 
+### Long-Context MTP Acceptance Isolation
+
+Follow-up A/B runs kept the same targeted shape unless noted otherwise:
+synthetic 64K prompt, C=4, repeat count 3, `max_tokens=128`, prefix cache
+disabled, 131K max-model-len, 4096 max-num-batched-tokens, TP=2, MTP=2.
+
+| Variant | Requests | Failures | Mean TTFT | Mean Elapsed | Decision |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Default MTP=2 | 12 | 2 | 32.069 s | 46.355 s | reject |
+| No MTP | 12 | 0 | 32.648 s | 52.765 s | correctness control |
+| MTP=2, CUDA graph disabled, GPU memory util 0.95 | 12 | 2 | 33.796 s | 48.885 s | reject |
+| MTP=2, `disable_padded_drafter_batch=true` | 12 | 2 | 33.879 s | 49.023 s | reject |
+| MTP=2, synthetic rejection, acceptance rates `[0.0, 0.0]` | 12 | 0 | 33.403 s | 54.542 s | diagnostic only |
+
+The failed CUDA-graph-disabled run returned middle-marker variants such as
+`основним` and `beta-tungsten-29`; the failed padded-drafter-disabled run
+again returned `beta-epsilon-29`. Both still missed `beta-quartz-29`, so
+CUDA graph capture, async scheduling, and the padded drafter batch are not
+sufficient root causes.
+
+The synthetic-rejection run is the important narrowing result. It forced a
+zero acceptance rate while still running MTP=2 target verification, and it
+passed all 12 requests. That means the first target verification position is
+correct for this shape; the correctness miss appears only when later draft
+tokens are accepted and the request advances along the multi-token MTP
+verification trajectory. Do not promote synthetic rejection as an optimization:
+it removes the MTP speedup and exists only as a diagnostic control.
+
+One setup mistake is also recorded so it is not reused as evidence: a
+CUDA-graph-disabled run with line count 1000 passed 12 of 12 requests, but the
+prompt was only about 31K tokens, not the intended 64K shape.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
@@ -298,8 +330,10 @@ Ideas to avoid carrying over blindly:
 
 ## Near-Term Work Queue
 
-1. Investigate the MTP=2 64K C=4 correctness miss with no-MTP as the control
-   path before promoting PR-facing long-context numbers.
+1. Investigate the MTP=2 64K C=4 correctness miss inside accepted multi-token
+   target verification. The next useful evidence is request-level tracing of
+   accepted token positions and target argmax values around the failed middle
+   marker, with no-MTP and synthetic-reject-0 as controls.
 2. Profile the active FP8 MQA logits Triton path with NCU on representative
    late-context 128K launches.
 3. Sweep small tile/register-pressure changes around `BLOCK_M`, `BLOCK_N`,
