@@ -14,8 +14,15 @@ a different inference stack.
 | FP4 indexer cache | yes (SM100) | **no** | Disable via `SERVE_USE_FP4_INDEXER_CACHE=0` |
 | FP8 fused MoE backend (datacenter Cutlass) | yes | **no** | Route to Triton block-scaled fp8 GEMM |
 | PDL (programmatic dependent launch) | yes | **yes** (SM90+) | Common confusion; PDL is supported on SM12x |
-| TMA (tensor memory accelerator) | yes | **yes** | But some tilelang/Triton configs default off |
+| TMA (tensor memory accelerator) | yes | **do not assume for SM120** | Current SM120 tuning does not rely on TMA; require per-device proof and guards |
 | Unified memory (GB10 only) | n/a | yes (GB10) | Reclaim file cache (`echo 3 > drop_caches`) before launch |
+
+Current correction: for RTX PRO 6000 / SM120 workstation optimization, treat the
+memory subsystem as GDDR7, not HBM, and keep TMEM / `tcgen05` / TMA-dependent
+designs out of the vLLM path unless an SM120-specific validation proves
+otherwise. See
+[`docs/sm120_optimization_notes.md`](../../docs/sm120_optimization_notes.md)
+for the active tuning assumptions.
 
 ## Must-do engineering work for a new stack
 

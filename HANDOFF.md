@@ -34,6 +34,12 @@ branches.
 - Prefer specific arch values for local builds to reduce compile time: SM120
   uses `12.0a` / `120a`, and SM121 uses `12.1a` / `121a`. The broader
   `12.0f` / `120f` family can cover both when a family target is required.
+- Keep current optimization assumptions in
+  [`docs/sm120_optimization_notes.md`](docs/sm120_optimization_notes.md): RTX
+  PRO 6000 / SM120 workstation data should be discussed as GDDR7
+  memory-subsystem data, and SM100/B200/B300 paths that rely on TMEM,
+  `tcgen05`, or TMA must not be treated as portable without SM120-specific
+  verification and guards.
 - The local macOS machine is for code review, harness edits, docs, and artifact
   organization only. Do not treat local results as GPU-path validation.
 

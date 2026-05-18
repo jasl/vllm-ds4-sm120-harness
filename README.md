@@ -166,6 +166,13 @@ tool-call turn.
     `prompts/long_context/` for prompt-file mode
   - is the targeted tool for 64K/128K interactive latency work and chunked
     prefill sweeps
+- SM120 optimization notes:
+  - keep the current hardware assumptions and tuning priorities in
+    [`docs/sm120_optimization_notes.md`](docs/sm120_optimization_notes.md)
+  - treat RTX PRO 6000 / SM120 workstation runs as GDDR7 memory-subsystem
+    evidence, not HBM evidence
+  - use external DeepGEMM SM120 work as design input only unless a measured,
+    vLLM-owned change passes the promotion gates
 - Optional streaming-pressure soak:
   - sends concurrent streaming chat completions over deterministic long
     conversations that grow across several short rounds
