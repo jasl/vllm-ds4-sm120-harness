@@ -167,6 +167,23 @@ max-num-batched-tokens, TP=2:
 | MTP C=1/2/4 short matrix, label `codex_mtp_c124_clean_short/20260519232237` | C=1/2/4 all 16/16 successful; C=4 output tok/s 225.48, mean TTFT 254.46 ms, acceptance 64.85% |
 | no-MTP C=4 short smoke, label `codex_nomtp_c4_clean_short/20260519232622` | 16/16 successful, output tok/s 201.38, mean TTFT 425.40 ms |
 
+Full promotion gate after the fix, label
+`pr_gate_after_mtp_c4_fix/20260519233509`:
+
+| Prompt Shape | Concurrency | Requests | Failures | Mean TTFT | Max TTFT |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 62K synthetic | 1 | 3 | 0 | 13.009 s | 13.036 s |
+| 62K synthetic | 2 | 6 | 0 | 20.370 s | 26.906 s |
+| 62K synthetic | 3 | 9 | 0 | 27.672 s | 41.810 s |
+| 62K synthetic | 4 | 12 | 0 | 34.554 s | 54.625 s |
+| 124K synthetic | 1 | 3 | 0 | 32.779 s | 32.797 s |
+| 124K synthetic | 2 | 6 | 0 | 49.830 s | 67.093 s |
+| 124K synthetic | 3 | 9 | 0 | 66.912 s | 104.247 s |
+| 124K synthetic | 4 | 12 | 0 | 84.197 s | 138.497 s |
+
+GSM8K limit-200, 5-shot, MTP concurrency 1, passed with
+`exact_match_flexible=0.960` and `exact_match_strict=0.955`.
+
 Serve logs for the fixed MTP run show only `PIECEWISE` CUDA graph capture
 (`PIECEWISE=49`) and no full decode graph capture. That matches the intended
 fix shape: avoid the unsafe speculative full decode replay path without
