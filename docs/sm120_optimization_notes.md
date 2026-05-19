@@ -46,6 +46,56 @@ not at a simple GDDR7 bandwidth ceiling:
 
 ## Successful Optimization Notes
 
+### Sparse SWA MTP Reorder Correctness Fix
+
+The 64K-class MTP=2 C=3/C=4 retrieval miss was traced to a metadata split
+mismatch rather than to unchecked draft acceptance. DeepSeek V4 sparse SWA
+internally used `decode_threshold = 1 + num_speculative_tokens`, but still
+reported `reorder_batch_threshold = 1` to the model runner. Because the runner
+uses the minimum threshold across attention groups, a 3-token MTP verification
+step could be ordered after a long chunked-prefill request. Sparse SWA then
+assumed decodes were at the front of the batch and treated the MTP verification
+tokens as prefill tokens.
+
+The captured failing request showed the exact divergence: after `beta` was
+accepted, the draft second token was `-qu`, but target verification's second
+row preferred `-c`, producing `beta-cobalt-29` instead of
+`beta-quartz-29`. The retained fix initializes sparse SWA's runner-facing
+reorder threshold with `supports_spec_as_decode=True` and reuses that value for
+the internal decode/prefill split. vLLM commit: `24db5ed89`.
+
+Regression test:
+
+| Test | Result |
+| --- | --- |
+| `tests/v1/attention/test_deepseek_v4_sparse_swa.py::test_sparse_swa_reorder_threshold_matches_mtp_decode_threshold` | failed before fix, passed after fix |
+| `tests/v1/attention/test_deepseek_v4_sparse_swa.py tests/v1/attention/test_batch_reordering.py tests/v1/attention/test_attention_splitting.py` | 38 passed |
+
+Targeted long-context gate, prefix cache disabled, 131K max-model-len, 4096
+max-num-batched-tokens, TP=2, MTP=2, synthetic 2000-line prompt,
+`max_tokens=128`, repeat count 3, artifact label
+`sparse_swa_reorder_fix_c3_c4_62k/20260519090417`:
+
+| Prompt Shape | Concurrency | Requests | Failures | Mean TTFT | Max TTFT |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 62K synthetic | 3 | 9 | 0 | 27.017 s | 40.346 s |
+| 62K synthetic | 4 | 12 | 0 | 34.400 s | 54.593 s |
+
+Correctness gate, artifact label
+`sparse_swa_reorder_fix_gsm8k_limit200/20260519091147`: GSM8K limit-200
+5-shot `exact_match_flexible` was 0.960 versus the fixed current-branch
+baseline of 0.955, so the gate passed with delta +0.005.
+
+Short-context smoke, artifact label
+`sparse_swa_reorder_fix_short_smoke/20260519091743`, MTP=2, MT-Bench HF
+dataset, 16 prompts:
+
+| Concurrency | Successful Requests | Output Tok/s | Mean TTFT | Acceptance Rate |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 16/16 | 129.44 | 319.58 ms | 65.51% |
+| 2 | 16/16 | 170.78 | 424.36 ms | 63.81% |
+| 4 | 16/16 | 197.55 | 507.05 ms | 62.15% |
+
 ### FP8 MQA Logits `BLOCK_M=16`
 
 The direct FP8 MQA logits fallback originally launched the Triton kernel with
