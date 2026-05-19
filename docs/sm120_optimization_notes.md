@@ -429,6 +429,39 @@ explanation. Keep the investigation centered on the accepted multi-token MTP
 scheduling/verification trajectory, using no-MTP and synthetic-reject-0 as
 controls.
 
+## Latest Upstream Cleanup, 2026-05-19
+
+After rebasing onto the upstream DeepSeek V4 module refactor, the active SM120
+environment resolves the fused indexer Q path through Cutedsl first. The older
+Triton `fused_indexer_q` `num_warps` autotune delta is therefore fallback-only
+for this host and added review surface without affecting the measured path.
+Decision: remove that autotune delta from the active branch; keep the upstream
+fallback shape unchanged until a non-Cutedsl target needs it measured again.
+
+The same cleanup pass replaced direct `vllm.third_party.deep_gemm` imports in
+DeepSeek V4 MegaMoE with the existing `vllm.utils.deep_gemm` wrapper. This keeps
+external `deep_gemm` installs and vendored fallbacks behind one import policy.
+The retained regression test exercises `finalize_weights()` through the wrapper
+without requiring the vendored package to exist.
+
+The broader prefix-cache gate exposed a real MLA protection bug: hybrid
+coordinators align cacheable tokens down to the LCM boundary, so a 35-token
+prompt with a 32-token cacheable prefix did not satisfy the previous
+`num_tokens >= request.num_prompt_tokens` protection condition. Under decode or
+allocator pressure, SWA/MLA prompt blocks could then be evicted before a future
+same-prompt reuse. Decision: keep the fix that protects blocks once the
+aligned cache-hit prefix has been cached, not only after the entire prompt has
+crossed the boundary.
+
+Verification summary:
+
+| Gate | Result |
+| --- | --- |
+| vLLM targeted unit/static group | `117 passed` for env/core prefix-cache/sparse-SWA, plus `18 passed` for MegaMoE/MTP/SM120 fallback/quant/disagg; ruff, compileall, and diff-check passed |
+| Short HF/MT-Bench smoke | C=1/2/4 all `16/16` successful; C=4 output tok/s `197.08`, MTP acceptance `63.65%` |
+| 64K/128K cold long-context smoke, hot service | 64K C=1 `13.561 s`, C=2 `20.904 s`; 128K C=1 `33.328 s`, C=2 `50.572 s`; zero failures |
+| GSM8K correctness gate | 5-shot limit-200 `exact_match_flexible=0.965` versus baseline `0.950`; compare gate passed |
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
