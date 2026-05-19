@@ -132,7 +132,67 @@ steady-state range. Do not count the first-request compile spike as a model
 latency regression, but keep startup warmup in mind before presenting
 user-facing cold-start numbers.
 
+### DeepSeek V4 MTP C=4 Stability Fix
+
+The short-context MTP C=4 blocker was reproduced after the rebase: no-MTP C=4
+passed, while MTP=1 and MTP=2 C=4 both stalled in target verification. Turning
+off async scheduling did not change the failure. Debug instrumentation narrowed
+the stall to the speculative verification `_model_forward()` path after the
+draft tokens had already been proposed and copied.
+
+The retained fix is intentionally narrow:
+
+- skip full decode CUDA graph capture for DeepSeek V4 MTP, while preserving
+  piecewise CUDA graphs;
+- bound DeepSeek V4 MTP uniform-decode warmup request counts to the small
+  interactive range, capped at 32;
+- bound DeepSeek V4 MTP dummy sampler warmup requests to 32 so long-context
+  131K serves do not spend startup memory on a raw `max_num_seqs` sampler
+  shape.
+
+Regression tests:
+
+| Test | Result |
+| --- | --- |
+| `tests/v1/cudagraph/test_cudagraph_dispatch.py::TestCudagraphDispatcher::test_deepseek_v4_mtp_spec_decode_skips_full_decode_graphs` | failed before fix, passed after fix |
+| `tests/model_executor/test_deepseek_v4_kernel_warmup.py::test_deepseek_v4_mtp_uniform_decode_warmup_caps_large_max_num_seqs` | failed before fix, passed after fix |
+| `tests/v1/worker/test_gpu_model_runner.py::test_deepseek_v4_mtp_dummy_sampler_warmup_caps_large_max_num_seqs` | failed before fix, passed after fix |
+
+Clean-code validation, prefix cache disabled, 131K max-model-len, 4096
+max-num-batched-tokens, TP=2:
+
+| Gate | Result |
+| --- | --- |
+| MTP C=4 short smoke, label `codex_c4_fix_clean_smoke16_jsonfix/20260519231919` | 16/16 successful, output tok/s 181.14, mean TTFT 620.55 ms, acceptance 64.53% |
+| MTP C=1/2/4 short matrix, label `codex_mtp_c124_clean_short/20260519232237` | C=1/2/4 all 16/16 successful; C=4 output tok/s 225.48, mean TTFT 254.46 ms, acceptance 64.85% |
+| no-MTP C=4 short smoke, label `codex_nomtp_c4_clean_short/20260519232622` | 16/16 successful, output tok/s 201.38, mean TTFT 425.40 ms |
+
+Serve logs for the fixed MTP run show only `PIECEWISE` CUDA graph capture
+(`PIECEWISE=49`) and no full decode graph capture. That matches the intended
+fix shape: avoid the unsafe speculative full decode replay path without
+globally disabling CUDA graphs.
+
 ## Ineffective Or Ambiguous Optimization Notes
+
+### Short-Context MTP C=4 Root-Cause Controls
+
+The following controls were useful for locating the C=4 stall but were not kept
+as production changes:
+
+| Experiment | Result | Decision |
+| --- | --- | --- |
+| no-MTP C=4 control | passed | use as non-MTP stability control only |
+| MTP=1 C=4 | stalled | not a safe fallback for this bug |
+| MTP=2 C=4 with async scheduling disabled | stalled | async scheduling is not the root cause |
+| CUDA graph disabled at 8K max-model-len and lower GPU memory utilization | passed | diagnostic only; not a 131K production fix |
+| CUDA graph disabled at 131K with current memory target | startup OOM | not promotable |
+| temporary per-stage debug logging around RPC, model forward, attention, and sampling | localized the stall | removed from code after the fix |
+
+The result points at full decode CUDA graph replay for DeepSeek V4 MTP
+verification, not at the sampler bookkeeping, prefix cache, or async scheduler
+as the primary root cause. Do not reintroduce the debug logging or a global
+eager/no-cudagraph workaround; use the narrow DS4 MTP full-graph skip unless a
+future upstream graph fix makes it unnecessary.
 
 ### FP8 MQA Logits `BLOCK_M=32`, `BLOCK_N=256`
 
@@ -502,15 +562,24 @@ Ideas to avoid carrying over blindly:
 
 ## Near-Term Work Queue
 
-1. Treat the MTP=2 64K C=3/4 correctness miss as a bug rather than continuing
-   broad history bisection. The next useful evidence is target-verification
-   metadata at the failed second verification position: input token ids,
-   positions, slot mapping, logits indices, KV cache slots, and sparse top-k
-   context indices, with no-MTP and synthetic-reject-0 as controls.
+1. Refresh the PR-facing long-context gate after the latest rebase and CUTeDSL
+   availability fix: short smoke, 64K/128K C=1/2/3/4, and GSM8K. Include
+   failure counts and min/median/mean/max TTFT so one-shot cold variance does
+   not drive promotion decisions.
 2. Profile the active FP8 MQA logits Triton path with NCU on representative
-   late-context 128K launches.
-3. Sweep small tile/register-pressure changes around `BLOCK_M`, `BLOCK_N`,
-   `BLOCK_H`, and `num_warps`, keeping each candidate small enough to revert.
-4. Gate candidates with the short + 64K/128K + GSM8K matrix before promotion.
-5. After prefill is stable, move to paged MQA decode and small-M GEMM/BMM
+   late-context 128K launches. Treat register pressure, eligible-warps, and
+   long-scoreboard stalls as the primary hypothesis until the new counters say
+   otherwise.
+3. Sweep small tile/register-pressure changes around direct FP8 MQA logits:
+   `BLOCK_M`, `BLOCK_N`, `BLOCK_H`, `BLOCK_D`, and `num_warps`. Keep each
+   candidate small enough to revert, and require both short-context and GSM8K
+   gates before promotion.
+4. Investigate a fused or streaming direct-top-k path for long prefill so the
+   SM120 fallback no longer has to materialize a large `(num_q, seq_len_kv)`
+   fp32 logits matrix before row-top-k selection.
+5. Re-profile `_accumulate_indexed_attention_chunk_multihead_kernel` after the
+   FP8 MQA logits work. If it becomes the dominant prefill kernel, test only
+   narrow changes around head grouping, candidate loop structure, and query/topk
+   chunk sizes.
+6. After prefill is stable, move to paged MQA decode and small-M GEMM/BMM
    experiments for long-context multi-turn latency.
