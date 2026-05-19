@@ -324,6 +324,21 @@ long-context batch. Keep the investigation on target multi-token verification:
 positions, slot mapping, KV writes/reads, and sparse context selection for
 query positions after the first accepted token.
 
+Additional A/B checks on the current branch did not change the decision:
+
+| Variant | Requests | Failures | Mean TTFT | Mean Elapsed | Decision |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `VLLM_TRITON_MLA_SPARSE_MATMUL_DECODE=0`, C=3 | 9 | 1 | 28.782 s | 41.508 s | reject |
+| `--no-async-scheduling`, C=3 | 9 | 2 | 28.862 s | 41.764 s | reject |
+| `--enforce-eager`, GPU memory util 0.90, C=3 | 9 | 2 | 29.053 s | 42.794 s | reject |
+
+Forcing sparse MLA fully off was not a valid comparison on this checkout
+because the required FlashMLA extension was not available. An eager run at the
+normal 0.985 GPU-memory budget also failed startup with Triton out-of-memory
+during warmup; the lower-memory eager run above did start and still reproduced
+the retrieval miss. These results make the materialized-matmul sparse decode
+path, async scheduling, and CUDA graph capture insufficient explanations.
+
 One setup mistake is also recorded so it is not reused as evidence: a
 CUDA-graph-disabled run with line count 1000 passed 12 of 12 requests, but the
 prompt was only about 31K tokens, not the intended 64K shape.
