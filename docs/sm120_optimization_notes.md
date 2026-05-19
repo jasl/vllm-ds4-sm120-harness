@@ -132,7 +132,7 @@ steady-state range. Do not count the first-request compile spike as a model
 latency regression, but keep startup warmup in mind before presenting
 user-facing cold-start numbers.
 
-### DeepSeek V4 MTP C=4 Stability Fix
+### DeepSeek V4 MTP C=4 FULL Graph Stability Fix
 
 The short-context MTP C=4 blocker was reproduced after the rebase: no-MTP C=4
 passed, while MTP=1 and MTP=2 C=4 both stalled in target verification. Turning
@@ -140,10 +140,20 @@ off async scheduling did not change the failure. Debug instrumentation narrowed
 the stall to the speculative verification `_model_forward()` path after the
 draft tokens had already been proposed and copied.
 
-The retained fix is intentionally narrow:
+After reverting the diagnostic full-graph skip, the live C=4 repro with
+`FULL_AND_PIECEWISE` stalled inside FULL CUDA graph replay. The failing runtime
+shape was actual C=4 / 12 tokens padded to
+`BatchDescriptor(num_tokens=18, num_reqs=6, uniform=True)`. A diagnostic run
+that kept FULL graphs but added exact small spec-decode capture sizes passed
+with C=4 hitting `BatchDescriptor(num_tokens=12, num_reqs=4, uniform=True)`.
 
-- skip full decode CUDA graph capture for DeepSeek V4 MTP, while preserving
-  piecewise CUDA graphs;
+The retained fixes are intentionally narrow:
+
+- keep DeepSeek V4 MTP on `FULL_AND_PIECEWISE`; do not skip full decode CUDA
+  graph capture;
+- preserve exact small spec-decode uniform decode shapes for request counts
+  1..32 so small-interactive FULL graph replay does not use padded virtual
+  requests;
 - bound DeepSeek V4 MTP uniform-decode warmup request counts to the small
   interactive range, capped at 32;
 - bound DeepSeek V4 MTP dummy sampler warmup requests to 32 so long-context
@@ -154,7 +164,8 @@ Regression tests:
 
 | Test | Result |
 | --- | --- |
-| `tests/v1/cudagraph/test_cudagraph_dispatch.py::TestCudagraphDispatcher::test_deepseek_v4_mtp_spec_decode_skips_full_decode_graphs` | failed before fix, passed after fix |
+| `tests/v1/cudagraph/test_cudagraph_dispatch.py::TestCudagraphDispatcher::test_deepseek_v4_mtp_spec_decode_keeps_full_and_piecewise_graphs` | guards against masking MTP issues by skipping full decode graphs |
+| `tests/compile/test_config.py::test_spec_decode_cudagraph_sizes_keep_small_full_decode_batches_exact` | guards exact FULL graph shapes for request counts 1..32 |
 | `tests/model_executor/test_deepseek_v4_kernel_warmup.py::test_deepseek_v4_mtp_uniform_decode_warmup_caps_large_max_num_seqs` | failed before fix, passed after fix |
 | `tests/v1/worker/test_gpu_model_runner.py::test_deepseek_v4_mtp_dummy_sampler_warmup_caps_large_max_num_seqs` | failed before fix, passed after fix |
 
@@ -163,6 +174,12 @@ max-num-batched-tokens, TP=2:
 
 | Gate | Result |
 | --- | --- |
+| FULL replay localization, label `codex_full_graph_mtp_c4_trace/20260520014805` | reproduced hang inside FULL graph replay after padding C=4/12 tokens to 18 tokens / 6 reqs |
+| Exact-shape diagnostic, label `codex_full_graph_mtp_c4_exact_sizes/20260520015317` | 8/8 successful with `FULL_AND_PIECEWISE`, `PIECEWISE=11`, `FULL=11`, exact C=4 FULL replay |
+| Default fixed C=4 smoke, label `codex_full_graph_mtp_c4_fix_smoke/20260520015929` | 8/8 successful with `FULL_AND_PIECEWISE`, `PIECEWISE=67`, `FULL=67`, output tok/s 316.99, mean TTFT 187.96 ms |
+| Default fixed MTP C=1/2/4 matrix, label `codex_full_graph_mtp_c124_fix_short/20260520020327` | C=1/2/4 all 16/16 successful; C=4 output tok/s 360.67, mean TTFT 120.10 ms, acceptance 64.97% |
+| GSM8K limit-200, 5-shot, temperature 0, label `codex_full_graph_mtp_gsm8k_fix_gate_temp0/20260520021808` | `exact_match_flexible=0.960`, `exact_match_strict=0.945` |
+| 124K synthetic C=1 cold long-context smoke, label `codex_full_graph_mtp_124k_c1_fix_smoke/20260520022411` | 0 failures, TTFT 31.270 s, matched required terms |
 | MTP C=4 short smoke, label `codex_c4_fix_clean_smoke16_jsonfix/20260519231919` | 16/16 successful, output tok/s 181.14, mean TTFT 620.55 ms, acceptance 64.53% |
 | MTP C=1/2/4 short matrix, label `codex_mtp_c124_clean_short/20260519232237` | C=1/2/4 all 16/16 successful; C=4 output tok/s 225.48, mean TTFT 254.46 ms, acceptance 64.85% |
 | no-MTP C=4 short smoke, label `codex_nomtp_c4_clean_short/20260519232622` | 16/16 successful, output tok/s 201.38, mean TTFT 425.40 ms |
@@ -183,11 +200,21 @@ Full promotion gate after the fix, label
 
 GSM8K limit-200, 5-shot, MTP concurrency 1, passed with
 `exact_match_flexible=0.960` and `exact_match_strict=0.955`.
+Repeating that gate without explicit generation kwargs produced
+`exact_match_flexible=0.955` twice (`strict=0.950` then `0.935`), so use
+`--gen_kwargs temperature=0` for deterministic correctness promotion gates.
+The extra exact small FULL graphs increased capture from `PIECEWISE=49/FULL=49`
+to `PIECEWISE=67/FULL=67`; on the 131K serve profile, actual CUDA graph pool
+memory was 2.04 GiB and available KV cache was 491,927 tokens. That still
+supports the dual-card 124K/128K single-stream path, but the graph-memory cost
+should be watched in future wider gates.
 
-Serve logs for the fixed MTP run show only `PIECEWISE` CUDA graph capture
-(`PIECEWISE=49`) and no full decode graph capture. That matches the intended
-fix shape: avoid the unsafe speculative full decode replay path without
-globally disabling CUDA graphs.
+The earlier C=4 validation was collected with only `PIECEWISE` CUDA graph
+capture (`PIECEWISE=49`) and no full decode graph capture. That evidence is now
+treated as a diagnostic workaround only, not as a promotable fix: any production
+MTP repair must preserve `FULL_AND_PIECEWISE` and keep full decode CUDA graph
+capture available. The current default C=4 smoke satisfies that rule and shows
+both graph families captured.
 
 ## Ineffective Or Ambiguous Optimization Notes
 
@@ -204,12 +231,13 @@ as production changes:
 | CUDA graph disabled at 8K max-model-len and lower GPU memory utilization | passed | diagnostic only; not a 131K production fix |
 | CUDA graph disabled at 131K with current memory target | startup OOM | not promotable |
 | temporary per-stage debug logging around RPC, model forward, attention, and sampling | localized the stall | removed from code after the fix |
+| manual exact small `cudagraph_capture_sizes` | passed with FULL graphs | diagnostic confirmation; replaced by default exact small spec-decode shapes |
 
-The result points at full decode CUDA graph replay for DeepSeek V4 MTP
-verification, not at the sampler bookkeeping, prefix cache, or async scheduler
-as the primary root cause. Do not reintroduce the debug logging or a global
-eager/no-cudagraph workaround; use the narrow DS4 MTP full-graph skip unless a
-future upstream graph fix makes it unnecessary.
+The result points at padded full decode CUDA graph replay for DeepSeek V4 MTP
+verification, not at sampler bookkeeping, prefix cache, custom all-reduce, or
+async scheduler as the primary root cause. Do not reintroduce debug logging, a
+global eager/no-cudagraph workaround, or a DS4 MTP full-graph skip. Keep
+`FULL_AND_PIECEWISE` and preserve exact small uniform decode graph shapes.
 
 ### FP8 MQA Logits `BLOCK_M=32`, `BLOCK_N=256`
 
@@ -574,7 +602,10 @@ Ideas to avoid carrying over blindly:
 - Fixed gates for promotion:
   - short-context latency must not regress,
   - 64K/128K long-context latency at C=1/2/3/4 must not regress,
-  - GSM8K `exact_match_flexible` must not drop below the fixed baseline,
+  - deterministic GSM8K `exact_match_flexible` must not drop below the fixed
+    baseline; use `--gen_kwargs temperature=0`,
+  - DeepSeek V4 MTP fixes must preserve `FULL_AND_PIECEWISE`; do not skip
+    full decode CUDA graph capture as a workaround,
   - correctness/unit smoke for the touched vLLM path must pass.
 
 ## Near-Term Work Queue
