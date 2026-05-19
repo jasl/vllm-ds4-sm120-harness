@@ -155,10 +155,7 @@ The retained fixes are intentionally narrow:
   1..32 so small-interactive FULL graph replay does not use padded virtual
   requests;
 - bound DeepSeek V4 MTP uniform-decode warmup request counts to the small
-  interactive range, capped at 32;
-- bound DeepSeek V4 MTP dummy sampler warmup requests to 32 so long-context
-  131K serves do not spend startup memory on a raw `max_num_seqs` sampler
-  shape.
+  interactive range, capped at 32.
 
 Regression tests:
 
@@ -167,7 +164,6 @@ Regression tests:
 | `tests/v1/cudagraph/test_cudagraph_dispatch.py::TestCudagraphDispatcher::test_deepseek_v4_mtp_spec_decode_keeps_full_and_piecewise_graphs` | guards against masking MTP issues by skipping full decode graphs |
 | `tests/compile/test_config.py::test_spec_decode_cudagraph_sizes_keep_small_full_decode_batches_exact` | guards exact FULL graph shapes for request counts 1..32 |
 | `tests/model_executor/test_deepseek_v4_kernel_warmup.py::test_deepseek_v4_mtp_uniform_decode_warmup_caps_large_max_num_seqs` | failed before fix, passed after fix |
-| `tests/v1/worker/test_gpu_model_runner.py::test_deepseek_v4_mtp_dummy_sampler_warmup_caps_large_max_num_seqs` | failed before fix, passed after fix |
 
 Clean-code validation, prefix cache disabled, 131K max-model-len, 4096
 max-num-batched-tokens, TP=2:
@@ -238,6 +234,32 @@ verification, not at sampler bookkeeping, prefix cache, custom all-reduce, or
 async scheduler as the primary root cause. Do not reintroduce debug logging, a
 global eager/no-cudagraph workaround, or a DS4 MTP full-graph skip. Keep
 `FULL_AND_PIECEWISE` and preserve exact small uniform decode graph shapes.
+
+### DeepSeek V4 mHC TileLang Warmup
+
+The model-specific `deepseek_v4_mhc_warmup.py` path was tested after the MTP
+C=4 fix because it looked like an isolated attempt to hide first-request JIT
+rather than a root-cause optimization. Artifact label:
+`codex_warmup_ablation_20260520033046`.
+
+All variants used prefix cache disabled, 131K max-model-len, 4096
+max-num-batched-tokens, TP=2, MTP=2, `FULL_AND_PIECEWISE`, and distinct
+Triton/TileLang JIT cache directories.
+
+| Variant | Startup | 127K C=1 Mean TTFT | 127K C=1 Max TTFT | 4K C=4 Mean TTFT | JIT Warnings |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| mHC on, sparse warmup on | 140 s | 32.478 s | 35.180 s | 3.346 s | 13 |
+| mHC off, sparse warmup on | 140 s | 32.775 s | 35.397 s | 3.324 s | 13 |
+| mHC on, sparse warmup off | 130 s | 34.167 s | 38.069 s | 3.134 s | 16 |
+
+Disabling mHC warmup did not change the first-request JIT warning set, startup
+time, 127K TTFT, or short-context C=4 correctness. Even with it enabled, the
+serve log still reported first-inference JIT for `_tf32_hc_prenorm_gemm_kernel`.
+
+Decision: remove the mHC warmup code and env switches from the active branch.
+Keep the sparse/request-prep/MTP warmup for now because disabling that group
+added first-request long-context TTFT and more JIT misses, but continue to
+treat it as an incomplete warmup mitigation rather than a root-cause fix.
 
 ### FP8 MQA Logits `BLOCK_M=32`, `BLOCK_N=256`
 
