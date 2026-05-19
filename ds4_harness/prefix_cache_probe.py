@@ -192,6 +192,7 @@ def stream_chat_completion(
     text_parts: list[str] = []
     usage: Json = {}
     finish_reason: str | None = None
+    response_id: str | None = None
     chunks = 0
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -205,6 +206,9 @@ def stream_chat_completion(
                 event = json.loads(data)
                 if not isinstance(event, dict):
                     continue
+                event_id = event.get("id")
+                if isinstance(event_id, str) and event_id:
+                    response_id = event_id
                 event_usage = event.get("usage")
                 if isinstance(event_usage, dict):
                     usage = event_usage
@@ -242,6 +246,8 @@ def stream_chat_completion(
         ],
         "usage": usage,
     }
+    if response_id is not None:
+        response_json["id"] = response_id
     return {
         "response": response_json,
         "assistant_text": assistant,

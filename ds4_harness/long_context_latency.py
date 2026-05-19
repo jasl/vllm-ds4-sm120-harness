@@ -253,6 +253,7 @@ def _run_stream_request(
             "cached_prompt_tokens": _cached_prompt_tokens(usage),
             "chunks": result.get("chunks"),
             "finish_reason": _finish_reason(response),
+            "response_id": response.get("id") if response.get("id") else None,
             "prompt_sha256": prompt.sha256,
             "line_count": prompt.line_count,
             "prompt_file": prompt.prompt_file,

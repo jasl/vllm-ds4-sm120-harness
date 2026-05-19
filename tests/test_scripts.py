@@ -99,6 +99,7 @@ def test_long_context_latency_matrix_wrapper_records_runtime_artifacts():
     )
 
     assert 'LONG_CONTEXT_LATENCY_LINE_COUNTS="${LONG_CONTEXT_LATENCY_LINE_COUNTS-1900}"' in script
+    assert 'LONG_CONTEXT_LATENCY_CONCURRENCY="${LONG_CONTEXT_LATENCY_CONCURRENCY:-1,2,3,4}"' in script
     assert "long-context-latency-matrix" in script
     assert '--json-output "${OUT_DIR}/long_context_latency_matrix.json"' in script
     assert '--markdown-output "${OUT_DIR}/long_context_latency_matrix.md"' in script
@@ -270,7 +271,7 @@ def test_env_sample_and_local_env_are_configured():
         "SERVE_PREFIX_CACHE_MODE": "auto",
         "RUN_LONG_CONTEXT_LATENCY_MATRIX": "1",
         "LONG_CONTEXT_LATENCY_LINE_COUNTS": "2000",
-        "LONG_CONTEXT_LATENCY_CONCURRENCY": "4",
+        "LONG_CONTEXT_LATENCY_CONCURRENCY": "3,4",
         "LONG_CONTEXT_LATENCY_CACHE_MODES": "cold",
         "LONG_CONTEXT_LATENCY_REPEAT_COUNT": "3",
         "LONG_CONTEXT_LATENCY_MAX_TOKENS": "128",
@@ -617,7 +618,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"' in script
     assert 'RUN_LONG_CONTEXT_LATENCY_MATRIX="${RUN_LONG_CONTEXT_LATENCY_MATRIX:-1}"' in script
     assert 'LONG_CONTEXT_LATENCY_LINE_COUNTS="${LONG_CONTEXT_LATENCY_LINE_COUNTS:-2000}"' in script
-    assert 'LONG_CONTEXT_LATENCY_CONCURRENCY="${LONG_CONTEXT_LATENCY_CONCURRENCY:-4}"' in script
+    assert 'LONG_CONTEXT_LATENCY_CONCURRENCY="${LONG_CONTEXT_LATENCY_CONCURRENCY:-3,4}"' in script
     assert 'LONG_CONTEXT_LATENCY_CACHE_MODES="${LONG_CONTEXT_LATENCY_CACHE_MODES:-cold}"' in script
     assert 'LONG_CONTEXT_LATENCY_REPEAT_COUNT="${LONG_CONTEXT_LATENCY_REPEAT_COUNT:-3}"' in script
     assert 'LONG_CONTEXT_LATENCY_MAX_TOKENS="${LONG_CONTEXT_LATENCY_MAX_TOKENS:-128}"' in script

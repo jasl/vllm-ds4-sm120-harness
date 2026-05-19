@@ -70,6 +70,9 @@ Add or run focused vLLM tests when the touched code can affect these paths:
 - MTP scheduler health: run no-MTP and MTP as separate server lifecycles and
   keep a guarded C>1 benchmark or eval shape to detect server hangs, shared
   memory broadcast stalls, or zero generation throughput.
+- Long-context MTP reliability: keep the synthetic 64K-class latency matrix at
+  least at C=3 and C=4. C=3 is the current smallest reproduced failure
+  boundary; C=4 preserves the existing pressure point for regression checks.
 
 Reference or fallback implementations are useful in tests. Do not leave slow
 Python loops or fallback paths as the intended production path unless the vLLM

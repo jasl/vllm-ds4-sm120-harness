@@ -768,7 +768,7 @@ current required 128K-class GB10 sentinel.
 The baseline driver also runs `long_context_latency_matrix` by default with
 `RUN_LONG_CONTEXT_LATENCY_MATRIX=1`,
 `LONG_CONTEXT_LATENCY_LINE_COUNTS=2000`,
-`LONG_CONTEXT_LATENCY_CONCURRENCY=4`,
+`LONG_CONTEXT_LATENCY_CONCURRENCY=3,4`,
 `LONG_CONTEXT_LATENCY_CACHE_MODES=cold`,
 `LONG_CONTEXT_LATENCY_REPEAT_COUNT=3`, and
 `LONG_CONTEXT_LATENCY_MAX_TOKENS=128`. This is the small-concurrency

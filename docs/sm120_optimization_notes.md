@@ -286,6 +286,44 @@ tokens are accepted and the request advances along the multi-token MTP
 verification trajectory. Do not promote synthetic rejection as an optimization:
 it removes the MTP speedup and exists only as a diagnostic control.
 
+Additional 62K-token runs narrowed the active failure boundary:
+
+| Variant | Requests | Failures | Mean TTFT | Mean Elapsed | Decision |
+| --- | ---: | ---: | ---: | ---: | --- |
+| MTP=2, C=1 | 3 | 0 | 13.083 s | 13.616 s | pass |
+| MTP=2, C=2 | 6 | 0 | 20.237 s | 27.011 s | pass |
+| MTP=2, C=3 | 9 | 1 | 27.586 s | 39.729 s | fail |
+
+This confirms the active bug is not single-stream long-context retrieval. It
+starts once the small-concurrency batch reaches about three concurrent
+long-context requests.
+
+One targeted code experiment forced DeepSeek V4 sparse indexer decode away
+from the native `(B, next_n)` path and into the flattened decode path for
+multi-token spec decode. It did not fix the correctness miss:
+
+| Variant | Requests | Failures | Mean TTFT | Mean Elapsed | Decision |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Flattened indexer decode, C=3 | 9 | 2 | 27.228 s | 39.204 s | reject |
+| Flattened indexer decode, C=4 | 12 | 1 | 34.497 s | 49.254 s | reject |
+
+The code change was removed. The failure is therefore not explained solely by
+the native sparse-indexer multi-token decode layout.
+
+Request-level tracing of a failing C=3 run provided a more precise location.
+The failed request answered `beta-cobalt-29` instead of `beta-quartz-29`. At
+the divergence step, the draft proposed token ids for `beta-qu...`; target
+verification accepted the first token `beta` but rejected the second draft
+token and selected the token for `-c` instead. The next step then continued
+with `obalt-29`.
+
+That trace means the failure is not an unchecked draft-token acceptance. The
+target verification logits are already wrong for the second verification
+position after the first accepted draft token, in a small-concurrency
+long-context batch. Keep the investigation on target multi-token verification:
+positions, slot mapping, KV writes/reads, and sparse context selection for
+query positions after the first accepted token.
+
 One setup mistake is also recorded so it is not reused as evidence: a
 CUDA-graph-disabled run with line count 1000 passed 12 of 12 requests, but the
 prompt was only about 31K tokens, not the intended 64K shape.
@@ -360,17 +398,17 @@ Ideas to avoid carrying over blindly:
   backup branch before reverting it.
 - Fixed gates for promotion:
   - short-context latency must not regress,
-  - 64K/128K long-context latency at C=1/2/4 must not regress,
+  - 64K/128K long-context latency at C=1/2/3/4 must not regress,
   - GSM8K `exact_match_flexible` must not drop below the fixed baseline,
   - correctness/unit smoke for the touched vLLM path must pass.
 
 ## Near-Term Work Queue
 
-1. Investigate the MTP=2 64K C=4 correctness miss inside the accepted
-   multi-token scheduling/verification trajectory. The next useful evidence is
-   request-level tracing of accepted token positions, draft token ids, target
-   token ids, and output offsets around the failed middle marker, with no-MTP
-   and synthetic-reject-0 as controls.
+1. Treat the MTP=2 64K C=3/4 correctness miss as a bug rather than continuing
+   broad history bisection. The next useful evidence is target-verification
+   metadata at the failed second verification position: input token ids,
+   positions, slot mapping, logits indices, KV cache slots, and sparse top-k
+   context indices, with no-MTP and synthetic-reject-0 as controls.
 2. Profile the active FP8 MQA logits Triton path with NCU on representative
    late-context 128K launches.
 3. Sweep small tile/register-pressure changes around `BLOCK_M`, `BLOCK_N`,

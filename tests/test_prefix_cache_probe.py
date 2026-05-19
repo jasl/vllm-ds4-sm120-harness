@@ -4,6 +4,7 @@ from ds4_harness import cli
 from ds4_harness.prefix_cache_probe import (
     build_prefix_cache_request,
     run_prefix_cache_probe,
+    stream_chat_completion,
     write_prefix_cache_probe_markdown,
 )
 
@@ -24,6 +25,41 @@ def test_prefix_cache_requests_share_session_prefix_but_not_session_body():
     assert cold_messages[-1] != warm_messages[-1]
     assert "SESSION-A-CODE-17" in cold["required_terms"]
     assert "SESSION-B-CODE-17" in other["required_terms"]
+
+
+def test_stream_chat_completion_preserves_stream_response_id(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return iter(
+                [
+                    b'data: {"id":"chatcmpl-stream-1","choices":[{"delta":{"content":"hello"}}]}\n',
+                    b'data: {"id":"chatcmpl-stream-1","choices":[{"delta":{"content":" world"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2}}\n',
+                    b"data: [DONE]\n",
+                ]
+            )
+
+    def fake_urlopen(request, timeout):
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "ds4_harness.prefix_cache_probe.urllib.request.urlopen", fake_urlopen
+    )
+
+    result = stream_chat_completion(
+        "http://127.0.0.1:8000",
+        "/v1/chat/completions",
+        {"model": "model", "messages": []},
+        30,
+    )
+
+    assert result["response"]["id"] == "chatcmpl-stream-1"
+    assert result["assistant_text"] == "hello world"
 
 
 def test_run_prefix_cache_probe_records_solo_and_interleaved_requests():

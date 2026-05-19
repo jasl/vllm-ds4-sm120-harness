@@ -16,6 +16,7 @@ def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
         cached_tokens = 0 if metadata["cache_mode"] == "cold" else 39000
         return {
             "response": {
+                "id": f"chatcmpl-{metadata['cache_mode']}-{metadata['request_index']}",
                 "choices": [
                     {
                         "message": {
@@ -66,6 +67,7 @@ def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
     ]
     assert len({json.dumps(payload["messages"]) for payload in cold_payloads}) == 3
     first_request = row["requests"][0]
+    assert first_request["response_id"]
     assert first_request["assistant_text_sha256"]
     assert first_request["assistant_text_length"] == len(
         "alpha-cobalt-17 beta-quartz-29 gamma-onyx-43"
