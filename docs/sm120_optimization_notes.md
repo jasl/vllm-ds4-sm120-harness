@@ -32,7 +32,9 @@ not at a simple GDDR7 bandwidth ceiling:
 
 - The large step change came from avoiding the slow fallback around FP8 MQA
   logits and top-k. The 127K C=1 cold-prefill mean moved from roughly 60.8 s to
-  the high-36 s range after the direct Triton logits plus row-top-k path.
+  the high-36 s range after the direct Triton logits plus row-top-k path, then
+  into the high-20 s range for the current 124K C=1 repeat gate after the
+  retained FP8 MQA logits tile updates.
 - Widening the direct FP8 MQA logits Triton tile from `BLOCK_N=64` to
   `BLOCK_N=128` was a small positive step and is currently kept.
 - NCU observations for late-context FP8 MQA logits show register / occupancy /
@@ -131,6 +133,49 @@ after the new specialization. The second short request was in the expected
 steady-state range. Do not count the first-request compile spike as a model
 latency regression, but keep startup warmup in mind before presenting
 user-facing cold-start numbers.
+
+### FP8 MQA Logits `BLOCK_M=64`
+
+After the `BLOCK_M=32` variants were rejected, a narrower follow-up retested
+only the direct FP8 MQA logits row tile while keeping `BLOCK_N=128`,
+`BLOCK_D=64`, and `num_warps=4`. The promoted change widens the wrapper's
+M tile from 16 to 64. The standalone 131K-KV microbench showed the same
+direction across small and large query-row counts, with sampled outputs
+matching the `BLOCK_M=16` result:
+
+| Query Rows | `BLOCK_M=16` Mean | `BLOCK_M=64` Mean | Delta |
+| ---: | ---: | ---: | ---: |
+| 128 | 1.672 ms | 1.294 ms | -22.6% |
+| 256 | 3.266 ms | 2.542 ms | -22.2% |
+| 512 | 6.513 ms | 5.032 ms | -22.7% |
+| 1024 | 13.022 ms | 10.020 ms | -23.0% |
+
+Artifact labels: `codex_mqa_tile_sweep_20260520040025` and
+`codex_mqa_blockm_followup_20260520040105`.
+
+Because prior larger-row experiments had failed promotion despite good
+microbench numbers, this variant was checked with a paired same-host C=1
+repeat against the current `BLOCK_M=16` baseline:
+
+| Prompt Shape | `BLOCK_M=16` Mean TTFT | `BLOCK_M=64` Mean TTFT | Delta |
+| --- | ---: | ---: | ---: |
+| 59K synthetic, C=1 repeat=3 | 11.413 s | 11.097 s | -2.8% |
+| 124K synthetic, C=1 repeat=3 | 29.868 s | 28.042 s | -6.1% |
+
+Artifact labels: `codex_blockm16_c1_repeat_baseline/20260520041627` and
+`codex_blockm64_c1_repeat/20260520041210`.
+
+Additional promotion gates passed:
+
+| Gate | Result |
+| --- | --- |
+| Mixed 4K / 59K / 124K C=1/2/4 matrix | 9 groups, 0 failures, with FULL decode graph capture retained |
+| Short HF/MT-Bench C=1/2/4, 16 prompts | all 16/16 successful; C=4 output tok/s 332.53, mean TTFT 158.92 ms |
+| GSM8K limit-200, 5-shot, temperature 0 | `exact_match_flexible=0.965`, `exact_match_strict=0.940` |
+| SM120 fallback tests | `tests/v1/attention/test_sm120_deepgemm_fallbacks.py` passed |
+
+Promotion artifact labels: `codex_blockm64_latency_gate/20260520040358` and
+`codex_blockm64_short_gsm8k_gate/20260520042117`.
 
 ### DeepSeek V4 MTP C=4 FULL Graph Stability Fix
 
