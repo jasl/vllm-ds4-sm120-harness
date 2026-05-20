@@ -176,6 +176,16 @@ tool-call turn.
   - use prefix-cache warm mode when the question is pure decode behavior, and
     cold mode when the question is scheduler interaction between long prefill
     and decode
+- Needle position matrix:
+  - runs a synthetic NIAH-style correctness probe across configurable context
+    lengths and needle positions, including the 15-position sequence used by
+    Inspect Evals-style runs
+  - targets single-connection long-context retrieval, especially tail positions
+    such as 92% and 100%, where a model can miss an answer even when the
+    runtime path is otherwise healthy
+  - is disabled by default; enable it with `RUN_NEEDLE_POSITION_MATRIX=1` or
+    run `scripts/run_needle_position_matrix.sh` against an already-started
+    server
 - SM120 optimization notes:
   - keep the current hardware assumptions and tuning priorities in
     [`docs/sm120_optimization_notes.md`](docs/sm120_optimization_notes.md)
@@ -193,9 +203,10 @@ tool-call turn.
 - Optional continuous streaming-pressure matrix:
   - runs several streaming-pressure cases back-to-back against one live server,
     preserving GPU/runtime telemetry across the whole pressure window
-  - defaults to short C=4 plus long-context C=2/C=4 cases; override
-    `STREAMING_PRESSURE_MATRIX_CASE_SPECS` to add C=8/24/32, longer rounds, or
-    hardware-specific shapes
+  - defaults to short C=4, the issue #7-like 5K prompt / 128 output / C=4
+    MTP stability shape, and long-context C=2/C=4 cases; override
+    `STREAMING_PRESSURE_MATRIX_CASE_SPECS` to add C=8/24/32, longer rounds,
+    or hardware-specific shapes
   - is disabled by default; enable it with `RUN_STREAMING_PRESSURE_MATRIX=1`
     when comparing hardware or validating sustained high-pressure behavior
 
@@ -216,6 +227,10 @@ Use the harness as a layered gate, not as one monolithic command:
 - Long-context retrieval: run `long-context-probe` when a change may affect
   KV cache, indexer cache, chunking, or long-prefill behavior. It validates
   end-to-end sentinel retrieval rather than dumping raw KV tensors.
+- Needle position retrieval: run `needle-position-matrix` when a user reports
+  NIAH/needle misses at specific context positions. Treat failures as
+  correctness evidence to investigate, but separate them from decode-kernel
+  throughput cliffs unless the runtime telemetry also shows stalls.
 - Public accuracy: run the optional `lm_eval` GSM8K phase on reference hosts
   and promotion candidates. This provides a public scalar correctness signal
   similar to the ROCm DeepSeek V4 support PRs, while oracle comparison remains

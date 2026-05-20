@@ -707,6 +707,10 @@ Ideas to avoid carrying over blindly:
 - Fixed gates for promotion:
   - short-context latency must not regress,
   - 64K/128K long-context latency at C=1/2/3/4 must not regress,
+  - single-connection NIAH-style needle retrieval should include tail positions
+    such as 92% and 100% when long-context correctness is in scope,
+  - MTP small-context continuous pressure should include the issue #7-like
+    5K prompt / 128 output / C=4 shape before treating the branch as stable,
   - deterministic GSM8K `exact_match_flexible` must not drop below the fixed
     baseline; use `--gen_kwargs temperature=0`,
   - DeepSeek V4 MTP fixes must preserve `FULL_AND_PIECEWISE`; do not skip

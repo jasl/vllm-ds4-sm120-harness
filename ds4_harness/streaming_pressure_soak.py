@@ -26,6 +26,7 @@ DEFAULT_MAX_ELAPSED_SECONDS = 300.0
 DEFAULT_MATRIX_CASE_NAME = "streaming_pressure_continuous_matrix"
 DEFAULT_MATRIX_CASE_SPECS = (
     "short_c4:4:3:1200:128",
+    "issue7_5k_c4:4:3:192:128",
     "long_c2:2:2:4000:128",
     "long_c4:4:2:2400:128",
 )

@@ -54,6 +54,7 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_prefix_cache_probe.sh",
         "run_long_context_latency_matrix.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
     ):
@@ -134,6 +135,22 @@ def test_long_context_decode_concurrency_wrapper_targets_c1_c2_decode():
     assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
 
 
+def test_needle_position_matrix_wrapper_targets_tail_correctness():
+    script = (ROOT / "scripts" / "run_needle_position_matrix.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "needle-position-matrix" in script
+    assert 'NEEDLE_POSITION_MATRIX_POSITIONS="${NEEDLE_POSITION_MATRIX_POSITIONS:-0,7,14,21,28,35,42,50,57,64,71,78,85,92,100}"' in script
+    assert '--json-output "${OUT_DIR}/needle_position_matrix.json"' in script
+    assert '--markdown-output "${OUT_DIR}/needle_position_matrix.md"' in script
+    assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+    assert "start_gpu_stats" in script
+    assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+    assert "start_runtime_stats" in script
+    assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
 def test_b200_baseline_command_file_records_sparse_mla_tuning_env():
     script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
         encoding="utf-8"
@@ -167,6 +184,7 @@ def test_streaming_pressure_matrix_wrapper_records_continuous_pressure_cases():
     assert "streaming-pressure-matrix" in script
     assert "STREAMING_PRESSURE_MATRIX_CASE_SPECS" in script
     assert "short_c4:4:3:1200:128" in script
+    assert "issue7_5k_c4:4:3:192:128" in script
     assert "long_c2:2:2:4000:128" in script
     assert '--json-output "${OUT_DIR}/streaming_pressure_matrix.json"' in script
     assert '--markdown-output "${OUT_DIR}/streaming_pressure_matrix.md"' in script
@@ -186,6 +204,17 @@ def test_acceptance_streaming_pressure_soak_is_opt_in():
     assert 'if [[ "${RUN_STREAMING_PRESSURE_SOAK}" == "1"' in script
     assert "streaming-pressure-soak" in script
     assert '"${OUT_DIR}/streaming_pressure_soak.json"' in script
+
+
+def test_acceptance_needle_position_matrix_is_opt_in():
+    script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
+    sample = (ROOT / "env.sample").read_text(encoding="utf-8")
+
+    assert "RUN_NEEDLE_POSITION_MATRIX=0" in sample
+    assert 'RUN_NEEDLE_POSITION_MATRIX="${RUN_NEEDLE_POSITION_MATRIX:-0}"' in script
+    assert 'if [[ "${RUN_NEEDLE_POSITION_MATRIX}" == "1"' in script
+    assert "needle-position-matrix" in script
+    assert '"${OUT_DIR}/needle_position_matrix.json"' in script
 
 
 def test_scripts_default_to_branch_timestamped_artifacts_dir():
@@ -255,6 +284,7 @@ def test_env_sample_and_local_env_are_configured():
         "VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE",
         "VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE",
         "RUN_LONG_CONTEXT_LATENCY_MATRIX",
+        "RUN_NEEDLE_POSITION_MATRIX",
         "LONG_CONTEXT_LATENCY_LINE_COUNTS",
         "LONG_CONTEXT_LATENCY_CONCURRENCY",
         "LONG_CONTEXT_LATENCY_CACHE_MODES",
@@ -267,6 +297,7 @@ def test_env_sample_and_local_env_are_configured():
         "STREAMING_PRESSURE_ROUND_COUNT",
         "STREAMING_PRESSURE_LINE_COUNT",
         "STREAMING_PRESSURE_MATRIX_CASE_SPECS",
+        "NEEDLE_POSITION_MATRIX_POSITIONS",
         "STREAMING_PRESSURE_THINKING_MODE",
         "GENERATION_PROMPT_ROOT",
         "GENERATION_LANGUAGES",
@@ -311,6 +342,7 @@ def test_env_sample_and_local_env_are_configured():
         "SERVE_USE_FP4_INDEXER_CACHE": "auto",
         "SERVE_PREFIX_CACHE_MODE": "auto",
         "RUN_LONG_CONTEXT_LATENCY_MATRIX": "1",
+        "RUN_NEEDLE_POSITION_MATRIX": "0",
         "LONG_CONTEXT_LATENCY_LINE_COUNTS": "2000",
         "LONG_CONTEXT_LATENCY_CONCURRENCY": "3,4",
         "LONG_CONTEXT_LATENCY_CACHE_MODES": "cold",
@@ -567,6 +599,7 @@ def test_scripts_capture_gpu_stats_to_artifacts():
         "run_lm_eval.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
     ):
@@ -597,6 +630,7 @@ def test_scripts_capture_vllm_runtime_stats_to_artifacts():
         "run_lm_eval.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
     ):
@@ -626,6 +660,7 @@ def test_scripts_collect_vllm_official_env_to_artifacts():
         "run_kv_layout_probe.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
     ):
@@ -1146,6 +1181,7 @@ def test_scripts_have_valid_bash_syntax():
         "run_b200_baseline.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
         "generate_baseline_bundle.sh",

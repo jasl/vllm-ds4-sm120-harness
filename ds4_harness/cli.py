@@ -70,6 +70,14 @@ from ds4_harness.long_context_latency import (
     run_long_context_latency_matrix,
     write_long_context_latency_markdown,
 )
+from ds4_harness.needle_context_probe import (
+    DEFAULT_CASE_NAME as DEFAULT_NEEDLE_POSITION_CASE_NAME,
+    DEFAULT_LINE_COUNTS as DEFAULT_NEEDLE_POSITION_LINE_COUNTS,
+    DEFAULT_MAX_TOKENS as DEFAULT_NEEDLE_POSITION_MAX_TOKENS,
+    DEFAULT_POSITIONS as DEFAULT_NEEDLE_POSITION_POSITIONS,
+    run_needle_position_matrix,
+    write_needle_position_matrix_markdown,
+)
 from ds4_harness.oracle import (
     attach_prompt_token_ids,
     compare_response,
@@ -952,6 +960,57 @@ def _cmd_long_context_latency_matrix(args: argparse.Namespace) -> int:
     print(
         f"{status} {row.get('case')} variant={args.variant}: "
         f"groups={len(summary)} failures={failures}"
+    )
+    return 0 if row.get("ok") else 1
+
+
+def _cmd_needle_position_matrix(args: argparse.Namespace) -> int:
+    try:
+        line_counts = _parse_int_csv(args.line_counts, option="--line-counts")
+        positions = _parse_int_csv(args.positions, option="--positions")
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+        row = run_needle_position_matrix(
+            base_url=args.base_url,
+            model=args.model,
+            variant=args.variant,
+            case_name=args.case_name,
+            line_counts=line_counts,
+            positions=positions,
+            repeat_count=args.repeat_count,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            thinking_mode=args.thinking_mode,
+            timeout=args.timeout,
+            headers=headers,
+            extra_body=extra_body,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_needle_position_matrix_markdown(args.markdown_output, row)
+
+    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    status = "PASS" if row.get("ok") else "FAIL"
+    print(
+        f"{status} {row.get('case')} variant={args.variant}: "
+        f"requests={summary.get('request_count', 'n/a')} "
+        f"failures={summary.get('failure_count', 'n/a')} "
+        f"positions={summary.get('positions', 'n/a')}"
     )
     return 0 if row.get("ok") else 1
 
@@ -1867,6 +1926,35 @@ def build_parser() -> argparse.ArgumentParser:
     long_latency.add_argument("--json-output", type=Path)
     long_latency.add_argument("--markdown-output", type=Path)
     long_latency.set_defaults(func=_cmd_long_context_latency_matrix)
+
+    needle_matrix = subparsers.add_parser("needle-position-matrix")
+    needle_matrix.add_argument("--base-url", default="http://127.0.0.1:8000")
+    needle_matrix.add_argument("--model", default=DEFAULT_MODEL)
+    needle_matrix.add_argument("--variant", default="manual")
+    needle_matrix.add_argument("--case-name", default=DEFAULT_NEEDLE_POSITION_CASE_NAME)
+    needle_matrix.add_argument(
+        "--line-counts",
+        default=",".join(str(value) for value in DEFAULT_NEEDLE_POSITION_LINE_COUNTS),
+        help="comma-separated synthetic line counts",
+    )
+    needle_matrix.add_argument(
+        "--positions",
+        default=",".join(str(value) for value in DEFAULT_NEEDLE_POSITION_POSITIONS),
+        help="comma-separated needle positions from 0 to 100",
+    )
+    needle_matrix.add_argument("--repeat-count", type=int, default=1)
+    needle_matrix.add_argument(
+        "--max-tokens", type=int, default=DEFAULT_NEEDLE_POSITION_MAX_TOKENS
+    )
+    needle_matrix.add_argument("--temperature", type=float, default=0.0)
+    needle_matrix.add_argument("--top-p", type=float, default=1.0)
+    needle_matrix.add_argument("--thinking-mode", default="non-thinking")
+    needle_matrix.add_argument("--timeout", type=float, default=3600.0)
+    needle_matrix.add_argument("--api-key-env")
+    needle_matrix.add_argument("--extra-body-json")
+    needle_matrix.add_argument("--json-output", type=Path)
+    needle_matrix.add_argument("--markdown-output", type=Path)
+    needle_matrix.set_defaults(func=_cmd_needle_position_matrix)
 
     streaming_soak = subparsers.add_parser("streaming-pressure-soak")
     streaming_soak.add_argument("--base-url", default="http://127.0.0.1:8000")
