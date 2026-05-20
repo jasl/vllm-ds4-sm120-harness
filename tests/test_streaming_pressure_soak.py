@@ -68,6 +68,8 @@ def test_run_streaming_pressure_soak_records_concurrent_rounds():
             "assistant_text": required,
             "ttft_seconds": 0.1 * round_index,
             "elapsed_seconds": 0.5 + round_index,
+            "inter_chunk_seconds": [0.05 * round_index, 0.1 * round_index],
+            "time_to_last_token_seconds": 0.3 * round_index,
             "chunks": round_index + 1,
         }
 
@@ -87,6 +89,12 @@ def test_run_streaming_pressure_soak_records_concurrent_rounds():
     assert row["summary"]["cached_tokens_total"] == 2100
     assert row["summary"]["max_ttft_seconds"] == 0.2
     assert row["summary"]["total_chunks"] == 15
+    assert row["summary"]["inter_chunk_sample_count"] == 12
+    assert row["summary"]["avg_inter_chunk_seconds"] == 0.1125
+    assert row["summary"]["p95_inter_chunk_seconds"] == 0.2
+    assert row["summary"]["p99_inter_chunk_seconds"] == 0.2
+    assert row["summary"]["max_time_to_last_token_seconds"] == 0.6
+    assert row["requests"][0]["p95_inter_chunk_seconds"] in {0.1, 0.2}
     assert set(calls) == {
         (1, 0),
         (1, 1),
@@ -155,6 +163,11 @@ def test_streaming_pressure_soak_markdown_includes_runtime_guidance(tmp_path):
                 "ok": True,
                 "ttft_seconds": 0.2,
                 "elapsed_seconds": 1.5,
+                "inter_chunk_sample_count": 2,
+                "p95_inter_chunk_seconds": 0.1,
+                "p99_inter_chunk_seconds": 0.1,
+                "max_inter_chunk_seconds": 0.1,
+                "time_to_last_token_seconds": 0.4,
                 "prompt_tokens": 1000,
                 "cached_prompt_tokens": 700,
                 "chunks": 2,
@@ -170,6 +183,7 @@ def test_streaming_pressure_soak_markdown_includes_runtime_guidance(tmp_path):
     assert "# Streaming Pressure Soak" in report
     assert "KV/runtime stats" in report
     assert "cached_prompt_tokens" in report
+    assert "P95 inter-chunk seconds" in report
 
 
 def test_streaming_pressure_soak_cli_writes_json_and_markdown(monkeypatch, tmp_path):
@@ -236,6 +250,8 @@ def test_streaming_pressure_matrix_runs_multiple_case_specs():
             "assistant_text": required,
             "ttft_seconds": 0.5,
             "elapsed_seconds": 2.0,
+            "inter_chunk_seconds": [0.1, 0.2],
+            "time_to_last_token_seconds": 1.5,
             "chunks": 3,
         }
 
@@ -256,6 +272,8 @@ def test_streaming_pressure_matrix_runs_multiple_case_specs():
     assert row["summary"]["request_count"] == 5
     assert row["summary"]["failure_count"] == 0
     assert row["summary"]["slow_case_count"] == 0
+    assert row["summary"]["p95_inter_chunk_seconds"] == 0.2
+    assert row["cases"][0]["summary"]["inter_chunk_sample_count"] == 8
     assert [case["matrix_case"]["name"] for case in row["cases"]] == [
         "short_c2",
         "long_c1",
@@ -309,6 +327,8 @@ def test_streaming_pressure_matrix_markdown_includes_case_table(tmp_path):
                     "suspect_slow_elapsed": False,
                     "max_ttft_seconds": 0.5,
                     "max_elapsed_seconds": 2.0,
+                    "p95_inter_chunk_seconds": 0.2,
+                    "p99_inter_chunk_seconds": 0.2,
                 },
             }
         ],
@@ -320,6 +340,7 @@ def test_streaming_pressure_matrix_markdown_includes_case_table(tmp_path):
     report = output.read_text(encoding="utf-8")
     assert "# Streaming Pressure Matrix" in report
     assert "| short_c2 | 2 | 1 | 128 | 16 | yes |" in report
+    assert "P95 ITL s" in report
 
 
 def test_streaming_pressure_matrix_cli_writes_json_and_markdown(monkeypatch, tmp_path):

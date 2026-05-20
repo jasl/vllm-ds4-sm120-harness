@@ -394,6 +394,8 @@ def _run_request(
         elapsed = result.get("elapsed_seconds")
         if not isinstance(elapsed, int | float):
             elapsed = time.monotonic() - started
+        inter_chunk_seconds = _numeric_sequence(result.get("inter_chunk_seconds"))
+        inter_chunk_stats = _inter_chunk_stats(inter_chunk_seconds)
         row = {
             "phase": phase,
             "worker": request["worker"],
@@ -407,6 +409,9 @@ def _run_request(
             "total_tokens": usage.get("total_tokens"),
             "cached_prompt_tokens": _cached_prompt_tokens(usage),
             "chunks": result.get("chunks"),
+            "time_to_last_token_seconds": result.get("time_to_last_token_seconds"),
+            "inter_chunk_seconds": inter_chunk_seconds,
+            **inter_chunk_stats,
             "finish_reason": _finish_reason(response),
             "prompt_sha256": request["prompt_sha256"],
             "line_count": request["line_count"],
@@ -429,6 +434,9 @@ def _run_request(
             "total_tokens": None,
             "cached_prompt_tokens": None,
             "chunks": 0,
+            "time_to_last_token_seconds": None,
+            "inter_chunk_seconds": [],
+            **_inter_chunk_stats([]),
             "finish_reason": None,
             "prompt_sha256": request["prompt_sha256"],
             "line_count": request["line_count"],
@@ -457,6 +465,43 @@ def _round_or_none(value: float | None) -> float | None:
     return None if value is None else round(value, 6)
 
 
+def _numeric_sequence(value: Any) -> list[float]:
+    if not isinstance(value, list | tuple):
+        return []
+    parsed: list[float] = []
+    for item in value:
+        number = _as_float(item)
+        if number is not None:
+            parsed.append(number)
+    return parsed
+
+
+def _percentile_nearest_rank(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    if not 0 < percentile <= 1:
+        raise ValueError("percentile must be > 0 and <= 1")
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, int(len(ordered) * percentile + 0.999999) - 1))
+    return ordered[index]
+
+
+def _inter_chunk_stats(samples: list[float]) -> Json:
+    return {
+        "inter_chunk_sample_count": len(samples),
+        "avg_inter_chunk_seconds": _round_or_none(
+            sum(samples) / len(samples) if samples else None
+        ),
+        "p95_inter_chunk_seconds": _round_or_none(
+            _percentile_nearest_rank(samples, 0.95)
+        ),
+        "p99_inter_chunk_seconds": _round_or_none(
+            _percentile_nearest_rank(samples, 0.99)
+        ),
+        "max_inter_chunk_seconds": _round_or_none(max(samples) if samples else None),
+    }
+
+
 def _summarize_requests(
     rows: list[Json],
     *,
@@ -474,6 +519,18 @@ def _summarize_requests(
         if value is not None
     ]
     chunks = [_as_int(row.get("chunks")) or 0 for row in rows]
+    inter_chunk_samples = [
+        sample
+        for row in rows
+        for sample in _numeric_sequence(row.get("inter_chunk_seconds"))
+    ]
+    time_to_last_token = [
+        value
+        for value in (
+            _as_float(row.get("time_to_last_token_seconds")) for row in rows
+        )
+        if value is not None
+    ]
     prompt_tokens = [
         value
         for value in (_as_int(row.get("prompt_tokens")) for row in rows)
@@ -511,10 +568,14 @@ def _summarize_requests(
         "avg_elapsed_seconds": _round_or_none(
             sum(elapsed) / len(elapsed) if elapsed else None
         ),
+        "max_time_to_last_token_seconds": _round_or_none(
+            max(time_to_last_token) if time_to_last_token else None
+        ),
         "max_ttft_seconds_threshold": max_ttft_seconds,
         "max_elapsed_seconds_threshold": max_elapsed_seconds,
         "suspect_slow_ttft": suspect_slow_ttft,
         "suspect_slow_elapsed": suspect_slow_elapsed,
+        **_inter_chunk_stats(inter_chunk_samples),
     }
 
 
@@ -701,6 +762,16 @@ def run_streaming_pressure_matrix(
     max_elapsed = _max_float(
         [summary.get("max_elapsed_seconds") for summary in summaries]
     )
+    inter_chunk_samples = [
+        sample
+        for case in cases
+        for request in case.get("requests", [])
+        if isinstance(request, dict)
+        for sample in _numeric_sequence(request.get("inter_chunk_seconds"))
+    ]
+    max_time_to_last_token = _max_float(
+        [summary.get("max_time_to_last_token_seconds") for summary in summaries]
+    )
     summary = {
         "case_count": len(cases),
         "ok_case_count": len(cases) - failed_case_count,
@@ -722,6 +793,8 @@ def run_streaming_pressure_matrix(
         ),
         "max_ttft_seconds": _round_or_none(max_ttft),
         "max_elapsed_seconds": _round_or_none(max_elapsed),
+        "max_time_to_last_token_seconds": _round_or_none(max_time_to_last_token),
+        **_inter_chunk_stats(inter_chunk_samples),
     }
     return {
         "case": case_name,
@@ -771,6 +844,11 @@ def write_streaming_pressure_soak_markdown(path: Path, row: Json) -> None:
         f"- Cached prompt tokens total: `{summary.get('cached_tokens_total', 'n/a')}`",
         f"- Max TTFT seconds: `{_fmt(summary.get('max_ttft_seconds'))}`",
         f"- Max elapsed seconds: `{_fmt(summary.get('max_elapsed_seconds'))}`",
+        f"- Max time-to-last-token seconds: `{_fmt(summary.get('max_time_to_last_token_seconds'))}`",
+        f"- P95 inter-chunk seconds: `{_fmt(summary.get('p95_inter_chunk_seconds'))}`",
+        f"- P99 inter-chunk seconds: `{_fmt(summary.get('p99_inter_chunk_seconds'))}`",
+        f"- Max inter-chunk seconds: `{_fmt(summary.get('max_inter_chunk_seconds'))}`",
+        f"- Inter-chunk samples: `{summary.get('inter_chunk_sample_count', 'n/a')}`",
         f"- Total chunks: `{summary.get('total_chunks', 'n/a')}`",
         f"- Suspect slow TTFT: `{summary.get('suspect_slow_ttft', 'n/a')}`",
         f"- Suspect slow elapsed: `{summary.get('suspect_slow_elapsed', 'n/a')}`",
@@ -782,13 +860,15 @@ def write_streaming_pressure_soak_markdown(path: Path, row: Json) -> None:
             "`running_requests_max`, `gpu_kv_cache_usage_percent_*`, "
             "`prefix_cache_hit_rate_percent_delta`, and `preemptions_delta`. "
             "This soak records streaming TTFT, elapsed time, chunk counts, and "
-            "`cached_prompt_tokens` for every concurrent request."
+            "`cached_prompt_tokens` for every concurrent request. Inter-chunk "
+            "latency is measured between content-bearing streamed chunks; use "
+            "it as an ITL proxy, not as exact tokenizer-level timing."
         ),
         "",
         "## Requests",
         "",
-        "| Phase | Round | Worker | OK | TTFT s | Elapsed s | Prompt tokens | cached_prompt_tokens | Chunks | Detail |",
-        "| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| Phase | Round | Worker | OK | TTFT s | Last token s | P95 ITL s | P99 ITL s | Max ITL s | Elapsed s | Prompt tokens | cached_prompt_tokens | Chunks | Detail |",
+        "| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for request in row.get("requests", []):
         if not isinstance(request, dict):
@@ -799,6 +879,10 @@ def write_streaming_pressure_soak_markdown(path: Path, row: Json) -> None:
             f"{_fmt_int(request.get('worker'))} | "
             f"{'yes' if request.get('ok') else 'no'} | "
             f"{_fmt(request.get('ttft_seconds'))} | "
+            f"{_fmt(request.get('time_to_last_token_seconds'))} | "
+            f"{_fmt(request.get('p95_inter_chunk_seconds'))} | "
+            f"{_fmt(request.get('p99_inter_chunk_seconds'))} | "
+            f"{_fmt(request.get('max_inter_chunk_seconds'))} | "
             f"{_fmt(request.get('elapsed_seconds'))} | "
             f"{_fmt_int(request.get('prompt_tokens'))} | "
             f"{_fmt_int(request.get('cached_prompt_tokens'))} | "
@@ -828,11 +912,14 @@ def write_streaming_pressure_matrix_markdown(path: Path, row: Json) -> None:
         f"- Slow cases: `{summary.get('slow_case_count', 'n/a')}`",
         f"- Max TTFT seconds: `{_fmt(summary.get('max_ttft_seconds'))}`",
         f"- Max elapsed seconds: `{_fmt(summary.get('max_elapsed_seconds'))}`",
+        f"- P95 ITL seconds: `{_fmt(summary.get('p95_inter_chunk_seconds'))}`",
+        f"- P99 ITL seconds: `{_fmt(summary.get('p99_inter_chunk_seconds'))}`",
+        f"- Max ITL seconds: `{_fmt(summary.get('max_inter_chunk_seconds'))}`",
         "",
         "## Cases",
         "",
-        "| Name | C | Rounds | Lines | Max tokens | OK | Requests | Failures | Max TTFT s | Max elapsed s | Slow flag |",
-        "| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |",
+        "| Name | C | Rounds | Lines | Max tokens | OK | Requests | Failures | Max TTFT s | P95 ITL s | P99 ITL s | Max elapsed s | Slow flag |",
+        "| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for case in row.get("cases", []):
         if not isinstance(case, dict):
@@ -849,8 +936,8 @@ def write_streaming_pressure_matrix_markdown(path: Path, row: Json) -> None:
         )
         lines.append(
             "| {name} | {concurrency} | {rounds} | {lines} | {max_tokens} | "
-            "{ok} | {requests} | {failures} | {max_ttft} | {max_elapsed} | "
-            "{slow} |".format(
+            "{ok} | {requests} | {failures} | {max_ttft} | {p95_itl} | "
+            "{p99_itl} | {max_elapsed} | {slow} |".format(
                 name=spec.get("name", "n/a"),
                 concurrency=_fmt_int(spec.get("concurrency")),
                 rounds=_fmt_int(spec.get("round_count")),
@@ -860,6 +947,8 @@ def write_streaming_pressure_matrix_markdown(path: Path, row: Json) -> None:
                 requests=_fmt_int(case_summary.get("request_count")),
                 failures=_fmt_int(case_summary.get("failure_count")),
                 max_ttft=_fmt(case_summary.get("max_ttft_seconds")),
+                p95_itl=_fmt(case_summary.get("p95_inter_chunk_seconds")),
+                p99_itl=_fmt(case_summary.get("p99_inter_chunk_seconds")),
                 max_elapsed=_fmt(case_summary.get("max_elapsed_seconds")),
                 slow="yes" if slow_flag else "no",
             )
@@ -874,7 +963,8 @@ def write_streaming_pressure_matrix_markdown(path: Path, row: Json) -> None:
                 "`gpu_stats_summary.json` to interpret continuous pressure "
                 "results. Watch `running_requests_max`, KV-cache usage, "
                 "preemptions, prefix-cache hit rate, GPU power, and utilization "
-                "alongside the per-case TTFT and elapsed-time tails."
+                "alongside the per-case TTFT, inter-chunk latency, and "
+                "elapsed-time tails."
             ),
             "",
         ]

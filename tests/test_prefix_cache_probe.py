@@ -62,6 +62,50 @@ def test_stream_chat_completion_preserves_stream_response_id(monkeypatch):
     assert result["assistant_text"] == "hello world"
 
 
+def test_stream_chat_completion_records_inter_chunk_latency(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return iter(
+                [
+                    b'data: {"id":"chatcmpl-stream-1","choices":[{"delta":{"content":"one"}}]}\n',
+                    b'data: {"id":"chatcmpl-stream-1","choices":[{"delta":{"content":" two"}}]}\n',
+                    b'data: {"id":"chatcmpl-stream-1","choices":[{"delta":{"content":" three"},"finish_reason":"stop"}],"usage":{"completion_tokens":3}}\n',
+                    b"data: [DONE]\n",
+                ]
+            )
+
+    def fake_urlopen(request, timeout):
+        return FakeResponse()
+
+    times = iter([10.0, 11.0, 11.25, 12.0, 12.5])
+
+    monkeypatch.setattr(
+        "ds4_harness.prefix_cache_probe.urllib.request.urlopen", fake_urlopen
+    )
+    monkeypatch.setattr(
+        "ds4_harness.prefix_cache_probe.time.monotonic", lambda: next(times)
+    )
+
+    result = stream_chat_completion(
+        "http://127.0.0.1:8000",
+        "/v1/chat/completions",
+        {"model": "model", "messages": []},
+        30,
+    )
+
+    assert result["assistant_text"] == "one two three"
+    assert result["ttft_seconds"] == 1.0
+    assert result["time_to_last_token_seconds"] == 2.0
+    assert result["inter_chunk_seconds"] == [0.25, 0.75]
+    assert result["max_inter_chunk_seconds"] == 0.75
+
+
 def test_run_prefix_cache_probe_records_solo_and_interleaved_requests():
     calls = []
 

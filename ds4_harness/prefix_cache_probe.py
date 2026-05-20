@@ -194,6 +194,7 @@ def stream_chat_completion(
     finish_reason: str | None = None
     response_id: str | None = None
     chunks = 0
+    content_chunk_times: list[float] = []
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             for raw_line in response:
@@ -227,9 +228,11 @@ def stream_chat_completion(
                 piece = _content_from_delta(delta)
                 if not piece:
                     continue
+                chunk_at = time.monotonic()
                 chunks += 1
                 if first_token_at is None:
-                    first_token_at = time.monotonic()
+                    first_token_at = chunk_at
+                content_chunk_times.append(chunk_at)
                 text_parts.append(piece)
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
@@ -237,6 +240,10 @@ def stream_chat_completion(
 
     elapsed = time.monotonic() - started
     assistant = "".join(text_parts)
+    inter_chunk_seconds = [
+        round(later - earlier, 6)
+        for earlier, later in zip(content_chunk_times, content_chunk_times[1:])
+    ]
     response_json: Json = {
         "choices": [
             {
@@ -256,6 +263,13 @@ def stream_chat_completion(
         else round(first_token_at - started, 6),
         "elapsed_seconds": round(elapsed, 6),
         "chunks": chunks,
+        "time_to_last_token_seconds": None
+        if not content_chunk_times
+        else round(content_chunk_times[-1] - started, 6),
+        "inter_chunk_seconds": inter_chunk_seconds,
+        "max_inter_chunk_seconds": None
+        if not inter_chunk_seconds
+        else max(inter_chunk_seconds),
     }
 
 

@@ -711,6 +711,9 @@ Ideas to avoid carrying over blindly:
     such as 92% and 100% when long-context correctness is in scope,
   - MTP small-context continuous pressure should include the issue #7-like
     5K prompt / 128 output / C=4 shape before treating the branch as stable,
+  - long-context pressure reports should include inter-chunk p95/p99 as an ITL
+    proxy so prefill/decode scheduling stalls are visible beyond TTFT and
+    elapsed time,
   - deterministic GSM8K `exact_match_flexible` must not drop below the fixed
     baseline; use `--gen_kwargs temperature=0`,
   - DeepSeek V4 MTP fixes must preserve `FULL_AND_PIECEWISE`; do not skip

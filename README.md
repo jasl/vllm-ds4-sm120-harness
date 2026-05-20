@@ -196,8 +196,9 @@ tool-call turn.
 - Optional streaming-pressure soak:
   - sends concurrent streaming chat completions over deterministic long
     conversations that grow across several short rounds
-  - records request-level TTFT, elapsed time, chunk counts, cached prompt
-    tokens, runtime stats, and GPU stats
+  - records request-level TTFT, streamed content-chunk latency as an ITL proxy,
+    elapsed time, chunk counts, cached prompt tokens, runtime stats, and GPU
+    stats
   - is disabled by default; enable it with `RUN_STREAMING_PRESSURE_SOAK=1`
     when you want a short release-gate check for streaming responsiveness
 - Optional continuous streaming-pressure matrix:
@@ -867,7 +868,7 @@ host where you want those warnings to fail the gate.
 
 The optional continuous streaming-pressure matrix is disabled by default with
 `RUN_STREAMING_PRESSURE_MATRIX=0`. When enabled, it defaults to
-`STREAMING_PRESSURE_MATRIX_CASE_SPECS=short_c4:4:3:1200:128,long_c2:2:2:4000:128,long_c4:4:2:2400:128`.
+`STREAMING_PRESSURE_MATRIX_CASE_SPECS=short_c4:4:3:1200:128,issue7_5k_c4:4:3:192:128,long_c2:2:2:4000:128,long_c4:4:2:2400:128`.
 Each case spec is
 `name:concurrency:round_count:line_count:max_tokens[:max_ttft_seconds[:max_elapsed_seconds]]`.
 For upper-bound pressure on larger hosts, append cases such as
@@ -1060,9 +1061,11 @@ Before promoting an optimization:
   capacity pressure.
 - Enable `streaming-pressure-soak` with `RUN_STREAMING_PRESSURE_SOAK=1` before
   making streaming responsiveness a release gate. Compare `max_ttft_seconds`,
-  `max_elapsed_seconds`, chunk counts, `running_requests_max`,
-  `gpu_kv_cache_usage_percent_max`, prefix hit rate, and preemptions. Leave it
-  disabled for routine local harness edits.
+  `p95_inter_chunk_seconds`, `p99_inter_chunk_seconds`, `max_elapsed_seconds`,
+  chunk counts, `running_requests_max`, `gpu_kv_cache_usage_percent_max`,
+  prefix hit rate, and preemptions. Inter-chunk latency is measured between
+  content-bearing streamed chunks, so treat it as an ITL proxy rather than exact
+  tokenizer-level timing. Leave it disabled for routine local harness edits.
 - Enable `streaming-pressure-matrix` with `RUN_STREAMING_PRESSURE_MATRIX=1`
   when validating sustained high-pressure behavior across hardware or serve
   profiles. Start with the default short C=4 plus long C=2/C=4 matrix, then add
