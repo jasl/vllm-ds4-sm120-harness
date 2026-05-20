@@ -53,6 +53,7 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_kv_layout_probe.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_latency_matrix.sh",
+        "run_long_context_decode_concurrency.sh",
         "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
@@ -106,6 +107,25 @@ def test_long_context_latency_matrix_wrapper_records_runtime_artifacts():
     assert '--line-counts "${LONG_CONTEXT_LATENCY_LINE_COUNTS}"' in script
     assert '--concurrency "${LONG_CONTEXT_LATENCY_CONCURRENCY}"' in script
     assert '--cache-modes "${LONG_CONTEXT_LATENCY_CACHE_MODES}"' in script
+    assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+    assert "start_gpu_stats" in script
+    assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+    assert "start_runtime_stats" in script
+    assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
+def test_long_context_decode_concurrency_wrapper_targets_c1_c2_decode():
+    script = (ROOT / "scripts" / "run_long_context_decode_concurrency.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'LONG_CONTEXT_DECODE_CONCURRENCY="${LONG_CONTEXT_DECODE_CONCURRENCY:-1,2}"' in script
+    assert 'LONG_CONTEXT_DECODE_MAX_TOKENS="${LONG_CONTEXT_DECODE_MAX_TOKENS:-256}"' in script
+    assert "long_context_decode_concurrency" in script
+    assert "long-context-latency-matrix" in script
+    assert '--json-output "${OUT_DIR}/long_context_decode_concurrency.json"' in script
+    assert '--markdown-output "${OUT_DIR}/long_context_decode_concurrency.md"' in script
+    assert '--concurrency "${LONG_CONTEXT_DECODE_CONCURRENCY}"' in script
     assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
     assert "start_gpu_stats" in script
     assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
@@ -524,6 +544,7 @@ def test_scripts_capture_gpu_stats_to_artifacts():
         "run_oracle_export.sh",
         "run_lm_eval.sh",
         "run_prefix_cache_probe.sh",
+        "run_long_context_decode_concurrency.sh",
         "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
@@ -552,6 +573,7 @@ def test_scripts_capture_vllm_runtime_stats_to_artifacts():
         "run_oracle_export.sh",
         "run_lm_eval.sh",
         "run_prefix_cache_probe.sh",
+        "run_long_context_decode_concurrency.sh",
         "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
@@ -579,6 +601,7 @@ def test_scripts_collect_vllm_official_env_to_artifacts():
         "run_lm_eval.sh",
         "run_kv_layout_probe.sh",
         "run_prefix_cache_probe.sh",
+        "run_long_context_decode_concurrency.sh",
         "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
@@ -1094,6 +1117,7 @@ def test_scripts_have_valid_bash_syntax():
         "run_official_api_baseline.sh",
         "run_b200_baseline.sh",
         "run_prefix_cache_probe.sh",
+        "run_long_context_decode_concurrency.sh",
         "run_streaming_pressure_soak.sh",
         "generate_baseline_bundle.sh",
         "gpu_stats.sh",

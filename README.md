@@ -166,6 +166,16 @@ tool-call turn.
     `prompts/long_context/` for prompt-file mode
   - is the targeted tool for 64K/128K interactive latency work and chunked
     prefill sweeps
+- Long-context decode concurrency probe:
+  - wraps the latency matrix with a 128K-class default prompt shape and C=1/C=2
+    concurrency to test whether long-context decode collapses when two requests
+    are active
+  - records per-request decode tokens/sec as
+    `completion_tokens / (elapsed - TTFT)` plus the C>1 ratio versus the C=1
+    baseline for the same prompt/cache mode
+  - use prefix-cache warm mode when the question is pure decode behavior, and
+    cold mode when the question is scheduler interaction between long prefill
+    and decode
 - SM120 optimization notes:
   - keep the current hardware assumptions and tuning priorities in
     [`docs/sm120_optimization_notes.md`](docs/sm120_optimization_notes.md)
@@ -790,6 +800,24 @@ Set `LONG_CONTEXT_LATENCY_PREWARM=1` to run `scripts/prewarm_serve.sh` after
 the server health gate and before the latency matrix. The prewarm uses real
 OpenAI-style requests, writes `prewarm.log` and `prewarm.exit_code`, and
 defaults `PREWARM_ISL` to `MAX_NUM_BATCHED_TOKENS` or `4096`.
+
+For suspected long-context decode concurrency cliffs, run
+`scripts/run_long_context_decode_concurrency.sh`. It defaults to a synthetic
+4000-line prompt, C=1/C=2, cold cache, and 256 output tokens. Override
+`LONG_CONTEXT_DECODE_CACHE_MODES=warm` and serve with prefix caching enabled
+when isolating decode behavior after the prompt is cached. Keep
+`LONG_CONTEXT_DECODE_MAX_TOKENS` small, such as 64, for first repro attempts
+so a true sub-1 tok/s collapse does not turn into a very long run.
+
+For more realistic public long-context text than the synthetic prompt, prefer
+license-clear benchmark corpora exported into an artifact directory or ignored
+local path, then pass them with `LONG_CONTEXT_DECODE_PROMPT_FILES` or
+`LONG_CONTEXT_LATENCY_PROMPT_FILES`. Good candidates are InfiniteBench
+(`100k+` contexts and MIT-licensed code/data repo), LongBench v2 (MIT-licensed
+repo, 8K to 2M-word contexts, multiple-choice tasks), and LooGLE (MIT-licensed
+repo with realistic long documents, many above 100K words). Do not commit
+downloaded benchmark corpora unless the dataset license and size are suitable
+for this public harness.
 For SM120 long-context latency experiments, `configs/sm120_tp2_serve.env.example`
 sets `VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE=512` and
 `VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE=512` as a measured candidate. Keep these

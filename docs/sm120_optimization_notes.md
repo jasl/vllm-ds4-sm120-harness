@@ -259,6 +259,44 @@ both graph families captured.
 
 ## Ineffective Or Ambiguous Optimization Notes
 
+### Long-Context C=2 Decode Cliff Recheck
+
+An external report suggested that two simultaneous 120K-context decode
+requests could collapse to roughly 0.1-0.2 tok/s per sequence and suspected
+the SM120 paged-MQA rowwise logits kernel. A targeted gate was added via
+`scripts/run_long_context_decode_concurrency.sh` to expose per-request decode
+tokens/sec and C>1 ratios in the long-context latency artifact.
+
+Current recheck, TP=2, MTP=1, 131K max-model-len, 4096
+max-num-batched-tokens, 124K synthetic prompt, 64 generated tokens:
+
+| Shape | Prefix Cache | Kernel Path | C | Mean Decode tok/s | Min Decode tok/s | C/C1 Ratio | Result |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| cold long prompt | disabled | rowwise | 1 | 81.935 | 81.935 | 1.000 | pass |
+| cold long prompt | disabled | rowwise | 2 | 34.318 | 1.606 | 0.419 | pass, but mixed with second long prefill |
+| warm long prompt, repeat 2 | enabled | rowwise | 1 | 81.796 | 81.796 | 1.000 | pass |
+| warm long prompt, repeat 2 | enabled | rowwise | 2 | 68.687 | 63.218 | 0.840 | pass |
+| warm long prompt, repeat 2 | enabled | generic fallback | 1 | 75.273 | 75.273 | 1.000 | pass |
+| warm long prompt, repeat 2 | enabled | generic fallback | 2 | 65.816 | 60.446 | 0.874 | pass |
+
+Artifact labels: `codex_long_decode_c1c2_mtp1_rowwise_20260520152213`,
+`codex_long_decode_c1c2_mtp1_rowwise_prefix_20260520152814`, and
+`codex_long_decode_c1c2_mtp1_generic_prefix_20260520153209`.
+
+Decision: do not revert or disable `_fp8_paged_mqa_logits_rowwise_kernel`
+based on this report alone. The cold C=2 run did show a very slow first
+request, but that request was decoding while another 124K prompt was still
+being prefetched; it is evidence of long-prefill/decode scheduler interference,
+not pure decode-kernel collapse. The prefix-cache warm C=2 runs, which better
+isolate decode after the long prompt is cached, did not reproduce the reported
+0.1-0.2 tok/s cliff. The generic fallback was slightly slower in absolute
+decode tokens/sec, so the current data does not support replacing rowwise with
+generic fallback.
+
+Keep this gate in future rowwise evaluations. If a user can still reproduce a
+sub-1 tok/s C=2 cliff in prefix-cache warm mode, collect NCU/NSYS around the
+paged-MQA logits kernel and scheduler traces before changing the kernel.
+
 ### Short-Context MTP C=4 Root-Cause Controls
 
 The following controls were useful for locating the C=4 stall but were not kept

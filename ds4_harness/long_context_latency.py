@@ -133,6 +133,37 @@ def _cached_prompt_tokens(usage: Json) -> int | None:
         return None
 
 
+def _as_float(value: Any) -> float | None:
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_int(value: Any) -> int | None:
+    try:
+        return None if value is None else int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _decode_tokens_per_second(
+    *,
+    completion_tokens: Any,
+    ttft_seconds: Any,
+    elapsed_seconds: Any,
+) -> float | None:
+    tokens = _as_int(completion_tokens)
+    ttft = _as_float(ttft_seconds)
+    elapsed = _as_float(elapsed_seconds)
+    if tokens is None or tokens <= 0 or ttft is None or elapsed is None:
+        return None
+    decode_seconds = elapsed - ttft
+    if decode_seconds <= 0:
+        return None
+    return round(tokens / decode_seconds, 6)
+
+
 def _request_ok(text: str, required_terms: tuple[str, ...]) -> tuple[bool, str]:
     if not required_terms:
         if text.strip():
@@ -234,6 +265,13 @@ def _run_stream_request(
         elapsed = result.get("elapsed_seconds")
         if not isinstance(elapsed, int | float):
             elapsed = time.monotonic() - started
+        ttft = result.get("ttft_seconds")
+        completion_tokens = usage.get("completion_tokens")
+        decode_tps = _decode_tokens_per_second(
+            completion_tokens=completion_tokens,
+            ttft_seconds=ttft,
+            elapsed_seconds=elapsed,
+        )
         row = {
             "phase": phase,
             "cache_mode": cache_mode,
@@ -245,12 +283,13 @@ def _run_stream_request(
             "request_index": request_index,
             "ok": ok,
             "detail": detail,
-            "ttft_seconds": result.get("ttft_seconds"),
+            "ttft_seconds": ttft,
             "elapsed_seconds": round(float(elapsed), 6),
             "prompt_tokens": usage.get("prompt_tokens"),
-            "completion_tokens": usage.get("completion_tokens"),
+            "completion_tokens": completion_tokens,
             "total_tokens": usage.get("total_tokens"),
             "cached_prompt_tokens": _cached_prompt_tokens(usage),
+            "decode_tokens_per_second": decode_tps,
             "chunks": result.get("chunks"),
             "finish_reason": _finish_reason(response),
             "response_id": response.get("id") if response.get("id") else None,
@@ -278,6 +317,7 @@ def _run_stream_request(
             "completion_tokens": None,
             "total_tokens": None,
             "cached_prompt_tokens": None,
+            "decode_tokens_per_second": None,
             "chunks": 0,
             "finish_reason": None,
             "prompt_sha256": prompt.sha256,
@@ -332,6 +372,7 @@ def _summarize_rows(rows: list[Json]) -> list[Json]:
         prompt_tokens = _numeric_values(group_rows, "prompt_tokens")
         cached_tokens = _numeric_values(group_rows, "cached_prompt_tokens")
         completion_tokens = _numeric_values(group_rows, "completion_tokens")
+        decode_tps = _numeric_values(group_rows, "decode_tokens_per_second")
         summary.append(
             {
                 "prompt": prompt,
@@ -347,7 +388,27 @@ def _summarize_rows(rows: list[Json]) -> list[Json]:
                 "prompt_tokens_mean": _mean(prompt_tokens),
                 "completion_tokens_mean": _mean(completion_tokens),
                 "cached_prompt_tokens_mean": _mean(cached_tokens),
+                "decode_tokens_per_second_mean": _mean(decode_tps),
+                "decode_tokens_per_second_min": _min(decode_tps),
+                "decode_tokens_per_second_max": _max(decode_tps),
             }
+        )
+    c1_by_prompt_cache = {
+        (str(item.get("prompt")), str(item.get("cache_mode"))): item.get(
+            "decode_tokens_per_second_mean"
+        )
+        for item in summary
+        if item.get("concurrency") == 1
+    }
+    for item in summary:
+        c1_tps = _as_float(
+            c1_by_prompt_cache.get((str(item.get("prompt")), str(item.get("cache_mode"))))
+        )
+        current_tps = _as_float(item.get("decode_tokens_per_second_mean"))
+        item["decode_tps_vs_c1_ratio"] = (
+            None
+            if c1_tps is None or c1_tps <= 0 or current_tps is None
+            else round(current_tps / c1_tps, 6)
         )
     return summary
 
@@ -580,16 +641,17 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
         "",
         "## Summary",
         "",
-        "| Prompt | Cache | C | Requests | Failures | TTFT mean s | TTFT max s | Elapsed mean s | Prompt tok | Cached tok | Completion tok |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Prompt | Cache | C | Requests | Failures | TTFT mean s | TTFT max s | Elapsed mean s | Decode tok/s mean | Decode/C1 | Prompt tok | Cached tok | Completion tok |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for item in row.get("summary", []):
         if not isinstance(item, dict):
             continue
         lines.append(
             "| {prompt} | {cache} | {concurrency} | {requests} | {failures} | "
-            "{ttft_mean} | {ttft_max} | {elapsed_mean} | {prompt_tokens} | "
-            "{cached_tokens} | {completion_tokens} |".format(
+            "{ttft_mean} | {ttft_max} | {elapsed_mean} | {decode_tps} | "
+            "{decode_ratio} | {prompt_tokens} | {cached_tokens} | "
+            "{completion_tokens} |".format(
                 prompt=item.get("prompt"),
                 cache=item.get("cache_mode"),
                 concurrency=item.get("concurrency"),
@@ -598,6 +660,8 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
                 ttft_mean=_fmt(item.get("ttft_seconds_mean")),
                 ttft_max=_fmt(item.get("ttft_seconds_max")),
                 elapsed_mean=_fmt(item.get("elapsed_seconds_mean")),
+                decode_tps=_fmt(item.get("decode_tokens_per_second_mean")),
+                decode_ratio=_fmt(item.get("decode_tps_vs_c1_ratio")),
                 prompt_tokens=_fmt_int(item.get("prompt_tokens_mean")),
                 cached_tokens=_fmt_int(item.get("cached_prompt_tokens_mean")),
                 completion_tokens=_fmt_int(item.get("completion_tokens_mean")),
@@ -624,8 +688,8 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
         [
             "## Request Rows",
             "",
-            "| Phase | Prompt | Cache | C | Repeat | Request | OK | TTFT s | Elapsed s | Prompt tok | Cached tok | Detail |",
-            "| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |",
+            "| Phase | Prompt | Cache | C | Repeat | Request | OK | TTFT s | Elapsed s | Decode tok/s | Prompt tok | Cached tok | Detail |",
+            "| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |",
         ]
     )
     for request in row.get("requests", []):
@@ -633,7 +697,7 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
             continue
         lines.append(
             "| {phase} | {prompt} | {cache} | {concurrency} | {repeat} | {request} | "
-            "{ok} | {ttft} | {elapsed} | {prompt_tokens} | {cached_tokens} | {detail} |".format(
+            "{ok} | {ttft} | {elapsed} | {decode_tps} | {prompt_tokens} | {cached_tokens} | {detail} |".format(
                 phase=request.get("phase"),
                 prompt=request.get("prompt"),
                 cache=request.get("cache_mode"),
@@ -643,6 +707,7 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
                 ok="yes" if request.get("ok") else "no",
                 ttft=_fmt(request.get("ttft_seconds")),
                 elapsed=_fmt(request.get("elapsed_seconds")),
+                decode_tps=_fmt(request.get("decode_tokens_per_second")),
                 prompt_tokens=_fmt_int(request.get("prompt_tokens")),
                 cached_tokens=_fmt_int(request.get("cached_prompt_tokens")),
                 detail=str(request.get("detail", "")).replace("|", "\\|"),

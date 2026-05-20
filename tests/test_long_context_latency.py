@@ -60,6 +60,8 @@ def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
         if item["cache_mode"] == "warm" and item["concurrency"] == 2
     )
     assert warm_c2["cached_prompt_tokens_mean"] == 39000
+    assert warm_c2["decode_tokens_per_second_mean"] == 15.0
+    assert warm_c2["decode_tps_vs_c1_ratio"] == 1.0
     cold_payloads = [
         payload
         for metadata, payload in calls
@@ -73,6 +75,49 @@ def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
         "alpha-cobalt-17 beta-quartz-29 gamma-onyx-43"
     )
     assert "beta-quartz-29" in first_request["assistant_text_excerpt"]
+
+
+def test_long_context_latency_matrix_quantifies_decode_collapse_vs_c1():
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        metadata = kwargs["probe_metadata"]
+        concurrency = int(metadata["concurrency"])
+        elapsed = 6.0 if concurrency == 1 else 120.0
+        return {
+            "response": {
+                "choices": [
+                    {
+                        "message": {"content": "ok"},
+                        "finish_reason": "length",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 120000,
+                    "completion_tokens": 100,
+                    "total_tokens": 120100,
+                },
+            },
+            "assistant_text": "ok",
+            "ttft_seconds": 1.0,
+            "elapsed_seconds": elapsed,
+            "chunks": 5,
+        }
+
+    row = run_long_context_latency_matrix(
+        base_url="http://127.0.0.1:8000",
+        model="model",
+        variant="mtp1",
+        line_counts=[128],
+        concurrencies=[1, 2],
+        cache_modes=["cold"],
+        stream_func=fake_stream,
+    )
+
+    c1 = next(item for item in row["summary"] if item["concurrency"] == 1)
+    c2 = next(item for item in row["summary"] if item["concurrency"] == 2)
+
+    assert c1["decode_tokens_per_second_mean"] == 20.0
+    assert c2["decode_tokens_per_second_mean"] == 0.840336
+    assert c2["decode_tps_vs_c1_ratio"] == 0.042017
 
 
 def test_long_context_latency_matrix_supports_prompt_files(tmp_path):
@@ -140,6 +185,8 @@ def test_long_context_latency_markdown_includes_summary(tmp_path):
                 "prompt_tokens_mean": 1000,
                 "cached_prompt_tokens_mean": 900,
                 "completion_tokens_mean": 4,
+                "decode_tokens_per_second_mean": 12.5,
+                "decode_tps_vs_c1_ratio": 1.0,
             }
         ],
         "prompts": [],
@@ -152,6 +199,7 @@ def test_long_context_latency_markdown_includes_summary(tmp_path):
     report = output.read_text(encoding="utf-8")
     assert "# Long Context Latency Matrix" in report
     assert "TTFT mean s" in report
+    assert "Decode tok/s mean" in report
     assert "synthetic_128_lines" in report
 
 
