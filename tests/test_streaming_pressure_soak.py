@@ -3,7 +3,10 @@ import json
 from ds4_harness import cli
 from ds4_harness.streaming_pressure_soak import (
     build_streaming_pressure_request,
+    parse_streaming_pressure_case_spec,
+    run_streaming_pressure_matrix,
     run_streaming_pressure_soak,
+    write_streaming_pressure_matrix_markdown,
     write_streaming_pressure_soak_markdown,
 )
 
@@ -206,3 +209,155 @@ def test_streaming_pressure_soak_cli_writes_json_and_markdown(monkeypatch, tmp_p
     data = json.loads(json_output.read_text(encoding="utf-8"))
     assert data["variant"] == "mtp"
     assert "Streaming Pressure Soak" in markdown_output.read_text(encoding="utf-8")
+
+
+def test_streaming_pressure_matrix_runs_multiple_case_specs():
+    calls = []
+
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        metadata = kwargs["probe_metadata"]
+        calls.append((metadata["matrix_case"], metadata["round_index"], metadata["worker_index"]))
+        required = metadata["required_terms"][0]
+        return {
+            "response": {
+                "choices": [
+                    {
+                        "message": {"content": required},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1000 + metadata["round_index"],
+                    "completion_tokens": 8,
+                    "total_tokens": 1008 + metadata["round_index"],
+                    "prompt_tokens_details": {"cached_tokens": 512},
+                },
+            },
+            "assistant_text": required,
+            "ttft_seconds": 0.5,
+            "elapsed_seconds": 2.0,
+            "chunks": 3,
+        }
+
+    row = run_streaming_pressure_matrix(
+        base_url="http://127.0.0.1:8000",
+        model="model",
+        variant="mtp",
+        case_name="continuous_pressure",
+        case_specs=[
+            "short_c2:2:2:128:16",
+            "long_c1:1:1:256:8:2.0:10.0",
+        ],
+        stream_func=fake_stream,
+    )
+
+    assert row["ok"] is True
+    assert row["summary"]["case_count"] == 2
+    assert row["summary"]["request_count"] == 5
+    assert row["summary"]["failure_count"] == 0
+    assert row["summary"]["slow_case_count"] == 0
+    assert [case["matrix_case"]["name"] for case in row["cases"]] == [
+        "short_c2",
+        "long_c1",
+    ]
+    assert set(calls) == {
+        ("short_c2", 1, 0),
+        ("short_c2", 1, 1),
+        ("short_c2", 2, 0),
+        ("short_c2", 2, 1),
+        ("long_c1", 1, 0),
+    }
+
+
+def test_streaming_pressure_matrix_rejects_invalid_case_spec():
+    try:
+        parse_streaming_pressure_case_spec("bad:2:0:128:16")
+    except ValueError as exc:
+        assert "round_count must be >= 1" in str(exc)
+    else:
+        raise AssertionError("expected invalid matrix case spec to fail")
+
+
+def test_streaming_pressure_matrix_markdown_includes_case_table(tmp_path):
+    row = {
+        "case": "continuous_pressure",
+        "variant": "mtp",
+        "ok": True,
+        "summary": {
+            "case_count": 1,
+            "request_count": 2,
+            "failure_count": 0,
+            "slow_case_count": 0,
+            "max_ttft_seconds": 0.5,
+            "max_elapsed_seconds": 2.0,
+        },
+        "cases": [
+            {
+                "case": "continuous_pressure.short_c2",
+                "ok": True,
+                "matrix_case": {
+                    "name": "short_c2",
+                    "concurrency": 2,
+                    "round_count": 1,
+                    "line_count": 128,
+                    "max_tokens": 16,
+                },
+                "summary": {
+                    "request_count": 2,
+                    "failure_count": 0,
+                    "suspect_slow_ttft": False,
+                    "suspect_slow_elapsed": False,
+                    "max_ttft_seconds": 0.5,
+                    "max_elapsed_seconds": 2.0,
+                },
+            }
+        ],
+    }
+    output = tmp_path / "matrix.md"
+
+    write_streaming_pressure_matrix_markdown(output, row)
+
+    report = output.read_text(encoding="utf-8")
+    assert "# Streaming Pressure Matrix" in report
+    assert "| short_c2 | 2 | 1 | 128 | 16 | yes |" in report
+
+
+def test_streaming_pressure_matrix_cli_writes_json_and_markdown(monkeypatch, tmp_path):
+    def fake_run_streaming_pressure_matrix(**kwargs):
+        return {
+            "case": kwargs["case_name"],
+            "variant": kwargs["variant"],
+            "model": kwargs["model"],
+            "ok": True,
+            "summary": {"case_count": 1, "request_count": 2, "failure_count": 0},
+            "cases": [],
+        }
+
+    monkeypatch.setattr(
+        cli, "run_streaming_pressure_matrix", fake_run_streaming_pressure_matrix
+    )
+    json_output = tmp_path / "matrix.json"
+    markdown_output = tmp_path / "matrix.md"
+
+    rc = cli.main(
+        [
+            "streaming-pressure-matrix",
+            "--model",
+            "model",
+            "--variant",
+            "mtp",
+            "--case-name",
+            "continuous_pressure",
+            "--case-spec",
+            "short_c2:2:1:128:16",
+            "--json-output",
+            str(json_output),
+            "--markdown-output",
+            str(markdown_output),
+        ]
+    )
+
+    assert rc == 0
+    data = json.loads(json_output.read_text(encoding="utf-8"))
+    assert data["case"] == "continuous_pressure"
+    assert "Streaming Pressure Matrix" in markdown_output.read_text(encoding="utf-8")

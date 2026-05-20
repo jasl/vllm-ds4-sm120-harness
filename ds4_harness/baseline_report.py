@@ -19,6 +19,7 @@ PHASE_LABELS = {
     "long_context_latency_matrix": "Long Context Latency Matrix",
     "prefix_cache_probe": "Prefix Cache Probe",
     "streaming_pressure_soak": "Streaming Pressure Soak",
+    "streaming_pressure_matrix": "Streaming Pressure Matrix",
     "oracle_export": "Oracle Export",
     "eval_gsm8k": "GSM8K",
 }
@@ -1066,6 +1067,51 @@ def _streaming_pressure_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]
     return sorted(rows, key=lambda row: _variant_sort_key(row["variant"]))
 
 
+def _streaming_pressure_matrix_rows(
+    records: list[PhaseRecord],
+) -> list[dict[str, Any]]:
+    rows = []
+    for record in records:
+        if record.phase != "streaming_pressure_matrix":
+            continue
+        data = _load_json(record.artifact_dir / "streaming_pressure_matrix.json")
+        if not isinstance(data, dict):
+            continue
+        for case in data.get("cases", []):
+            if not isinstance(case, dict):
+                continue
+            spec = case.get("matrix_case")
+            if not isinstance(spec, dict):
+                spec = {}
+            summary = (
+                case.get("summary") if isinstance(case.get("summary"), dict) else {}
+            )
+            rows.append(
+                {
+                    "variant": record.variant,
+                    "matrix_case": spec.get("name"),
+                    "ok": case.get("ok"),
+                    "concurrency": spec.get("concurrency"),
+                    "round_count": spec.get("round_count"),
+                    "line_count": spec.get("line_count"),
+                    "max_tokens": spec.get("max_tokens"),
+                    "request_count": summary.get("request_count"),
+                    "failure_count": summary.get("failure_count"),
+                    "max_ttft_seconds": summary.get("max_ttft_seconds"),
+                    "max_elapsed_seconds": summary.get("max_elapsed_seconds"),
+                    "suspect_slow_ttft": summary.get("suspect_slow_ttft"),
+                    "suspect_slow_elapsed": summary.get("suspect_slow_elapsed"),
+                }
+            )
+    return sorted(
+        rows,
+        key=lambda row: (
+            _variant_sort_key(row["variant"]),
+            str(row.get("matrix_case") or ""),
+        ),
+    )
+
+
 def _task_label(task: Any) -> str:
     value = str(task or "n/a")
     if value.casefold() == "gsm8k":
@@ -1809,6 +1855,48 @@ def _append_streaming_pressure(
     lines.append("")
 
 
+def _append_streaming_pressure_matrix(
+    lines: list[str],
+    rows: list[dict[str, Any]],
+) -> None:
+    if not rows:
+        return
+    lines.extend(
+        [
+            "## Streaming Pressure Matrix",
+            "",
+            (
+                "This optional gate runs several streaming-pressure shapes "
+                "back-to-back against one live server. Use it for sustained "
+                "pressure comparisons across hardware and serve profiles."
+            ),
+            "",
+            "| Variant | Case | OK | C | Rounds | Lines | Max tokens | Requests | Failures | Max TTFT s | Max elapsed s | Slow flag |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in rows:
+        slow_flags = []
+        if row.get("suspect_slow_ttft"):
+            slow_flags.append("ttft")
+        if row.get("suspect_slow_elapsed"):
+            slow_flags.append("elapsed")
+        lines.append(
+            f"| `{row['variant']}` | `{row.get('matrix_case', 'n/a')}` | "
+            f"{_yes_no(row.get('ok'))} | "
+            f"{_fmt_int(row.get('concurrency'))} | "
+            f"{_fmt_int(row.get('round_count'))} | "
+            f"{_fmt_int(row.get('line_count'))} | "
+            f"{_fmt_int(row.get('max_tokens'))} | "
+            f"{_fmt_int(row.get('request_count'))} | "
+            f"{_fmt_int(row.get('failure_count'))} | "
+            f"{_fmt(row.get('max_ttft_seconds'))} | "
+            f"{_fmt(row.get('max_elapsed_seconds'))} | "
+            f"{', '.join(slow_flags) or 'none'} |"
+        )
+    lines.append("")
+
+
 def _append_evals(lines: list[str], rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
@@ -1917,6 +2005,7 @@ def build_baseline_report(
     long_context_latency_rows = _long_context_latency_rows(records)
     prefix_cache_rows = _prefix_cache_rows(records)
     streaming_pressure_rows = _streaming_pressure_rows(records)
+    streaming_pressure_matrix_rows = _streaming_pressure_matrix_rows(records)
     oracle_rows = _oracle_rows(records)
     eval_rows = _eval_rows(records)
     collect_env_total, collect_env_ok, collect_env_failed = _collect_env_status(records)
@@ -1973,6 +2062,7 @@ def build_baseline_report(
     _append_long_context_latency(lines, long_context_latency_rows)
     _append_prefix_cache(lines, prefix_cache_rows)
     _append_streaming_pressure(lines, streaming_pressure_rows)
+    _append_streaming_pressure_matrix(lines, streaming_pressure_matrix_rows)
     _append_oracle(lines, oracle_rows)
     _append_evals(lines, eval_rows)
     if runtime_rows:

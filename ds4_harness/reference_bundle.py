@@ -405,6 +405,30 @@ def _copy_streaming_pressure_soaks(run_dir: Path, output_dir: Path) -> None:
         )
 
 
+def _copy_streaming_pressure_matrices(run_dir: Path, output_dir: Path) -> None:
+    for variant in VARIANTS:
+        source_dir = run_dir / variant / "streaming_pressure_matrix"
+        if not source_dir.exists():
+            continue
+        target_dir = output_dir / "streaming_pressure_matrix" / variant
+        _copy_json(
+            source_dir / "streaming_pressure_matrix.json",
+            target_dir / "matrix.json",
+        )
+        _copy_text(
+            source_dir / "streaming_pressure_matrix.md",
+            target_dir / "matrix.md",
+        )
+        _copy_json(
+            source_dir / "gpu_stats_summary.json",
+            target_dir / "gpu_stats_summary.json",
+        )
+        _copy_json(
+            source_dir / "runtime_stats_summary.json",
+            target_dir / "runtime_stats_summary.json",
+        )
+
+
 def _copy_kv_layout_probes(run_dir: Path, output_dir: Path) -> None:
     for variant in VARIANTS:
         source_dir = run_dir / variant / "kv_layout_probe"
@@ -508,6 +532,7 @@ def _write_manifest(
         "long_context_latency": "Small-concurrency long-context latency and correctness matrices.",
         "prefix_cache": "Concurrent long-prefix cache reuse probes with request-level timing plus KV/runtime telemetry.",
         "streaming_pressure": "Optional short concurrent streaming-pressure soak with request timing plus KV/runtime telemetry.",
+        "streaming_pressure_matrix": "Optional sustained streaming-pressure matrix with short, long, and hardware-specific cases.",
         "evals": "Optional lm_eval accuracy summaries such as GSM8K exact match.",
         "performance": "Benchmark, runtime, and GPU telemetry summaries.",
     }
@@ -643,6 +668,8 @@ paths, server logs, tokens, and private connection details.
   TTFT/elapsed timing plus KV cache, prefix hit, and preemption telemetry.
 - `streaming_pressure/`: optional short concurrent streaming-pressure soak
   captures with request timing, chunk counts, and KV/runtime telemetry.
+- `streaming_pressure_matrix/`: optional sustained streaming-pressure matrix
+  captures with per-case timing plus GPU/runtime telemetry.
 - `evals/`: optional `lm_eval` accuracy summaries such as GSM8K exact match
   when the source run included an eval phase.
 - `performance/`: benchmark rows plus GPU/runtime telemetry summaries.
@@ -693,6 +720,7 @@ def build_reference_bundle(
     _copy_long_context_latency_matrices(run_dir, output_dir)
     _copy_prefix_cache_probes(run_dir, output_dir)
     _copy_streaming_pressure_soaks(run_dir, output_dir)
+    _copy_streaming_pressure_matrices(run_dir, output_dir)
     _copy_smoke_and_toolcall(run_dir, output_dir)
     _copy_evals(run_dir, output_dir)
     _write_json(output_dir / "performance" / "primary.json", _performance_source("primary", run_dir))

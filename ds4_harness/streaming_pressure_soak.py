@@ -4,6 +4,7 @@ import hashlib
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -22,10 +23,132 @@ DEFAULT_LINE_COUNT = 1200
 DEFAULT_MAX_TOKENS = 128
 DEFAULT_MAX_TTFT_SECONDS = 60.0
 DEFAULT_MAX_ELAPSED_SECONDS = 300.0
+DEFAULT_MATRIX_CASE_NAME = "streaming_pressure_continuous_matrix"
+DEFAULT_MATRIX_CASE_SPECS = (
+    "short_c4:4:3:1200:128",
+    "long_c2:2:2:4000:128",
+    "long_c4:4:2:2400:128",
+)
+
+
+@dataclass(frozen=True)
+class StreamingPressureCaseSpec:
+    name: str
+    concurrency: int
+    round_count: int
+    line_count: int
+    max_tokens: int
+    max_ttft_seconds: float | None = None
+    max_elapsed_seconds: float | None = None
+
+    def to_json(self) -> Json:
+        return {
+            "name": self.name,
+            "concurrency": self.concurrency,
+            "round_count": self.round_count,
+            "line_count": self.line_count,
+            "max_tokens": self.max_tokens,
+            "max_ttft_seconds": self.max_ttft_seconds,
+            "max_elapsed_seconds": self.max_elapsed_seconds,
+        }
 
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _parse_positive_int(value: str, field: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{field} must be an integer: {value!r}") from exc
+    if parsed < 1:
+        raise ValueError(f"{field} must be >= 1")
+    return parsed
+
+
+def _parse_optional_float(value: str, field: str) -> float | None:
+    if value == "":
+        return None
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ValueError(f"{field} must be a number: {value!r}") from exc
+    if parsed <= 0:
+        raise ValueError(f"{field} must be > 0")
+    return parsed
+
+
+def _validate_case_name(name: str) -> str:
+    if not name:
+        raise ValueError("matrix case name must not be empty")
+    if any(not (char.isalnum() or char in "._-") for char in name):
+        raise ValueError(
+            "matrix case name may only contain letters, numbers, '.', '_', or '-'"
+        )
+    return name
+
+
+def parse_streaming_pressure_case_spec(text: str) -> StreamingPressureCaseSpec:
+    parts = [part.strip() for part in text.split(":")]
+    if len(parts) not in (5, 6, 7):
+        raise ValueError(
+            "streaming pressure case spec must be "
+            "name:concurrency:round_count:line_count:max_tokens"
+            "[:max_ttft_seconds[:max_elapsed_seconds]]"
+        )
+
+    return StreamingPressureCaseSpec(
+        name=_validate_case_name(parts[0]),
+        concurrency=_parse_positive_int(parts[1], "concurrency"),
+        round_count=_parse_positive_int(parts[2], "round_count"),
+        line_count=_parse_positive_int(parts[3], "line_count"),
+        max_tokens=_parse_positive_int(parts[4], "max_tokens"),
+        max_ttft_seconds=(
+            _parse_optional_float(parts[5], "max_ttft_seconds")
+            if len(parts) >= 6
+            else None
+        ),
+        max_elapsed_seconds=(
+            _parse_optional_float(parts[6], "max_elapsed_seconds")
+            if len(parts) >= 7
+            else None
+        ),
+    )
+
+
+def parse_streaming_pressure_case_specs(
+    values: (
+        str
+        | list[str]
+        | tuple[str, ...]
+        | list[StreamingPressureCaseSpec]
+        | tuple[StreamingPressureCaseSpec, ...]
+        | None
+    ),
+) -> list[StreamingPressureCaseSpec]:
+    if values is None:
+        values = list(DEFAULT_MATRIX_CASE_SPECS)
+    elif isinstance(values, str):
+        values = [values]
+    elif values and all(
+        isinstance(value, StreamingPressureCaseSpec) for value in values
+    ):
+        return list(values)
+
+    specs: list[StreamingPressureCaseSpec] = []
+    for value in values:
+        for raw_item in value.split(","):
+            item = raw_item.strip()
+            if item:
+                specs.append(parse_streaming_pressure_case_spec(item))
+    if not specs:
+        raise ValueError("at least one streaming pressure matrix case is required")
+    names = [spec.name for spec in specs]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError("duplicate streaming pressure matrix case names: " + ", ".join(duplicates))
+    return specs
 
 
 def _check_term(worker_index: int, round_index: int) -> str:
@@ -83,6 +206,7 @@ def build_streaming_pressure_request(
     top_p: float = 1.0,
     thinking_mode: str = "non-thinking",
     probe_label: str | None = None,
+    matrix_case: str | None = None,
 ) -> Json:
     required = _check_term(worker_index, round_index)
     document = _worker_document(worker_index, line_count)
@@ -151,7 +275,7 @@ def build_streaming_pressure_request(
     }
     payload.update(thinking_extra_body(thinking_mode))
     prompt_json = json.dumps(messages, ensure_ascii=False, sort_keys=True)
-    return {
+    row = {
         "payload": payload,
         "worker": worker_index,
         "round": round_index,
@@ -161,6 +285,9 @@ def build_streaming_pressure_request(
         "line_count": line_count,
         "prompt_sha256": _sha256(prompt_json),
     }
+    if matrix_case is not None:
+        row["matrix_case"] = matrix_case
+    return row
 
 
 def _stream_with_retries(
@@ -240,6 +367,14 @@ def _run_request(
 ) -> Json:
     started = time.monotonic()
     phase = str(request["probe_label"])
+    probe_metadata = {
+        "probe_label": phase,
+        "worker_index": request["worker"],
+        "round_index": request["round"],
+        "required_terms": list(request["required_terms"]),
+    }
+    if request.get("matrix_case") is not None:
+        probe_metadata["matrix_case"] = str(request["matrix_case"])
     try:
         result = _stream_with_retries(
             stream_func,
@@ -249,12 +384,7 @@ def _run_request(
             timeout,
             headers=headers,
             request_retries=request_retries,
-            probe_metadata={
-                "probe_label": phase,
-                "worker_index": request["worker"],
-                "round_index": request["round"],
-                "required_terms": list(request["required_terms"]),
-            },
+            probe_metadata=probe_metadata,
         )
         response = result.get("response") if isinstance(result.get("response"), dict) else {}
         text = str(result.get("assistant_text") or assistant_text(response))
@@ -263,7 +393,7 @@ def _run_request(
         elapsed = result.get("elapsed_seconds")
         if not isinstance(elapsed, int | float):
             elapsed = time.monotonic() - started
-        return {
+        row = {
             "phase": phase,
             "worker": request["worker"],
             "round": request["round"],
@@ -281,8 +411,11 @@ def _run_request(
             "line_count": request["line_count"],
             "required_terms": list(request["required_terms"]),
         }
+        if request.get("matrix_case") is not None:
+            row["matrix_case"] = str(request["matrix_case"])
+        return row
     except Exception as exc:
-        return {
+        row = {
             "phase": phase,
             "worker": request["worker"],
             "round": request["round"],
@@ -300,6 +433,9 @@ def _run_request(
             "line_count": request["line_count"],
             "required_terms": list(request["required_terms"]),
         }
+        if request.get("matrix_case") is not None:
+            row["matrix_case"] = str(request["matrix_case"])
+        return row
 
 
 def _as_float(value: Any) -> float | None:
@@ -401,6 +537,7 @@ def run_streaming_pressure_soak(
     max_ttft_seconds: float | None = DEFAULT_MAX_TTFT_SECONDS,
     max_elapsed_seconds: float | None = DEFAULT_MAX_ELAPSED_SECONDS,
     fail_on_slow: bool = False,
+    matrix_case: str | None = None,
     stream_func: StreamFunc = stream_chat_completion,
 ) -> Json:
     if concurrency < 1:
@@ -420,6 +557,7 @@ def run_streaming_pressure_soak(
                 temperature=temperature,
                 top_p=top_p,
                 thinking_mode=thinking_mode,
+                matrix_case=matrix_case,
             )
             for worker_index in range(concurrency)
         ]
@@ -455,7 +593,7 @@ def run_streaming_pressure_soak(
             and not summary["suspect_slow_elapsed"]
         )
     )
-    return {
+    row = {
         "case": case_name,
         "variant": variant,
         "model": model,
@@ -469,6 +607,132 @@ def run_streaming_pressure_soak(
         "max_tokens": max_tokens,
         "summary": summary,
         "requests": rows,
+    }
+    if matrix_case is not None:
+        row["matrix_case"] = matrix_case
+    return row
+
+
+def _max_float(values: list[Any]) -> float | None:
+    parsed = [_as_float(value) for value in values]
+    parsed = [value for value in parsed if value is not None]
+    return max(parsed) if parsed else None
+
+
+def run_streaming_pressure_matrix(
+    *,
+    base_url: str,
+    model: str,
+    variant: str,
+    case_name: str = DEFAULT_MATRIX_CASE_NAME,
+    case_specs: (
+        str
+        | list[str]
+        | tuple[str, ...]
+        | list[StreamingPressureCaseSpec]
+        | tuple[StreamingPressureCaseSpec, ...]
+        | None
+    ) = None,
+    temperature: float = 1.0,
+    top_p: float = 1.0,
+    thinking_mode: str = "non-thinking",
+    timeout: float = 900.0,
+    request_retries: int = 1,
+    headers: dict[str, str] | None = None,
+    extra_body: Json | None = None,
+    max_ttft_seconds: float | None = DEFAULT_MAX_TTFT_SECONDS,
+    max_elapsed_seconds: float | None = DEFAULT_MAX_ELAPSED_SECONDS,
+    fail_on_slow: bool = False,
+    stream_func: StreamFunc = stream_chat_completion,
+) -> Json:
+    specs = parse_streaming_pressure_case_specs(case_specs)
+    cases: list[Json] = []
+    for spec in specs:
+        row = run_streaming_pressure_soak(
+            base_url=base_url,
+            model=model,
+            variant=variant,
+            case_name=f"{case_name}.{spec.name}",
+            concurrency=spec.concurrency,
+            round_count=spec.round_count,
+            line_count=spec.line_count,
+            max_tokens=spec.max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            thinking_mode=thinking_mode,
+            timeout=timeout,
+            request_retries=request_retries,
+            headers=headers,
+            extra_body=extra_body,
+            max_ttft_seconds=(
+                spec.max_ttft_seconds
+                if spec.max_ttft_seconds is not None
+                else max_ttft_seconds
+            ),
+            max_elapsed_seconds=(
+                spec.max_elapsed_seconds
+                if spec.max_elapsed_seconds is not None
+                else max_elapsed_seconds
+            ),
+            fail_on_slow=fail_on_slow,
+            matrix_case=spec.name,
+            stream_func=stream_func,
+        )
+        row["matrix_case"] = spec.to_json()
+        cases.append(row)
+
+    summaries = [
+        case.get("summary")
+        for case in cases
+        if isinstance(case.get("summary"), dict)
+    ]
+    request_count = sum(int(summary.get("request_count") or 0) for summary in summaries)
+    failure_count = sum(int(summary.get("failure_count") or 0) for summary in summaries)
+    slow_case_count = sum(
+        1
+        for summary in summaries
+        if summary.get("suspect_slow_ttft") or summary.get("suspect_slow_elapsed")
+    )
+    failed_case_count = sum(0 if case.get("ok") else 1 for case in cases)
+    max_ttft = _max_float(
+        [summary.get("max_ttft_seconds") for summary in summaries]
+    )
+    max_elapsed = _max_float(
+        [summary.get("max_elapsed_seconds") for summary in summaries]
+    )
+    summary = {
+        "case_count": len(cases),
+        "ok_case_count": len(cases) - failed_case_count,
+        "failed_case_count": failed_case_count,
+        "slow_case_count": slow_case_count,
+        "request_count": request_count,
+        "failure_count": failure_count,
+        "cached_tokens_total": sum(
+            int(summary.get("cached_tokens_total") or 0) for summary in summaries
+        ),
+        "total_chunks": sum(int(summary.get("total_chunks") or 0) for summary in summaries),
+        "max_prompt_tokens": max(
+            (
+                int(summary.get("max_prompt_tokens") or 0)
+                for summary in summaries
+                if summary.get("max_prompt_tokens") is not None
+            ),
+            default=None,
+        ),
+        "max_ttft_seconds": _round_or_none(max_ttft),
+        "max_elapsed_seconds": _round_or_none(max_elapsed),
+    }
+    return {
+        "case": case_name,
+        "variant": variant,
+        "model": model,
+        "ok": failed_case_count == 0,
+        "thinking_mode": thinking_mode,
+        "temperature": temperature,
+        "top_p": top_p,
+        "case_specs": [spec.to_json() for spec in specs],
+        "summary": summary,
+        "cases": cases,
     }
 
 
@@ -541,5 +805,78 @@ def write_streaming_pressure_soak_markdown(path: Path, row: Json) -> None:
             f"{request.get('detail') or 'n/a'} |"
         )
     lines.append("")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def write_streaming_pressure_matrix_markdown(path: Path, row: Json) -> None:
+    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    lines = [
+        "# Streaming Pressure Matrix",
+        "",
+        f"- OK: `{row.get('ok')}`",
+        f"- Case: `{row.get('case')}`",
+        f"- Variant: `{row.get('variant')}`",
+        f"- Model: `{row.get('model')}`",
+        f"- Thinking mode: `{row.get('thinking_mode', 'n/a')}`",
+        f"- Temperature: `{row.get('temperature', 'n/a')}`",
+        f"- Top P: `{row.get('top_p', 'n/a')}`",
+        f"- Cases: `{summary.get('case_count', 'n/a')}`",
+        f"- Requests: `{summary.get('request_count', 'n/a')}`",
+        f"- Failures: `{summary.get('failure_count', 'n/a')}`",
+        f"- Slow cases: `{summary.get('slow_case_count', 'n/a')}`",
+        f"- Max TTFT seconds: `{_fmt(summary.get('max_ttft_seconds'))}`",
+        f"- Max elapsed seconds: `{_fmt(summary.get('max_elapsed_seconds'))}`",
+        "",
+        "## Cases",
+        "",
+        "| Name | C | Rounds | Lines | Max tokens | OK | Requests | Failures | Max TTFT s | Max elapsed s | Slow flag |",
+        "| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |",
+    ]
+    for case in row.get("cases", []):
+        if not isinstance(case, dict):
+            continue
+        spec = case.get("matrix_case")
+        if not isinstance(spec, dict):
+            spec = {}
+        case_summary = (
+            case.get("summary") if isinstance(case.get("summary"), dict) else {}
+        )
+        slow_flag = bool(
+            case_summary.get("suspect_slow_ttft")
+            or case_summary.get("suspect_slow_elapsed")
+        )
+        lines.append(
+            "| {name} | {concurrency} | {rounds} | {lines} | {max_tokens} | "
+            "{ok} | {requests} | {failures} | {max_ttft} | {max_elapsed} | "
+            "{slow} |".format(
+                name=spec.get("name", "n/a"),
+                concurrency=_fmt_int(spec.get("concurrency")),
+                rounds=_fmt_int(spec.get("round_count")),
+                lines=_fmt_int(spec.get("line_count")),
+                max_tokens=_fmt_int(spec.get("max_tokens")),
+                ok="yes" if case.get("ok") else "no",
+                requests=_fmt_int(case_summary.get("request_count")),
+                failures=_fmt_int(case_summary.get("failure_count")),
+                max_ttft=_fmt(case_summary.get("max_ttft_seconds")),
+                max_elapsed=_fmt(case_summary.get("max_elapsed_seconds")),
+                slow="yes" if slow_flag else "no",
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Runtime Guidance",
+            "",
+            (
+                "Use the sibling `runtime_stats_summary.json` and "
+                "`gpu_stats_summary.json` to interpret continuous pressure "
+                "results. Watch `running_requests_max`, KV-cache usage, "
+                "preemptions, prefix-cache hit rate, GPU power, and utilization "
+                "alongside the per-case TTFT and elapsed-time tails."
+            ),
+            "",
+        ]
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")

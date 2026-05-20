@@ -98,11 +98,15 @@ from ds4_harness.streaming_pressure_soak import (
     DEFAULT_CASE_NAME as DEFAULT_STREAMING_PRESSURE_CASE_NAME,
     DEFAULT_CONCURRENCY as DEFAULT_STREAMING_PRESSURE_CONCURRENCY,
     DEFAULT_LINE_COUNT as DEFAULT_STREAMING_PRESSURE_LINE_COUNT,
+    DEFAULT_MATRIX_CASE_NAME as DEFAULT_STREAMING_PRESSURE_MATRIX_CASE_NAME,
     DEFAULT_MAX_ELAPSED_SECONDS as DEFAULT_STREAMING_PRESSURE_MAX_ELAPSED_SECONDS,
     DEFAULT_MAX_TOKENS as DEFAULT_STREAMING_PRESSURE_MAX_TOKENS,
     DEFAULT_MAX_TTFT_SECONDS as DEFAULT_STREAMING_PRESSURE_MAX_TTFT_SECONDS,
     DEFAULT_ROUND_COUNT as DEFAULT_STREAMING_PRESSURE_ROUND_COUNT,
+    parse_streaming_pressure_case_specs,
+    run_streaming_pressure_matrix,
     run_streaming_pressure_soak,
+    write_streaming_pressure_matrix_markdown,
     write_streaming_pressure_soak_markdown,
 )
 from ds4_harness.run_environment import (
@@ -1008,6 +1012,66 @@ def _cmd_streaming_pressure_soak(args: argparse.Namespace) -> int:
     return 0 if row.get("ok") else 1
 
 
+def _cmd_streaming_pressure_matrix(args: argparse.Namespace) -> int:
+    if not _validate_request_retries(args.request_retries):
+        print("--request-retries must be >= 0", file=sys.stderr)
+        return 2
+
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+        raw_specs: list[str] = []
+        if args.case_specs:
+            raw_specs.append(args.case_specs)
+        raw_specs.extend(args.case_spec or [])
+        specs = parse_streaming_pressure_case_specs(raw_specs or None)
+        row = run_streaming_pressure_matrix(
+            base_url=args.base_url,
+            model=args.model,
+            variant=args.variant,
+            case_name=args.case_name,
+            case_specs=specs,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            thinking_mode=args.thinking_mode,
+            timeout=args.timeout,
+            request_retries=args.request_retries,
+            headers=headers,
+            extra_body=extra_body,
+            max_ttft_seconds=args.max_ttft_seconds,
+            max_elapsed_seconds=args.max_elapsed_seconds,
+            fail_on_slow=args.fail_on_slow,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_streaming_pressure_matrix_markdown(args.markdown_output, row)
+
+    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    status = "PASS" if row.get("ok") else "FAIL"
+    detail = (
+        "cases={cases} requests={requests} failures={failures} "
+        "slow_cases={slow_cases} max_ttft={max_ttft} max_elapsed={max_elapsed}"
+    ).format(
+        cases=summary.get("case_count", "n/a"),
+        requests=summary.get("request_count", "n/a"),
+        failures=summary.get("failure_count", "n/a"),
+        slow_cases=summary.get("slow_case_count", "n/a"),
+        max_ttft=summary.get("max_ttft_seconds", "n/a"),
+        max_elapsed=summary.get("max_elapsed_seconds", "n/a"),
+    )
+    print(f"{status} {row.get('case')} variant={args.variant}: {detail}")
+    return 0 if row.get("ok") else 1
+
+
 def _cmd_kv_layout_probe(args: argparse.Namespace) -> int:
     try:
         row = run_kv_layout_probe(
@@ -1844,6 +1908,52 @@ def build_parser() -> argparse.ArgumentParser:
     streaming_soak.add_argument("--json-output", type=Path)
     streaming_soak.add_argument("--markdown-output", type=Path)
     streaming_soak.set_defaults(func=_cmd_streaming_pressure_soak)
+
+    streaming_matrix = subparsers.add_parser("streaming-pressure-matrix")
+    streaming_matrix.add_argument("--base-url", default="http://127.0.0.1:8000")
+    streaming_matrix.add_argument("--model", default=DEFAULT_MODEL)
+    streaming_matrix.add_argument("--variant", default="manual")
+    streaming_matrix.add_argument(
+        "--case-name", default=DEFAULT_STREAMING_PRESSURE_MATRIX_CASE_NAME
+    )
+    streaming_matrix.add_argument(
+        "--case-specs",
+        default=None,
+        help=(
+            "Comma-separated specs: "
+            "name:concurrency:round_count:line_count:max_tokens"
+            "[:max_ttft_seconds[:max_elapsed_seconds]]"
+        ),
+    )
+    streaming_matrix.add_argument(
+        "--case-spec",
+        action="append",
+        help=(
+            "Add one matrix case spec. May be repeated. Uses the same format "
+            "as --case-specs."
+        ),
+    )
+    streaming_matrix.add_argument("--temperature", type=float, default=1.0)
+    streaming_matrix.add_argument("--top-p", type=float, default=1.0)
+    streaming_matrix.add_argument("--thinking-mode", default="non-thinking")
+    streaming_matrix.add_argument("--timeout", type=float, default=900.0)
+    streaming_matrix.add_argument("--request-retries", type=int, default=1)
+    streaming_matrix.add_argument(
+        "--max-ttft-seconds",
+        type=float,
+        default=DEFAULT_STREAMING_PRESSURE_MAX_TTFT_SECONDS,
+    )
+    streaming_matrix.add_argument(
+        "--max-elapsed-seconds",
+        type=float,
+        default=DEFAULT_STREAMING_PRESSURE_MAX_ELAPSED_SECONDS,
+    )
+    streaming_matrix.add_argument("--fail-on-slow", action="store_true")
+    streaming_matrix.add_argument("--api-key-env")
+    streaming_matrix.add_argument("--extra-body-json")
+    streaming_matrix.add_argument("--json-output", type=Path)
+    streaming_matrix.add_argument("--markdown-output", type=Path)
+    streaming_matrix.set_defaults(func=_cmd_streaming_pressure_matrix)
 
     kv_layout = subparsers.add_parser("kv-layout-probe")
     kv_layout.add_argument("--target-python", default=sys.executable)

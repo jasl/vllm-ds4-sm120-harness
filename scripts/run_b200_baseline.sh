@@ -135,6 +135,17 @@ STREAMING_PRESSURE_REQUEST_RETRIES="${STREAMING_PRESSURE_REQUEST_RETRIES:-${API_
 STREAMING_PRESSURE_MAX_TTFT_SECONDS="${STREAMING_PRESSURE_MAX_TTFT_SECONDS:-60}"
 STREAMING_PRESSURE_MAX_ELAPSED_SECONDS="${STREAMING_PRESSURE_MAX_ELAPSED_SECONDS:-300}"
 STREAMING_PRESSURE_FAIL_ON_SLOW="${STREAMING_PRESSURE_FAIL_ON_SLOW:-0}"
+RUN_STREAMING_PRESSURE_MATRIX="${RUN_STREAMING_PRESSURE_MATRIX:-0}"
+STREAMING_PRESSURE_MATRIX_CASE_NAME="${STREAMING_PRESSURE_MATRIX_CASE_NAME:-streaming_pressure_continuous_matrix}"
+STREAMING_PRESSURE_MATRIX_CASE_SPECS="${STREAMING_PRESSURE_MATRIX_CASE_SPECS:-short_c4:4:3:1200:128,long_c2:2:2:4000:128,long_c4:4:2:2400:128}"
+STREAMING_PRESSURE_MATRIX_TEMPERATURE="${STREAMING_PRESSURE_MATRIX_TEMPERATURE:-1.0}"
+STREAMING_PRESSURE_MATRIX_TOP_P="${STREAMING_PRESSURE_MATRIX_TOP_P:-1.0}"
+STREAMING_PRESSURE_MATRIX_THINKING_MODE="${STREAMING_PRESSURE_MATRIX_THINKING_MODE:-non-thinking}"
+STREAMING_PRESSURE_MATRIX_TIMEOUT="${STREAMING_PRESSURE_MATRIX_TIMEOUT:-1800}"
+STREAMING_PRESSURE_MATRIX_REQUEST_RETRIES="${STREAMING_PRESSURE_MATRIX_REQUEST_RETRIES:-${API_REQUEST_RETRIES:-1}}"
+STREAMING_PRESSURE_MATRIX_MAX_TTFT_SECONDS="${STREAMING_PRESSURE_MATRIX_MAX_TTFT_SECONDS:-120}"
+STREAMING_PRESSURE_MATRIX_MAX_ELAPSED_SECONDS="${STREAMING_PRESSURE_MATRIX_MAX_ELAPSED_SECONDS:-900}"
+STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW="${STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW:-0}"
 RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"
 RUN_BENCH_HF="${RUN_BENCH_HF:-1}"
 RUN_LM_EVAL="${RUN_LM_EVAL:-1}"
@@ -261,6 +272,7 @@ VALID_BASELINE_PHASES=(
   long_context_latency_matrix
   prefix_cache_probe
   streaming_pressure_soak
+  streaming_pressure_matrix
   bench_hf_mt_bench
   eval_gsm8k
   bench_random_8192x512
@@ -291,7 +303,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,prefix_cache_probe,streaming_pressure_soak,bench_hf_mt_bench,eval_gsm8k,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,prefix_cache_probe,streaming_pressure_soak,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
   done
@@ -691,6 +703,10 @@ write_summary() {
       "${STREAMING_PRESSURE_ROUND_COUNT:-3}" "${STREAMING_PRESSURE_LINE_COUNT:-1200}" \
       "${STREAMING_PRESSURE_MAX_TOKENS:-128}" "${STREAMING_PRESSURE_THINKING_MODE:-non-thinking}" \
       "${STREAMING_PRESSURE_FAIL_ON_SLOW:-0}"
+    printf -- '- streaming_pressure_matrix: `%s`, specs `%s`, thinking `%s`, fail_on_slow `%s`\n' \
+      "${RUN_STREAMING_PRESSURE_MATRIX}" "${STREAMING_PRESSURE_MATRIX_CASE_SPECS}" \
+      "${STREAMING_PRESSURE_MATRIX_THINKING_MODE:-non-thinking}" \
+      "${STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW:-0}"
     printf -- '- hf_benchmark: `%s`\n' "${RUN_BENCH_HF}"
     printf -- '- lm_eval: `%s`, tasks `%s`, fewshot `%s`, limit `%s`, no-MTP concurrency `%s`, MTP concurrency `%s`\n' \
       "${RUN_LM_EVAL}" "${LM_EVAL_TASKS}" "${LM_EVAL_NUM_FEWSHOT}" \
@@ -1115,6 +1131,29 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_streaming_pressure_soak.sh"
+  fi
+
+  if phase_enabled "streaming_pressure_matrix" && { [[ "${RUN_STREAMING_PRESSURE_MATRIX}" == "1" ]] || [[ "${RUN_STREAMING_PRESSURE_MATRIX}" == "true" ]]; }; then
+    run_phase "${variant}" "streaming_pressure_matrix" "${variant_dir}/streaming_pressure_matrix" \
+      env OUT_DIR="${variant_dir}/streaming_pressure_matrix" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
+        STREAMING_PRESSURE_MATRIX_VARIANT="${variant}" \
+        STREAMING_PRESSURE_MATRIX_CASE_NAME="${STREAMING_PRESSURE_MATRIX_CASE_NAME:-streaming_pressure_continuous_matrix}" \
+        STREAMING_PRESSURE_MATRIX_CASE_SPECS="${STREAMING_PRESSURE_MATRIX_CASE_SPECS:-short_c4:4:3:1200:128,long_c2:2:2:4000:128,long_c4:4:2:2400:128}" \
+        STREAMING_PRESSURE_MATRIX_TEMPERATURE="${STREAMING_PRESSURE_MATRIX_TEMPERATURE:-1.0}" \
+        STREAMING_PRESSURE_MATRIX_TOP_P="${STREAMING_PRESSURE_MATRIX_TOP_P:-1.0}" \
+        STREAMING_PRESSURE_MATRIX_THINKING_MODE="${STREAMING_PRESSURE_MATRIX_THINKING_MODE:-non-thinking}" \
+        STREAMING_PRESSURE_MATRIX_TIMEOUT="${STREAMING_PRESSURE_MATRIX_TIMEOUT:-1800}" \
+        STREAMING_PRESSURE_MATRIX_REQUEST_RETRIES="${STREAMING_PRESSURE_MATRIX_REQUEST_RETRIES:-${API_REQUEST_RETRIES:-1}}" \
+        STREAMING_PRESSURE_MATRIX_MAX_TTFT_SECONDS="${STREAMING_PRESSURE_MATRIX_MAX_TTFT_SECONDS:-120}" \
+        STREAMING_PRESSURE_MATRIX_MAX_ELAPSED_SECONDS="${STREAMING_PRESSURE_MATRIX_MAX_ELAPSED_SECONDS:-900}" \
+        STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW="${STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW:-0}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_streaming_pressure_matrix.sh"
   fi
 
   if phase_enabled "bench_hf_mt_bench" && { [[ "${RUN_BENCH_HF}" == "1" ]] || [[ "${RUN_BENCH_HF}" == "true" ]]; }; then

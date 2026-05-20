@@ -54,6 +54,7 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_prefix_cache_probe.sh",
         "run_long_context_latency_matrix.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
@@ -158,6 +159,24 @@ def test_streaming_pressure_soak_wrapper_records_kv_runtime_artifacts():
     assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
 
 
+def test_streaming_pressure_matrix_wrapper_records_continuous_pressure_cases():
+    script = (ROOT / "scripts" / "run_streaming_pressure_matrix.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "streaming-pressure-matrix" in script
+    assert "STREAMING_PRESSURE_MATRIX_CASE_SPECS" in script
+    assert "short_c4:4:3:1200:128" in script
+    assert "long_c2:2:2:4000:128" in script
+    assert '--json-output "${OUT_DIR}/streaming_pressure_matrix.json"' in script
+    assert '--markdown-output "${OUT_DIR}/streaming_pressure_matrix.md"' in script
+    assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+    assert "start_gpu_stats" in script
+    assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+    assert "start_runtime_stats" in script
+    assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
 def test_acceptance_streaming_pressure_soak_is_opt_in():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
     sample = (ROOT / "env.sample").read_text(encoding="utf-8")
@@ -243,9 +262,11 @@ def test_env_sample_and_local_env_are_configured():
         "LONG_CONTEXT_LATENCY_MAX_TOKENS",
         "LONG_CONTEXT_LATENCY_THINKING_MODE",
         "RUN_STREAMING_PRESSURE_SOAK",
+        "RUN_STREAMING_PRESSURE_MATRIX",
         "STREAMING_PRESSURE_CONCURRENCY",
         "STREAMING_PRESSURE_ROUND_COUNT",
         "STREAMING_PRESSURE_LINE_COUNT",
+        "STREAMING_PRESSURE_MATRIX_CASE_SPECS",
         "STREAMING_PRESSURE_THINKING_MODE",
         "GENERATION_PROMPT_ROOT",
         "GENERATION_LANGUAGES",
@@ -296,6 +317,7 @@ def test_env_sample_and_local_env_are_configured():
         "LONG_CONTEXT_LATENCY_REPEAT_COUNT": "3",
         "LONG_CONTEXT_LATENCY_MAX_TOKENS": "128",
         "RUN_STREAMING_PRESSURE_SOAK": "0",
+        "RUN_STREAMING_PRESSURE_MATRIX": "0",
         "STREAMING_PRESSURE_TEMPERATURE": "1.0",
         "STREAMING_PRESSURE_TOP_P": "1.0",
     }.items() <= values.items()
@@ -545,6 +567,7 @@ def test_scripts_capture_gpu_stats_to_artifacts():
         "run_lm_eval.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
@@ -574,6 +597,7 @@ def test_scripts_capture_vllm_runtime_stats_to_artifacts():
         "run_lm_eval.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
@@ -602,6 +626,7 @@ def test_scripts_collect_vllm_official_env_to_artifacts():
         "run_kv_layout_probe.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
@@ -652,6 +677,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert "--no-enable-prefix-caching" in script
     assert 'serve_prefix_cache_mode: `%s`' in script
     assert 'RUN_STREAMING_PRESSURE_SOAK="${RUN_STREAMING_PRESSURE_SOAK:-0}"' in script
+    assert 'RUN_STREAMING_PRESSURE_MATRIX="${RUN_STREAMING_PRESSURE_MATRIX:-0}"' in script
     assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
     assert 'LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY:-}"' in script
     assert 'LM_EVAL_GATE_METRIC="${LM_EVAL_GATE_METRIC:-exact_match_flexible}"' in script
@@ -670,6 +696,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert '"${variant_dir}/long_context_latency_matrix"' in script
     assert '"${variant_dir}/prefix_cache_probe"' in script
     assert '"${variant_dir}/streaming_pressure_soak"' in script
+    assert '"${variant_dir}/streaming_pressure_matrix"' in script
     assert '"${variant_dir}/bench_hf_mt_bench"' in script
     assert '"${variant_dir}/bench_random_8192x512"' in script
     assert '"${variant_dir}/eval_gsm8k"' in script
@@ -682,6 +709,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert "run_long_context_latency_matrix.sh" in script
     assert "run_prefix_cache_probe.sh" in script
     assert "run_streaming_pressure_soak.sh" in script
+    assert "run_streaming_pressure_matrix.sh" in script
     assert "run_bench_matrix.sh" in script
     assert "run_lm_eval.sh" in script
     assert 'LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY}"' in script
@@ -1118,6 +1146,7 @@ def test_scripts_have_valid_bash_syntax():
         "run_b200_baseline.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
         "generate_baseline_bundle.sh",
         "gpu_stats.sh",

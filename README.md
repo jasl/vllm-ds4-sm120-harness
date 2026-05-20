@@ -190,6 +190,14 @@ tool-call turn.
     tokens, runtime stats, and GPU stats
   - is disabled by default; enable it with `RUN_STREAMING_PRESSURE_SOAK=1`
     when you want a short release-gate check for streaming responsiveness
+- Optional continuous streaming-pressure matrix:
+  - runs several streaming-pressure cases back-to-back against one live server,
+    preserving GPU/runtime telemetry across the whole pressure window
+  - defaults to short C=4 plus long-context C=2/C=4 cases; override
+    `STREAMING_PRESSURE_MATRIX_CASE_SPECS` to add C=8/24/32, longer rounds, or
+    hardware-specific shapes
+  - is disabled by default; enable it with `RUN_STREAMING_PRESSURE_MATRIX=1`
+    when comparing hardware or validating sustained high-pressure behavior
 
 ## Coverage Model
 
@@ -841,6 +849,18 @@ The optional streaming-pressure soak is disabled by default with
 `STREAMING_PRESSURE_FAIL_ON_SLOW=0`. It records slow-TTFT/elapsed warning
 flags by default; set `STREAMING_PRESSURE_FAIL_ON_SLOW=1` only on a stable
 host where you want those warnings to fail the gate.
+
+The optional continuous streaming-pressure matrix is disabled by default with
+`RUN_STREAMING_PRESSURE_MATRIX=0`. When enabled, it defaults to
+`STREAMING_PRESSURE_MATRIX_CASE_SPECS=short_c4:4:3:1200:128,long_c2:2:2:4000:128,long_c4:4:2:2400:128`.
+Each case spec is
+`name:concurrency:round_count:line_count:max_tokens[:max_ttft_seconds[:max_elapsed_seconds]]`.
+For upper-bound pressure on larger hosts, append cases such as
+`burst_c24:24:3:512:64` or `burst_c32:32:2:256:64`; keep those out of the
+default matrix because dual-card and memory-tight serves may legitimately queue
+or fail them. Use `STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW=1` only after the
+per-hardware thresholds are calibrated.
+
 The default KV layout probe uses a synthetic packed FP8 indexer cache with
 `KV_LAYOUT_NUM_BLOCKS=2`, `KV_LAYOUT_BLOCK_SIZE=256`,
 `KV_LAYOUT_HEAD_DIM=448`, `KV_LAYOUT_SCALE_BYTES=8`, and
@@ -1028,6 +1048,12 @@ Before promoting an optimization:
   `max_elapsed_seconds`, chunk counts, `running_requests_max`,
   `gpu_kv_cache_usage_percent_max`, prefix hit rate, and preemptions. Leave it
   disabled for routine local harness edits.
+- Enable `streaming-pressure-matrix` with `RUN_STREAMING_PRESSURE_MATRIX=1`
+  when validating sustained high-pressure behavior across hardware or serve
+  profiles. Start with the default short C=4 plus long C=2/C=4 matrix, then add
+  C=8/24/32 cases through `STREAMING_PRESSURE_MATRIX_CASE_SPECS` for larger
+  hosts. Treat slow flags as evidence until thresholds are calibrated for that
+  hardware.
 - `oracle-compare` has matching prompt token ids and no early token divergence
   on high-margin deterministic oracle cases. Low-margin divergence must be
   explained with top-k overlap, top-1 margin, and repeated-request stability
