@@ -259,6 +259,57 @@ both graph families captured.
 
 ## Ineffective Or Ambiguous Optimization Notes
 
+### Mixed Long Decode Internal Prefill Cap
+
+A 2026-05-21 refresh appeared to regress 59K/124K C=1 TTFT, but that
+artifact was collected from a dirty, out-of-date harness checkout and is not a
+strict A/B point. A clean fixed-protocol repeat with prefix cache disabled,
+131K max-model-len, 4096 max-num-batched-tokens, TP=2, MTP=2,
+`FULL_AND_PIECEWISE`, and repeat count 3 did not reproduce the C=1 regression:
+
+| Prompt Shape | C | TTFT Mean | TTFT Range | Decode tok/s Mean | ITL P95 | ITL P99 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 59K synthetic | 1 | 11.686 s | 11.006-12.975 s | 133.307 | 0.021 s | 0.024 s |
+| 124K synthetic | 1 | 30.522 s | 27.902-35.545 s | 107.421 | 0.027 s | 0.029 s |
+
+The same repeat confirmed that C=2 mixed long-context decode imbalance is
+real. One request decodes while the paired long prefill is still active, so the
+slow request sees second-scale inter-token gaps:
+
+| Prompt Shape | C | TTFT Mean | TTFT Max | Decode tok/s Min | Decode tok/s Mean | Decode Min/Max | ITL P95 | ITL P99 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 59K synthetic | 2 | 17.798 s | 26.325 s | 4.689 | 63.640 | 0.037 | 1.014 s | 1.152 s |
+| 124K synthetic | 2 | 44.607 s | 67.867 s | 2.258 | 54.965 | 0.021 | 1.494 s | 1.593 s |
+
+Artifact label: `codex_regression_recheck_20260521064045`.
+
+An internal scheduler experiment then capped long prefill chunks only after a
+decode request had already been scheduled in the same step. The goal was to
+reduce the one-sided decode starvation without adding a public user-facing
+knob. Three cap fractions were tested:
+
+| Prompt Shape | Variant | TTFT Mean Delta | TTFT Max Delta | Decode Min Delta | ITL P95 Delta | ITL P99 Delta |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 59K C=2 | cap 1/4 | +7.31% | +17.67% | +36.24% | -55.72% | -59.12% |
+| 59K C=2 | cap 1/3 | +5.12% | +18.13% | +9.74% | -48.80% | -50.56% |
+| 59K C=2 | cap 1/2 | +4.30% | +12.96% | -8.56% | -33.66% | -39.50% |
+| 124K C=2 | cap 1/4 | +2.34% | +7.68% | +168.24% | -68.52% | -69.63% |
+| 124K C=2 | cap 1/3 | +2.20% | +6.50% | +130.44% | -62.85% | -64.45% |
+| 124K C=2 | cap 1/2 | +1.61% | +4.59% | +86.47% | -54.72% | -54.00% |
+
+Artifact labels:
+`codex_adaptive_prefill_recheck_20260521065621`,
+`codex_adaptive_prefill_third_recheck_20260521071645`, and
+`codex_adaptive_prefill_half_recheck_20260521070700`.
+
+Decision: do not retain this scheduler code in the active branch. The data
+validates the hypothesis that long prefill/decode overlap causes the C=2
+fairness cliff, and the cap materially improves ITL tails, but every tested
+fraction regressed C=2 TTFT. That violates the current promotion rule for
+small-concurrency latency. Preserve the code only on backup branch
+`codex/mixed-decode-prefill-cap-experiment-20260521` for future experiments
+where an explicit latency-vs-TTFT tradeoff is acceptable.
+
 ### Mixed Decode/Prefill Scheduling Cap
 
 This experiment tested whether a scheduler cap for mixed decode/prefill steps

@@ -64,6 +64,14 @@ def test_scripts_allow_explicit_python_interpreter():
         assert '"${PYTHON}" -m ds4_harness.cli' in script
 
 
+def test_lm_eval_script_uses_vllm_venv_binary_by_default():
+    script = (ROOT / "scripts" / "run_lm_eval.sh").read_text(encoding="utf-8")
+
+    assert 'if [[ -z "${LM_EVAL_BIN:-}" && -n "${VLLM_VENV:-}" ]]; then' in script
+    assert 'LM_EVAL_BIN="${VLLM_VENV}/bin/lm_eval"' in script
+    assert 'LM_EVAL_BIN="${LM_EVAL_BIN:-lm_eval}"' in script
+
+
 def test_bench_script_defaults_to_representative_hf_dataset():
     script = (ROOT / "scripts" / "run_bench_matrix.sh").read_text(encoding="utf-8")
 

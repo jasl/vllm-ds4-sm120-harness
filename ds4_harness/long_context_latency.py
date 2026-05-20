@@ -164,6 +164,59 @@ def _decode_tokens_per_second(
     return round(tokens / decode_seconds, 6)
 
 
+def _round_or_none(value: float | None) -> float | None:
+    return None if value is None else round(value, 6)
+
+
+def _numeric_sequence(value: Any) -> list[float]:
+    if not isinstance(value, list | tuple):
+        return []
+    parsed: list[float] = []
+    for item in value:
+        number = _as_float(item)
+        if number is not None:
+            parsed.append(number)
+    return parsed
+
+
+def _percentile_nearest_rank(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    if not 0 < percentile <= 1:
+        raise ValueError("percentile must be > 0 and <= 1")
+    ordered = sorted(values)
+    index = max(
+        0,
+        min(len(ordered) - 1, int(len(ordered) * percentile + 0.999999) - 1),
+    )
+    return ordered[index]
+
+
+def _inter_chunk_stats(samples: list[float]) -> Json:
+    return {
+        "inter_chunk_sample_count": len(samples),
+        "avg_inter_chunk_seconds": _round_or_none(
+            sum(samples) / len(samples) if samples else None
+        ),
+        "p95_inter_chunk_seconds": _round_or_none(
+            _percentile_nearest_rank(samples, 0.95)
+        ),
+        "p99_inter_chunk_seconds": _round_or_none(
+            _percentile_nearest_rank(samples, 0.99)
+        ),
+        "max_inter_chunk_seconds": _round_or_none(max(samples) if samples else None),
+    }
+
+
+def _min_to_max_ratio(values: list[float]) -> float | None:
+    if not values:
+        return None
+    maximum = max(values)
+    if maximum <= 0:
+        return None
+    return round(min(values) / maximum, 6)
+
+
 def _request_ok(text: str, required_terms: tuple[str, ...]) -> tuple[bool, str]:
     if not required_terms:
         if text.strip():
@@ -272,6 +325,7 @@ def _run_stream_request(
             ttft_seconds=ttft,
             elapsed_seconds=elapsed,
         )
+        inter_chunk_seconds = _numeric_sequence(result.get("inter_chunk_seconds"))
         row = {
             "phase": phase,
             "cache_mode": cache_mode,
@@ -291,6 +345,9 @@ def _run_stream_request(
             "cached_prompt_tokens": _cached_prompt_tokens(usage),
             "decode_tokens_per_second": decode_tps,
             "chunks": result.get("chunks"),
+            "time_to_last_token_seconds": result.get("time_to_last_token_seconds"),
+            "inter_chunk_seconds": inter_chunk_seconds,
+            **_inter_chunk_stats(inter_chunk_seconds),
             "finish_reason": _finish_reason(response),
             "response_id": response.get("id") if response.get("id") else None,
             "prompt_sha256": prompt.sha256,
@@ -319,6 +376,9 @@ def _run_stream_request(
             "cached_prompt_tokens": None,
             "decode_tokens_per_second": None,
             "chunks": 0,
+            "time_to_last_token_seconds": None,
+            "inter_chunk_seconds": [],
+            **_inter_chunk_stats([]),
             "finish_reason": None,
             "prompt_sha256": prompt.sha256,
             "line_count": prompt.line_count,
@@ -373,6 +433,11 @@ def _summarize_rows(rows: list[Json]) -> list[Json]:
         cached_tokens = _numeric_values(group_rows, "cached_prompt_tokens")
         completion_tokens = _numeric_values(group_rows, "completion_tokens")
         decode_tps = _numeric_values(group_rows, "decode_tokens_per_second")
+        inter_chunk_samples = [
+            sample
+            for row in group_rows
+            for sample in _numeric_sequence(row.get("inter_chunk_seconds"))
+        ]
         summary.append(
             {
                 "prompt": prompt,
@@ -391,6 +456,8 @@ def _summarize_rows(rows: list[Json]) -> list[Json]:
                 "decode_tokens_per_second_mean": _mean(decode_tps),
                 "decode_tokens_per_second_min": _min(decode_tps),
                 "decode_tokens_per_second_max": _max(decode_tps),
+                "decode_tps_min_to_max_ratio": _min_to_max_ratio(decode_tps),
+                **_inter_chunk_stats(inter_chunk_samples),
             }
         )
     c1_by_prompt_cache = {
@@ -641,8 +708,8 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
         "",
         "## Summary",
         "",
-        "| Prompt | Cache | C | Requests | Failures | TTFT mean s | TTFT max s | Elapsed mean s | Decode tok/s mean | Decode/C1 | Prompt tok | Cached tok | Completion tok |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Prompt | Cache | C | Requests | Failures | TTFT mean s | TTFT max s | Elapsed mean s | Decode tok/s mean | Decode/C1 | Decode min/max | ITL p95 s | ITL p99 s | ITL max s | Prompt tok | Cached tok | Completion tok |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for item in row.get("summary", []):
         if not isinstance(item, dict):
@@ -650,7 +717,8 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
         lines.append(
             "| {prompt} | {cache} | {concurrency} | {requests} | {failures} | "
             "{ttft_mean} | {ttft_max} | {elapsed_mean} | {decode_tps} | "
-            "{decode_ratio} | {prompt_tokens} | {cached_tokens} | "
+            "{decode_ratio} | {decode_fairness} | {itl_p95} | {itl_p99} | "
+            "{itl_max} | {prompt_tokens} | {cached_tokens} | "
             "{completion_tokens} |".format(
                 prompt=item.get("prompt"),
                 cache=item.get("cache_mode"),
@@ -662,6 +730,10 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
                 elapsed_mean=_fmt(item.get("elapsed_seconds_mean")),
                 decode_tps=_fmt(item.get("decode_tokens_per_second_mean")),
                 decode_ratio=_fmt(item.get("decode_tps_vs_c1_ratio")),
+                decode_fairness=_fmt(item.get("decode_tps_min_to_max_ratio")),
+                itl_p95=_fmt(item.get("p95_inter_chunk_seconds")),
+                itl_p99=_fmt(item.get("p99_inter_chunk_seconds")),
+                itl_max=_fmt(item.get("max_inter_chunk_seconds")),
                 prompt_tokens=_fmt_int(item.get("prompt_tokens_mean")),
                 cached_tokens=_fmt_int(item.get("cached_prompt_tokens_mean")),
                 completion_tokens=_fmt_int(item.get("completion_tokens_mean")),
@@ -688,8 +760,8 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
         [
             "## Request Rows",
             "",
-            "| Phase | Prompt | Cache | C | Repeat | Request | OK | TTFT s | Elapsed s | Decode tok/s | Prompt tok | Cached tok | Detail |",
-            "| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+            "| Phase | Prompt | Cache | C | Repeat | Request | OK | TTFT s | Elapsed s | Decode tok/s | ITL p95 s | ITL p99 s | ITL max s | Prompt tok | Cached tok | Detail |",
+            "| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
         ]
     )
     for request in row.get("requests", []):
@@ -697,7 +769,8 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
             continue
         lines.append(
             "| {phase} | {prompt} | {cache} | {concurrency} | {repeat} | {request} | "
-            "{ok} | {ttft} | {elapsed} | {decode_tps} | {prompt_tokens} | {cached_tokens} | {detail} |".format(
+            "{ok} | {ttft} | {elapsed} | {decode_tps} | {itl_p95} | {itl_p99} | "
+            "{itl_max} | {prompt_tokens} | {cached_tokens} | {detail} |".format(
                 phase=request.get("phase"),
                 prompt=request.get("prompt"),
                 cache=request.get("cache_mode"),
@@ -708,6 +781,9 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
                 ttft=_fmt(request.get("ttft_seconds")),
                 elapsed=_fmt(request.get("elapsed_seconds")),
                 decode_tps=_fmt(request.get("decode_tokens_per_second")),
+                itl_p95=_fmt(request.get("p95_inter_chunk_seconds")),
+                itl_p99=_fmt(request.get("p99_inter_chunk_seconds")),
+                itl_max=_fmt(request.get("max_inter_chunk_seconds")),
                 prompt_tokens=_fmt_int(request.get("prompt_tokens")),
                 cached_tokens=_fmt_int(request.get("cached_prompt_tokens")),
                 detail=str(request.get("detail", "")).replace("|", "\\|"),

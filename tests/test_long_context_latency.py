@@ -38,6 +38,12 @@ def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
             "ttft_seconds": 0.2 if metadata["cache_mode"] == "warm" else 1.0,
             "elapsed_seconds": 0.8 if metadata["cache_mode"] == "warm" else 2.0,
             "chunks": 2,
+            "time_to_last_token_seconds": 0.7
+            if metadata["cache_mode"] == "warm"
+            else 1.9,
+            "inter_chunk_seconds": [0.1, 0.2, 0.5]
+            if metadata["cache_mode"] == "warm"
+            else [0.4, 0.8, 1.2],
         }
 
     row = run_long_context_latency_matrix(
@@ -62,6 +68,10 @@ def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
     assert warm_c2["cached_prompt_tokens_mean"] == 39000
     assert warm_c2["decode_tokens_per_second_mean"] == 15.0
     assert warm_c2["decode_tps_vs_c1_ratio"] == 1.0
+    assert warm_c2["p95_inter_chunk_seconds"] == 0.5
+    assert warm_c2["p99_inter_chunk_seconds"] == 0.5
+    assert warm_c2["max_inter_chunk_seconds"] == 0.5
+    assert warm_c2["decode_tps_min_to_max_ratio"] == 1.0
     cold_payloads = [
         payload
         for metadata, payload in calls
@@ -75,13 +85,18 @@ def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
         "alpha-cobalt-17 beta-quartz-29 gamma-onyx-43"
     )
     assert "beta-quartz-29" in first_request["assistant_text_excerpt"]
+    assert first_request["time_to_last_token_seconds"] == 1.9
+    assert first_request["inter_chunk_seconds"] == [0.4, 0.8, 1.2]
+    assert first_request["p95_inter_chunk_seconds"] == 1.2
+    assert first_request["p99_inter_chunk_seconds"] == 1.2
 
 
 def test_long_context_latency_matrix_quantifies_decode_collapse_vs_c1():
     def fake_stream(base_url, path, payload, timeout, **kwargs):
         metadata = kwargs["probe_metadata"]
         concurrency = int(metadata["concurrency"])
-        elapsed = 6.0 if concurrency == 1 else 120.0
+        request_index = int(metadata["request_index"])
+        elapsed = 6.0 if concurrency == 1 else (11.0 if request_index == 1 else 101.0)
         return {
             "response": {
                 "choices": [
@@ -116,8 +131,9 @@ def test_long_context_latency_matrix_quantifies_decode_collapse_vs_c1():
     c2 = next(item for item in row["summary"] if item["concurrency"] == 2)
 
     assert c1["decode_tokens_per_second_mean"] == 20.0
-    assert c2["decode_tokens_per_second_mean"] == 0.840336
-    assert c2["decode_tps_vs_c1_ratio"] == 0.042017
+    assert c2["decode_tokens_per_second_mean"] == 5.5
+    assert c2["decode_tps_vs_c1_ratio"] == 0.275
+    assert c2["decode_tps_min_to_max_ratio"] == 0.1
 
 
 def test_long_context_latency_matrix_supports_prompt_files(tmp_path):
@@ -187,6 +203,10 @@ def test_long_context_latency_markdown_includes_summary(tmp_path):
                 "completion_tokens_mean": 4,
                 "decode_tokens_per_second_mean": 12.5,
                 "decode_tps_vs_c1_ratio": 1.0,
+                "decode_tps_min_to_max_ratio": 1.0,
+                "p95_inter_chunk_seconds": 0.2,
+                "p99_inter_chunk_seconds": 0.2,
+                "max_inter_chunk_seconds": 0.2,
             }
         ],
         "prompts": [],

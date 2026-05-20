@@ -9,6 +9,9 @@ load_harness_env
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
 MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
 PYTHON="${PYTHON:-python}"
+if [[ -z "${LM_EVAL_BIN:-}" && -n "${VLLM_VENV:-}" ]]; then
+  LM_EVAL_BIN="${VLLM_VENV}/bin/lm_eval"
+fi
 LM_EVAL_BIN="${LM_EVAL_BIN:-lm_eval}"
 LM_EVAL_TASKS="${LM_EVAL_TASKS:-gsm8k}"
 LM_EVAL_NUM_FEWSHOT="${LM_EVAL_NUM_FEWSHOT:-8}"
