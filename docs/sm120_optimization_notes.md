@@ -331,6 +331,32 @@ Keep this gate in future rowwise evaluations. If a user can still reproduce a
 sub-1 tok/s C=2 cliff in prefix-cache warm mode, collect NCU/NSYS around the
 paged-MQA logits kernel and scheduler traces before changing the kernel.
 
+### Sparse MLA SplitKV Decode Experiment
+
+A default-off SM120 experiment added a split-KV sparse MLA decode path behind
+`VLLM_TRITON_MLA_SPARSE_SPLITKV_DECODE`. It was intended to explore whether
+long-context decode could benefit from splitting the candidate dimension across
+SMs before merging partial softmax state.
+
+The experiment was removed from the active branch because it had no
+promotion-quality end-to-end win for the current target. Keeping the code would
+leave an undocumented A/B switch, extra Triton kernels, and additional
+workspace sizing logic on the DeepSeek V4 path without a measured default
+benefit. The simpler matmul decode path remains the active implementation.
+
+Cleanup validation used the current TP=2, MTP=2, prefix-cache-disabled,
+131K-capable serve profile and kept `FULL_AND_PIECEWISE` graph capture:
+
+| Gate | Result |
+| --- | --- |
+| short-context streaming pressure C=4 | pass, 4/4 requests completed, max TTFT 6.940 s |
+| 59K synthetic long-context C=1 | pass, TTFT 10.887 s, decode 135.659 tok/s |
+| targeted vLLM tests | pass, 58 tests |
+| touched-file static checks | pass, compileall, ruff, diff-check |
+
+The splitKV code is preserved only on backup branch
+`codex/sm120-splitkv-decode-experiment-backup-20260521054846`.
+
 ### Short-Context MTP C=4 Root-Cause Controls
 
 The following controls were useful for locating the C=4 stall but were not kept
