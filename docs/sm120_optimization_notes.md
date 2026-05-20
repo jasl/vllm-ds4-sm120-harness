@@ -259,6 +259,40 @@ both graph families captured.
 
 ## Ineffective Or Ambiguous Optimization Notes
 
+### Mixed Decode/Prefill Scheduling Cap
+
+This experiment tested whether a scheduler cap for mixed decode/prefill steps
+could preserve decode smoothness while keeping the 8192-token prefill profile.
+The experimental vLLM branch added an opt-in budget,
+`--max-num-prefill-tokens-with-decode`, that only applied when active decode
+work existed at the start of a scheduling step.
+
+The data was positive for streaming smoothness. Same-current-code A/B, prefix
+cache disabled, 131K max-model-len, TP=2, MTP=2, `FULL_AND_PIECEWISE`,
+`max_num_seqs=4`, `max_num_batched_tokens=8192`, current CUDA graph memory
+profiling enabled. Both services reported 4.36 GiB available KV memory and
+167,242 KV tokens, so this comparison is not mixed with the older larger-KV
+startup profile.
+
+| Matrix | Cap | Max TTFT | P95 ITL | P99 ITL | Max ITL |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| cold long C=2/C=4 | off | 51.430 s | 2.182 s | 2.459 s | 2.537 s |
+| cold long C=2/C=4 | 4096 | 53.687 s | 1.141 s | 1.467 s | 1.856 s |
+| warm long C=2/C=4 | off | 48.093 s | 1.882 s | 2.176 s | 2.234 s |
+| warm long C=2/C=4 | 4096 | 47.534 s | 0.935 s | 1.300 s | 1.304 s |
+
+Warm mixed-load streaming improved materially: P95 ITL dropped about 50%, P99
+ITL about 40%, and max ITL about 42%, with no warm TTFT regression in this
+matrix. However, the code was not retained because it exposes a new user-facing
+scheduler knob with subtle semantics and no documentation-quality guidance for
+when to enable it. It is also not validated on >128K, four-card, or GB10
+cluster shapes. The conservative default remains to avoid adding this option to
+the Dev branch for now.
+
+Artifact labels: `codex_mixed_prefill_mbt8192_cap4096_20260520182630` and
+`codex_mixed_prefill_mbt8192_nocap_20260520183653`. The experimental code is
+preserved only on backup branch `codex/mixed-prefill-budget-experiment`.
+
 ### Long-Context C=2 Decode Cliff Recheck
 
 An external report suggested that two simultaneous 120K-context decode
