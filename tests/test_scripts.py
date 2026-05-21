@@ -551,6 +551,22 @@ def test_vllm_correctness_gate_docs_use_public_gsm8k_slice():
     assert "LM_EVAL_NUM_FEWSHOT=8" not in docs
 
 
+def test_vllm_correctness_gate_docs_include_sm120_refresh_watchlist():
+    docs = (ROOT / "docs" / "vllm_correctness_gates.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SM120 Refresh Promotion Gates" in docs
+    assert "short-context C=1/2/4" in docs
+    assert "59K and 124K" in docs
+    assert "C=1/C=2" in docs
+    assert "decode min/max" in docs
+    assert "ITL p95/p99" in docs
+    assert "GSM8K" in docs
+    assert "256K/512K/1M" in docs
+    assert "four-card" in docs
+
+
 def test_acceptance_script_writes_human_markdown_smoke_reports():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
 

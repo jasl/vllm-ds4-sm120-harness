@@ -107,6 +107,33 @@ Use this harness to capture behavior around the vLLM-side tests:
   than as a model-quality failure.
 - `lm-eval` / `scripts/run_lm_eval.sh` for public GSM8K exact-match reporting.
 
+## SM120 Refresh Promotion Gates
+
+For SM120 branch promotion, carry the current refresh watchlist as explicit
+quality gates instead of relying on a sales-refresh narrative:
+
+- Short-context same-profile smoke: compare short-context C=1/2/4 throughput
+  against the latest accepted same-host baseline. Treat it as a regression
+  gate for scheduler, CUDA graph, MTP, and decode-kernel changes even when the
+  active optimization targets long context.
+- Long-context fixed-order latency: repeat 59K and 124K cold C=1/C=2 with the
+  same warmup, run order, prefix-cache mode, request `max_tokens`,
+  `--max-model-len`, and `--max-num-batched-tokens`. Report TTFT mean/max and
+  elapsed time before deciding whether a TTFT movement is real or run-order
+  variance.
+- Mixed long-context C=2 fairness: report per-request decode min/max,
+  decode min/max ratio, and ITL p95/p99/max. A slow-request path with high ITL
+  p95/p99 remains an engineering follow-up even if the mean decode throughput
+  or request success rate looks acceptable.
+- GSM8K correctness: keep an explicit-venv `lm_eval` invocation in the refresh
+  path. A limit-50 5-shot run is acceptable as a quick iteration smoke; public
+  preview and branch-promotion evidence should still use the 0-shot and 5-shot
+  200-question slices above when runtime budget allows.
+- Long-context claim boundary: treat 256K/512K/1M behavior as estimates until
+  the same gates run on four-card RTX PRO 6000 hardware at the target context
+  length. Do not turn dual-card 128K-130K evidence into customer commitments
+  beyond 128K.
+
 Checked-in baselines are final result artifacts. This harness should consume
 them as-is and write new analysis artifacts when they become stale; do not
 backfill old baselines or add compatibility layers for retired baseline

@@ -238,6 +238,12 @@ Use the harness as a layered gate, not as one monolithic command:
   the stricter token-level kernel gate. For public preview claims, capture both
   `--num-fewshot 0 --limit 200` and `--num-fewshot 5 --limit 200` when runtime
   budget allows, matching the common DeepSeek V4 SM120 comparison format.
+- SM120 refresh promotion: carry the current refresh watchlist into the
+  quality gate. Compare short-context C=1/2/4 throughput, repeat 59K and 124K
+  long-context C=1/C=2 with fixed warmup and run order, include per-request
+  decode fairness plus ITL p95/p99 for mixed long-context C=2, and keep GSM8K
+  in the explicit target venv. Treat 256K/512K/1M claims as estimates until
+  the same gates run on four-card RTX PRO 6000 hardware.
 - Serving variants: run no-MTP and MTP as separate server configurations. MTP
   changes generation trajectories, so compare it against a no-MTP baseline
   with the same harness profile.
@@ -1079,6 +1085,10 @@ Before promoting an optimization:
 - Real-scenario benchmark on `philschmid/mt-bench` does not regress more than
   the explicitly accepted threshold. Random-shape benchmark regressions are
   useful diagnostics, but should not be the only performance signal.
+- For SM120 branch promotion, use `docs/vllm_correctness_gates.md` as the
+  authoritative checklist for the refresh watchlist: short-context C=1/2/4,
+  fixed-order 59K/124K C=1/C=2, mixed long-context C=2 fairness, GSM8K, and the
+  four-card boundary for 256K/512K/1M claims.
 
 ## Notes
 
