@@ -48,6 +48,62 @@ not at a simple GDDR7 bandwidth ceiling:
 
 ## Successful Optimization Notes
 
+### Mixed Decode / Long Prefill 3/4 Cap
+
+The user-reported multi-long-context cliff is now understood as a narrower
+scheduler shape: one request has already reached decode, then another long
+prefill is admitted behind it. The paged-MQA decode kernel is not the only
+suspect in that shape; the active decoder can be starved by the following long
+prefill chunks.
+
+The retained scheduler change is intentionally internal and conservative. It
+does not add a public knob. When chunked prefill is enabled, at least one
+decode request has already been scheduled in the current step, and the next
+request still has more than one full scheduling step of prefill remaining, the
+long-prefill chunk is capped at 3/4 of `max_num_batched_tokens`. C=1, pure
+prefill, pure decode, and short prefills that fit within one normal step are
+not capped.
+
+Mixed-arrival gate, prefix cache disabled, 131K max-model-len, 4096
+max-num-batched-tokens, TP=2, MTP=2, repeat count 3:
+
+| Case | Variant | Primary TTFT | Secondary TTFT | Decode Min | Fairness | ITL P95 | ITL P99 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| decode then 59K long | baseline | 11.036 s | 12.882 s | 3.821 tok/s | 0.029 | 0.955 s | 1.048 s |
+| decode then 59K long | 3/4 cap | 10.957 s | 11.566 s | 5.822 tok/s | 0.044 | 0.655 s | 0.835 s |
+| 124K long then short | baseline | 28.436 s | 27.124 s | 39.358 tok/s | 0.448 | 0.031 s | 0.525 s |
+| 124K long then short | 3/4 cap | 28.441 s | 26.964 s | 54.715 tok/s | 0.585 | 0.032 s | 0.524 s |
+
+Artifact labels:
+`codex_mixed_arrival_baseline_20260521` and
+`codex_mixed_arrival_decode_prefill_cap_3q_20260521`.
+
+Fixed 59K/124K C=1/C=2 cold gate, repeat count 3:
+
+| Prompt Shape | C | Baseline TTFT | 3/4 Cap TTFT | Baseline ITL P95 | 3/4 Cap ITL P95 | Baseline ITL P99 | 3/4 Cap ITL P99 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 59K synthetic | 1 | 11.686 s | 11.013 s | 0.021 s | 0.021 s | 0.024 s | 0.024 s |
+| 59K synthetic | 2 | 17.798 s | 18.020 s | 1.014 s | 0.850 s | 1.152 s | 0.889 s |
+| 124K synthetic | 1 | 30.522 s | 28.420 s | 0.027 s | 0.028 s | 0.029 s | 0.029 s |
+| 124K synthetic | 2 | 44.607 s | 44.184 s | 1.494 s | 0.911 s | 1.593 s | 0.985 s |
+
+Artifact labels:
+`codex_regression_recheck_20260521064045` and
+`codex_mixed_arrival_decode_prefill_cap_3q_20260521`.
+
+Short-context and correctness gates on the retained 3/4 candidate:
+
+| Gate | Result |
+| --- | --- |
+| Short C=4 streaming-pressure smoke, artifact `codex_decode_prefill_cap_3q_final_gate_20260521/short_c4_round2` | 8/8 successful, max TTFT 6.421 s, max elapsed 6.786 s |
+| GSM8K 5-shot limit-50, artifact `codex_decode_prefill_cap_3q_final_gate_20260521/gsm8k_limit50` | `exact_match_flexible=0.960` versus baseline `0.940`; compare passed |
+
+Decision: keep this candidate for the Dev branch because it targets the
+observed decode+long-prefill interference without changing user-facing
+configuration. It is still a dual-card 131K validation point; before making
+claims for 256K+ or four-card users, rerun the same mixed-arrival and fixed
+C=1/C=2 gates on that hardware.
+
 ### Sparse SWA MTP Reorder Correctness Fix
 
 The 64K-class MTP=2 C=3/C=4 retrieval miss was traced to a metadata split
@@ -302,13 +358,38 @@ Artifact labels:
 `codex_adaptive_prefill_third_recheck_20260521071645`, and
 `codex_adaptive_prefill_half_recheck_20260521070700`.
 
-Decision: do not retain this scheduler code in the active branch. The data
-validates the hypothesis that long prefill/decode overlap causes the C=2
-fairness cliff, and the cap materially improves ITL tails, but every tested
-fraction regressed C=2 TTFT. That violates the current promotion rule for
-small-concurrency latency. Preserve the code only on backup branch
-`codex/mixed-decode-prefill-cap-experiment-20260521` for future experiments
-where an explicit latency-vs-TTFT tradeoff is acceptable.
+Decision: do not retain those aggressive 1/4, 1/3, or 1/2 caps in the active
+branch. The data validated the hypothesis that long prefill/decode overlap
+causes the C=2 fairness cliff, but the tested fractions regressed C=2 TTFT.
+The later 3/4 cap is tracked separately as a retained candidate because it is
+narrower and had materially better fixed-gate behavior.
+
+### Mixed Decode / Long Prefill 7/8 Cap
+
+The 7/8 cap was tested as a more conservative alternative to the retained 3/4
+cap. It reduced interference less than 3/4 while still not recovering the
+fixed 59K C=2 decode-min proxy enough to change the tradeoff.
+
+| Case | Variant | Decode Min | ITL P95 | ITL P99 |
+| --- | --- | ---: | ---: | ---: |
+| mixed-arrival decode then 59K long | 3/4 cap | 5.822 tok/s | 0.655 s | 0.835 s |
+| mixed-arrival decode then 59K long | 7/8 cap | 4.610 tok/s | 0.895 s | 0.989 s |
+| fixed 124K C=2 | 3/4 cap | 3.193 tok/s | 0.911 s | 0.985 s |
+| fixed 124K C=2 | 7/8 cap | 2.704 tok/s | 1.065 s | 1.394 s |
+
+Artifact label: `codex_mixed_arrival_decode_prefill_cap_7eighth_20260521`.
+Decision: do not retain 7/8; it is too weak for the target interference shape.
+
+### Short Prefill Reserve Scheduler Experiment
+
+A separate experiment reserved token budget for short prefills while a long
+prefill was already running. It improved the `long_then_short` TTFT shape but
+hurt decode fairness and did not address the primary user report where an
+existing decoder is interrupted by a new long prefill.
+
+Decision: do not retain this code in the active branch. The experiment is
+preserved on backup branch
+`codex/short-prefill-reserve-experiment-20260521`.
 
 ### Mixed Decode/Prefill Scheduling Cap
 

@@ -2,8 +2,11 @@ import json
 
 from ds4_harness import cli
 from ds4_harness.long_context_latency import (
+    parse_mixed_arrival_case_spec,
     run_long_context_latency_matrix,
+    run_long_context_mixed_arrival_matrix,
     write_long_context_latency_markdown,
+    write_long_context_mixed_arrival_markdown,
 )
 
 
@@ -223,6 +226,160 @@ def test_long_context_latency_markdown_includes_summary(tmp_path):
     assert "synthetic_128_lines" in report
 
 
+def test_mixed_arrival_case_spec_parses_start_trigger():
+    spec = parse_mixed_arrival_case_spec(
+        "decode_then_long:1900:1900:after_first_token:0.25:256:128"
+    )
+
+    assert spec.name == "decode_then_long"
+    assert spec.primary_line_count == 1900
+    assert spec.secondary_line_count == 1900
+    assert spec.start_trigger == "after_first_token"
+    assert spec.secondary_start_delay_seconds == 0.25
+    assert spec.primary_max_tokens == 256
+    assert spec.secondary_max_tokens == 128
+
+
+def test_mixed_arrival_after_first_token_starts_secondary_after_primary_decode():
+    calls = []
+
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        metadata = kwargs["probe_metadata"]
+        calls.append((metadata["request_role"], metadata["start_trigger"]))
+        callback = metadata.get("on_first_token")
+        if callback is not None:
+            callback()
+        completion_tokens = 32 if metadata["request_role"] == "primary" else 16
+        return {
+            "assistant_text": "alpha-cobalt-17 beta-quartz-29 gamma-onyx-43",
+            "response": {
+                "usage": {
+                    "prompt_tokens": 59000
+                    if metadata["request_role"] == "primary"
+                    else 60000,
+                    "completion_tokens": completion_tokens,
+                }
+            },
+            "ttft_seconds": 1.0 if metadata["request_role"] == "primary" else 2.0,
+            "elapsed_seconds": 5.0 if metadata["request_role"] == "primary" else 10.0,
+            "inter_chunk_seconds": [0.1, 0.2]
+            if metadata["request_role"] == "primary"
+            else [0.9, 1.1],
+        }
+
+    row = run_long_context_mixed_arrival_matrix(
+        base_url="http://server",
+        model="model",
+        variant="unit",
+        case_specs=["decode_then_long:1900:1900:after_first_token:0:256:128"],
+        stream_func=fake_stream,
+    )
+
+    assert row["ok"] is True
+    assert calls[0] == ("primary", "after_first_token")
+    assert calls[1] == ("secondary", "after_first_token")
+    summary = row["summary"][0]
+    assert summary["case"] == "decode_then_long"
+    assert summary["secondary_p95_inter_chunk_seconds"] == 1.1
+    assert summary["decode_tps_min_to_max_ratio"] < 1.0
+    secondary = next(req for req in row["requests"] if req["request_role"] == "secondary")
+    primary = next(req for req in row["requests"] if req["request_role"] == "primary")
+    assert secondary["actual_start_offset_seconds"] >= primary["actual_start_offset_seconds"]
+
+
+def test_mixed_arrival_fixed_delay_uses_injected_sleep_and_short_secondary():
+    sleep_calls = []
+
+    def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        metadata = kwargs["probe_metadata"]
+        return {
+            "assistant_text": "alpha-cobalt-17 beta-quartz-29 gamma-onyx-43",
+            "response": {
+                "usage": {
+                    "prompt_tokens": 124000
+                    if metadata["request_role"] == "primary"
+                    else 5000,
+                    "completion_tokens": 32,
+                }
+            },
+            "ttft_seconds": 30.0 if metadata["request_role"] == "primary" else 1.0,
+            "elapsed_seconds": 35.0 if metadata["request_role"] == "primary" else 3.0,
+            "inter_chunk_seconds": [0.03, 0.04]
+            if metadata["request_role"] == "primary"
+            else [0.2, 0.4],
+        }
+
+    row = run_long_context_mixed_arrival_matrix(
+        base_url="http://server",
+        model="model",
+        variant="unit",
+        case_specs=["long_then_short:4000:192:fixed_delay:2:128:64"],
+        stream_func=fake_stream,
+        sleep_func=fake_sleep,
+    )
+
+    assert row["ok"] is True
+    assert sleep_calls == [2.0]
+    summary = row["summary"][0]
+    assert summary["primary_prompt_tokens_mean"] == 124000
+    assert summary["secondary_prompt_tokens_mean"] == 5000
+    assert summary["secondary_max_ttft_seconds"] == 1.0
+
+
+def test_long_context_mixed_arrival_markdown_includes_roles(tmp_path):
+    row = {
+        "case": "mixed_arrival",
+        "variant": "unit",
+        "model": "model",
+        "ok": True,
+        "repeat_count": 1,
+        "cases": [
+            {
+                "name": "decode_then_long",
+                "start_trigger": "after_first_token",
+                "secondary_start_delay_seconds": 0.0,
+                "primary_line_count": 1900,
+                "secondary_line_count": 1900,
+            }
+        ],
+        "summary": [
+            {
+                "case": "decode_then_long",
+                "request_count": 2,
+                "failure_count": 0,
+                "primary_ttft_seconds_mean": 1.0,
+                "secondary_ttft_seconds_mean": 2.0,
+                "secondary_p95_inter_chunk_seconds": 1.1,
+                "decode_tps_min_to_max_ratio": 0.1,
+            }
+        ],
+        "requests": [
+            {
+                "arrival_case": "decode_then_long",
+                "request_role": "primary",
+                "ok": True,
+                "ttft_seconds": 1.0,
+                "elapsed_seconds": 5.0,
+                "decode_tokens_per_second": 8.0,
+                "p95_inter_chunk_seconds": 0.2,
+                "actual_start_offset_seconds": 0.0,
+                "detail": "matched",
+            }
+        ],
+    }
+    output = tmp_path / "mixed.md"
+
+    write_long_context_mixed_arrival_markdown(output, row)
+
+    text = output.read_text(encoding="utf-8")
+    assert "# Long Context Mixed Arrival Matrix" in text
+    assert "| decode_then_long | 2 | 0 |" in text
+    assert "| decode_then_long | primary | yes |" in text
+
+
 def test_long_context_latency_cli_writes_json_and_markdown(monkeypatch, tmp_path):
     def fake_run_long_context_latency_matrix(**kwargs):
         return {
@@ -265,5 +422,49 @@ def test_long_context_latency_cli_writes_json_and_markdown(monkeypatch, tmp_path
     data = json.loads(json_output.read_text(encoding="utf-8"))
     assert data["variant"] == "mtp"
     assert "Long Context Latency Matrix" in markdown_output.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_long_context_mixed_arrival_cli_writes_json_and_markdown(monkeypatch, tmp_path):
+    def fake_run_long_context_mixed_arrival_matrix(**kwargs):
+        return {
+            "case": kwargs["case_name"],
+            "variant": kwargs["variant"],
+            "model": kwargs["model"],
+            "ok": True,
+            "summary": [{"failure_count": 0}],
+            "requests": [],
+            "cases": [],
+        }
+
+    monkeypatch.setattr(
+        cli,
+        "run_long_context_mixed_arrival_matrix",
+        fake_run_long_context_mixed_arrival_matrix,
+    )
+    json_output = tmp_path / "mixed.json"
+    markdown_output = tmp_path / "mixed.md"
+
+    rc = cli.main(
+        [
+            "long-context-mixed-arrival",
+            "--model",
+            "model",
+            "--variant",
+            "mtp",
+            "--case-specs",
+            "decode_then_long:1900:1900:after_first_token:0:256:128",
+            "--json-output",
+            str(json_output),
+            "--markdown-output",
+            str(markdown_output),
+        ]
+    )
+
+    assert rc == 0
+    data = json.loads(json_output.read_text(encoding="utf-8"))
+    assert data["variant"] == "mtp"
+    assert "Long Context Mixed Arrival Matrix" in markdown_output.read_text(
         encoding="utf-8"
     )

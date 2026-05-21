@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import statistics
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -20,12 +21,19 @@ from ds4_harness.prefix_cache_probe import stream_chat_completion
 
 Json = dict[str, Any]
 StreamFunc = Callable[..., Json]
+SleepFunc = Callable[[float], None]
 
 DEFAULT_CASE_NAME = "long_context_interactive_latency"
 DEFAULT_LINE_COUNTS = (DEFAULT_LINE_COUNT,)
 DEFAULT_CONCURRENCY = (1,)
 DEFAULT_CACHE_MODES = ("cold", "warm")
 DEFAULT_MAX_TOKENS = 64
+DEFAULT_MIXED_ARRIVAL_CASE_NAME = "long_context_mixed_arrival"
+DEFAULT_MIXED_ARRIVAL_CASE_SPECS = (
+    "decode_then_long:1900:1900:after_first_token:0:256:128",
+    "long_then_short:4000:192:fixed_delay:2:128:64",
+)
+MIXED_ARRIVAL_START_TRIGGERS = ("after_first_token", "fixed_delay")
 
 
 @dataclass(frozen=True)
@@ -42,6 +50,28 @@ class LatencyPrompt:
         return hashlib.sha256(self.text.encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True)
+class MixedArrivalCaseSpec:
+    name: str
+    primary_line_count: int
+    secondary_line_count: int
+    start_trigger: str
+    secondary_start_delay_seconds: float
+    primary_max_tokens: int
+    secondary_max_tokens: int
+
+    def to_json(self) -> Json:
+        return {
+            "name": self.name,
+            "primary_line_count": self.primary_line_count,
+            "secondary_line_count": self.secondary_line_count,
+            "start_trigger": self.start_trigger,
+            "secondary_start_delay_seconds": self.secondary_start_delay_seconds,
+            "primary_max_tokens": self.primary_max_tokens,
+            "secondary_max_tokens": self.secondary_max_tokens,
+        }
+
+
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -54,6 +84,86 @@ def _slug(value: str) -> str:
         elif chars and chars[-1] != "_":
             chars.append("_")
     return "".join(chars).strip("_") or "prompt"
+
+
+def _validate_case_name(name: str) -> str:
+    if not name:
+        raise ValueError("mixed arrival case name must not be empty")
+    if any(not (char.isalnum() or char in "._-") for char in name):
+        raise ValueError(
+            "mixed arrival case name may only contain letters, numbers, '.', '_', or '-'"
+        )
+    return name
+
+
+def _parse_positive_int(value: str, field: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{field} must be an integer: {value!r}") from exc
+    if parsed < 1:
+        raise ValueError(f"{field} must be >= 1")
+    return parsed
+
+
+def _parse_non_negative_float(value: str, field: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ValueError(f"{field} must be a number: {value!r}") from exc
+    if parsed < 0:
+        raise ValueError(f"{field} must be >= 0")
+    return parsed
+
+
+def parse_mixed_arrival_case_spec(text: str) -> MixedArrivalCaseSpec:
+    parts = [part.strip() for part in text.split(":")]
+    if len(parts) != 7:
+        raise ValueError(
+            "mixed arrival case spec must be "
+            "name:primary_line_count:secondary_line_count:start_trigger:"
+            "secondary_start_delay_seconds:primary_max_tokens:secondary_max_tokens"
+        )
+    start_trigger = parts[3]
+    if start_trigger not in MIXED_ARRIVAL_START_TRIGGERS:
+        raise ValueError(
+            "mixed arrival start_trigger must be one of: "
+            + ", ".join(MIXED_ARRIVAL_START_TRIGGERS)
+        )
+    return MixedArrivalCaseSpec(
+        name=_validate_case_name(parts[0]),
+        primary_line_count=_parse_positive_int(parts[1], "primary_line_count"),
+        secondary_line_count=_parse_positive_int(parts[2], "secondary_line_count"),
+        start_trigger=start_trigger,
+        secondary_start_delay_seconds=_parse_non_negative_float(
+            parts[4], "secondary_start_delay_seconds"
+        ),
+        primary_max_tokens=_parse_positive_int(parts[5], "primary_max_tokens"),
+        secondary_max_tokens=_parse_positive_int(parts[6], "secondary_max_tokens"),
+    )
+
+
+def parse_mixed_arrival_case_specs(
+    values: str | list[str] | tuple[str, ...] | None,
+) -> list[MixedArrivalCaseSpec]:
+    if values is None:
+        values = list(DEFAULT_MIXED_ARRIVAL_CASE_SPECS)
+    elif isinstance(values, str):
+        values = [values]
+
+    specs: list[MixedArrivalCaseSpec] = []
+    for value in values:
+        for raw_item in value.split(","):
+            item = raw_item.strip()
+            if item:
+                specs.append(parse_mixed_arrival_case_spec(item))
+    if not specs:
+        raise ValueError("at least one mixed arrival case is required")
+    names = [spec.name for spec in specs]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError("duplicate mixed arrival case names: " + ", ".join(duplicates))
+    return specs
 
 
 def _prompt_excerpt(prompt: str) -> Json:
@@ -282,6 +392,8 @@ def _run_stream_request(
     extra_body: Json | None,
     stream_func: StreamFunc,
     phase: str = "measure",
+    probe_metadata_extra: dict[str, Any] | None = None,
+    row_extra: Json | None = None,
 ) -> Json:
     payload = _build_payload(
         prompt,
@@ -293,6 +405,18 @@ def _run_stream_request(
         extra_body=extra_body,
     )
     started = time.monotonic()
+    probe_metadata = {
+        "case": case_name,
+        "variant": variant,
+        "prompt": prompt.name,
+        "cache_mode": cache_mode,
+        "concurrency": concurrency,
+        "repeat": repeat_index,
+        "request_index": request_index,
+        "phase": phase,
+    }
+    if probe_metadata_extra:
+        probe_metadata.update(probe_metadata_extra)
     try:
         result = stream_func(
             base_url,
@@ -300,16 +424,7 @@ def _run_stream_request(
             payload,
             timeout,
             headers=headers,
-            probe_metadata={
-                "case": case_name,
-                "variant": variant,
-                "prompt": prompt.name,
-                "cache_mode": cache_mode,
-                "concurrency": concurrency,
-                "repeat": repeat_index,
-                "request_index": request_index,
-                "phase": phase,
-            },
+            probe_metadata=probe_metadata,
         )
         response = result.get("response") if isinstance(result.get("response"), dict) else {}
         text = str(result.get("assistant_text") or assistant_text(response))
@@ -354,10 +469,12 @@ def _run_stream_request(
             "line_count": prompt.line_count,
             "prompt_file": prompt.prompt_file,
         }
+        if row_extra:
+            row.update(row_extra)
         row.update(_assistant_text_artifact(prompt, text))
         return row
     except Exception as exc:
-        return {
+        row = {
             "phase": phase,
             "cache_mode": cache_mode,
             "prompt": prompt.name,
@@ -384,6 +501,9 @@ def _run_stream_request(
             "line_count": prompt.line_count,
             "prompt_file": prompt.prompt_file,
         }
+        if row_extra:
+            row.update(row_extra)
+        return row
 
 
 def _mean(values: list[float]) -> float | None:
@@ -680,6 +800,268 @@ def run_long_context_latency_matrix(
     }
 
 
+def _role_rows(rows: list[Json], role: str) -> list[Json]:
+    return [row for row in rows if row.get("request_role") == role]
+
+
+def _summarize_mixed_arrival_rows(rows: list[Json]) -> list[Json]:
+    groups: dict[str, list[Json]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get("arrival_case")), []).append(row)
+
+    summaries: list[Json] = []
+    for case_name, case_rows in sorted(groups.items()):
+        decode_tps = _numeric_values(case_rows, "decode_tokens_per_second")
+        inter_chunk_samples = [
+            sample
+            for row in case_rows
+            for sample in _numeric_sequence(row.get("inter_chunk_seconds"))
+        ]
+        summary: Json = {
+            "case": case_name,
+            "request_count": len(case_rows),
+            "failure_count": sum(0 if row.get("ok") else 1 for row in case_rows),
+            "decode_tokens_per_second_mean": _mean(decode_tps),
+            "decode_tokens_per_second_min": _min(decode_tps),
+            "decode_tokens_per_second_max": _max(decode_tps),
+            "decode_tps_min_to_max_ratio": _min_to_max_ratio(decode_tps),
+            **_inter_chunk_stats(inter_chunk_samples),
+        }
+        for role in ("primary", "secondary"):
+            role_group = _role_rows(case_rows, role)
+            ttfts = _numeric_values(role_group, "ttft_seconds")
+            elapsed = _numeric_values(role_group, "elapsed_seconds")
+            prompt_tokens = _numeric_values(role_group, "prompt_tokens")
+            role_inter_chunks = [
+                sample
+                for row in role_group
+                for sample in _numeric_sequence(row.get("inter_chunk_seconds"))
+            ]
+            summary.update(
+                {
+                    f"{role}_request_count": len(role_group),
+                    f"{role}_failure_count": sum(
+                        0 if row.get("ok") else 1 for row in role_group
+                    ),
+                    f"{role}_ttft_seconds_mean": _mean(ttfts),
+                    f"{role}_max_ttft_seconds": _max(ttfts),
+                    f"{role}_elapsed_seconds_mean": _mean(elapsed),
+                    f"{role}_max_elapsed_seconds": _max(elapsed),
+                    f"{role}_prompt_tokens_mean": _mean(prompt_tokens),
+                    f"{role}_p95_inter_chunk_seconds": _round_or_none(
+                        _percentile_nearest_rank(role_inter_chunks, 0.95)
+                    ),
+                    f"{role}_p99_inter_chunk_seconds": _round_or_none(
+                        _percentile_nearest_rank(role_inter_chunks, 0.99)
+                    ),
+                    f"{role}_max_inter_chunk_seconds": _round_or_none(
+                        max(role_inter_chunks) if role_inter_chunks else None
+                    ),
+                }
+            )
+        start_after_primary_ttft = []
+        repeats = sorted({int(row.get("repeat") or 0) for row in case_rows})
+        for repeat_index in repeats:
+            repeat_rows = [
+                row for row in case_rows if int(row.get("repeat") or 0) == repeat_index
+            ]
+            primary = next(
+                (row for row in repeat_rows if row.get("request_role") == "primary"),
+                None,
+            )
+            secondary = next(
+                (row for row in repeat_rows if row.get("request_role") == "secondary"),
+                None,
+            )
+            if not primary or not secondary:
+                continue
+            primary_start = _as_float(primary.get("actual_start_offset_seconds"))
+            primary_ttft = _as_float(primary.get("ttft_seconds"))
+            secondary_start = _as_float(secondary.get("actual_start_offset_seconds"))
+            if (
+                primary_start is None
+                or primary_ttft is None
+                or secondary_start is None
+            ):
+                continue
+            start_after_primary_ttft.append(
+                secondary_start - (primary_start + primary_ttft)
+            )
+        summary["secondary_start_after_primary_ttft_seconds"] = _mean(
+            start_after_primary_ttft
+        )
+        summary["secondary_start_after_primary_ttft_seconds_min"] = _min(
+            start_after_primary_ttft
+        )
+        summary["secondary_start_after_primary_ttft_seconds_max"] = _max(
+            start_after_primary_ttft
+        )
+        summaries.append(summary)
+    return summaries
+
+
+def run_long_context_mixed_arrival_matrix(
+    *,
+    base_url: str,
+    model: str,
+    variant: str,
+    case_name: str = DEFAULT_MIXED_ARRIVAL_CASE_NAME,
+    case_specs: list[str] | None = None,
+    repeat_count: int = 1,
+    temperature: float = 0.0,
+    top_p: float = 1.0,
+    thinking_mode: str = "non-thinking",
+    timeout: float = 3600.0,
+    headers: dict[str, str] | None = None,
+    extra_body: Json | None = None,
+    stream_func: StreamFunc = stream_chat_completion,
+    sleep_func: SleepFunc = time.sleep,
+) -> Json:
+    if repeat_count < 1:
+        raise ValueError("repeat_count must be >= 1")
+    specs = parse_mixed_arrival_case_specs(case_specs)
+    for spec in specs:
+        if spec.primary_line_count < 128 or spec.secondary_line_count < 128:
+            raise ValueError("line counts must be at least 128")
+
+    rows: list[Json] = []
+    prompt_manifests: list[Json] = []
+    for spec in specs:
+        for repeat_index in range(1, repeat_count + 1):
+            primary_prompt = build_synthetic_latency_prompt(
+                line_count=spec.primary_line_count,
+                salt=f"{spec.name}:primary:{repeat_index}:{time.monotonic_ns()}",
+            )
+            secondary_prompt = build_synthetic_latency_prompt(
+                line_count=spec.secondary_line_count,
+                salt=f"{spec.name}:secondary:{repeat_index}:{time.monotonic_ns()}",
+            )
+            prompt_manifests.extend(
+                [
+                    {
+                        "case": spec.name,
+                        "request_role": "primary",
+                        "name": primary_prompt.name,
+                        "source": primary_prompt.source,
+                        "line_count": primary_prompt.line_count,
+                        "sha256": primary_prompt.sha256,
+                        "excerpt": _prompt_excerpt(primary_prompt.text),
+                        "required_terms": list(primary_prompt.required_terms),
+                    },
+                    {
+                        "case": spec.name,
+                        "request_role": "secondary",
+                        "name": secondary_prompt.name,
+                        "source": secondary_prompt.source,
+                        "line_count": secondary_prompt.line_count,
+                        "sha256": secondary_prompt.sha256,
+                        "excerpt": _prompt_excerpt(secondary_prompt.text),
+                        "required_terms": list(secondary_prompt.required_terms),
+                    },
+                ]
+            )
+
+            case_started = time.monotonic()
+            primary_first_token = threading.Event()
+
+            def mark_primary_first_token() -> None:
+                primary_first_token.set()
+
+            def run_role(
+                *,
+                role: str,
+                request_index: int,
+                prompt: LatencyPrompt,
+                max_tokens: int,
+                probe_extra: dict[str, Any] | None = None,
+            ) -> Json:
+                actual_start = time.monotonic() - case_started
+                return _run_stream_request(
+                    base_url=base_url,
+                    model=model,
+                    variant=variant,
+                    case_name=case_name,
+                    prompt=prompt,
+                    cache_mode="cold",
+                    concurrency=2,
+                    repeat_index=repeat_index,
+                    request_index=request_index,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    thinking_mode=thinking_mode,
+                    timeout=timeout,
+                    headers=headers,
+                    extra_body=extra_body,
+                    stream_func=stream_func,
+                    phase="measure",
+                    probe_metadata_extra={
+                        "arrival_case": spec.name,
+                        "request_role": role,
+                        "start_trigger": spec.start_trigger,
+                        **(probe_extra or {}),
+                    },
+                    row_extra={
+                        "arrival_case": spec.name,
+                        "request_role": role,
+                        "start_trigger": spec.start_trigger,
+                        "planned_start_after_seconds": (
+                            0.0
+                            if role == "primary"
+                            else spec.secondary_start_delay_seconds
+                        ),
+                        "actual_start_offset_seconds": round(actual_start, 6),
+                    },
+                )
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                primary_future = executor.submit(
+                    run_role,
+                    role="primary",
+                    request_index=1,
+                    prompt=primary_prompt,
+                    max_tokens=spec.primary_max_tokens,
+                    probe_extra={"on_first_token": mark_primary_first_token},
+                )
+                if spec.start_trigger == "after_first_token":
+                    while not primary_first_token.wait(timeout=0.1):
+                        if primary_future.done():
+                            break
+                if spec.secondary_start_delay_seconds > 0:
+                    sleep_func(spec.secondary_start_delay_seconds)
+                secondary_future = executor.submit(
+                    run_role,
+                    role="secondary",
+                    request_index=2,
+                    prompt=secondary_prompt,
+                    max_tokens=spec.secondary_max_tokens,
+                )
+                rows.extend([primary_future.result(), secondary_future.result()])
+
+    rows.sort(
+        key=lambda row: (
+            str(row.get("arrival_case")),
+            int(row.get("repeat") or 0),
+            int(row.get("request_index") or 0),
+        )
+    )
+    summary = _summarize_mixed_arrival_rows(rows)
+    return {
+        "case": case_name,
+        "variant": variant,
+        "model": model,
+        "ok": all(row.get("ok") for row in rows),
+        "thinking_mode": thinking_mode,
+        "temperature": temperature,
+        "top_p": top_p,
+        "repeat_count": repeat_count,
+        "cases": [spec.to_json() for spec in specs],
+        "prompts": prompt_manifests,
+        "summary": summary,
+        "requests": rows,
+    }
+
+
 def _fmt(value: Any, digits: int = 3) -> str:
     if not isinstance(value, int | float):
         return "n/a"
@@ -786,6 +1168,98 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
                 itl_max=_fmt(request.get("max_inter_chunk_seconds")),
                 prompt_tokens=_fmt_int(request.get("prompt_tokens")),
                 cached_tokens=_fmt_int(request.get("cached_prompt_tokens")),
+                detail=str(request.get("detail", "")).replace("|", "\\|"),
+            )
+        )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def write_long_context_mixed_arrival_markdown(path: Path, row: Json) -> None:
+    lines = [
+        "# Long Context Mixed Arrival Matrix",
+        "",
+        f"- OK: `{row.get('ok')}`",
+        f"- Case: `{row.get('case')}`",
+        f"- Variant: `{row.get('variant')}`",
+        f"- Model: `{row.get('model')}`",
+        f"- Thinking mode: `{row.get('thinking_mode')}`",
+        f"- Repeat count: `{row.get('repeat_count')}`",
+        "",
+        "## Cases",
+        "",
+        "| Case | Trigger | Delay s | Primary lines | Secondary lines | Primary max tokens | Secondary max tokens |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for item in row.get("cases", []):
+        if not isinstance(item, dict):
+            continue
+        lines.append(
+            "| {name} | {trigger} | {delay} | {primary_lines} | {secondary_lines} | "
+            "{primary_tokens} | {secondary_tokens} |".format(
+                name=item.get("name"),
+                trigger=item.get("start_trigger"),
+                delay=_fmt(item.get("secondary_start_delay_seconds")),
+                primary_lines=item.get("primary_line_count"),
+                secondary_lines=item.get("secondary_line_count"),
+                primary_tokens=item.get("primary_max_tokens", "n/a"),
+                secondary_tokens=item.get("secondary_max_tokens", "n/a"),
+            )
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Summary",
+            "",
+            "| Case | Requests | Failures | Primary TTFT mean s | Secondary TTFT mean s | Secondary ITL p95 s | Decode min/max | Secondary start vs primary TTFT s |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for item in row.get("summary", []):
+        if not isinstance(item, dict):
+            continue
+        lines.append(
+            "| {case} | {requests} | {failures} | {primary_ttft} | "
+            "{secondary_ttft} | {secondary_itl} | {decode_fairness} | "
+            "{start_after_ttft} |".format(
+                case=item.get("case"),
+                requests=item.get("request_count"),
+                failures=item.get("failure_count"),
+                primary_ttft=_fmt(item.get("primary_ttft_seconds_mean")),
+                secondary_ttft=_fmt(item.get("secondary_ttft_seconds_mean")),
+                secondary_itl=_fmt(item.get("secondary_p95_inter_chunk_seconds")),
+                decode_fairness=_fmt(item.get("decode_tps_min_to_max_ratio")),
+                start_after_ttft=_fmt(
+                    item.get("secondary_start_after_primary_ttft_seconds")
+                ),
+            )
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Request Rows",
+            "",
+            "| Case | Role | OK | Start offset s | TTFT s | Elapsed s | Decode tok/s | ITL p95 s | Detail |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for request in row.get("requests", []):
+        if not isinstance(request, dict):
+            continue
+        lines.append(
+            "| {case} | {role} | {ok} | {start} | {ttft} | {elapsed} | "
+            "{decode_tps} | {itl_p95} | {detail} |".format(
+                case=request.get("arrival_case"),
+                role=request.get("request_role"),
+                ok="yes" if request.get("ok") else "no",
+                start=_fmt(request.get("actual_start_offset_seconds")),
+                ttft=_fmt(request.get("ttft_seconds")),
+                elapsed=_fmt(request.get("elapsed_seconds")),
+                decode_tps=_fmt(request.get("decode_tokens_per_second")),
+                itl_p95=_fmt(request.get("p95_inter_chunk_seconds")),
                 detail=str(request.get("detail", "")).replace("|", "\\|"),
             )
         )

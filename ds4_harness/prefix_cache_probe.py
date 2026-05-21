@@ -171,7 +171,11 @@ def stream_chat_completion(
     headers: dict[str, str] | None = None,
     probe_metadata: Json | None = None,
 ) -> Json:
-    del probe_metadata
+    on_first_token = None
+    if isinstance(probe_metadata, dict):
+        callback = probe_metadata.get("on_first_token")
+        if callable(callback):
+            on_first_token = callback
     url = base_url.rstrip("/") + path
     request_payload = dict(payload)
     request_payload["stream"] = True
@@ -232,6 +236,8 @@ def stream_chat_completion(
                 chunks += 1
                 if first_token_at is None:
                     first_token_at = chunk_at
+                    if on_first_token is not None:
+                        on_first_token()
                 content_chunk_times.append(chunk_at)
                 text_parts.append(piece)
     except urllib.error.HTTPError as exc:

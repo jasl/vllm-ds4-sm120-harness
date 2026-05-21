@@ -54,6 +54,7 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_prefix_cache_probe.sh",
         "run_long_context_latency_matrix.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_long_context_mixed_arrival.sh",
         "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
@@ -141,6 +142,26 @@ def test_long_context_decode_concurrency_wrapper_targets_c1_c2_decode():
     assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
     assert "start_runtime_stats" in script
     assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
+def test_long_context_mixed_arrival_wrapper_targets_staggered_decode_pressure():
+    script = (ROOT / "scripts" / "run_long_context_mixed_arrival.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "long_context_mixed_arrival" in script
+    assert "long-context-mixed-arrival" in script
+    assert (
+        'LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS="${LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS:-'
+        "decode_then_long:1900:1900:after_first_token:0:256:128,"
+        "long_then_short:4000:192:fixed_delay:2:128:64}\"" in script
+    )
+    assert '--json-output "${OUT_DIR}/long_context_mixed_arrival.json"' in script
+    assert '--markdown-output "${OUT_DIR}/long_context_mixed_arrival.md"' in script
+    assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+    assert "start_gpu_stats" in script
+    assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+    assert "start_runtime_stats" in script
 
 
 def test_needle_position_matrix_wrapper_targets_tail_correctness():
@@ -607,6 +628,7 @@ def test_scripts_capture_gpu_stats_to_artifacts():
         "run_lm_eval.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_long_context_mixed_arrival.sh",
         "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
@@ -638,6 +660,7 @@ def test_scripts_capture_vllm_runtime_stats_to_artifacts():
         "run_lm_eval.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_long_context_mixed_arrival.sh",
         "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
@@ -668,6 +691,7 @@ def test_scripts_collect_vllm_official_env_to_artifacts():
         "run_kv_layout_probe.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_long_context_mixed_arrival.sh",
         "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
@@ -1189,6 +1213,7 @@ def test_scripts_have_valid_bash_syntax():
         "run_b200_baseline.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
+        "run_long_context_mixed_arrival.sh",
         "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",

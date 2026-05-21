@@ -67,8 +67,12 @@ from ds4_harness.long_context_latency import (
     DEFAULT_CONCURRENCY as DEFAULT_LONG_CONTEXT_LATENCY_CONCURRENCY,
     DEFAULT_LINE_COUNTS as DEFAULT_LONG_CONTEXT_LATENCY_LINE_COUNTS,
     DEFAULT_MAX_TOKENS as DEFAULT_LONG_CONTEXT_LATENCY_MAX_TOKENS,
+    DEFAULT_MIXED_ARRIVAL_CASE_NAME as DEFAULT_LONG_CONTEXT_MIXED_ARRIVAL_CASE_NAME,
+    DEFAULT_MIXED_ARRIVAL_CASE_SPECS as DEFAULT_LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS,
     run_long_context_latency_matrix,
+    run_long_context_mixed_arrival_matrix,
     write_long_context_latency_markdown,
+    write_long_context_mixed_arrival_markdown,
 )
 from ds4_harness.needle_context_probe import (
     DEFAULT_CASE_NAME as DEFAULT_NEEDLE_POSITION_CASE_NAME,
@@ -960,6 +964,55 @@ def _cmd_long_context_latency_matrix(args: argparse.Namespace) -> int:
     print(
         f"{status} {row.get('case')} variant={args.variant}: "
         f"groups={len(summary)} failures={failures}"
+    )
+    return 0 if row.get("ok") else 1
+
+
+def _cmd_long_context_mixed_arrival(args: argparse.Namespace) -> int:
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+        raw_specs: list[str] = []
+        if args.case_specs:
+            raw_specs.append(args.case_specs)
+        raw_specs.extend(args.case_spec or [])
+        row = run_long_context_mixed_arrival_matrix(
+            base_url=args.base_url,
+            model=args.model,
+            variant=args.variant,
+            case_name=args.case_name,
+            case_specs=raw_specs or None,
+            repeat_count=args.repeat_count,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            thinking_mode=args.thinking_mode,
+            timeout=args.timeout,
+            headers=headers,
+            extra_body=extra_body,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_long_context_mixed_arrival_markdown(args.markdown_output, row)
+
+    status = "PASS" if row.get("ok") else "FAIL"
+    summary = row.get("summary") if isinstance(row.get("summary"), list) else []
+    failures = sum(
+        int(item.get("failure_count") or 0)
+        for item in summary
+        if isinstance(item, dict)
+    )
+    print(
+        f"{status} {row.get('case')} variant={args.variant}: "
+        f"cases={len(summary)} failures={failures}"
     )
     return 0 if row.get("ok") else 1
 
@@ -1926,6 +1979,38 @@ def build_parser() -> argparse.ArgumentParser:
     long_latency.add_argument("--json-output", type=Path)
     long_latency.add_argument("--markdown-output", type=Path)
     long_latency.set_defaults(func=_cmd_long_context_latency_matrix)
+
+    mixed_arrival = subparsers.add_parser("long-context-mixed-arrival")
+    mixed_arrival.add_argument("--base-url", default="http://127.0.0.1:8000")
+    mixed_arrival.add_argument("--model", default=DEFAULT_MODEL)
+    mixed_arrival.add_argument("--variant", default="manual")
+    mixed_arrival.add_argument(
+        "--case-name", default=DEFAULT_LONG_CONTEXT_MIXED_ARRIVAL_CASE_NAME
+    )
+    mixed_arrival.add_argument(
+        "--case-specs",
+        default=",".join(DEFAULT_LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS),
+        help=(
+            "comma-separated mixed-arrival specs: "
+            "name:primary_lines:secondary_lines:start_trigger:delay_seconds:"
+            "primary_max_tokens:secondary_max_tokens"
+        ),
+    )
+    mixed_arrival.add_argument(
+        "--case-spec",
+        action="append",
+        help="additional mixed-arrival case spec; may be repeated",
+    )
+    mixed_arrival.add_argument("--repeat-count", type=int, default=1)
+    mixed_arrival.add_argument("--temperature", type=float, default=0.0)
+    mixed_arrival.add_argument("--top-p", type=float, default=1.0)
+    mixed_arrival.add_argument("--thinking-mode", default="non-thinking")
+    mixed_arrival.add_argument("--timeout", type=float, default=3600.0)
+    mixed_arrival.add_argument("--api-key-env")
+    mixed_arrival.add_argument("--extra-body-json")
+    mixed_arrival.add_argument("--json-output", type=Path)
+    mixed_arrival.add_argument("--markdown-output", type=Path)
+    mixed_arrival.set_defaults(func=_cmd_long_context_mixed_arrival)
 
     needle_matrix = subparsers.add_parser("needle-position-matrix")
     needle_matrix.add_argument("--base-url", default="http://127.0.0.1:8000")
