@@ -52,6 +52,7 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_lm_eval.sh",
         "run_kv_layout_probe.sh",
         "run_prefix_cache_probe.sh",
+        "run_prefix_cache_stress.sh",
         "run_long_context_latency_matrix.sh",
         "run_long_context_decode_concurrency.sh",
         "run_long_context_mixed_arrival.sh",
@@ -281,6 +282,23 @@ def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
     assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
 
 
+def test_sm120_mtp1_prefix_cache_stability_profile_matches_user_report_shape():
+    script = (ROOT / "scripts" / "run_sm120_mtp1_prefix_cache_stability.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-mtp1}"' in script
+    assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-prefix_cache_stress}"' in script
+    assert 'RUN_PREFIX_CACHE_STRESS="${RUN_PREFIX_CACHE_STRESS:-1}"' in script
+    assert 'B200_TENSOR_PARALLEL_SIZE="${B200_TENSOR_PARALLEL_SIZE:-2}"' in script
+    assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-16384}"' in script
+    assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-enabled}"' in script
+    assert 'B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"' in script
+    assert "--gpu-memory-utilization 0.977" in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
+
+
 def test_sm120_external_quality_gate_profile_requires_explicit_context_ceiling():
     script = (ROOT / "scripts" / "run_sm120_external_reported_gates.sh").read_text(
         encoding="utf-8"
@@ -307,10 +325,21 @@ def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates()
     assert "issuecomment-4497389943" in docs
     assert "issuecomment-4504312139" in docs
     assert "issuecomment-4505504798" in docs
+    assert "issuecomment-4507780873" in docs
+    assert "prefix_cache_stress" in docs
     assert "bench_random_prefill_sweep" in docs
     assert "long_context_mixed_arrival" in docs
     assert "MTP=1" in docs
     assert "TP=4" in docs
+
+
+def test_b200_baseline_exposes_prefix_cache_stress_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
+
+    assert "prefix_cache_stress" in script
+    assert 'RUN_PREFIX_CACHE_STRESS="${RUN_PREFIX_CACHE_STRESS:-0}"' in script
+    assert '"${variant_dir}/prefix_cache_stress"' in script
+    assert '"${SCRIPT_DIR}/run_prefix_cache_stress.sh"' in script
 
 
 def test_acceptance_streaming_pressure_soak_is_opt_in():

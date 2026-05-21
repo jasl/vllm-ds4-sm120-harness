@@ -100,6 +100,15 @@ from ds4_harness.prefix_cache_probe import (
     run_prefix_cache_probe,
     write_prefix_cache_probe_markdown,
 )
+from ds4_harness.prefix_cache_stress import (
+    DEFAULT_CASE_NAME as DEFAULT_PREFIX_CACHE_STRESS_CASE_NAME,
+    DEFAULT_FILLER_WORDS as DEFAULT_PREFIX_CACHE_STRESS_FILLER_WORDS,
+    DEFAULT_MAX_TOKENS as DEFAULT_PREFIX_CACHE_STRESS_MAX_TOKENS,
+    DEFAULT_TRIALS as DEFAULT_PREFIX_CACHE_STRESS_TRIALS,
+    DEFAULT_TURNS as DEFAULT_PREFIX_CACHE_STRESS_TURNS,
+    run_prefix_cache_stress,
+    write_prefix_cache_stress_markdown,
+)
 from ds4_harness.reference_bundle import build_reference_bundle
 from ds4_harness.runtime_stats import (
     summarize_runtime_stats,
@@ -908,6 +917,48 @@ def _cmd_prefix_cache_probe(args: argparse.Namespace) -> int:
         suspect=summary.get("suspect_prefix_reuse_regression", "n/a"),
     )
     print(f"{status} {row.get('case')} variant={args.variant}: {detail}")
+    return 0 if row.get("ok") else 1
+
+
+def _cmd_prefix_cache_stress(args: argparse.Namespace) -> int:
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        row = run_prefix_cache_stress(
+            base_url=args.base_url,
+            model=args.model,
+            case_name=args.case_name,
+            trials=args.trials,
+            filler_words=args.filler_words,
+            turns=args.turns,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            timeout=args.timeout,
+            metrics_timeout=args.metrics_timeout,
+            health_timeout=args.health_timeout,
+            headers=headers,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_prefix_cache_stress_markdown(args.markdown_output, row)
+
+    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    status = "PASS" if row.get("ok") else "FAIL"
+    detail = "trials={trials} failures={failures} concurrent_hit_rate_mean={rate}".format(
+        trials=summary.get("trial_count", "n/a"),
+        failures=summary.get("failure_count", "n/a"),
+        rate=summary.get("concurrent_hit_rate_mean", "n/a"),
+    )
+    print(f"{status} {row.get('case')}: {detail}")
     return 0 if row.get("ok") else 1
 
 
@@ -1942,6 +1993,30 @@ def build_parser() -> argparse.ArgumentParser:
     prefix_cache.add_argument("--json-output", type=Path)
     prefix_cache.add_argument("--markdown-output", type=Path)
     prefix_cache.set_defaults(func=_cmd_prefix_cache_probe)
+
+    prefix_stress = subparsers.add_parser("prefix-cache-stress")
+    prefix_stress.add_argument("--base-url", default="http://127.0.0.1:8000")
+    prefix_stress.add_argument("--model", default=DEFAULT_MODEL)
+    prefix_stress.add_argument(
+        "--case-name", default=DEFAULT_PREFIX_CACHE_STRESS_CASE_NAME
+    )
+    prefix_stress.add_argument("--trials", type=int, default=DEFAULT_PREFIX_CACHE_STRESS_TRIALS)
+    prefix_stress.add_argument(
+        "--filler-words", type=int, default=DEFAULT_PREFIX_CACHE_STRESS_FILLER_WORDS
+    )
+    prefix_stress.add_argument("--turns", type=int, default=DEFAULT_PREFIX_CACHE_STRESS_TURNS)
+    prefix_stress.add_argument(
+        "--max-tokens", type=int, default=DEFAULT_PREFIX_CACHE_STRESS_MAX_TOKENS
+    )
+    prefix_stress.add_argument("--temperature", type=float, default=1.0)
+    prefix_stress.add_argument("--top-p", type=float, default=1.0)
+    prefix_stress.add_argument("--timeout", type=float, default=180.0)
+    prefix_stress.add_argument("--metrics-timeout", type=float, default=10.0)
+    prefix_stress.add_argument("--health-timeout", type=float, default=10.0)
+    prefix_stress.add_argument("--api-key-env")
+    prefix_stress.add_argument("--json-output", type=Path)
+    prefix_stress.add_argument("--markdown-output", type=Path)
+    prefix_stress.set_defaults(func=_cmd_prefix_cache_stress)
 
     long_latency = subparsers.add_parser("long-context-latency-matrix")
     long_latency.add_argument("--base-url", default="http://127.0.0.1:8000")

@@ -985,6 +985,41 @@ Verification summary:
 | 64K/128K cold long-context smoke, hot service | 64K C=1 `13.561 s`, C=2 `20.904 s`; 128K C=1 `33.328 s`, C=2 `50.572 s`; zero failures |
 | GSM8K correctness gate | 5-shot limit-200 `exact_match_flexible=0.965` versus baseline `0.950`; compare gate passed |
 
+## User-Reported Prefix-Cache HTTP Stress, 2026-05-21
+
+The reporter in
+[`vllm-project/vllm#41834` comment 4507780873](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4507780873)
+shared a compact reproducer for the earlier prefix-cache failure: non-streaming
+OpenAI chat requests, one solo multi-turn session followed by two concurrent
+multi-turn sessions, with `/metrics` deltas before and after each segment. The
+original bad branch reset or disconnected while reading `/metrics`; newer
+branches completed normally on the reporter's host.
+
+Harness action: add `prefix_cache_stress` as a first-class phase and
+`scripts/run_sm120_mtp1_prefix_cache_stability.sh` for the local TP=2, MTP=1,
+FP8 KV, prefix-cache-on, 16K max-model-len, block-size-256,
+FULL_AND_PIECEWISE shape. This gate is intentionally separate from
+`prefix_cache_probe`: it checks server stability and `/metrics` continuity, not
+whether prefix-cache TTFT ratios meet a performance threshold.
+
+Validation on the current PR branch used artifact label
+`codex_user4507780873_mtp1_prefix_stress_20260521`:
+
+| Gate | Result |
+| --- | --- |
+| Server startup | pass |
+| `prefix_cache_stress` | 5/5 trials passed, 0 failures |
+| HTTP health | 200 |
+| Solo prefix-cache hit rate mean | 60.1% |
+| Concurrent prefix-cache hit rate mean | 67.0% |
+| Runtime metrics | max running requests 2, max waiting 0, preemptions 0 |
+| Serve log | avg prefill 269.40 tok/s, avg decode 156.22 tok/s |
+
+Decision: the specific MTP=1 prefix-cache `/metrics` disconnect reported for
+the older branch is not reproducible on the current PR branch under the
+provided stress shape. Keep this as a user-reported stability gate for future
+prefix-cache, scheduler, CUDA graph, and MTP changes.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR

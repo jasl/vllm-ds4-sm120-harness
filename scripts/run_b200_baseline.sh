@@ -129,6 +129,17 @@ PREFIX_CACHE_TIMEOUT="${PREFIX_CACHE_TIMEOUT:-1800}"
 PREFIX_CACHE_REQUEST_RETRIES="${PREFIX_CACHE_REQUEST_RETRIES:-${API_REQUEST_RETRIES:-1}}"
 PREFIX_CACHE_REGRESSION_TTFT_RATIO="${PREFIX_CACHE_REGRESSION_TTFT_RATIO:-3.0}"
 PREFIX_CACHE_FAIL_ON_REGRESSION="${PREFIX_CACHE_FAIL_ON_REGRESSION:-0}"
+RUN_PREFIX_CACHE_STRESS="${RUN_PREFIX_CACHE_STRESS:-0}"
+PREFIX_CACHE_STRESS_CASE_NAME="${PREFIX_CACHE_STRESS_CASE_NAME:-user_report_prefix_cache_http_metrics_stress}"
+PREFIX_CACHE_STRESS_TRIALS="${PREFIX_CACHE_STRESS_TRIALS:-5}"
+PREFIX_CACHE_STRESS_FILLER_WORDS="${PREFIX_CACHE_STRESS_FILLER_WORDS:-800}"
+PREFIX_CACHE_STRESS_TURNS="${PREFIX_CACHE_STRESS_TURNS:-3}"
+PREFIX_CACHE_STRESS_MAX_TOKENS="${PREFIX_CACHE_STRESS_MAX_TOKENS:-256}"
+PREFIX_CACHE_STRESS_TEMPERATURE="${PREFIX_CACHE_STRESS_TEMPERATURE:-1.0}"
+PREFIX_CACHE_STRESS_TOP_P="${PREFIX_CACHE_STRESS_TOP_P:-1.0}"
+PREFIX_CACHE_STRESS_TIMEOUT="${PREFIX_CACHE_STRESS_TIMEOUT:-180}"
+PREFIX_CACHE_STRESS_METRICS_TIMEOUT="${PREFIX_CACHE_STRESS_METRICS_TIMEOUT:-10}"
+PREFIX_CACHE_STRESS_HEALTH_TIMEOUT="${PREFIX_CACHE_STRESS_HEALTH_TIMEOUT:-10}"
 RUN_STREAMING_PRESSURE_SOAK="${RUN_STREAMING_PRESSURE_SOAK:-0}"
 STREAMING_PRESSURE_CASE_NAME="${STREAMING_PRESSURE_CASE_NAME:-streaming_pressure_short_soak}"
 STREAMING_PRESSURE_CONCURRENCY="${STREAMING_PRESSURE_CONCURRENCY:-4}"
@@ -263,6 +274,12 @@ export RUN_PREFIX_CACHE_PROBE PREFIX_CACHE_CASE_NAME PREFIX_CACHE_LINE_COUNT
 export PREFIX_CACHE_MAX_TOKENS PREFIX_CACHE_TEMPERATURE PREFIX_CACHE_TOP_P
 export PREFIX_CACHE_THINKING_MODE PREFIX_CACHE_TIMEOUT PREFIX_CACHE_REQUEST_RETRIES
 export PREFIX_CACHE_REGRESSION_TTFT_RATIO PREFIX_CACHE_FAIL_ON_REGRESSION
+export RUN_PREFIX_CACHE_STRESS PREFIX_CACHE_STRESS_CASE_NAME
+export PREFIX_CACHE_STRESS_TRIALS PREFIX_CACHE_STRESS_FILLER_WORDS
+export PREFIX_CACHE_STRESS_TURNS PREFIX_CACHE_STRESS_MAX_TOKENS
+export PREFIX_CACHE_STRESS_TEMPERATURE PREFIX_CACHE_STRESS_TOP_P
+export PREFIX_CACHE_STRESS_TIMEOUT PREFIX_CACHE_STRESS_METRICS_TIMEOUT
+export PREFIX_CACHE_STRESS_HEALTH_TIMEOUT
 export RUN_STREAMING_PRESSURE_SOAK STREAMING_PRESSURE_CASE_NAME
 export STREAMING_PRESSURE_CONCURRENCY STREAMING_PRESSURE_ROUND_COUNT
 export STREAMING_PRESSURE_LINE_COUNT STREAMING_PRESSURE_MAX_TOKENS
@@ -298,6 +315,7 @@ VALID_BASELINE_PHASES=(
   long_context_latency_matrix
   long_context_mixed_arrival
   prefix_cache_probe
+  prefix_cache_stress
   streaming_pressure_soak
   streaming_pressure_matrix
   bench_hf_mt_bench
@@ -331,7 +349,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,long_context_mixed_arrival,prefix_cache_probe,streaming_pressure_soak,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,streaming_pressure_soak,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
   done
@@ -730,6 +748,10 @@ write_summary() {
       "${RUN_PREFIX_CACHE_PROBE}" "${PREFIX_CACHE_LINE_COUNT:-1900}" \
       "${PREFIX_CACHE_MAX_TOKENS:-64}" "${PREFIX_CACHE_THINKING_MODE:-non-thinking}" \
       "${PREFIX_CACHE_FAIL_ON_REGRESSION}"
+    printf -- '- prefix_cache_stress: `%s`, trials `%s`, filler words `%s`, turns `%s`, max tokens `%s`\n' \
+      "${RUN_PREFIX_CACHE_STRESS}" "${PREFIX_CACHE_STRESS_TRIALS}" \
+      "${PREFIX_CACHE_STRESS_FILLER_WORDS}" "${PREFIX_CACHE_STRESS_TURNS}" \
+      "${PREFIX_CACHE_STRESS_MAX_TOKENS}"
     printf -- '- streaming_pressure_soak: `%s`, concurrency `%s`, rounds `%s`, lines `%s`, max tokens `%s`, thinking `%s`, fail_on_slow `%s`\n' \
       "${RUN_STREAMING_PRESSURE_SOAK}" "${STREAMING_PRESSURE_CONCURRENCY:-4}" \
       "${STREAMING_PRESSURE_ROUND_COUNT:-3}" "${STREAMING_PRESSURE_LINE_COUNT:-1200}" \
@@ -1161,6 +1183,28 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_prefix_cache_probe.sh"
+  fi
+
+  if phase_enabled "prefix_cache_stress" && { [[ "${RUN_PREFIX_CACHE_STRESS}" == "1" ]] || [[ "${RUN_PREFIX_CACHE_STRESS}" == "true" ]]; }; then
+    run_phase "${variant}" "prefix_cache_stress" "${variant_dir}/prefix_cache_stress" \
+      env OUT_DIR="${variant_dir}/prefix_cache_stress" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
+        PREFIX_CACHE_STRESS_CASE_NAME="${PREFIX_CACHE_STRESS_CASE_NAME}" \
+        PREFIX_CACHE_STRESS_TRIALS="${PREFIX_CACHE_STRESS_TRIALS}" \
+        PREFIX_CACHE_STRESS_FILLER_WORDS="${PREFIX_CACHE_STRESS_FILLER_WORDS}" \
+        PREFIX_CACHE_STRESS_TURNS="${PREFIX_CACHE_STRESS_TURNS}" \
+        PREFIX_CACHE_STRESS_MAX_TOKENS="${PREFIX_CACHE_STRESS_MAX_TOKENS}" \
+        PREFIX_CACHE_STRESS_TEMPERATURE="${PREFIX_CACHE_STRESS_TEMPERATURE}" \
+        PREFIX_CACHE_STRESS_TOP_P="${PREFIX_CACHE_STRESS_TOP_P}" \
+        PREFIX_CACHE_STRESS_TIMEOUT="${PREFIX_CACHE_STRESS_TIMEOUT}" \
+        PREFIX_CACHE_STRESS_METRICS_TIMEOUT="${PREFIX_CACHE_STRESS_METRICS_TIMEOUT}" \
+        PREFIX_CACHE_STRESS_HEALTH_TIMEOUT="${PREFIX_CACHE_STRESS_HEALTH_TIMEOUT}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_prefix_cache_stress.sh"
   fi
 
   if phase_enabled "streaming_pressure_soak" && { [[ "${RUN_STREAMING_PRESSURE_SOAK}" == "1" ]] || [[ "${RUN_STREAMING_PRESSURE_SOAK}" == "true" ]]; }; then

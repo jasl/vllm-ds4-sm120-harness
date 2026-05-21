@@ -920,10 +920,10 @@ Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
 the requested server variant. Valid phase names are `kv_layout_probe`,
 `acceptance`, `long_context_probe`, `long_context_latency_matrix`,
 `long_context_mixed_arrival`, `prefix_cache_probe`,
-`streaming_pressure_soak`, `streaming_pressure_matrix`, `bench_hf_mt_bench`,
-`eval_gsm8k`, `bench_random_prefill_sweep`, `bench_random_8192x512`,
-`oracle_export`, `decode_profile`, and `eval_longbench2`; the default is
-`all`. The
+`prefix_cache_stress`, `streaming_pressure_soak`, `streaming_pressure_matrix`,
+`bench_hf_mt_bench`, `eval_gsm8k`, `bench_random_prefill_sweep`,
+`bench_random_8192x512`, `oracle_export`, `decode_profile`, and
+`eval_longbench2`; the default is `all`. The
 `streaming_pressure_soak` phase still requires `RUN_STREAMING_PRESSURE_SOAK=1`
 because it is intentionally opt-in. For example:
 
@@ -1093,6 +1093,13 @@ Before promoting an optimization:
   `gpu_kv_cache_usage_percent_max`, and `preemptions_delta`; a high ratio with
   low prefix hit and no preemption is evidence of reuse drift rather than
   capacity pressure.
+- `prefix-cache-stress` is the user-reported non-streaming HTTP `/metrics`
+  stress shape for MTP=1 prefix-cache stability. It runs one solo multi-turn
+  session and two concurrent multi-turn sessions per trial, recording
+  prefix-cache hit/query deltas and treating request errors, `/metrics`
+  disconnects, or server unresponsiveness as regressions. Use
+  `scripts/run_sm120_mtp1_prefix_cache_stability.sh` for the exact local
+  2x RTX PRO 6000 profile.
 - Enable `streaming-pressure-soak` with `RUN_STREAMING_PRESSURE_SOAK=1` before
   making streaming responsiveness a release gate. Compare `max_ttft_seconds`,
   `p95_inter_chunk_seconds`, `p99_inter_chunk_seconds`, `max_elapsed_seconds`,

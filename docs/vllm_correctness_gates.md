@@ -153,6 +153,15 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   `cudagraph_mode=FULL_AND_PIECEWISE`. This is a stability gate: failures,
   `/metrics` disconnects, or post-probe server unresponsiveness are regressions
   even if request-level cached-token counters are noisy.
+- Exact HTTP `/metrics` stress script proxy for
+  [issuecomment-4507780873](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4507780873):
+  run `prefix_cache_stress` through
+  `scripts/run_sm120_mtp1_prefix_cache_stability.sh`. This keeps the reported
+  TP=2, MTP=1, FP8 KV, prefix-cache-on, 16K max-model-len, block-size-256,
+  non-streaming chat shape separate from the prefix-cache TTFT regression
+  probe. Treat any trial exception, `/metrics` disconnect, or post-probe
+  server unresponsiveness as a regression; do not fail this gate only because
+  the prefix-cache hit rate differs from the reporter's machine.
 - Multi-session decode pressure proxy for
   [issuecomment-4505504798](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4505504798):
   run `streaming_pressure_matrix` on the local TP=2 server with at least
