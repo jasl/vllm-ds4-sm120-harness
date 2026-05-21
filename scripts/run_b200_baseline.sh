@@ -79,6 +79,14 @@ LONG_CONTEXT_LATENCY_TOP_P="${LONG_CONTEXT_LATENCY_TOP_P:-1.0}"
 LONG_CONTEXT_LATENCY_THINKING_MODE="${LONG_CONTEXT_LATENCY_THINKING_MODE:-non-thinking}"
 LONG_CONTEXT_LATENCY_TIMEOUT="${LONG_CONTEXT_LATENCY_TIMEOUT:-1800}"
 LONG_CONTEXT_LATENCY_PREWARM="${LONG_CONTEXT_LATENCY_PREWARM:-0}"
+RUN_LONG_CONTEXT_MIXED_ARRIVAL="${RUN_LONG_CONTEXT_MIXED_ARRIVAL:-1}"
+LONG_CONTEXT_MIXED_ARRIVAL_CASE_NAME="${LONG_CONTEXT_MIXED_ARRIVAL_CASE_NAME:-long_context_mixed_arrival}"
+LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS="${LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS:-decode_then_long:1900:1900:after_first_token:0:256:128,long_then_short:4000:192:fixed_delay:2:128:64}"
+LONG_CONTEXT_MIXED_ARRIVAL_REPEAT_COUNT="${LONG_CONTEXT_MIXED_ARRIVAL_REPEAT_COUNT:-1}"
+LONG_CONTEXT_MIXED_ARRIVAL_TEMPERATURE="${LONG_CONTEXT_MIXED_ARRIVAL_TEMPERATURE:-0.0}"
+LONG_CONTEXT_MIXED_ARRIVAL_TOP_P="${LONG_CONTEXT_MIXED_ARRIVAL_TOP_P:-1.0}"
+LONG_CONTEXT_MIXED_ARRIVAL_THINKING_MODE="${LONG_CONTEXT_MIXED_ARRIVAL_THINKING_MODE:-non-thinking}"
+LONG_CONTEXT_MIXED_ARRIVAL_TIMEOUT="${LONG_CONTEXT_MIXED_ARRIVAL_TIMEOUT:-3600}"
 # decode_profile is OFF by default because it tears down the variant's
 # running serve and launches a profiler-instrumented one (torch profiler
 # hooks must be installed at serve startup time). Production wrappers opt
@@ -166,6 +174,14 @@ LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY:-}"
 LM_EVAL_GATE_TASK="${LM_EVAL_GATE_TASK:-gsm8k}"
 LM_EVAL_GATE_METRIC="${LM_EVAL_GATE_METRIC:-exact_match_flexible}"
 LM_EVAL_GATE_MIN_DELTA="${LM_EVAL_GATE_MIN_DELTA:-0}"
+RUN_RANDOM_PREFILL_SWEEP="${RUN_RANDOM_PREFILL_SWEEP:-1}"
+RANDOM_PREFILL_INPUT_LENS="${RANDOM_PREFILL_INPUT_LENS:-1024,4096,16384,65536}"
+RANDOM_PREFILL_OUTPUT_LEN="${RANDOM_PREFILL_OUTPUT_LEN:-1}"
+RANDOM_PREFILL_CONCURRENCY="${RANDOM_PREFILL_CONCURRENCY:-1}"
+RANDOM_PREFILL_NUM_PROMPTS="${RANDOM_PREFILL_NUM_PROMPTS:-8}"
+RANDOM_PREFILL_BENCH_TIMEOUT="${RANDOM_PREFILL_BENCH_TIMEOUT:-1800}"
+RANDOM_PREFILL_TEMPERATURE="${RANDOM_PREFILL_TEMPERATURE:-0.0}"
+RANDOM_PREFILL_IGNORE_EOS="${RANDOM_PREFILL_IGNORE_EOS:-1}"
 RANDOM_LONG_CONCURRENCY="${RANDOM_LONG_CONCURRENCY:-1,2}"
 RANDOM_LONG_NUM_PROMPTS="${RANDOM_LONG_NUM_PROMPTS:-8}"
 RANDOM_LONG_INPUT_LEN="${RANDOM_LONG_INPUT_LEN:-8192}"
@@ -218,6 +234,10 @@ export LM_EVAL_MAX_GEN_TOKS LM_EVAL_TIMEOUT_MS LM_EVAL_TOKENIZER_BACKEND LM_EVAL
 export LM_EVAL_LIMIT LM_EVAL_COMMAND_TIMEOUT LM_EVAL_EXTRA_ARGS
 export LM_EVAL_BASELINE_SUMMARY LM_EVAL_GATE_TASK LM_EVAL_GATE_METRIC
 export LM_EVAL_GATE_MIN_DELTA
+export RUN_RANDOM_PREFILL_SWEEP RANDOM_PREFILL_INPUT_LENS
+export RANDOM_PREFILL_OUTPUT_LEN RANDOM_PREFILL_CONCURRENCY
+export RANDOM_PREFILL_NUM_PROMPTS RANDOM_PREFILL_BENCH_TIMEOUT
+export RANDOM_PREFILL_TEMPERATURE RANDOM_PREFILL_IGNORE_EOS
 export RUN_LONG_CONTEXT_PROBE LONG_CONTEXT_CASE_NAME LONG_CONTEXT_LINE_COUNT
 export LONG_CONTEXT_MAX_TOKENS LONG_CONTEXT_TEMPERATURE LONG_CONTEXT_TOP_P
 export LONG_CONTEXT_THINKING_MODE LONG_CONTEXT_TIMEOUT LONG_CONTEXT_REQUEST_RETRIES
@@ -228,6 +248,12 @@ export LONG_CONTEXT_LATENCY_REPEAT_COUNT LONG_CONTEXT_LATENCY_MAX_TOKENS
 export LONG_CONTEXT_LATENCY_TEMPERATURE LONG_CONTEXT_LATENCY_TOP_P
 export LONG_CONTEXT_LATENCY_THINKING_MODE LONG_CONTEXT_LATENCY_TIMEOUT
 export LONG_CONTEXT_LATENCY_PREWARM
+export RUN_LONG_CONTEXT_MIXED_ARRIVAL LONG_CONTEXT_MIXED_ARRIVAL_CASE_NAME
+export LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS
+export LONG_CONTEXT_MIXED_ARRIVAL_REPEAT_COUNT
+export LONG_CONTEXT_MIXED_ARRIVAL_TEMPERATURE LONG_CONTEXT_MIXED_ARRIVAL_TOP_P
+export LONG_CONTEXT_MIXED_ARRIVAL_THINKING_MODE
+export LONG_CONTEXT_MIXED_ARRIVAL_TIMEOUT
 export RUN_DECODE_PROFILE DECODE_PROFILE_MAX_TOKENS DECODE_PROFILE_WARMUP_TOKENS
 export DECODE_PROFILE_TEMPERATURE DECODE_PROFILE_PROMPT DECODE_PROFILE_LABEL
 export RUN_LONGBENCH2 LONGBENCH2_TASKS LONGBENCH2_LIMIT LONGBENCH2_BATCH_SIZE
@@ -270,11 +296,13 @@ VALID_BASELINE_PHASES=(
   acceptance
   long_context_probe
   long_context_latency_matrix
+  long_context_mixed_arrival
   prefix_cache_probe
   streaming_pressure_soak
   streaming_pressure_matrix
   bench_hf_mt_bench
   eval_gsm8k
+  bench_random_prefill_sweep
   bench_random_8192x512
   oracle_export
   decode_profile
@@ -303,7 +331,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,prefix_cache_probe,streaming_pressure_soak,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,long_context_mixed_arrival,prefix_cache_probe,streaming_pressure_soak,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
   done
@@ -694,6 +722,10 @@ write_summary() {
       "${LONG_CONTEXT_LATENCY_CONCURRENCY}" "${LONG_CONTEXT_LATENCY_CACHE_MODES}" \
       "${LONG_CONTEXT_LATENCY_REPEAT_COUNT}" "${LONG_CONTEXT_LATENCY_MAX_TOKENS}" \
       "${LONG_CONTEXT_LATENCY_THINKING_MODE}"
+    printf -- '- long_context_mixed_arrival: `%s`, specs `%s`, repeats `%s`, thinking `%s`\n' \
+      "${RUN_LONG_CONTEXT_MIXED_ARRIVAL}" "${LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS}" \
+      "${LONG_CONTEXT_MIXED_ARRIVAL_REPEAT_COUNT}" \
+      "${LONG_CONTEXT_MIXED_ARRIVAL_THINKING_MODE}"
     printf -- '- prefix_cache_probe: `%s`, lines `%s`, max tokens `%s`, thinking `%s`, fail_on_regression `%s`\n' \
       "${RUN_PREFIX_CACHE_PROBE}" "${PREFIX_CACHE_LINE_COUNT:-1900}" \
       "${PREFIX_CACHE_MAX_TOKENS:-64}" "${PREFIX_CACHE_THINKING_MODE:-non-thinking}" \
@@ -716,6 +748,10 @@ write_summary() {
       printf -- '- lm_eval_gate: task `%s`, metric `%s`, min_delta `%s`\n' \
         "${LM_EVAL_GATE_TASK}" "${LM_EVAL_GATE_METRIC}" "${LM_EVAL_GATE_MIN_DELTA}"
     fi
+    printf -- '- random_prefill_sweep: `%s`, input lens `%s`, output len `%s`, concurrency `%s`, prompts `%s`\n' \
+      "${RUN_RANDOM_PREFILL_SWEEP}" "${RANDOM_PREFILL_INPUT_LENS}" \
+      "${RANDOM_PREFILL_OUTPUT_LEN}" "${RANDOM_PREFILL_CONCURRENCY}" \
+      "${RANDOM_PREFILL_NUM_PROMPTS}"
     printf -- '- random_long: `%s`, concurrency `%s`, shape `%s/%s`, prompts `%s`\n' \
       "${RUN_RANDOM_LONG}" "${RANDOM_LONG_CONCURRENCY}" "${RANDOM_LONG_INPUT_LEN}" \
       "${RANDOM_LONG_OUTPUT_LEN}" "${RANDOM_LONG_NUM_PROMPTS}"
@@ -1084,6 +1120,26 @@ for variant in ${variant_list}; do
         "${SCRIPT_DIR}/run_long_context_latency_matrix.sh"
   fi
 
+  if phase_enabled "long_context_mixed_arrival" && { [[ "${RUN_LONG_CONTEXT_MIXED_ARRIVAL}" == "1" ]] || [[ "${RUN_LONG_CONTEXT_MIXED_ARRIVAL}" == "true" ]]; }; then
+    run_phase "${variant}" "long_context_mixed_arrival" "${variant_dir}/long_context_mixed_arrival" \
+      env OUT_DIR="${variant_dir}/long_context_mixed_arrival" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
+        LONG_CONTEXT_MIXED_ARRIVAL_VARIANT="${variant}" \
+        LONG_CONTEXT_MIXED_ARRIVAL_CASE_NAME="${LONG_CONTEXT_MIXED_ARRIVAL_CASE_NAME}" \
+        LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS="${LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS}" \
+        LONG_CONTEXT_MIXED_ARRIVAL_REPEAT_COUNT="${LONG_CONTEXT_MIXED_ARRIVAL_REPEAT_COUNT}" \
+        LONG_CONTEXT_MIXED_ARRIVAL_TEMPERATURE="${LONG_CONTEXT_MIXED_ARRIVAL_TEMPERATURE}" \
+        LONG_CONTEXT_MIXED_ARRIVAL_TOP_P="${LONG_CONTEXT_MIXED_ARRIVAL_TOP_P}" \
+        LONG_CONTEXT_MIXED_ARRIVAL_THINKING_MODE="${LONG_CONTEXT_MIXED_ARRIVAL_THINKING_MODE}" \
+        LONG_CONTEXT_MIXED_ARRIVAL_TIMEOUT="${LONG_CONTEXT_MIXED_ARRIVAL_TIMEOUT}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_long_context_mixed_arrival.sh"
+  fi
+
   if phase_enabled "prefix_cache_probe" && { [[ "${RUN_PREFIX_CACHE_PROBE}" == "1" ]] || [[ "${RUN_PREFIX_CACHE_PROBE}" == "true" ]]; }; then
     run_phase "${variant}" "prefix_cache_probe" "${variant_dir}/prefix_cache_probe" \
       env OUT_DIR="${variant_dir}/prefix_cache_probe" \
@@ -1198,6 +1254,28 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_lm_eval.sh"
+  fi
+
+  if phase_enabled "bench_random_prefill_sweep" && { [[ "${RUN_RANDOM_PREFILL_SWEEP}" == "1" ]] || [[ "${RUN_RANDOM_PREFILL_SWEEP}" == "true" ]]; }; then
+    run_phase "${variant}" "bench_random_prefill_sweep" "${variant_dir}/bench_random_prefill_sweep" \
+      env OUT_DIR="${variant_dir}/bench_random_prefill_sweep" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" HOST="${HOST}" PORT="${PORT}" \
+        PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" SERVE_LOG="${serve_log}" \
+        TOKENIZER_MODE=deepseek_v4 \
+        RANDOM_PREFILL_INPUT_LENS="${RANDOM_PREFILL_INPUT_LENS}" \
+        RANDOM_PREFILL_OUTPUT_LEN="${RANDOM_PREFILL_OUTPUT_LEN}" \
+        RANDOM_PREFILL_CONCURRENCY="${RANDOM_PREFILL_CONCURRENCY}" \
+        RANDOM_PREFILL_NUM_PROMPTS="${RANDOM_PREFILL_NUM_PROMPTS}" \
+        RANDOM_PREFILL_BENCH_TIMEOUT="${RANDOM_PREFILL_BENCH_TIMEOUT}" \
+        RANDOM_PREFILL_TEMPERATURE="${RANDOM_PREFILL_TEMPERATURE}" \
+        RANDOM_PREFILL_IGNORE_EOS="${RANDOM_PREFILL_IGNORE_EOS}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_PROBE_TIMEOUT="${SERVER_FAILURE_PROBE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_random_prefill_sweep.sh"
   fi
 
   if phase_enabled "bench_random_8192x512" && { [[ "${RUN_RANDOM_LONG}" == "1" ]] || [[ "${RUN_RANDOM_LONG}" == "true" ]]; }; then

@@ -127,6 +127,13 @@ tool-call turn.
   - keeps random synthetic prompts for controlled short/long context pressure
   - parses common throughput and latency metrics
   - stores raw logs per concurrency
+- Random short-prefill sweep:
+  - runs random-input `bench serve` cases at 1K/4K/16K/64K prompt lengths with
+    a small output cap
+  - records per-shape input-token throughput, output throughput, TTFT, and raw
+    benchmark logs
+  - is the development gate for short-prefill kernel regressions such as FP8
+    MQA logits tile changes
 - vLLM `bench serve` comparison:
   - compares two `bench.json` files, such as CUDA graph off/on or branch A/B
   - reports SGLang-style batch/concurrency rows with output tok/s, TPOT, TTFT,
@@ -883,6 +890,25 @@ default matrix because dual-card and memory-tight serves may legitimately queue
 or fail them. Use `STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW=1` only after the
 per-hardware thresholds are calibrated.
 
+The mixed-arrival long-context gate is enabled in baseline profiles by default
+with `RUN_LONG_CONTEXT_MIXED_ARRIVAL=1`. It runs
+`LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS=decode_then_long:1900:1900:after_first_token:0:256:128,long_then_short:4000:192:fixed_delay:2:128:64`.
+Each case spec is
+`name:first_prompt_lines:second_prompt_lines:start_mode:start_delay_seconds:first_max_tokens:second_max_tokens`.
+Use it to measure short/long interference when an existing decode stream and a
+new long prefill overlap, or when a short request arrives behind an active long
+prefill. Its per-request TTFT, ITL, decode throughput, and elapsed-time outputs
+are the first place to look before considering heavier deployment separation
+such as dedicated prefill/decode instances.
+
+The random short-prefill sweep is enabled in baseline profiles by default with
+`RUN_RANDOM_PREFILL_SWEEP=1`. It runs
+`RANDOM_PREFILL_INPUT_LENS=1024,4096,16384,65536`,
+`RANDOM_PREFILL_OUTPUT_LEN=1`, `RANDOM_PREFILL_CONCURRENCY=1`, and
+`RANDOM_PREFILL_NUM_PROMPTS=8`, writing `prefill_sweep_summary.json` and
+`prefill_sweep_summary.md`. Use it before promoting changes that touch direct
+prefill kernels, especially SM120 FP8 MQA logits row tiling.
+
 The default KV layout probe uses a synthetic packed FP8 indexer cache with
 `KV_LAYOUT_NUM_BLOCKS=2`, `KV_LAYOUT_BLOCK_SIZE=256`,
 `KV_LAYOUT_HEAD_DIM=448`, `KV_LAYOUT_SCALE_BYTES=8`, and
@@ -893,8 +919,10 @@ server starts.
 Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
 the requested server variant. Valid phase names are `kv_layout_probe`,
 `acceptance`, `long_context_probe`, `long_context_latency_matrix`,
-`prefix_cache_probe`, `streaming_pressure_soak`, `bench_hf_mt_bench`,
-`eval_gsm8k`, `bench_random_8192x512`, and `oracle_export`; the default is
+`long_context_mixed_arrival`, `prefix_cache_probe`,
+`streaming_pressure_soak`, `streaming_pressure_matrix`, `bench_hf_mt_bench`,
+`eval_gsm8k`, `bench_random_prefill_sweep`, `bench_random_8192x512`,
+`oracle_export`, `decode_profile`, and `eval_longbench2`; the default is
 `all`. The
 `streaming_pressure_soak` phase still requires `RUN_STREAMING_PRESSURE_SOAK=1`
 because it is intentionally opt-in. For example:

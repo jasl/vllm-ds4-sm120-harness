@@ -137,10 +137,13 @@ Short-context and correctness gates on the follow-up candidate:
 | GSM8K 5-shot limit-50, C=4, artifact `codex_very_long_prefill_half_cap_gsm8k_c4_20260521/mtp/eval_gsm8k` | `exact_match_flexible=0.960`, `exact_match_strict=0.960` |
 | GSM8K 5-shot limit-200, C=4, artifact `codex_very_long_prefill_half_cap_gsm8k_limit200_20260521/mtp/eval_gsm8k` | `exact_match_flexible=0.950`, `exact_match_strict=0.940`; same-protocol 3/4 cap baseline `0.940 / 0.930` |
 
-Decision: keep this follow-up. It improves the 124K C=2 slow-request tail
-without moving 59K or C=1 materially and without adding a public scheduler
-knob. The result is still dual-card 128K-class evidence; repeat on four-card
-hardware before making longer-context commitments.
+Decision at the time: keep this follow-up. It improved the 124K C=2
+slow-request tail without moving 59K or C=1 materially and without adding a
+public scheduler knob. It is now superseded by the mixed-arrival budget guard
+below, which lowers the very-long threshold from 16 to 4 scheduler steps and
+also protects waiting requests behind a running long prefill. The result is
+still dual-card 128K-class evidence; repeat on four-card hardware before
+making longer-context commitments.
 
 ### Sparse SWA MTP Reorder Correctness Fix
 
@@ -270,6 +273,86 @@ Additional promotion gates passed:
 
 Promotion artifact labels: `codex_blockm64_latency_gate/20260520040358` and
 `codex_blockm64_short_gsm8k_gate/20260520042117`.
+
+### Adaptive FP8 MQA Logits `BLOCK_M`
+
+User feedback on
+[`issuecomment-4504312139`](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4504312139)
+reported that the promoted `BLOCK_M=64` path regressed short prefill while
+helping 64K-class prefill. A direct same-host recheck confirmed the shape is
+real enough to fix: use `BLOCK_M=16` for `seq_len_kv <= 16K`, and keep
+`BLOCK_M=64` for longer prefill.
+
+Same-host A/B, prefix cache disabled, 131K max-model-len, 4096
+max-num-batched-tokens, TP=2, MTP=2, random input, output length 1,
+concurrency 1, 8 prompts per shape:
+
+| Input Shape | `BLOCK_M=64` Input tok/s | Adaptive Input tok/s | Input tok/s Delta | `BLOCK_M=64` TTFT | Adaptive TTFT | TTFT Delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1K | 3385.12 | 5152.20 | +52.2% | 302.06 ms | 198.16 ms | -34.4% |
+| 4K | 6159.40 | 6090.71 | -1.1% | 664.69 ms | 671.89 ms | +1.1% |
+| 16K | 5539.81 | 5587.04 | +0.9% | 2957.02 ms | 2932.20 ms | -0.8% |
+| 64K | 4643.00 | 4605.89 | -0.8% | 14115.16 ms | 14228.26 ms | +0.8% |
+
+Artifact labels:
+`codex_blockm64_prefill_sweep_fixed_20260521` and
+`codex_adaptive_blockm_prefill_sweep_20260521`.
+
+Decision: keep the adaptive tile selection. It directly addresses the reported
+short-prefill regression while keeping 4K/16K/64K within run noise on the
+dual-SM120 host.
+
+### Mixed Arrival Long-Prefill Budget Guard
+
+The first retained mixed scheduler cap improved the existing-decode +
+new-long-prefill path, but the mixed-arrival gate still showed two gaps:
+59K decode streams could see p99 inter-chunk gaps near two seconds, and a
+short request arriving behind a 124K-class prefill still waited nearly the
+entire long prefill before TTFT.
+
+The retained follow-up remains internal and does not add a public scheduler
+knob. It keeps the 3/4 cap for ordinary long prefills, uses the 1/2 cap once
+remaining prefill exceeds four full scheduler steps, and applies the same
+budget guard to an already-running long prefill when waiting requests exist.
+Pure C=1 prefill, pure decode, and short prefills that fit within one full
+step are unchanged.
+
+Same-host A/B against the adaptive `BLOCK_M` candidate, prefix cache disabled,
+131K max-model-len, 4096 max-num-batched-tokens, TP=2, MTP=2, repeat count 3:
+
+| Case | Metric | Previous Candidate | Budget Guard | Delta |
+| --- | --- | ---: | ---: | ---: |
+| decode then 59K | Primary TTFT mean | 12.383 s | 12.289 s | -0.8% |
+| decode then 59K | Primary elapsed mean | 26.554 s | 21.592 s | -18.7% |
+| decode then 59K | Primary ITL p99 | 1.938 s | 0.625 s | -67.7% |
+| decode then 59K | Decode tok/s mean | 65.489 | 74.237 | +13.4% |
+| 124K long then short | Primary TTFT mean | 33.807 s | 31.925 s | -5.6% |
+| 124K long then short | Secondary TTFT mean | 32.471 s | 30.564 s | -5.9% |
+| 124K long then short | Decode min/max ratio | 0.467 | 0.505 | +8.3% |
+
+Artifact labels:
+`codex_adaptive_mixed_arrival_20260521` and
+`codex_adaptive_scheduler_mixed_arrival_20260521`.
+
+Decision: keep this follow-up. It improves the exact mixed long/short
+interference gate without moving the tradeoff into a user-facing configuration
+option. The remaining 30 s-class short-request TTFT behind a 124K prefill is
+still a real single-instance limitation; for strict data-center SLAs, use this
+gate as the point where prefill/decode separation or admission-control policy
+becomes a deployment question.
+
+Final combined gate, artifact `codex_adaptive_scheduler_final_gate_20260521`,
+TP=2, MTP=2, prefix cache disabled, 131K max-model-len, 4096
+max-num-batched-tokens:
+
+| Gate | Result |
+| --- | --- |
+| 59K/124K long-context latency matrix | 4 groups, 0 failures; 59K C=1 TTFT 12.307 s, 124K C=1 TTFT 31.399 s; 59K C=2 ITL p99 0.888 s, 124K C=2 ITL p99 0.658 s |
+| Mixed-arrival long/short matrix | 2 cases, 0 failures; decode-then-59K primary ITL p95 0.484 s, long-then-short secondary TTFT 30.583 s |
+| Streaming pressure matrix | 4 cases, 36 requests, 0 failures, 0 slow cases; max TTFT 61.277 s, p99 ITL 1.247 s |
+| Random short-prefill sweep | 1K/4K/16K/64K all successful; input tok/s 6350.39 / 6045.76 / 5532.80 / 4561.01 |
+| HF/MT-Bench short-context bench | C=1/2/4/8/16/24 all 80/80 successful; output tok/s 138.33 / 229.19 / 332.32 / 353.06 / 362.89 / 359.11 |
+| GSM8K 5-shot limit-50 | `exact_match_flexible=0.980`, `exact_match_strict=0.940` |
 
 ### DeepSeek V4 MTP C=4 FULL Graph Stability Fix
 

@@ -90,6 +90,21 @@ def test_bench_script_defaults_to_representative_hf_dataset():
     assert '${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}' in script
 
 
+def test_random_prefill_sweep_wrapper_covers_short_prefill_regression_shapes():
+    script = (ROOT / "scripts" / "run_random_prefill_sweep.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'RANDOM_PREFILL_INPUT_LENS="${RANDOM_PREFILL_INPUT_LENS:-1024,4096,16384,65536}"' in script
+    assert 'RANDOM_PREFILL_OUTPUT_LEN="${RANDOM_PREFILL_OUTPUT_LEN:-1}"' in script
+    assert 'RANDOM_PREFILL_CONCURRENCY="${RANDOM_PREFILL_CONCURRENCY:-1}"' in script
+    assert 'DATASET_NAME=random' in script
+    assert 'RANDOM_INPUT_LEN="${input_len}"' in script
+    assert 'RANDOM_OUTPUT_LEN="${RANDOM_PREFILL_OUTPUT_LEN}"' in script
+    assert "prefill_sweep_summary.json" in script
+    assert "prefill_sweep_summary.md" in script
+
+
 def test_prefix_cache_probe_wrapper_records_kv_runtime_artifacts():
     script = (ROOT / "scripts" / "run_prefix_cache_probe.sh").read_text(
         encoding="utf-8"
@@ -164,6 +179,18 @@ def test_long_context_mixed_arrival_wrapper_targets_staggered_decode_pressure():
     assert "start_runtime_stats" in script
 
 
+def test_b200_baseline_exposes_mixed_arrival_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "long_context_mixed_arrival" in script
+    assert 'RUN_LONG_CONTEXT_MIXED_ARRIVAL="${RUN_LONG_CONTEXT_MIXED_ARRIVAL:-1}"' in script
+    assert 'LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS="${LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS:-' in script
+    assert '"${variant_dir}/long_context_mixed_arrival"' in script
+    assert '"${SCRIPT_DIR}/run_long_context_mixed_arrival.sh"' in script
+
+
 def test_needle_position_matrix_wrapper_targets_tail_correctness():
     script = (ROOT / "scripts" / "run_needle_position_matrix.sh").read_text(
         encoding="utf-8"
@@ -222,6 +249,68 @@ def test_streaming_pressure_matrix_wrapper_records_continuous_pressure_cases():
     assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
     assert "start_runtime_stats" in script
     assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
+def test_b200_baseline_exposes_user_reported_prefill_sweep_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "bench_random_prefill_sweep" in script
+    assert 'RUN_RANDOM_PREFILL_SWEEP="${RUN_RANDOM_PREFILL_SWEEP:-1}"' in script
+    assert 'RANDOM_PREFILL_INPUT_LENS="${RANDOM_PREFILL_INPUT_LENS:-1024,4096,16384,65536}"' in script
+    assert 'RANDOM_PREFILL_OUTPUT_LEN="${RANDOM_PREFILL_OUTPUT_LEN:-1}"' in script
+    assert '"${variant_dir}/bench_random_prefill_sweep"' in script
+    assert '"${SCRIPT_DIR}/run_random_prefill_sweep.sh"' in script
+
+
+def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
+    script = (ROOT / "scripts" / "run_sm120_local_quality_gates.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'B200_TENSOR_PARALLEL_SIZE="${B200_TENSOR_PARALLEL_SIZE:-2}"' in script
+    assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-131072}"' in script
+    assert 'SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-0}"' in script
+    assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-disabled}"' in script
+    assert 'RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-0}"' in script
+    assert "bench_random_prefill_sweep" in script
+    assert "long_context_mixed_arrival" in script
+    assert "long_context_latency_matrix" in script
+    assert "streaming_pressure_matrix" in script
+    assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
+
+
+def test_sm120_external_quality_gate_profile_requires_explicit_context_ceiling():
+    script = (ROOT / "scripts" / "run_sm120_external_reported_gates.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "EXTERNAL_GATE_MAX_MODEL_LEN" in script
+    assert "must be set" in script
+    assert 'B200_TENSOR_PARALLEL_SIZE="${B200_TENSOR_PARALLEL_SIZE:-4}"' in script
+    assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-${EXTERNAL_GATE_MAX_MODEL_LEN}}"' in script
+    assert 'RUN_LONGBENCH2="${RUN_LONGBENCH2:-1}"' in script
+    assert 'LONGBENCH2_MAX_MODEL_LEN="${LONGBENCH2_MAX_MODEL_LEN:-${EXTERNAL_GATE_MAX_MODEL_LEN}}"' in script
+    assert "streaming_pressure_matrix" in script
+    assert "long_context_mixed_arrival" in script
+    assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
+
+
+def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates():
+    docs = (ROOT / "docs" / "vllm_correctness_gates.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Development Feedback Gates" in docs
+    assert "User-Reported External Gates" in docs
+    assert "issuecomment-4497389943" in docs
+    assert "issuecomment-4504312139" in docs
+    assert "issuecomment-4505504798" in docs
+    assert "bench_random_prefill_sweep" in docs
+    assert "long_context_mixed_arrival" in docs
+    assert "MTP=1" in docs
+    assert "TP=4" in docs
 
 
 def test_acceptance_streaming_pressure_soak_is_opt_in():
@@ -1227,6 +1316,9 @@ def test_scripts_have_valid_bash_syntax():
         "run_oracle_export.sh",
         "run_official_api_baseline.sh",
         "run_b200_baseline.sh",
+        "run_random_prefill_sweep.sh",
+        "run_sm120_local_quality_gates.sh",
+        "run_sm120_external_reported_gates.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
         "run_long_context_mixed_arrival.sh",

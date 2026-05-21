@@ -134,6 +134,74 @@ quality gates instead of relying on a sales-refresh narrative:
   length. Do not turn dual-card 128K-130K evidence into customer commitments
   beyond 128K.
 
+### Development Feedback Gates
+
+Keep these user-feedback shapes in the dual-card development loop because they
+fit the local 128K-130K ceiling and directly cover the latest PR feedback:
+
+- Short prefill sweep for the reported `BLOCK_M=16 -> 64` regression in
+  [issuecomment-4504312139](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4504312139):
+  run `bench_random_prefill_sweep` with `RANDOM_PREFILL_INPUT_LENS=1024,4096,16384,65536`,
+  `RANDOM_PREFILL_OUTPUT_LEN=1`, `RANDOM_PREFILL_CONCURRENCY=1`, and prefix
+  cache disabled. Compare input-token throughput and TTFT against the latest
+  same-host accepted baseline before promoting FP8 MQA prefill kernel changes.
+- MTP=1 prefix-cache stability proxy for
+  [issuecomment-4497389943](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4497389943):
+  run the `mtp1` variant with `SERVE_PREFIX_CACHE_MODE=enabled`,
+  `SERVE_MAX_MODEL_LEN=16384`, `B200_BLOCK_SIZE=256`,
+  `PREFIX_CACHE_LINE_COUNT=384`, `PREFIX_CACHE_FAIL_ON_REGRESSION=1`, and
+  `cudagraph_mode=FULL_AND_PIECEWISE`. This is a stability gate: failures,
+  `/metrics` disconnects, or post-probe server unresponsiveness are regressions
+  even if request-level cached-token counters are noisy.
+- Multi-session decode pressure proxy for
+  [issuecomment-4505504798](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4505504798):
+  run `streaming_pressure_matrix` on the local TP=2 server with at least
+  short C=4, issue #7 5K C=4, 124K-class C=2, and 59K-class C=4 cases. Treat
+  per-request ITL p95/p99 and request failures as first-class gate outputs.
+- Mixed long/short arrival pressure: run `long_context_mixed_arrival` with
+  one case where a long request arrives after an existing decode stream starts
+  and one case where a short request arrives behind a long prefill. This is the
+  local proxy for deciding whether best-effort single-instance scheduling is
+  still enough, or whether a deployment needs stronger prefill/decode
+  isolation.
+
+The convenience profile `scripts/run_sm120_local_quality_gates.sh` wires the
+prefix-cache-disabled development gates together with the existing
+long-context, MT-Bench, and GSM8K checks for dual RTX PRO 6000 development
+runs. The MTP=1 prefix-cache proxy intentionally stays outside that default
+profile because it needs `SERVE_PREFIX_CACHE_MODE=enabled` and a separate
+`mtp1` serve.
+
+### User-Reported External Gates
+
+Keep the following as external/user-reported gates until a local four-card
+environment is available. They are required before public claims for the
+reported four-card or 512K/1M shapes:
+
+- TP=4, FP8 KV, prefix-cache-on 512K short-prefill sweep: use
+  `EXTERNAL_GATE_MAX_MODEL_LEN=524288` with `bench_random_prefill_sweep` and
+  the same 1K/4K/16K/64K input lengths from
+  [issuecomment-4504312139](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4504312139).
+- TP=4, FP8 KV, prefix-cache-on 1M multi-session decode pressure: use
+  `EXTERNAL_GATE_MAX_MODEL_LEN=1048576`, `STREAMING_PRESSURE_MATRIX_CASE_SPECS`
+  containing C=4 and C=6 long-session cases, and require runtime telemetry to
+  show no decode collapse like the 2-3 tok/s report in
+  [issuecomment-4505504798](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4505504798).
+- TP=4 long/short mixed-arrival pressure: use
+  `long_context_mixed_arrival` with the external profile defaults, then inspect
+  per-request decode throughput and ITL p95/p99 before claiming that 512K/1M
+  multi-session workloads are healthy.
+- TP=2 MTP=1 prefix-cache crash/stability confirmation: when reproducing the
+  exact user AM5/PHB shape from
+  [issuecomment-4497389943](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4497389943),
+  preserve their NCCL flags, `--disable-custom-all-reduce`, FP8 KV, block size
+  256, and FULL_AND_PIECEWISE CUDA graph. Record both `/metrics` deltas and
+  whether the server remains responsive after the probe.
+
+The convenience profile `scripts/run_sm120_external_reported_gates.sh` refuses
+to run unless `EXTERNAL_GATE_MAX_MODEL_LEN` is set, so 512K and 1M evidence is
+never confused with the dual-card local development gate.
+
 Checked-in baselines are final result artifacts. This harness should consume
 them as-is and write new analysis artifacts when they become stale; do not
 backfill old baselines or add compatibility layers for retired baseline
