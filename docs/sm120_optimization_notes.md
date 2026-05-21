@@ -104,6 +104,44 @@ configuration. It is still a dual-card 131K validation point; before making
 claims for 256K+ or four-card users, rerun the same mixed-arrival and fixed
 C=1/C=2 gates on that hardware.
 
+### Very-Long Mixed Decode / Prefill Half Cap
+
+The retained 3/4 mixed decode/prefill cap still left a visible slow-request
+tail at 124K C=2. A narrower follow-up keeps the 3/4 cap for ordinary long
+prefills but uses a 1/2 cap only when the remaining prefill is more than 16
+full scheduler steps. With the current 4096-token scheduler profile, that
+means 59K-class prompts stay on the 3/4 path while 124K-class prompts get a
+tighter chunk during the earliest, highest-interference prefill steps.
+
+Fixed-gate A/B, prefix cache disabled, 131K max-model-len, 4096
+max-num-batched-tokens, TP=2, MTP=2, prewarm enabled, repeat count 3:
+
+| Prompt Shape | C | Metric | 3/4 Cap | Very-Long 1/2 Cap | Delta |
+| --- | ---: | --- | ---: | ---: | ---: |
+| 59K synthetic | 1 | TTFT mean | 11.991 s | 12.025 s | +0.3% |
+| 59K synthetic | 2 | TTFT mean | 18.692 s | 18.746 s | +0.3% |
+| 59K synthetic | 2 | Decode min | 5.237 tok/s | 5.197 tok/s | -0.8% |
+| 59K synthetic | 2 | ITL P99 | 0.750 s | 0.753 s | +0.3% |
+| 124K synthetic | 1 | TTFT mean | 30.796 s | 30.911 s | +0.4% |
+| 124K synthetic | 2 | TTFT mean | 47.167 s | 47.408 s | +0.5% |
+| 124K synthetic | 2 | TTFT max | 62.838 s | 63.211 s | +0.6% |
+| 124K synthetic | 2 | Decode min | 3.988 tok/s | 6.137 tok/s | +53.9% |
+| 124K synthetic | 2 | ITL P95 | 0.800 s | 0.496 s | -38.0% |
+| 124K synthetic | 2 | ITL P99 | 0.825 s | 0.510 s | -38.2% |
+
+Short-context and correctness gates on the follow-up candidate:
+
+| Gate | Result |
+| --- | --- |
+| Short HF/MT-Bench C=1/2/4, 16 prompts, artifact `codex_very_long_prefill_half_cap_final_gate_20260521/mtp/bench_hf_mt_bench` | all 16/16 successful; output tok/s `147.76 / 230.34 / 313.66` |
+| GSM8K 5-shot limit-50, C=4, artifact `codex_very_long_prefill_half_cap_gsm8k_c4_20260521/mtp/eval_gsm8k` | `exact_match_flexible=0.960`, `exact_match_strict=0.960` |
+| GSM8K 5-shot limit-200, C=4, artifact `codex_very_long_prefill_half_cap_gsm8k_limit200_20260521/mtp/eval_gsm8k` | `exact_match_flexible=0.950`, `exact_match_strict=0.940`; same-protocol 3/4 cap baseline `0.940 / 0.930` |
+
+Decision: keep this follow-up. It improves the 124K C=2 slow-request tail
+without moving 59K or C=1 materially and without adding a public scheduler
+knob. The result is still dual-card 128K-class evidence; repeat on four-card
+hardware before making longer-context commitments.
+
 ### Sparse SWA MTP Reorder Correctness Fix
 
 The 64K-class MTP=2 C=3/C=4 retrieval miss was traced to a metadata split
