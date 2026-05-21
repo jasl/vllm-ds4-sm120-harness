@@ -995,6 +995,21 @@ def _long_context_latency_rows(records: list[PhaseRecord]) -> list[dict[str, Any
                     "ttft_seconds_mean": item.get("ttft_seconds_mean"),
                     "ttft_seconds_max": item.get("ttft_seconds_max"),
                     "elapsed_seconds_mean": item.get("elapsed_seconds_mean"),
+                    "decode_tokens_per_second_mean": item.get(
+                        "decode_tokens_per_second_mean"
+                    ),
+                    "decode_tokens_per_second_min": item.get(
+                        "decode_tokens_per_second_min"
+                    ),
+                    "decode_tokens_per_second_max": item.get(
+                        "decode_tokens_per_second_max"
+                    ),
+                    "decode_tps_min_to_max_ratio": item.get(
+                        "decode_tps_min_to_max_ratio"
+                    ),
+                    "p95_inter_chunk_seconds": item.get("p95_inter_chunk_seconds"),
+                    "p99_inter_chunk_seconds": item.get("p99_inter_chunk_seconds"),
+                    "max_inter_chunk_seconds": item.get("max_inter_chunk_seconds"),
                     "prompt_tokens_mean": item.get("prompt_tokens_mean"),
                     "completion_tokens_mean": item.get("completion_tokens_mean"),
                 }
@@ -1008,6 +1023,81 @@ def _long_context_latency_rows(records: list[PhaseRecord]) -> list[dict[str, Any
             _to_int(row.get("concurrency")) or 0,
         ),
     )
+
+
+def _long_context_latency_slowest_request_rows(
+    records: list[PhaseRecord],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str, str, int], dict[str, Any]] = {}
+    for record in records:
+        if record.phase != "long_context_latency_matrix":
+            continue
+        data = _load_json(record.artifact_dir / "long_context_latency_matrix.json")
+        if not isinstance(data, dict):
+            continue
+        requests = data.get("requests") if isinstance(data.get("requests"), list) else []
+        for request in requests:
+            if not isinstance(request, dict):
+                continue
+            concurrency = _to_int(request.get("concurrency"))
+            if concurrency is None or concurrency <= 1:
+                continue
+            key = (
+                record.variant,
+                str(data.get("case") or "n/a"),
+                str(request.get("prompt") or "n/a"),
+                str(request.get("cache_mode") or "n/a"),
+                concurrency,
+            )
+            row = {
+                "variant": record.variant,
+                "case": data.get("case"),
+                "prompt": request.get("prompt"),
+                "cache_mode": request.get("cache_mode"),
+                "concurrency": concurrency,
+                "repeat": request.get("repeat"),
+                "request_index": request.get("request_index"),
+                "ok": request.get("ok"),
+                "ttft_seconds": request.get("ttft_seconds"),
+                "decode_tokens_per_second": request.get("decode_tokens_per_second"),
+                "p95_inter_chunk_seconds": request.get("p95_inter_chunk_seconds"),
+                "p99_inter_chunk_seconds": request.get("p99_inter_chunk_seconds"),
+                "max_inter_chunk_seconds": request.get("max_inter_chunk_seconds"),
+                "detail": request.get("detail"),
+            }
+            current = grouped.get(key)
+            if current is None or _is_slower_long_context_request(row, current):
+                grouped[key] = row
+    return sorted(
+        grouped.values(),
+        key=lambda row: (
+            _variant_sort_key(row["variant"]),
+            str(row.get("prompt")),
+            str(row.get("cache_mode")),
+            _to_int(row.get("concurrency")) or 0,
+        ),
+    )
+
+
+def _is_slower_long_context_request(
+    candidate: dict[str, Any],
+    current: dict[str, Any],
+) -> bool:
+    candidate_decode = _to_float(candidate.get("decode_tokens_per_second"))
+    current_decode = _to_float(current.get("decode_tokens_per_second"))
+    if candidate_decode is not None and current_decode is not None:
+        return candidate_decode < current_decode
+    if candidate_decode is not None:
+        return True
+    if current_decode is not None:
+        return False
+    candidate_p99 = _to_float(candidate.get("p99_inter_chunk_seconds"))
+    current_p99 = _to_float(current.get("p99_inter_chunk_seconds"))
+    if candidate_p99 is not None and current_p99 is not None:
+        return candidate_p99 > current_p99
+    if candidate_p99 is not None:
+        return True
+    return False
 
 
 def _prefix_cache_rows(records: list[PhaseRecord]) -> list[dict[str, Any]]:
@@ -1759,11 +1849,18 @@ def _append_long_context_latency(lines: list[str], rows: list[dict[str, Any]]) -
                 "regressions, and TTFT/elapsed values as latency evidence."
             ),
             "",
-            "| Variant | Case | Prompt | Cache | C | Repeat | Requests | Failures | Max toks | TTFT mean s | TTFT max s | Elapsed mean s | Prompt tok | Completion tok |",
-            "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| Variant | Case | Prompt | Cache | C | Repeat | Requests | Failures | Max toks | TTFT mean s | TTFT max s | Elapsed mean s | Decode tok/s mean | Decode min/max | Decode min/max ratio | ITL p95 s | ITL p99 s | ITL max s | Prompt tok | Completion tok |",
+            "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for row in rows:
+        decode_min = row.get("decode_tokens_per_second_min")
+        decode_max = row.get("decode_tokens_per_second_max")
+        decode_min_max = (
+            "n/a"
+            if decode_min is None or decode_max is None
+            else f"{_fmt(decode_min)}/{_fmt(decode_max)}"
+        )
         lines.append(
             f"| `{row['variant']}` | `{row.get('case', 'n/a')}` | "
             f"`{row.get('prompt', 'n/a')}` | {row.get('cache_mode', 'n/a')} | "
@@ -1775,8 +1872,52 @@ def _append_long_context_latency(lines: list[str], rows: list[dict[str, Any]]) -
             f"{_fmt(row.get('ttft_seconds_mean'))} | "
             f"{_fmt(row.get('ttft_seconds_max'))} | "
             f"{_fmt(row.get('elapsed_seconds_mean'))} | "
+            f"{_fmt(row.get('decode_tokens_per_second_mean'))} | "
+            f"{decode_min_max} | "
+            f"{_fmt(row.get('decode_tps_min_to_max_ratio'))} | "
+            f"{_fmt(row.get('p95_inter_chunk_seconds'))} | "
+            f"{_fmt(row.get('p99_inter_chunk_seconds'))} | "
+            f"{_fmt(row.get('max_inter_chunk_seconds'))} | "
             f"{_fmt_int(row.get('prompt_tokens_mean'))} | "
             f"{_fmt_int(row.get('completion_tokens_mean'))} |"
+        )
+    lines.append("")
+
+
+def _append_long_context_slowest_request_tails(
+    lines: list[str],
+    rows: list[dict[str, Any]],
+) -> None:
+    if not rows:
+        return
+    lines.extend(
+        [
+            "## Long Context Slowest Request Tails",
+            "",
+            (
+                "For each long-context C>1 group, this table reports the "
+                "slowest request by decode tok/s. Use it to catch fairness "
+                "problems that a mean TTFT or mean throughput hides."
+            ),
+            "",
+            "| Variant | Case | Prompt | Cache | C | Repeat | Req | OK | TTFT s | Decode tok/s | ITL p95 s | ITL p99 s | ITL max s | Detail |",
+            "| --- | --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            f"| `{row['variant']}` | `{row.get('case', 'n/a')}` | "
+            f"`{row.get('prompt', 'n/a')}` | {row.get('cache_mode', 'n/a')} | "
+            f"{_fmt_int(row.get('concurrency'))} | "
+            f"{_fmt_int(row.get('repeat'))} | "
+            f"{_fmt_int(row.get('request_index'))} | "
+            f"{_yes_no(row.get('ok'))} | "
+            f"{_fmt(row.get('ttft_seconds'))} | "
+            f"{_fmt(row.get('decode_tokens_per_second'))} | "
+            f"{_fmt(row.get('p95_inter_chunk_seconds'))} | "
+            f"{_fmt(row.get('p99_inter_chunk_seconds'))} | "
+            f"{_fmt(row.get('max_inter_chunk_seconds'))} | "
+            f"{row.get('detail') or 'n/a'} |"
         )
     lines.append("")
 
@@ -2003,6 +2144,9 @@ def build_baseline_report(
     toolcall_rows = _toolcall_rows(records)
     long_context_rows = _long_context_rows(records)
     long_context_latency_rows = _long_context_latency_rows(records)
+    long_context_slowest_request_rows = _long_context_latency_slowest_request_rows(
+        records
+    )
     prefix_cache_rows = _prefix_cache_rows(records)
     streaming_pressure_rows = _streaming_pressure_rows(records)
     streaming_pressure_matrix_rows = _streaming_pressure_matrix_rows(records)
@@ -2060,6 +2204,9 @@ def build_baseline_report(
     _append_toolcall(lines, toolcall_rows)
     _append_long_context(lines, long_context_rows)
     _append_long_context_latency(lines, long_context_latency_rows)
+    _append_long_context_slowest_request_tails(
+        lines, long_context_slowest_request_rows
+    )
     _append_prefix_cache(lines, prefix_cache_rows)
     _append_streaming_pressure(lines, streaming_pressure_rows)
     _append_streaming_pressure_matrix(lines, streaming_pressure_matrix_rows)

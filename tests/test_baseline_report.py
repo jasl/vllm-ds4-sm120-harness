@@ -284,7 +284,52 @@ def _write_fixture_run(tmp_path):
                     "prompt_tokens_mean": 62080,
                     "completion_tokens_mean": 70,
                     "cached_prompt_tokens_mean": 0,
+                    "decode_tokens_per_second_mean": 55.0,
+                    "decode_tokens_per_second_min": 3.92,
+                    "decode_tokens_per_second_max": 107.39,
+                    "decode_tps_min_to_max_ratio": 0.0365,
+                    "p95_inter_chunk_seconds": 0.744,
+                    "p99_inter_chunk_seconds": 1.076,
+                    "max_inter_chunk_seconds": 1.2,
                 }
+            ],
+            "requests": [
+                {
+                    "phase": "measure",
+                    "prompt": "synthetic_2000_lines",
+                    "cache_mode": "cold",
+                    "concurrency": 4,
+                    "repeat": 1,
+                    "request_index": 1,
+                    "ok": True,
+                    "ttft_seconds": 11.23,
+                    "elapsed_seconds": 25.5,
+                    "decode_tokens_per_second": 3.92,
+                    "p95_inter_chunk_seconds": 0.744,
+                    "p99_inter_chunk_seconds": 1.076,
+                    "max_inter_chunk_seconds": 1.2,
+                    "prompt_tokens": 62080,
+                    "completion_tokens": 70,
+                    "detail": "matched required terms",
+                },
+                {
+                    "phase": "measure",
+                    "prompt": "synthetic_2000_lines",
+                    "cache_mode": "cold",
+                    "concurrency": 4,
+                    "repeat": 1,
+                    "request_index": 2,
+                    "ok": True,
+                    "ttft_seconds": 34.11,
+                    "elapsed_seconds": 35.0,
+                    "decode_tokens_per_second": 107.39,
+                    "p95_inter_chunk_seconds": 0.022,
+                    "p99_inter_chunk_seconds": 0.024,
+                    "max_inter_chunk_seconds": 0.025,
+                    "prompt_tokens": 62080,
+                    "completion_tokens": 70,
+                    "detail": "matched required terms",
+                },
             ],
         },
     )
@@ -554,7 +599,14 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert "## Long Context Latency Matrix" in report
     assert (
         "| `nomtp` | `long_context_mtp_reliability` | `synthetic_2000_lines` | "
-        "cold | 4 | 3 | 12 | 0 | 128 | 32.07 | 34.11 | 46.35 | 62080 | 70 |"
+        "cold | 4 | 3 | 12 | 0 | 128 | 32.07 | 34.11 | 46.35 | "
+        "55.00 | 3.92/107.39 | 0.04 | 0.74 | 1.08 | 1.20 | 62080 | 70 |"
+    ) in report
+    assert "## Long Context Slowest Request Tails" in report
+    assert (
+        "| `nomtp` | `long_context_mtp_reliability` | `synthetic_2000_lines` | "
+        "cold | 4 | 1 | 1 | yes | 11.23 | 3.92 | 0.74 | 1.08 | 1.20 | "
+        "matched required terms |"
     ) in report
     assert "## Prefix Cache Probes" in report
     assert (
