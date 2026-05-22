@@ -693,8 +693,10 @@ For branch-promotion gates, set `LM_EVAL_BASELINE_SUMMARY` to a reference
 `lm_eval_summary.json`. The wrapper then writes `lm_eval_compare.json` and fails
 when the configured metric drops below the reference. The default gate is
 `LM_EVAL_GATE_TASK=gsm8k`, `LM_EVAL_GATE_METRIC=exact_match_flexible`, and
-`LM_EVAL_GATE_MIN_DELTA=0`; strict exact-match remains recorded in the summary
-for manual review.
+`LM_EVAL_GATE_MIN_DELTA=0`. Set `LM_EVAL_GATE_FLOORS` to comma-separated
+`metric=value` pairs when a run has fixed promotion floors without a separate
+baseline summary, for example
+`exact_match_flexible=0.94,exact_match_strict=0.925`.
 
 For public DeepSeek V4 preview claims, capture GSM8K twice when runtime budget
 allows: once with `--num-fewshot 0 --limit 200`, and once with
@@ -1140,6 +1142,10 @@ Before promoting an optimization:
   surface contains phase status, 59K/124K latency, issue #8 decode
   concurrency, mixed-arrival pressure, issue #7 streaming pressure, short
   bench throughput, GSM8K, prefill sweep, and prefix-cache stress data.
+  The profile defaults to GSM8K limit-200 promotion floors of
+  `exact_match_flexible >= 0.94` and `exact_match_strict >= 0.925`, matching
+  the current accepted lower bound so later tuning cannot silently trade away
+  more correctness.
   Use `RUN_USER_FEEDBACK_PREFIX_CACHE=0` when the host only has time for the
   prefix-cache-disabled performance matrix, and keep full acceptance
   generation separate because temperature-1 subjective response length is not

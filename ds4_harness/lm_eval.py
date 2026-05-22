@@ -229,3 +229,31 @@ def compare_lm_eval_summaries(
         "delta": delta,
         "min_delta": min_delta,
     }
+
+
+def gate_lm_eval_metrics(
+    summary: dict[str, Any],
+    *,
+    task: str,
+    metric_floors: list[tuple[str, float]],
+) -> dict[str, Any]:
+    if not metric_floors:
+        raise ValueError("at least one metric floor is required")
+    summary_task = _summary_task(summary, task)
+    metrics = []
+    for metric, required_min_value in metric_floors:
+        value = _numeric_metric(summary_task, metric)
+        metrics.append(
+            {
+                "ok": value >= required_min_value,
+                "metric": metric,
+                "value": value,
+                "required_min_value": required_min_value,
+                "delta": value - required_min_value,
+            }
+        )
+    return {
+        "ok": all(item["ok"] for item in metrics),
+        "task": task,
+        "metrics": metrics,
+    }

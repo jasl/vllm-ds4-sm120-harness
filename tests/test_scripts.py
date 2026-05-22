@@ -74,6 +74,16 @@ def test_lm_eval_script_uses_vllm_venv_binary_by_default():
     assert 'LM_EVAL_BIN="${LM_EVAL_BIN:-lm_eval}"' in script
 
 
+def test_lm_eval_script_supports_metric_floor_gates():
+    script = (ROOT / "scripts" / "run_lm_eval.sh").read_text(encoding="utf-8")
+
+    assert 'LM_EVAL_GATE_FLOORS="${LM_EVAL_GATE_FLOORS:-}"' in script
+    assert "lm-eval-gate" in script
+    assert '--metric-floor "${floor_spec}"' in script
+    assert '"${OUT_DIR}/lm_eval_gate.json"' in script
+    assert '"${OUT_DIR}/lm_eval_gate.exit_code"' in script
+
+
 def test_bench_script_defaults_to_representative_hf_dataset():
     script = (ROOT / "scripts" / "run_bench_matrix.sh").read_text(encoding="utf-8")
 
@@ -346,6 +356,10 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
     assert "decode_then_124k:4000:4000:after_first_token" in script
     assert "issue7_5k_c4:4:3:192:128" in script
     assert "prefix_cache_stress" in script
+    assert (
+        'LM_EVAL_GATE_FLOORS="${LM_EVAL_GATE_FLOORS:-exact_match_flexible=0.94,exact_match_strict=0.925}"'
+        in script
+    )
     assert "SERVE_PREFIX_CACHE_MODE=\"${USER_FEEDBACK_PREFIX_CACHE_MODE:-enabled}\"" in script
     assert "summarize_sm120_user_feedback_matrix.py" in script
     assert "user_feedback_matrix_summary.md" in script
@@ -923,6 +937,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert 'RUN_BENCH_HF="${RUN_BENCH_HF:-1}"' in script
     assert 'LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY:-}"' in script
     assert 'LM_EVAL_GATE_METRIC="${LM_EVAL_GATE_METRIC:-exact_match_flexible}"' in script
+    assert 'LM_EVAL_GATE_FLOORS="${LM_EVAL_GATE_FLOORS:-}"' in script
     assert 'TOOLCALL15_TEMPERATURE="${TOOLCALL15_TEMPERATURE:-1.0}"' in script
     assert 'TOOLCALL15_TOP_P="${TOOLCALL15_TOP_P:-1.0}"' in script
     assert 'ARTIFACT_ARCHIVE_PREVIOUS="${ARTIFACT_ARCHIVE_PREVIOUS:-1}"' in script
@@ -956,6 +971,7 @@ def test_b200_baseline_script_reuses_wrappers_and_keeps_variant_artifacts():
     assert "run_lm_eval.sh" in script
     assert 'LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY}"' in script
     assert 'LM_EVAL_GATE_METRIC="${LM_EVAL_GATE_METRIC}"' in script
+    assert 'LM_EVAL_GATE_FLOORS="${LM_EVAL_GATE_FLOORS}"' in script
     assert "run_oracle_export.sh" in script
     assert 'SERVE_LOG="${serve_log}"' in script
     assert "baseline_summary.md" in script
@@ -1977,6 +1993,7 @@ def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
         "  *' health'*) printf '%s\\n' '{\"ok\":true}'; exit 0 ;;\n"
         "  *' lm-eval '*) mkdir -p \"$OUT_DIR\"; printf '%s\\n' \"$@\" > \"$OUT_DIR/lm_eval_args.txt\"; printf '%s\\n' '{}' > \"$OUT_DIR/lm_eval_summary.json\"; exit 0 ;;\n"
         "  *' lm-eval-compare '*) mkdir -p \"$OUT_DIR\"; printf '%s\\n' \"$@\" > \"$OUT_DIR/lm_eval_compare_args.txt\"; printf '%s\\n' '{\"ok\":true}' > \"$OUT_DIR/lm_eval_compare.json\"; exit 0 ;;\n"
+        "  *' lm-eval-gate '*) mkdir -p \"$OUT_DIR\"; printf '%s\\n' \"$@\" > \"$OUT_DIR/lm_eval_gate_args.txt\"; printf '%s\\n' '{\"ok\":true}' > \"$OUT_DIR/lm_eval_gate.json\"; exit 0 ;;\n"
         "esac\n"
         "exit 0\n",
         encoding="utf-8",
@@ -1994,6 +2011,7 @@ def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
         "GPU_TOPOLOGY_SLUG": "test_gpu",
         "LM_EVAL_TASKS": "gsm8k",
         "LM_EVAL_LIMIT": "200",
+        "LM_EVAL_GATE_FLOORS": "exact_match_flexible=0.94,exact_match_strict=0.925",
         "SERVER_STARTUP_INTERVAL_SECONDS": "0",
         "SERVE_LOG": "",
         "LM_EVAL_BASELINE_SUMMARY": str(baseline_summary),
@@ -2015,6 +2033,10 @@ def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
     ).strip() == "0"
     assert (out_dir / "lm_eval_summary.json").exists()
     assert (out_dir / "lm_eval_compare.json").exists()
+    assert (out_dir / "lm_eval_gate.exit_code").read_text(
+        encoding="utf-8"
+    ).strip() == "0"
+    assert (out_dir / "lm_eval_gate.json").exists()
     args = (out_dir / "lm_eval_args.txt").read_text(encoding="utf-8")
     assert "--limit\n200" in args
     assert "--tokenizer-backend" in args
@@ -2025,6 +2047,9 @@ def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
     assert "--baseline-summary" in compare_args
     assert str(baseline_summary) in compare_args
     assert "--metric\nexact_match_flexible" in compare_args
+    gate_args = (out_dir / "lm_eval_gate_args.txt").read_text(encoding="utf-8")
+    assert "--metric-floor\nexact_match_flexible=0.94" in gate_args
+    assert "--metric-floor\nexact_match_strict=0.925" in gate_args
     assert f"wrote {out_dir}" in result.stdout
 
 

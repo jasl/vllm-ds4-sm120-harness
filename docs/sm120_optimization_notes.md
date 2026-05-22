@@ -1181,8 +1181,10 @@ Ideas to avoid carrying over blindly:
   - long-context pressure reports should include inter-chunk p95/p99 as an ITL
     proxy so prefill/decode scheduling stalls are visible beyond TTFT and
     elapsed time,
-  - deterministic GSM8K `exact_match_flexible` must not drop below the fixed
-    baseline; use `--gen_kwargs temperature=0`,
+  - deterministic GSM8K must not drop below the fixed lower bound: keep
+    `exact_match_flexible >= 0.94` and `exact_match_strict >= 0.925` for the
+    current 5-shot limit-200 MTP C=4 promotion gate; use
+    `--gen_kwargs temperature=0`,
   - DeepSeek V4 MTP fixes must preserve `FULL_AND_PIECEWISE`; do not skip
     full decode CUDA graph capture as a workaround,
   - correctness/unit smoke for the touched vLLM path must pass.

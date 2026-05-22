@@ -237,3 +237,83 @@ def test_lm_eval_compare_cli_accepts_candidate_at_or_above_baseline(tmp_path):
     )
 
     assert rc == 0
+
+
+def test_lm_eval_gate_cli_fails_when_metric_is_below_floor(tmp_path):
+    summary = tmp_path / "summary.json"
+    gate = tmp_path / "gate.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "tasks": [
+                    {
+                        "task": "gsm8k",
+                        "exact_match_flexible": 0.94,
+                        "exact_match_strict": 0.92,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = cli.main(
+        [
+            "lm-eval-gate",
+            "--summary",
+            str(summary),
+            "--task",
+            "gsm8k",
+            "--metric-floor",
+            "exact_match_flexible=0.94",
+            "--metric-floor",
+            "exact_match_strict=0.925",
+            "--json-output",
+            str(gate),
+        ]
+    )
+
+    assert rc == 1
+    data = json.loads(gate.read_text(encoding="utf-8"))
+    assert data["ok"] is False
+    assert data["task"] == "gsm8k"
+    assert data["metrics"][0]["ok"] is True
+    assert data["metrics"][1]["metric"] == "exact_match_strict"
+    assert data["metrics"][1]["value"] == 0.92
+    assert data["metrics"][1]["required_min_value"] == 0.925
+
+
+def test_lm_eval_gate_cli_accepts_metrics_at_floor(tmp_path):
+    summary = tmp_path / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "tasks": [
+                    {
+                        "task": "gsm8k",
+                        "exact_match_flexible": 0.94,
+                        "exact_match_strict": 0.925,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = cli.main(
+        [
+            "lm-eval-gate",
+            "--summary",
+            str(summary),
+            "--task",
+            "gsm8k",
+            "--metric-floor",
+            "exact_match_flexible=0.94",
+            "--metric-floor",
+            "exact_match_strict=0.925",
+        ]
+    )
+
+    assert rc == 0

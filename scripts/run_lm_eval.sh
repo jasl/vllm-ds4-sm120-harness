@@ -28,6 +28,7 @@ LM_EVAL_BASELINE_SUMMARY="${LM_EVAL_BASELINE_SUMMARY:-}"
 LM_EVAL_GATE_TASK="${LM_EVAL_GATE_TASK:-gsm8k}"
 LM_EVAL_GATE_METRIC="${LM_EVAL_GATE_METRIC:-exact_match_flexible}"
 LM_EVAL_GATE_MIN_DELTA="${LM_EVAL_GATE_MIN_DELTA:-0}"
+LM_EVAL_GATE_FLOORS="${LM_EVAL_GATE_FLOORS:-}"
 SERVER_GUARD="${SERVER_GUARD:-1}"
 SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT:-1800}"
 SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS:-15}"
@@ -47,7 +48,7 @@ export LM_EVAL_MAX_GEN_TOKS LM_EVAL_TIMEOUT_MS LM_EVAL_TOKENIZER_BACKEND LM_EVAL
 export LM_EVAL_LIMIT
 export LM_EVAL_COMMAND_TIMEOUT LM_EVAL_EXTRA_ARGS
 export LM_EVAL_BASELINE_SUMMARY LM_EVAL_GATE_TASK LM_EVAL_GATE_METRIC
-export LM_EVAL_GATE_MIN_DELTA
+export LM_EVAL_GATE_MIN_DELTA LM_EVAL_GATE_FLOORS
 export SERVER_GUARD SERVER_STARTUP_TIMEOUT SERVER_STARTUP_INTERVAL_SECONDS
 export SERVER_HEALTH_TIMEOUT SERVER_FAILURE_GRACE_TIMEOUT SERVER_FAILURE_GRACE_INTERVAL_SECONDS
 export ARTIFACT_ROOT RUN_TIMESTAMP BRANCH_NAME GPU_TOPOLOGY_SLUG OUT_DIR
@@ -112,12 +113,13 @@ set +e
   --json-output "${OUT_DIR}/lm_eval_summary.json" \
   ${cli_extra_args[@]+"${cli_extra_args[@]}"}
 code="$?"
+eval_code="${code}"
 set -e
 printf '%s\n' "${code}" > "${OUT_DIR}/lm_eval.exit_code"
 if [[ "${code}" != "0" ]] && ! wait_for_server_ready "${SERVER_FAILURE_GRACE_TIMEOUT}" "${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" "server after lm_eval"; then
   mark_server_unresponsive "lm_eval" "server unresponsive after lm_eval"
 fi
-if [[ "${code}" == "0" && -n "${LM_EVAL_BASELINE_SUMMARY}" ]]; then
+if [[ "${eval_code}" == "0" && -n "${LM_EVAL_BASELINE_SUMMARY}" ]]; then
   set +e
   "${PYTHON}" -m ds4_harness.cli lm-eval-compare \
     --baseline-summary "${LM_EVAL_BASELINE_SUMMARY}" \
@@ -131,6 +133,27 @@ if [[ "${code}" == "0" && -n "${LM_EVAL_BASELINE_SUMMARY}" ]]; then
   printf '%s\n' "${compare_code}" > "${OUT_DIR}/lm_eval_compare.exit_code"
   if [[ "${compare_code}" != "0" ]]; then
     code="${compare_code}"
+  fi
+fi
+if [[ "${eval_code}" == "0" && -n "${LM_EVAL_GATE_FLOORS}" ]]; then
+  gate_args=()
+  IFS=',' read -r -a floor_specs <<< "${LM_EVAL_GATE_FLOORS}"
+  for floor_spec in "${floor_specs[@]}"; do
+    if [[ -n "${floor_spec}" ]]; then
+      gate_args+=(--metric-floor "${floor_spec}")
+    fi
+  done
+  set +e
+  "${PYTHON}" -m ds4_harness.cli lm-eval-gate \
+    --summary "${OUT_DIR}/lm_eval_summary.json" \
+    --task "${LM_EVAL_GATE_TASK}" \
+    ${gate_args[@]+"${gate_args[@]}"} \
+    --json-output "${OUT_DIR}/lm_eval_gate.json"
+  gate_code="$?"
+  set -e
+  printf '%s\n' "${gate_code}" > "${OUT_DIR}/lm_eval_gate.exit_code"
+  if [[ "${gate_code}" != "0" ]]; then
+    code="${gate_code}"
   fi
 fi
 

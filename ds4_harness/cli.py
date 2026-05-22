@@ -52,6 +52,7 @@ from ds4_harness.kv_layout_probe import (
 from ds4_harness.lm_eval import (
     build_lm_eval_command,
     compare_lm_eval_summaries,
+    gate_lm_eval_metrics,
     load_lm_eval_results,
     run_lm_eval_command,
     summarize_lm_eval_results,
@@ -1614,6 +1615,49 @@ def _cmd_lm_eval_compare(args: argparse.Namespace) -> int:
     return 0 if comparison["ok"] else 1
 
 
+def _parse_metric_floor_specs(specs: list[str] | None) -> list[tuple[str, float]]:
+    if not specs:
+        raise ValueError("at least one --metric-floor is required")
+    floors = []
+    for spec in specs:
+        metric, separator, value = spec.partition("=")
+        if separator != "=" or not metric or not value:
+            raise ValueError(
+                "--metric-floor must use the format metric=value, "
+                f"got {spec!r}"
+            )
+        try:
+            floor = float(value)
+        except ValueError as exc:
+            raise ValueError(
+                f"--metric-floor value must be numeric, got {value!r}"
+            ) from exc
+        floors.append((metric, floor))
+    return floors
+
+
+def _cmd_lm_eval_gate(args: argparse.Namespace) -> int:
+    try:
+        summary = json.loads(args.summary.read_text(encoding="utf-8"))
+        gate = gate_lm_eval_metrics(
+            summary,
+            task=args.task,
+            metric_floors=_parse_metric_floor_specs(args.metric_floor),
+        )
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(gate, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    print(json.dumps(gate, ensure_ascii=False))
+    return 0 if gate["ok"] else 1
+
+
 def _cmd_toolcall15(args: argparse.Namespace) -> int:
     if args.repeat_count < 1:
         print("--repeat-count must be >= 1", file=sys.stderr)
@@ -2285,6 +2329,13 @@ def build_parser() -> argparse.ArgumentParser:
     lm_eval_compare.add_argument("--min-delta", type=float, default=0.0)
     lm_eval_compare.add_argument("--json-output", type=Path)
     lm_eval_compare.set_defaults(func=_cmd_lm_eval_compare)
+
+    lm_eval_gate = subparsers.add_parser("lm-eval-gate")
+    lm_eval_gate.add_argument("--summary", type=Path, required=True)
+    lm_eval_gate.add_argument("--task", required=True)
+    lm_eval_gate.add_argument("--metric-floor", action="append", required=True)
+    lm_eval_gate.add_argument("--json-output", type=Path)
+    lm_eval_gate.set_defaults(func=_cmd_lm_eval_gate)
 
     toolcall15 = subparsers.add_parser("toolcall15")
     toolcall15.add_argument("--base-url", default="http://127.0.0.1:8000")

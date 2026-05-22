@@ -195,7 +195,10 @@ MTP=1 prefix-cache stress shape in a separate prefix-cache-enabled serve, and
 writes one `user_feedback_matrix_summary.md` plus JSON summary. Use that
 combined summary to choose the tradeoff across C=1/2/4 short latency, 59K/124K
 long latency, issue #8 decode fairness, mixed-arrival pressure, issue #7
-streaming pressure, GSM8K, prefill throughput, and prefix-cache stability.
+streaming pressure, GSM8K, prefill throughput, and prefix-cache stability. The
+profile hard-gates GSM8K limit-200 at `exact_match_flexible >= 0.94` and
+`exact_match_strict >= 0.925`, so any further correctness drop blocks the
+matrix rather than becoming a narrative footnote.
 
 ### User-Reported External Gates
 

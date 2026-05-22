@@ -94,6 +94,7 @@ if [[ "${RUN_USER_FEEDBACK_PRIMARY}" == "1" || "${RUN_USER_FEEDBACK_PRIMARY}" ==
     LM_EVAL_NUM_FEWSHOT="${LM_EVAL_NUM_FEWSHOT:-5}" \
     LM_EVAL_LIMIT="${LM_EVAL_LIMIT:-200}" \
     MTP_LM_EVAL_NUM_CONCURRENT="${MTP_LM_EVAL_NUM_CONCURRENT:-4}" \
+    LM_EVAL_GATE_FLOORS="${LM_EVAL_GATE_FLOORS:-exact_match_flexible=0.94,exact_match_strict=0.925}" \
     "${SCRIPT_DIR}/run_b200_baseline.sh"
 fi
 
