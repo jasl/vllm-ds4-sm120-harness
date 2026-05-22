@@ -231,6 +231,39 @@ gates remain healthy. The known residual limitation is not a crash or pure
 decode-kernel cliff; it is fairness under simultaneous cold long-prefill where
 one stream can still be slower than its pair.
 
+Consolidated user-feedback matrix:
+
+Use `scripts/run_sm120_user_feedback_matrix.sh` for the combined tradeoff view
+instead of chasing one reported shape at a time. It runs the prefix-cache-off
+local matrix first, then the MTP=1 prefix-cache HTTP `/metrics` stress in a
+separate prefix-cache-on serve, and writes one
+`user_feedback_matrix_summary.md/json` at the matrix root.
+
+First complete run:
+`codex_user_feedback_matrix_20260522/20260522155455`, topology
+`2x_rtx_pro_6000_sm120_user_feedback`, summary
+`user_feedback_matrix_summary.md`.
+
+| Gate | Result |
+| --- | --- |
+| Phase exits | primary MTP all `0`; prefix-cache MTP=1 stress `0` |
+| 59K latency, cold, repeat 3 | C=1 TTFT mean `12.233s`, C=2 `19.289s`; failures `0` |
+| 124K latency, cold, repeat 3 | C=1 TTFT mean `31.123s`, C=2 `48.847s`; failures `0` |
+| 124K decode-concurrency | C=1 decode `107.036 tok/s`; C=2 slow request `20.797 tok/s`, decode min/max `0.209`, ITL p99 `0.142s`; failures `0` |
+| Mixed arrival | `decode_then_59k`, `decode_then_124k`, and `long_then_short` all passed; decode min/max `0.206 / 0.292 / 0.575` |
+| Streaming pressure | 36 requests, failures `0`, slow cases `0`, max TTFT `59.434s`, ITL p99 `1.127s` |
+| Short-context MTP bench | C=1/2/4/8/16/24 output throughput `160.68 / 256.59 / 389.43 / 551.89 / 784.14 / 922.80 tok/s` |
+| GSM8K 5-shot limit-200, MTP C=4 | `exact_match_flexible=0.940`, `exact_match_strict=0.925`; flexible is at the fixed floor |
+| Random prefill sweep, C=1, OSL=1 | ISL 1K/4K/16K/64K input throughput `6350 / 6012 / 5526 / 4570 tok/s` |
+| MTP=1 prefix-cache HTTP metrics stress | health `200`, trials `5`, failures `0`, solo hit rate `0.6729`, concurrent hit rate `0.7507` |
+
+Tradeoff read: this is the best current balanced point for the dual-card,
+<=128K-class development target. The branch should optimize further around
+long-context C=2 fairness, but not by sacrificing C=1/C=2/C=4 short latency,
+GSM8K flexible correctness, prefix-cache stability, or server responsiveness.
+The 256K+ / TP=4 path remains an external gate rather than a claim from this
+matrix.
+
 ### Sparse SWA MTP Reorder Correctness Fix
 
 The 64K-class MTP=2 C=3/C=4 retrieval miss was traced to a metadata split

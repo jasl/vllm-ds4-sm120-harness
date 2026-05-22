@@ -1131,6 +1131,19 @@ Before promoting an optimization:
 - Real-scenario benchmark on `philschmid/mt-bench` does not regress more than
   the explicitly accepted threshold. Random-shape benchmark regressions are
   useful diagnostics, but should not be the only performance signal.
+- `scripts/run_sm120_user_feedback_matrix.sh` is the consolidated
+  user-feedback profile for avoiding single-symptom tuning. It runs the local
+  two-card tradeoff matrix with prefix cache disabled, then optionally runs the
+  MTP=1 prefix-cache HTTP `/metrics` stress shape in a separate prefix-cache-on
+  serve. It writes `user_feedback_matrix_summary.json` and
+  `user_feedback_matrix_summary.md` at the matrix root so the first review
+  surface contains phase status, 59K/124K latency, issue #8 decode
+  concurrency, mixed-arrival pressure, issue #7 streaming pressure, short
+  bench throughput, GSM8K, prefill sweep, and prefix-cache stress data.
+  Use `RUN_USER_FEEDBACK_PREFIX_CACHE=0` when the host only has time for the
+  prefix-cache-disabled performance matrix, and keep full acceptance
+  generation separate because temperature-1 subjective response length is not
+  a stable performance tradeoff signal.
 - For SM120 branch promotion, use `docs/vllm_correctness_gates.md` as the
   authoritative checklist for the refresh watchlist: short-context C=1/2/4,
   fixed-order 59K/124K C=1/C=2, mixed long-context C=2 fairness, GSM8K, and the

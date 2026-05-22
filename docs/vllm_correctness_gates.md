@@ -188,6 +188,15 @@ runs. The MTP=1 prefix-cache proxy intentionally stays outside that default
 profile because it needs `SERVE_PREFIX_CACHE_MODE=enabled` and a separate
 `mtp1` serve.
 
+For branch-promotion tradeoff decisions, prefer
+`scripts/run_sm120_user_feedback_matrix.sh` over running one reported shape at
+a time. It executes the prefix-cache-disabled local matrix first, then runs the
+MTP=1 prefix-cache stress shape in a separate prefix-cache-enabled serve, and
+writes one `user_feedback_matrix_summary.md` plus JSON summary. Use that
+combined summary to choose the tradeoff across C=1/2/4 short latency, 59K/124K
+long latency, issue #8 decode fairness, mixed-arrival pressure, issue #7
+streaming pressure, GSM8K, prefill throughput, and prefix-cache stability.
+
 ### User-Reported External Gates
 
 Keep the following as external/user-reported gates until a local four-card

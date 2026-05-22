@@ -335,6 +335,22 @@ def test_sm120_external_quality_gate_profile_requires_explicit_context_ceiling()
     assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
 
 
+def test_sm120_user_feedback_matrix_combines_reported_shapes():
+    script = (ROOT / "scripts" / "run_sm120_user_feedback_matrix.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "USER_FEEDBACK_MATRIX_LABEL" in script
+    assert "long_context_latency_matrix,long_context_decode_concurrency" in script
+    assert "decode_then_59k:1900:1900:after_first_token" in script
+    assert "decode_then_124k:4000:4000:after_first_token" in script
+    assert "issue7_5k_c4:4:3:192:128" in script
+    assert "prefix_cache_stress" in script
+    assert "SERVE_PREFIX_CACHE_MODE=\"${USER_FEEDBACK_PREFIX_CACHE_MODE:-enabled}\"" in script
+    assert "summarize_sm120_user_feedback_matrix.py" in script
+    assert "user_feedback_matrix_summary.md" in script
+
+
 def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates():
     docs = (ROOT / "docs" / "vllm_correctness_gates.md").read_text(
         encoding="utf-8"
