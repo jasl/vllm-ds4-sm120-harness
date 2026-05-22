@@ -192,6 +192,20 @@ def test_b200_baseline_exposes_mixed_arrival_phase():
     assert '"${SCRIPT_DIR}/run_long_context_mixed_arrival.sh"' in script
 
 
+def test_b200_baseline_exposes_long_context_decode_concurrency_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "long_context_decode_concurrency" in script
+    assert 'RUN_LONG_CONTEXT_DECODE_CONCURRENCY="${RUN_LONG_CONTEXT_DECODE_CONCURRENCY:-0}"' in script
+    assert 'LONG_CONTEXT_DECODE_LINE_COUNTS="${LONG_CONTEXT_DECODE_LINE_COUNTS:-4000}"' in script
+    assert 'LONG_CONTEXT_DECODE_CONCURRENCY="${LONG_CONTEXT_DECODE_CONCURRENCY:-1,2}"' in script
+    assert 'VLLM_VENV="${B200_VLLM_VENV}"' in script
+    assert '"${variant_dir}/long_context_decode_concurrency"' in script
+    assert '"${SCRIPT_DIR}/run_long_context_decode_concurrency.sh"' in script
+
+
 def test_needle_position_matrix_wrapper_targets_tail_correctness():
     script = (ROOT / "scripts" / "run_needle_position_matrix.sh").read_text(
         encoding="utf-8"
@@ -275,6 +289,9 @@ def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
     assert 'SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-0}"' in script
     assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-disabled}"' in script
     assert 'RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-0}"' in script
+    assert 'RUN_LONG_CONTEXT_DECODE_CONCURRENCY="${RUN_LONG_CONTEXT_DECODE_CONCURRENCY:-1}"' in script
+    assert 'LM_EVAL_LIMIT="${LM_EVAL_LIMIT:-200}"' in script
+    assert "long_context_decode_concurrency" in script
     assert "bench_random_prefill_sweep" in script
     assert "long_context_mixed_arrival" in script
     assert "long_context_latency_matrix" in script
@@ -310,6 +327,9 @@ def test_sm120_external_quality_gate_profile_requires_explicit_context_ceiling()
     assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-${EXTERNAL_GATE_MAX_MODEL_LEN}}"' in script
     assert 'RUN_LONGBENCH2="${RUN_LONGBENCH2:-1}"' in script
     assert 'LONGBENCH2_MAX_MODEL_LEN="${LONGBENCH2_MAX_MODEL_LEN:-${EXTERNAL_GATE_MAX_MODEL_LEN}}"' in script
+    assert 'RUN_LONG_CONTEXT_DECODE_CONCURRENCY="${RUN_LONG_CONTEXT_DECODE_CONCURRENCY:-1}"' in script
+    assert 'LONG_CONTEXT_DECODE_LINE_COUNTS="${LONG_CONTEXT_DECODE_LINE_COUNTS:-4000,8000}"' in script
+    assert "long_context_decode_concurrency" in script
     assert "streaming_pressure_matrix" in script
     assert "long_context_mixed_arrival" in script
     assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
@@ -326,8 +346,11 @@ def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates()
     assert "issuecomment-4504312139" in docs
     assert "issuecomment-4505504798" in docs
     assert "issuecomment-4507780873" in docs
+    assert "github.com/jasl/vllm/issues/8" in docs
+    assert "forums.developer.nvidia.com" in docs
     assert "prefix_cache_stress" in docs
     assert "bench_random_prefill_sweep" in docs
+    assert "long_context_decode_concurrency" in docs
     assert "long_context_mixed_arrival" in docs
     assert "MTP=1" in docs
     assert "TP=4" in docs
@@ -438,6 +461,7 @@ def test_env_sample_and_local_env_are_configured():
         "LONG_CONTEXT_LATENCY_REPEAT_COUNT",
         "LONG_CONTEXT_LATENCY_MAX_TOKENS",
         "LONG_CONTEXT_LATENCY_THINKING_MODE",
+        "RUN_LONG_CONTEXT_DECODE_CONCURRENCY",
         "RUN_STREAMING_PRESSURE_SOAK",
         "RUN_STREAMING_PRESSURE_MATRIX",
         "STREAMING_PRESSURE_CONCURRENCY",
@@ -495,6 +519,7 @@ def test_env_sample_and_local_env_are_configured():
         "LONG_CONTEXT_LATENCY_CACHE_MODES": "cold",
         "LONG_CONTEXT_LATENCY_REPEAT_COUNT": "3",
         "LONG_CONTEXT_LATENCY_MAX_TOKENS": "128",
+        "RUN_LONG_CONTEXT_DECODE_CONCURRENCY": "0",
         "RUN_STREAMING_PRESSURE_SOAK": "0",
         "RUN_STREAMING_PRESSURE_MATRIX": "0",
         "STREAMING_PRESSURE_TEMPERATURE": "1.0",

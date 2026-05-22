@@ -845,6 +845,11 @@ For suspected long-context decode concurrency cliffs, run
 when isolating decode behavior after the prompt is cached. Keep
 `LONG_CONTEXT_DECODE_MAX_TOKENS` small, such as 64, for first repro attempts
 so a true sub-1 tok/s collapse does not turn into a very long run.
+The baseline driver can run the same check as the
+`long_context_decode_concurrency` phase. It is off by default in the generic
+baseline, enabled in `scripts/run_sm120_local_quality_gates.sh` as a 124K-class
+local proxy, and enabled in `scripts/run_sm120_external_reported_gates.sh` for
+the user-reported TP=2/long-context C=2 decode-collapse shape.
 
 For more realistic public long-context text than the synthetic prompt, prefer
 license-clear benchmark corpora exported into an artifact directory or ignored
@@ -919,7 +924,8 @@ server starts.
 Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
 the requested server variant. Valid phase names are `kv_layout_probe`,
 `acceptance`, `long_context_probe`, `long_context_latency_matrix`,
-`long_context_mixed_arrival`, `prefix_cache_probe`,
+`long_context_decode_concurrency`, `long_context_mixed_arrival`,
+`prefix_cache_probe`,
 `prefix_cache_stress`, `streaming_pressure_soak`, `streaming_pressure_matrix`,
 `bench_hf_mt_bench`, `eval_gsm8k`, `bench_random_prefill_sweep`,
 `bench_random_8192x512`, `oracle_export`, `decode_profile`, and
@@ -1100,6 +1106,11 @@ Before promoting an optimization:
   disconnects, or server unresponsiveness as regressions. Use
   `scripts/run_sm120_mtp1_prefix_cache_stability.sh` for the exact local
   2x RTX PRO 6000 profile.
+- `long_context_decode_concurrency` is the direct C=1/C=2 long-context decode
+  cliff gate. It records the same TTFT, decode tok/s, ITL p95/p99/max, cached
+  prompt tokens, KV usage, prefix-cache hit rate, and preemption telemetry as
+  the latency matrix, but keeps a longer output length so decode collapse is
+  visible after prefill completes.
 - Enable `streaming-pressure-soak` with `RUN_STREAMING_PRESSURE_SOAK=1` before
   making streaming responsiveness a release gate. Compare `max_ttft_seconds`,
   `p95_inter_chunk_seconds`, `p99_inter_chunk_seconds`, `max_elapsed_seconds`,

@@ -167,6 +167,13 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   run `streaming_pressure_matrix` on the local TP=2 server with at least
   short C=4, issue #7 5K C=4, 124K-class C=2, and 59K-class C=4 cases. Treat
   per-request ITL p95/p99 and request failures as first-class gate outputs.
+- Long-context decode-concurrency proxy for
+  [jasl/vllm issue #8](https://github.com/jasl/vllm/issues/8):
+  run `long_context_decode_concurrency` with a 124K-class prompt, C=1/C=2,
+  and a long enough output budget to expose decode collapse after prefill.
+  Use cold cache for the local prefix-cache-disabled development profile; use
+  warm cache only in a separate prefix-cache-enabled serve when isolating pure
+  decode behavior.
 - Mixed long/short arrival pressure: run `long_context_mixed_arrival` with
   one case where a long request arrives after an existing decode stream starts
   and one case where a short request arrives behind a long prefill. This is the
@@ -206,6 +213,14 @@ reported four-card or 512K/1M shapes:
   preserve their NCCL flags, `--disable-custom-all-reduce`, FP8 KV, block size
   256, and FULL_AND_PIECEWISE CUDA graph. Record both `/metrics` deltas and
   whether the server remains responsive after the probe.
+- TP=2 GB10 recipe and benchmark gap tracking from the
+  [NVIDIA Developer Forums thread](https://forums.developer.nvidia.com/t/deepseek-v4-flash-official-fp8-running-across-2x-dgx-spark-tp-2-mtp-200k-ctx-recipe-numbers/370309):
+  keep `long_context_decode_concurrency` in the external profile alongside
+  `bench_random_prefill_sweep`. When comparing forum-style `llama-benchy`
+  `pp2048` / `tg128` numbers, record the exact serve command, tokenizer,
+  `max_num_batched_tokens`, `max_num_seqs`, prefix-cache mode, sampler/all-reduce
+  flags, and NCCL/network environment before treating a 20-40% delta as a vLLM
+  kernel regression.
 
 The convenience profile `scripts/run_sm120_external_reported_gates.sh` refuses
 to run unless `EXTERNAL_GATE_MAX_MODEL_LEN` is set, so 512K and 1M evidence is

@@ -48,7 +48,7 @@ not at a simple GDDR7 bandwidth ceiling:
 
 ## Successful Optimization Notes
 
-### Mixed Decode / Long Prefill 3/4 Cap
+### Historical Mixed Decode / Long Prefill 3/4 Cap
 
 The user-reported multi-long-context cliff is now understood as a narrower
 scheduler shape: one request has already reached decode, then another long
@@ -56,7 +56,7 @@ prefill is admitted behind it. The paged-MQA decode kernel is not the only
 suspect in that shape; the active decoder can be starved by the following long
 prefill chunks.
 
-The retained scheduler change is intentionally internal and conservative. It
+The initial scheduler change was intentionally internal and conservative. It
 does not add a public knob. When chunked prefill is enabled, at least one
 decode request has already been scheduled in the current step, and the next
 request still has more than one full scheduling step of prefill remaining, the
@@ -98,11 +98,9 @@ Short-context and correctness gates on the retained 3/4 candidate:
 | Short C=4 streaming-pressure smoke, artifact `codex_decode_prefill_cap_3q_final_gate_20260521/short_c4_round2` | 8/8 successful, max TTFT 6.421 s, max elapsed 6.786 s |
 | GSM8K 5-shot limit-50, artifact `codex_decode_prefill_cap_3q_final_gate_20260521/gsm8k_limit50` | `exact_match_flexible=0.960` versus baseline `0.940`; compare passed |
 
-Decision: keep this candidate for the Dev branch because it targets the
-observed decode+long-prefill interference without changing user-facing
-configuration. It is still a dual-card 131K validation point; before making
-claims for 256K+ or four-card users, rerun the same mixed-arrival and fixed
-C=1/C=2 gates on that hardware.
+Decision at the time: this was useful as the first narrow scheduler fix, but it
+is now historical. Later gates showed the slow-request tail needed a tighter
+decode-overlap cap for 124K-class and issue #8-like C=2 shapes.
 
 ### Very-Long Mixed Decode / Prefill Half Cap
 
@@ -139,11 +137,99 @@ Short-context and correctness gates on the follow-up candidate:
 
 Decision at the time: keep this follow-up. It improved the 124K C=2
 slow-request tail without moving 59K or C=1 materially and without adding a
-public scheduler knob. It is now superseded by the mixed-arrival budget guard
-below, which lowers the very-long threshold from 16 to 4 scheduler steps and
-also protects waiting requests behind a running long prefill. The result is
-still dual-card 128K-class evidence; repeat on four-card hardware before
-making longer-context commitments.
+public scheduler knob. It is now superseded by the issue #8 decode-concurrency
+guard below, which uses a tighter decode-overlap cap and keeps the broader
+waiting-request behavior conservative. The result is still dual-card
+128K-class evidence; repeat on four-card hardware before making longer-context
+commitments.
+
+### Issue #8 Decode-Concurrency 1/8 Decode-Overlap Cap
+
+The [jasl/vllm issue #8](https://github.com/jasl/vllm/issues/8) and the
+related NVIDIA forum reports narrowed the failure shape further: the pure
+warm-cache C=2 decode path is healthy, but a cold C=2 run can let one request
+emit its first token and then starve while the paired long prefill continues.
+That matches the user-visible symptom better than a pure paged-MQA decode
+kernel cliff.
+
+Current retained policy:
+
+- If a decode request has already been scheduled in the current step and the
+  following request is still in prefill, cap ordinary long prefill chunks to
+  1/4 of `max_num_batched_tokens`.
+- If that remaining prefill is more than four full scheduler steps, cap it to
+  1/8 of `max_num_batched_tokens`.
+- If no decode has been scheduled and the goal is only to leave room for
+  waiting requests, keep the less aggressive 1/2 or 3/4 caps.
+- Do not expose a public scheduling knob; this is an internal latency/fairness
+  policy for mixed decode+long-prefill steps.
+
+Issue #8 local proxy, TP=2, no-MTP, prefix cache enabled, `max_num_seqs=2`,
+`max_num_batched_tokens=4096`, FULL_AND_PIECEWISE graph, 124K synthetic prompt,
+C=1/C=2, cold+warm, `max_tokens=128`:
+
+| Candidate | Cold C=2 TTFT Mean | Cold C=2 TTFT Max | Cold C=2 Elapsed Mean | Slow Req Decode | Decode Min/Max | ITL P99 | Warm C=2 Decode Mean |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Previous 1/2 very-long cap, artifact `codex_issue8_decode_concurrency_proxy_20260522` | 61.517 s | 83.697 s | 84.730 s | 1.566 tok/s | 0.039 | 1.698 s | 37.095 tok/s |
+| 1/4 decode-overlap experiment, artifact `codex_issue8_decode_prefill_cap_1q_20260522` | 51.717 s | 72.607 s | 66.019 s | 2.600 tok/s | 0.062 | 0.531 s | 39.268 tok/s |
+| Retained 1/8 decode-overlap cap, artifact `codex_issue8_decode_prefill_cap_1eighth_20260522` | 55.368 s | 79.868 s | 65.412 s | 3.804 tok/s | 0.092 | 0.298 s | 39.264 tok/s |
+
+Decision: keep the 1/8 decode-overlap cap for the Dev branch. It gives the
+best slow-request decode and ITL result in the direct issue #8 proxy while
+leaving warm-cache C=2 decode essentially unchanged. The tradeoff is that the
+second cold request's TTFT is a little worse than the 1/4 experiment; this is
+accepted because the user-facing complaint is the already-started stream
+stalling after first token. Revalidate with the local quality profile before
+PR-branch promotion, and treat >128K / four-card behavior as an external gate.
+
+Follow-up short-context and correctness checks:
+
+| Gate | Result |
+| --- | --- |
+| Short MTP `bench_hf_mt_bench`, artifact `codex_issue8_1eighth_short_gsm8k_smoke_20260522/20260522101340` | C=1/2/4 output throughput `130.43 / 223.72 / 343.61` tok/s |
+| GSM8K 5-shot limit-50, same artifact, MTP C=4 | `exact_match_flexible=0.920`, `exact_match_strict=0.920`; treated as too small/noisy for promotion |
+| GSM8K 5-shot limit-200, artifact `codex_issue8_1eighth_gsm8k_limit200_repeat_20260522/20260522101953`, MTP C=4 | `exact_match_flexible=0.940`, `exact_match_strict=0.915`; flexible matches the fixed 0.94 floor, strict is an observation to keep monitoring |
+| GSM8K 5-shot limit-200, artifact `codex_issue8_1eighth_gsm8k_isolation_20260522/20260522102518`, no-MTP C=4 | `exact_match_flexible=0.965`, `exact_match_strict=0.950` |
+| GSM8K 5-shot limit-200, same isolation artifact, MTP C=1 | `exact_match_flexible=0.960`, `exact_match_strict=0.945` |
+
+Interpretation: the retained scheduler policy does not show a general
+short-context or GSM8K correctness regression. The weaker MTP C=4 strict score
+appears tied to the MTP concurrent eval shape rather than the base model path;
+keep reporting both the deterministic C=1 MTP accuracy gate and the C=4 stress
+observation until the MTP concurrent correctness variance is better understood.
+
+Performance/quality refresh after the prewarm wiring fix:
+
+The first full local-quality attempt
+`codex_issue8_1eighth_local_quality_refresh_20260522/20260522103723` was stopped
+after full acceptance generation at temperature 1.0 produced subjective
+response-length failures unrelated to the scheduler path. Use it only as
+evidence that full acceptance should be separated from performance promotion.
+
+The performance-focused local refresh
+`codex_issue8_1eighth_perf_quality_refresh_20260522/20260522111056` passed every
+selected phase except `long_context_latency_matrix`; that failure was caused by
+the harness not passing `B200_VLLM_VENV` to the prewarm child script. The harness
+wiring was fixed and the same latency matrix was rerun as
+`codex_issue8_1eighth_latency_matrix_rerun_20260522/20260522113432`, which
+passed.
+
+| Gate | Result |
+| --- | --- |
+| Corrected 59K/124K latency matrix, MTP, prefix cache disabled, cold cache, repeat 3 | 59K C=1 TTFT mean `12.357s`, C=2 `20.383s`; 124K C=1 `31.293s`, C=2 `47.994s`; failures `0` |
+| 124K decode-concurrency gate, max tokens 256 | C=1 TTFT `30.464s`, decode `103.308 tok/s`; C=2 slow request `18.834 tok/s`, decode min/max `0.180`, ITL p99 `0.334s`; failures `0` |
+| Mixed arrival gate | `decode_then_59k` and `long_then_short` both passed; secondary ITL p95 `0.022s` and `0.030s`; failures `0` |
+| Streaming pressure matrix | 4 cases, 36 requests, failures `0`, slow cases `0`, max TTFT `64.503s`, p99 ITL `1.156s` |
+| Short-context MTP bench, 80 prompts | C=1/2/4/8/16/24 output throughput `162.99 / 257.71 / 392.73 / 548.93 / 756.94 / 886.44 tok/s` |
+| GSM8K 5-shot limit-200, MTP C=4 | `exact_match_flexible=0.965`, `exact_match_strict=0.935` |
+| Random prefill sweep, C=1, OSL=1 | ISL 1K/4K/16K/64K input throughput `6350 / 6024 / 5530 / 4577 tok/s`; mean TTFT `0.161 / 0.680 / 2.962 / 14.318s` |
+
+Decision: the 1/8 decode-overlap cap remains the active Dev-branch candidate.
+It improves the issue #8-like cold C=2 slow-request path materially while the
+refreshed short-context, GSM8K, streaming pressure, mixed-arrival, and prefill
+gates remain healthy. The known residual limitation is not a crash or pure
+decode-kernel cliff; it is fairness under simultaneous cold long-prefill where
+one stream can still be slower than its pair.
 
 ### Sparse SWA MTP Reorder Correctness Fix
 
