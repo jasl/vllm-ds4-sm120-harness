@@ -88,6 +88,21 @@ Artifact labels:
 `ab_no_lcm_cache_write_99b82a`, and
 `post_fix_no_lcm_floor_prefix_filler_sweep`.
 
+After adding the prefix-cache sweep to the user-feedback matrix, the same
+post-fix profile was rerun with 5 trials per filler. All points passed with
+zero failures and the service exited cleanly:
+
+| Filler Words | Trials | Failures | Solo Hit Rate | Concurrent Hit Rate |
+| ---: | ---: | ---: | ---: | ---: |
+| 100 | 5 | 0 | 0.2923 | 0.2861 |
+| 400 | 5 | 0 | 0.5284 | 0.6100 |
+| 800 | 5 | 0 | 0.7634 | 0.8236 |
+| 1600 | 5 | 0 | 0.8261 | 0.8691 |
+| 3200 | 5 | 0 | 0.8917 | 0.9593 |
+
+Artifact label:
+`post_fix_user_feedback_prefix_cache_matrix/20260523_post_fix_user_feedback_prefix_cache_matrix`.
+
 ### Historical Mixed Decode / Long Prefill 3/4 Cap
 
 The user-reported multi-long-context cliff is now understood as a narrower

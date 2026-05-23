@@ -18,9 +18,30 @@ def _load_json(path: Path) -> Json | list[Any] | None:
 
 def _phase_exit_codes(run_root: Path) -> list[Json]:
     path = run_root / "phase_exit_codes.tsv"
-    if not path.exists():
-        return []
     rows: list[Json] = []
+    if not path.exists():
+        diagnostic_path = run_root / "diagnostic_cases.tsv"
+        if not diagnostic_path.exists():
+            return []
+        with diagnostic_path.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle, delimiter="\t")
+            for row in reader:
+                try:
+                    exit_code = int(row.get("exit_code", "1"))
+                except ValueError:
+                    exit_code = 1
+                case = row.get("case", "")
+                filler_words = row.get("filler_words", "")
+                variant = f"{case}/filler_{filler_words}" if filler_words else case
+                rows.append(
+                    {
+                        "variant": variant,
+                        "phase": "prefix_cache_stress",
+                        "exit_code": exit_code,
+                        "artifact_dir": row.get("artifact_dir", ""),
+                    }
+                )
+        return rows
     with path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
@@ -202,14 +223,30 @@ def _collect_prefill_rows(run_label: str, variant: str, payload: Any) -> list[Js
     return rows
 
 
-def _collect_prefix_cache_rows(run_label: str, variant: str, payload: Any) -> list[Json]:
+def _collect_prefix_cache_rows(
+    run_label: str,
+    variant: str,
+    payload: Any,
+    *,
+    diagnostic_case: str | None = None,
+    filler_words: int | str | None = None,
+) -> list[Json]:
     if not isinstance(payload, dict) or not isinstance(payload.get("summary"), dict):
         return []
     summary = payload["summary"]
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    if filler_words is None:
+        filler_words = config.get("filler_words")
+    try:
+        filler_words = int(filler_words) if filler_words is not None else None
+    except (TypeError, ValueError):
+        pass
     return [
         {
             "run": run_label,
             "variant": variant,
+            "case": diagnostic_case or payload.get("case"),
+            "filler_words": filler_words,
             "ok": payload.get("ok"),
             "health_status": payload.get("health_status"),
             "trials": summary.get("trial_count"),
@@ -220,6 +257,35 @@ def _collect_prefix_cache_rows(run_label: str, variant: str, payload: Any) -> li
             ),
         }
     ]
+
+
+def _collect_prefix_cache_diagnostic_rows(run_label: str, run_root: Path) -> list[Json]:
+    path = run_root / "diagnostic_cases.tsv"
+    if not path.exists():
+        return []
+    rows: list[Json] = []
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            artifact_dir = Path(row.get("artifact_dir", ""))
+            if not artifact_dir.is_absolute():
+                artifact_dir = run_root / artifact_dir
+            payloads = sorted(
+                artifact_dir.glob("*/prefix_cache_stress/prefix_cache_stress.json")
+            )
+            for payload_path in payloads:
+                payload = _load_json(payload_path)
+                variant = payload_path.parents[1].name
+                rows.extend(
+                    _collect_prefix_cache_rows(
+                        run_label,
+                        variant,
+                        payload,
+                        diagnostic_case=row.get("case"),
+                        filler_words=row.get("filler_words"),
+                    )
+                )
+    return rows
 
 
 def summarize_run(label: str, run_root: Path) -> Json:
@@ -282,6 +348,9 @@ def summarize_run(label: str, run_root: Path) -> Json:
         result["prefix_cache_stress"].extend(
             _collect_prefix_cache_rows(label, variant, prefix)
         )
+    result["prefix_cache_stress"].extend(
+        _collect_prefix_cache_diagnostic_rows(label, run_root)
+    )
     phase_codes = [row["exit_code"] for row in result["phase_exit_codes"]]
     result["ok"] = bool(phase_codes) and all(code == 0 for code in phase_codes)
     return result
@@ -453,6 +522,8 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                 [
                     row["run"],
                     row["variant"],
+                    row["case"],
+                    row["filler_words"],
                     row["ok"],
                     row["health_status"],
                     row["trials"],
@@ -556,6 +627,8 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
             [
                 "Run",
                 "Variant",
+                "Case",
+                "Filler Words",
                 "OK",
                 "Health",
                 "Trials",

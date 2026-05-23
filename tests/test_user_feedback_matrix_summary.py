@@ -168,3 +168,51 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
     assert "Decode-Concurrency" in markdown
     assert "Prefix Cache Stress" in markdown
     assert "already-started decode stream fairness" in markdown
+
+
+def test_user_feedback_matrix_summary_collects_prefix_cache_diagnostic_sweep(tmp_path):
+    prefix = tmp_path / "prefix_cache"
+    prefix.mkdir()
+    filler_400 = prefix / "default/filler_400"
+    filler_800 = prefix / "default/filler_800"
+    (prefix / "diagnostic_cases.tsv").write_text(
+        "case\tfiller_words\texit_code\tartifact_dir\n"
+        f"default\t400\t0\t{filler_400}\n"
+        f"default\t800\t0\t{filler_800}\n",
+        encoding="utf-8",
+    )
+    for filler, hit_rate, root in (
+        (400, 0.466, filler_400),
+        (800, 0.727, filler_800),
+    ):
+        write_json(
+            root / "mtp1/prefix_cache_stress/prefix_cache_stress.json",
+            {
+                "ok": True,
+                "case": "user_feedback_prefix_cache_http_metrics_stress",
+                "health_status": 200,
+                "summary": {
+                    "trial_count": 5,
+                    "failure_count": 0,
+                    "solo_hit_rate_mean": 0.68,
+                    "concurrent_hit_rate_mean": hit_rate,
+                },
+                "config": {"filler_words": filler},
+            },
+        )
+
+    summary = summarize_runs([("prefix_cache", prefix)])
+
+    assert summary["ok"] is True
+    rows = summary["runs"][0]["prefix_cache_stress"]
+    assert [(row["filler_words"], row["concurrent_hit_rate_mean"]) for row in rows] == [
+        (400, 0.466),
+        (800, 0.727),
+    ]
+
+    markdown_path = tmp_path / "summary.md"
+    write_summary_markdown(markdown_path, summary)
+    markdown = markdown_path.read_text(encoding="utf-8")
+    assert "Filler Words" in markdown
+    assert "400" in markdown
+    assert "800" in markdown

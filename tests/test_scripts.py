@@ -380,6 +380,11 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
     assert "decode_then_124k:4000:4000:after_first_token" in script
     assert "issue7_5k_c4:4:3:192:128" in script
     assert "prefix_cache_stress" in script
+    assert "run_sm120_mtp1_prefix_cache_diagnostics.sh" in script
+    assert (
+        'PREFIX_CACHE_STRESS_FILLER_WORDS_LIST="${PREFIX_CACHE_STRESS_FILLER_WORDS_LIST:-100,400,800,1600,3200}"'
+        in script
+    )
     assert (
         'LM_EVAL_GATE_FLOORS="${LM_EVAL_GATE_FLOORS:-exact_match_flexible=0.94,exact_match_strict=0.925}"'
         in script
