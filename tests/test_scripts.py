@@ -326,6 +326,30 @@ def test_sm120_mtp1_prefix_cache_stability_profile_matches_user_report_shape():
     assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
 
 
+def test_sm120_mtp1_prefix_cache_diagnostics_runs_kernel_path_controls():
+    script = (ROOT / "scripts" / "run_sm120_mtp1_prefix_cache_diagnostics.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "default" in script
+    assert "launch_blocking" in script
+    assert "no_matmul_decode" in script
+    assert "CUDA_LAUNCH_BLOCKING=1" in script
+    assert "VLLM_TRITON_MLA_SPARSE_MATMUL_DECODE=0" in script
+    assert 'RUN_PREFIX_CACHE_STRESS="${RUN_PREFIX_CACHE_STRESS:-1}"' in script
+    assert 'PREFIX_CACHE_STRESS_FILLER_WORDS="${PREFIX_CACHE_STRESS_FILLER_WORDS:-800}"' in script
+    assert "PREFIX_CACHE_STRESS_FILLER_WORDS_LIST" in script
+    assert '"case" "filler_words" "exit_code" "artifact_dir"' in script
+    assert '"${SCRIPT_DIR}/run_sm120_mtp1_prefix_cache_stability.sh"' in script
+
+
+def test_b200_baseline_records_sparse_mla_decode_diagnostic_env():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
+
+    assert "VLLM_TRITON_MLA_SPARSE_MATMUL_DECODE" in script
+    assert "CUDA_LAUNCH_BLOCKING" in script
+
+
 def test_sm120_external_quality_gate_profile_requires_explicit_context_ceiling():
     script = (ROOT / "scripts" / "run_sm120_external_reported_gates.sh").read_text(
         encoding="utf-8"

@@ -246,6 +246,17 @@ def summarize_run_environment(
             "torch_cuda_arch_list": env.get("TORCH_CUDA_ARCH_LIST"),
             "cuda_home": env.get("CUDA_HOME"),
             "triton_ptxas_path": env.get("TRITON_PTXAS_PATH"),
+            "cuda_launch_blocking": env.get("CUDA_LAUNCH_BLOCKING"),
+            "vllm_triton_mla_sparse": env.get("VLLM_TRITON_MLA_SPARSE"),
+            "vllm_triton_mla_sparse_query_chunk_size": env.get(
+                "VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE"
+            ),
+            "vllm_triton_mla_sparse_topk_chunk_size": env.get(
+                "VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE"
+            ),
+            "vllm_triton_mla_sparse_matmul_decode": env.get(
+                "VLLM_TRITON_MLA_SPARSE_MATMUL_DECODE"
+            ),
         },
         "gpu": {
             "available": bool(gpus),
@@ -379,6 +390,15 @@ def write_run_environment_markdown(path: Path, summary: dict[str, Any]) -> None:
             f"- CUDA_VISIBLE_DEVICES: `{_format_value(cuda.get('cuda_visible_devices'))}`",
             f"- CUDA_ARCH_LIST: `{_format_value(cuda.get('cuda_arch_list'))}`",
             f"- TORCH_CUDA_ARCH_LIST: `{_format_value(cuda.get('torch_cuda_arch_list'))}`",
+            f"- CUDA_LAUNCH_BLOCKING: `{_format_value(cuda.get('cuda_launch_blocking'))}`",
+            "- VLLM_TRITON_MLA_SPARSE: "
+            f"`{_format_value(cuda.get('vllm_triton_mla_sparse'))}`",
+            "- VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE: "
+            f"`{_format_value(cuda.get('vllm_triton_mla_sparse_query_chunk_size'))}`",
+            "- VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE: "
+            f"`{_format_value(cuda.get('vllm_triton_mla_sparse_topk_chunk_size'))}`",
+            "- VLLM_TRITON_MLA_SPARSE_MATMUL_DECODE: "
+            f"`{_format_value(cuda.get('vllm_triton_mla_sparse_matmul_decode'))}`",
             "",
         ]
     )

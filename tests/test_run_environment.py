@@ -60,6 +60,8 @@ def test_summarize_run_environment_redacts_api_key_and_records_gpu_inventory():
         "BASE_URL": "http://127.0.0.1:8000",
         "GPU_TOPOLOGY_SLUG": "2x_test_gpu",
         "OUT_DIR": "artifacts/main/2x_test_gpu/run",
+        "CUDA_LAUNCH_BLOCKING": "1",
+        "VLLM_TRITON_MLA_SPARSE_MATMUL_DECODE": "0",
     }
     summary = summarize_run_environment(
         env=env,
@@ -80,6 +82,8 @@ def test_summarize_run_environment_redacts_api_key_and_records_gpu_inventory():
     assert summary["artifact"]["gpu_topology_slug"] == "2x_test_gpu"
     assert summary["gpu"]["topology_slug"] == "2x_test_gpu"
     assert summary["gpu"]["models"][0]["count"] == 2
+    assert summary["cuda"]["cuda_launch_blocking"] == "1"
+    assert summary["cuda"]["vllm_triton_mla_sparse_matmul_decode"] == "0"
 
 
 def test_summarize_run_environment_separates_configured_and_effective_gpu_topology():

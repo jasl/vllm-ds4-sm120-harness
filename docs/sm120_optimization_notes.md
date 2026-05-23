@@ -48,6 +48,46 @@ not at a simple GDDR7 bandwidth ceiling:
 
 ## Successful Optimization Notes
 
+### Hybrid Prefix-Cache Tail Blocks
+
+User-reported prefix-cache stress showed a mid-filler hit-rate cliff around
+the 400-800 filler-word shape on TP=2, MTP=1, FP8 KV, prefix cache enabled,
+block size 256, and `FULL_AND_PIECEWISE`. The active-prefix protection logic
+was already present after the rebase, so the remaining loss came from
+`HybridKVCacheCoordinator.cache_blocks()` flooring `num_computed_tokens` to
+`lcm_block_size` before writing cached blocks. That floor dropped complete
+tail blocks that a later chat turn could use to complete a future
+LCM-aligned hit.
+
+The retained fix keeps lookup semantics unchanged: hybrid
+`find_longest_cache_hit()` still returns only LCM-aligned hits, and SWA
+managers still receive `alignment_tokens` for cache masking. Only the cache
+write side now keeps complete tail blocks instead of permanently discarding
+them.
+
+Same-host prefix-cache filler sweep, TP=2, MTP=1, FP8 KV, prefix cache
+enabled, block size 256, `FULL_AND_PIECEWISE`, 3 trials per filler:
+
+| Filler Words | Before Concurrent Hit Rate | After Concurrent Hit Rate | Delta |
+| ---: | ---: | ---: | ---: |
+| 100 | 0.000 | 0.137 | +13.67 pp |
+| 400 | 0.344 | 0.466 | +12.17 pp |
+| 800 | 0.654 | 0.727 | +7.28 pp |
+| 1600 | 0.766 | 0.808 | +4.25 pp |
+| 3200 | 0.901 | 0.927 | +2.57 pp |
+
+All post-fix sweep points had zero stress failures. The 800-filler A/B with
+5 trials confirmed the same direction: keeping `alignment_tokens` but removing
+only the LCM floor produced concurrent hit-rate mean `0.7269`, while removing
+both floor and alignment was `0.7302`. Therefore the retained change is the
+narrower no-floor fix, not a broad mask bypass.
+
+Artifact labels:
+`post_recovery_99b82a_prefix_filler_sweep_default`,
+`ab_no_lcm_floor_keep_alignment_99b82a`,
+`ab_no_lcm_cache_write_99b82a`, and
+`post_fix_no_lcm_floor_prefix_filler_sweep`.
+
 ### Historical Mixed Decode / Long Prefill 3/4 Cap
 
 The user-reported multi-long-context cliff is now understood as a narrower
@@ -554,6 +594,24 @@ capture available. The current default C=4 smoke satisfies that rule and shows
 both graph families captured.
 
 ## Ineffective Or Ambiguous Optimization Notes
+
+### Prefix-Cache Stress Diagnostic Bypasses
+
+Two related prefix-cache diagnostics were useful for localization but should
+not be retained as fixes:
+
+- Disabling sparse MLA matmul decode with
+  `VLLM_TRITON_MLA_SPARSE_MATMUL_DECODE=0` did not explain the 800-filler
+  prefix-cache behavior. After host recovery, both default decode and this
+  diagnostic path passed the 800-filler stress shape; default was faster.
+- Removing both the hybrid LCM cache-write floor and the `alignment_tokens`
+  path raised the 800-filler concurrent hit-rate mean to `0.7302`, but keeping
+  `alignment_tokens` while removing only the floor reached `0.7269`. The mask
+  bypass adds more semantic risk for negligible gain, so it is not retained.
+
+Decision: keep the narrower hybrid cache-write no-floor fix only. Keep the
+diagnostic controls in the harness so future reports can quickly separate
+runtime-kernel failures from prefix-cache accounting / cache-write behavior.
 
 ### Mixed Long Decode Internal Prefill Cap
 

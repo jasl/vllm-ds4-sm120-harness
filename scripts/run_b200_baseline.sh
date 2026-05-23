@@ -569,7 +569,9 @@ write_command_file() {
     for optional_env in \
       VLLM_TRITON_MLA_SPARSE \
       VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE \
-      VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE; do
+      VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE \
+      VLLM_TRITON_MLA_SPARSE_MATMUL_DECODE \
+      CUDA_LAUNCH_BLOCKING; do
       if [[ -n "${!optional_env:-}" ]]; then
         printf 'export %s=%q\n' "${optional_env}" "${!optional_env}"
       fi
