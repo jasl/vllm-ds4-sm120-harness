@@ -1254,6 +1254,61 @@ broader long-context C=2 fairness problem. Per-request decode can still be
 imbalanced under mixed long-prefill pressure, so keep ITL p95/p99 and
 per-request min/max decode in promotion gates.
 
+## Sparse MLA Prefill Topk Follow-up, 2026-05-25
+
+After the issue #10 guard, the high-risk C128A multi-request prefill shape uses
+topk chunk 256, while C=1 kept the historical default 512. The follow-up tested
+whether the lower-risk single-request C128A path could use a larger chunk to
+reduce sparse-MLA prefill loop overhead without reintroducing the multi-request
+crash risk.
+
+Retained behavior:
+
+- Explicit `VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE` overrides remain
+  authoritative.
+- SM120 C128A single-request prefill with `combined_topk_size > 1024` now uses
+  topk chunk 1024.
+- SM120 C128A multi-request prefill with `combined_topk_size > 1024` keeps the
+  conservative topk chunk 256 guard.
+- C4A, short-context, and other lower-risk shapes keep the existing default
+  behavior.
+
+Full user-feedback matrix comparison, baseline
+`20260524_ds4_harness_frontier_semantic_baseline_r2` versus candidate
+`20260525_single_c128a_topk1024_full_gate`:
+
+| Metric | Baseline | Topk 1024 Candidate | Decision Signal |
+| --- | ---: | ---: | --- |
+| 59K C=1 TTFT | `12.280 s` | `12.307 s` | no material movement |
+| 59K C=2 TTFT / ITL p99 | `19.366 s` / `0.133 s` | `19.659 s` / `0.134 s` | no material movement |
+| 124K C=1 TTFT | `31.206 s` | `31.169 s` | no material movement |
+| 124K C=2 TTFT / decode | `47.972 s` / `60.953 tok/s` | `47.691 s` / `62.615 tok/s` | small positive |
+| Mixed `decode_then_124k` secondary TTFT | `32.199 s` | `31.959 s` | small positive |
+| Streaming pressure failures / slow cases | `0 / 0` | `0 / 0` | stable |
+| Short C=1/2/4 output | `162.39` / `256.62` / `391.27 tok/s` | `162.22` / `256.70` / `394.07 tok/s` | no regression |
+| Random prefill 65K TTFT | `14305.93 ms` | `14223.71 ms` | small positive |
+| DS4 story recall semantic | `16/16` | `16/16` | stable |
+| GSM8K limit-200 flexible / strict | `0.960` / `0.940` | `0.955` / `0.945` | above floor |
+| Prefix-cache stress fillers 100-3200 | all pass | all pass | stable |
+
+Decision: keep the single-request C128A topk 1024 relaxation. Treat the
+measured benefit as small, not a major latency breakthrough. The value is that
+it preserves the issue #10 multi-request crash guard while recovering a little
+headroom in the lower-risk C=1 and mixed matrix, with no observed correctness,
+CUDA graph, prefix-cache, or short-context regression.
+
+Rejected query chunk sweep:
+
+| Experiment | Artifact label | Result | Decision |
+| --- | --- | --- | --- |
+| `VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE=128` | `20260525_query_chunk128_probe` | 59K C=2 TTFT `21.487 s`, decode min/max `0.076`, ITL p99 `0.290 s`; 124K C=2 TTFT `52.527 s` | reject |
+| `VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE=384` | `20260525_query_chunk384_probe` | 59K C=2 TTFT `20.580 s`, decode min/max `0.070`, ITL p99 `0.290 s`; 124K C=2 TTFT `53.160 s` | reject |
+| `VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE=512` | `20260525_query_chunk512_probe` | C=1/frontier looked acceptable, but 59K C=2 decode min/max fell to `0.073` and 124K C=2 to `0.097` | reject |
+
+The rejected query-chunk experiments left no production code changes. Future
+sparse-MLA prefill work should avoid broad query-chunk increases unless it is
+paired with a shape-specific fairness and ITL improvement.
+
 ## DS4 Harness Absorption Baseline Plan, 2026-05-24
 
 Baseline label: `20260524_ds4_harness_frontier_semantic_baseline`.
