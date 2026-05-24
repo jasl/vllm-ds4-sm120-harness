@@ -468,7 +468,7 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
     )
 
     assert "USER_FEEDBACK_MATRIX_LABEL" in script
-    assert 'RUN_USER_FEEDBACK_ISSUE10="${RUN_USER_FEEDBACK_ISSUE10:-1}"' in script
+    assert 'RUN_USER_FEEDBACK_ISSUE10="${RUN_USER_FEEDBACK_ISSUE10:-0}"' in script
     assert "long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency" in script
     assert "frontier_context_sweep" in script
     assert 'RUN_FRONTIER_CONTEXT_SWEEP="${RUN_FRONTIER_CONTEXT_SWEEP:-1}"' in script
@@ -509,6 +509,8 @@ def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates()
     assert "github.com/jasl/vllm/issues/10" in docs
     assert "forums.developer.nvidia.com" in docs
     assert "run_sm120_issue10_startup_gate.sh" in docs
+    assert "RUN_USER_FEEDBACK_ISSUE10=1" in docs
+    assert "partial artifacts separate from promotion baselines" in docs
     assert "prefix_cache_stress" in docs
     assert "bench_random_prefill_sweep" in docs
     assert "long_context_decode_concurrency" in docs

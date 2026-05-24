@@ -1172,6 +1172,11 @@ Before promoting an optimization:
   prefix-cache-disabled performance matrix, and keep full acceptance
   generation separate because temperature-1 subjective response length is not
   a stable performance tradeoff signal.
+  The issue #10 startup/crash proxy is intentionally not part of the default
+  profile because it can leave the GPU driver in a fatal state on dual-card
+  SM120. Run it only as an explicit isolation step with
+  `RUN_USER_FEEDBACK_ISSUE10=1`, preserve partial artifacts, and do not treat
+  a matrix that stops in this diagnostic as a complete promotion baseline.
 - For SM120 branch promotion, use `docs/vllm_correctness_gates.md` as the
   authoritative checklist for the refresh watchlist: short-context C=1/2/4,
   fixed-order 59K/124K C=1/C=2, mixed long-context C=2 fairness, GSM8K, and the

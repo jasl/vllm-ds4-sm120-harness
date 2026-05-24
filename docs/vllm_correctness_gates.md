@@ -278,6 +278,9 @@ reported four-card or 512K/1M shapes:
   isolation. If the proxy passes, keep the wording narrow: the SM120
   scaled-down path stayed healthy; the original GB10 393K dual-node report
   still needs GB10 validation.
+  Keep this proxy out of the default user-feedback matrix. Run it with
+  `RUN_USER_FEEDBACK_ISSUE10=1` only when the host can be rebooted afterward,
+  and keep partial artifacts separate from promotion baselines.
 
 The convenience profile `scripts/run_sm120_external_reported_gates.sh` refuses
 to run unless `EXTERNAL_GATE_MAX_MODEL_LEN` is set, so 512K and 1M evidence is
