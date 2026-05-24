@@ -466,10 +466,12 @@ break-even reference numbers for internal comparison only. The report writes
 two cost views: a purchase/amortized view that combines 3-year GPU amortization
 at 70% useful utilization with `$0.12/kWh` and PUE `1.25`, and a rental view
 that uses fixed GPU-hour reference rates without adding separate power. The
-current rental reference rates are B200 `$3.80/GPU-hour`, RTX Pro 6000 WS
-`$0.96/GPU-hour`, and DGX Spark / GB10 `$0.48/unit-hour`. The purchase view
-still uses reference hardware prices for B200, RTX Pro 6000, RTX 5090, and DGX
-Spark / GB10.
+current rental reference rates are B200 `$1.71/GPU-hour`, RTX Pro 6000 WS
+`$0.59/GPU-hour`, and DGX Spark / GB10 `$0.48/unit-hour`. B200 and RTX Pro
+6000 use Spheron live marketplace pricing checked 2026-05-24; DGX Spark / GB10
+keeps the existing reference rate because it is not listed on that pricing
+page. The purchase view still uses reference hardware prices for B200, RTX Pro
+6000, RTX 5090, and DGX Spark / GB10.
 
 The same script also publishes a sanitized reference bundle in that directory.
 It keeps the data needed to resume work in a fresh environment

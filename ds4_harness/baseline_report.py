@@ -45,8 +45,9 @@ REFERENCE_GPU_PRICES_USD = (
     ("DGX SPARK", 3999.0),
 )
 REFERENCE_GPU_RENTAL_USD_PER_HOUR = (
-    ("B200", 3.80),
-    ("RTX PRO 6000", 0.96),
+    # Spheron live marketplace rates checked on 2026-05-24.
+    ("B200", 1.71),
+    ("RTX PRO 6000", 0.59),
     ("GB10", 0.48),
     ("DGX SPARK", 0.48),
 )
@@ -1464,9 +1465,15 @@ def _reference_cost_model_lines() -> list[str]:
             "DGX Spark / GB10: `$3,999/GPU`."
         ),
         (
-            "- Rental prices: B200: `$3.80/GPU-hour`; "
-            "RTX PRO 6000 WS: `$0.96/GPU-hour`; "
+            "- Rental prices: B200: `$1.71/GPU-hour`; "
+            "RTX PRO 6000 WS: `$0.59/GPU-hour`; "
             "DGX Spark / GB10: `$0.48/unit-hour`."
+        ),
+        (
+            "- Rental source: B200 and RTX PRO 6000 use Spheron live "
+            "marketplace pricing checked 2026-05-24; DGX Spark / GB10 "
+            "keeps the existing reference rate because it is not listed "
+            "on that pricing page."
         ),
         (
             "- Amortization: "

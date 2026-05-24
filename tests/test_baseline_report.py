@@ -493,7 +493,7 @@ def test_reference_rental_hourly_costs_cover_sm12x_dev_hosts():
                 }
             }
         )
-        == 1.92
+        == 1.18
     )
     assert (
         _reference_gpu_rental_hourly_usd(
@@ -575,12 +575,13 @@ def test_build_baseline_report_includes_normalized_efficiency_and_accuracy(tmp_p
     assert "#### Rental / Cloud GPU-Hour" in report
     assert (
         "| `nomtp` | writing | 1 | 100.00 | 2.00 | 100.00 | 100 | 200 | "
-        "$0.0084 | $8.44 | $84.44 | $42.22 | $16.89 | $15.20 |"
+        "$0.0038 | $3.80 | $38.00 | $19.00 | $7.60 | $6.84 |"
     ) in report
     assert "### Best Benchmark Throughput" in report
     assert "| Primary | `nomtp` | HF/MT-Bench | 1 | 1600.00 | 400.00 | 100.00 | 5.50 |" in report
     assert "B200: `$30,000/GPU`" in report
-    assert "B200: `$3.80/GPU-hour`" in report
+    assert "B200: `$1.71/GPU-hour`" in report
+    assert "Spheron live marketplace pricing checked 2026-05-24" in report
     assert "## Normalized Efficiency" in report
     assert "tok/s/GPU" in report
     assert "tok/J" in report
