@@ -1350,6 +1350,17 @@ Keep these outside the default user-feedback matrix, but treat them as required
 follow-up work before claiming the GB10 or high-risk issue #10 shapes are
 stable:
 
+- SM120 issue #8 long-decode proxy: a no-MTP, prefix-cache-enabled, TP=2,
+  FP8 KV, block-size-256, chunked-prefill, `FULL_AND_PIECEWISE` local proxy
+  with `SERVE_MAX_MODEL_LEN=131072`, `max_num_batched_tokens=4176`,
+  `max_num_seqs=8`, disabled custom all-reduce, 124K synthetic prompt,
+  C=1/C=2, and a 1024-token output budget reproduced a fatal driver state on
+  the dual RTX PRO 6000 host. C=1 completed, but C=2 failed both requests
+  during long prefill/decode pressure; the engine died through shared-memory
+  broadcast cancellation after a worker failure, and the kernel log reported
+  repeated NVRM assertions followed by `uvm encountered global fatal error
+  0x60, requiring os reboot to recover` and `GPU lost from the bus`. The
+  artifact label is `20260525_issue8_local_proxy_124k_c2_decode1024`.
 - SM120 issue #10 proxy: the 128K-class dual-card proxy with prefix cache,
   chunked prefill, FP8 KV, MTP=2, block size 256, disabled custom all-reduce,
   and `FULL_AND_PIECEWISE` triggered a sparse MLA prefill CUDA launch failure
