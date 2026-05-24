@@ -1212,6 +1212,48 @@ the older branch is not reproducible on the current PR branch under the
 provided stress shape. Keep this as a user-reported stability gate for future
 prefix-cache, scheduler, CUDA graph, and MTP changes.
 
+## User-Reported Issue 10 Sparse MLA Prefill Stability, 2026-05-24
+
+The issue reported in
+[`jasl/vllm#10`](https://github.com/jasl/vllm/issues/10) is a 2x RTX PRO 6000
+proxy for very long-context GB10 behavior. The local development host cannot
+run beyond roughly 130K context, so the gate uses 131K max-model-len with
+59K/124K synthetic prompts and C=1/C=2 cold requests. Earlier default
+`VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE=512` reproduced a severe 124K C=2
+failure: one request failed, the sparse MLA prefill
+`_accumulate_indexed_attention_chunk_multihead_kernel` reported an unspecified
+CUDA launch failure, and the driver entered a fatal state requiring a host
+reboot.
+
+Root-cause evidence from temporary shape instrumentation:
+
+| Shape | 59K C=2 default | 124K C=2 |
+| --- | ---: | ---: |
+| C4A combined topk | 640, `lens_max=640` | 640, `lens_max=640` |
+| C128A combined topk | 1152, `lens_max=588` | 1152, `lens_max=1097` |
+| Batched request count in risky chunk | 2 | 2 |
+
+The accepted change is deliberately narrow: when the user has not explicitly
+set `VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE`, SM12x prefill uses topk chunk 256
+only for C128A sparse MLA shapes with multiple requests in the same prefill
+chunk and `combined_topk_size > 1024`. C=1, C4A, short-context, and explicit
+environment overrides keep the existing 512 behavior.
+
+Experiment outcomes:
+
+| Experiment | Artifact label | Result | Decision |
+| --- | --- | --- | --- |
+| Disable Triton sparse MLA with `VLLM_TRITON_MLA_SPARSE=0` | `20260524_issue10_131k_sparse0_c2_cold` | invalid: current build does not provide the FlashMLA C++ extension path | reject |
+| Force global topk chunk 256 | `20260524_issue10_topk256_59k_124k_c1c2_cold` | 124K C=2 passes, but 59K C=1/C=2 regresses versus 512 | reject |
+| Keep default 512 for 59K | `20260524_issue10_topk512_59k_c1c2_cold_mlen131k` | 59K C=1 TTFT `12.325 s`, decode `132.09 tok/s`; C=2 TTFT `19.361 s`, decode `73.43 tok/s` | baseline |
+| Adaptive C128A multi-prefill topk | `20260524_issue10_adaptive_59k_124k_c1c2_cold` | 4/4 groups pass, 0 failures; 59K C=1/C=2 stays at `12.319 s`/`19.213 s` TTFT and `133.70`/`74.16 tok/s`; 124K C=2 passes with TTFT `47.615 s`, decode `60.61 tok/s` | keep |
+| Short-context and GSM8K smoke | `20260524_issue10_adaptive_short_gsm8k_smoke` | short C=1/2/4 output `149.24`/`248.76`/`392.97 tok/s`; GSM8K 5-shot limit-50 flexible `1.00`, strict `0.98` | keep |
+
+Residual risk: this fixes the crash-prone sparse MLA prefill shape, not the
+broader long-context C=2 fairness problem. Per-request decode can still be
+imbalanced under mixed long-prefill pressure, so keep ITL p95/p99 and
+per-request min/max decode in promotion gates.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
@@ -1251,6 +1293,9 @@ Ideas to avoid carrying over blindly:
     such as 92% and 100% when long-context correctness is in scope,
   - MTP small-context continuous pressure should include the issue #7-like
     5K prompt / 128 output / C=4 shape before treating the branch as stable,
+  - SM120 sparse MLA changes must include the issue #10-like 131K max-model-len
+    59K/124K C=1/C=2 cold matrix, including C=2 failure count and per-request
+    decode fairness,
   - long-context pressure reports should include inter-chunk p95/p99 as an ITL
     proxy so prefill/decode scheduling stalls are visible beyond TTFT and
     elapsed time,
