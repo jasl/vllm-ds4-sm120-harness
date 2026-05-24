@@ -39,6 +39,14 @@ from ds4_harness.generation_alignment import (
     load_generation_rows,
     write_generation_alignment_markdown,
 )
+from ds4_harness.frontier_context_sweep import (
+    DEFAULT_CASE_NAME as DEFAULT_FRONTIER_CONTEXT_SWEEP_CASE_NAME,
+    DEFAULT_FRONTIERS as DEFAULT_FRONTIER_CONTEXT_SWEEP_FRONTIERS,
+    DEFAULT_MAX_SWEEP_TOKENS as DEFAULT_FRONTIER_CONTEXT_SWEEP_MAX_TOKENS,
+    parse_frontiers,
+    run_frontier_context_sweep,
+    write_frontier_context_sweep_markdown,
+)
 from ds4_harness.gpu_stats import summarize_gpu_csv, write_gpu_json, write_gpu_markdown
 from ds4_harness.kv_layout_probe import (
     DEFAULT_BLOCK_SIZE as DEFAULT_KV_LAYOUT_BLOCK_SIZE,
@@ -1005,6 +1013,54 @@ def _cmd_long_context_latency_matrix(args: argparse.Namespace) -> int:
         )
     if args.markdown_output is not None:
         write_long_context_latency_markdown(args.markdown_output, row)
+
+    status = "PASS" if row.get("ok") else "FAIL"
+    summary = row.get("summary") if isinstance(row.get("summary"), list) else []
+    failures = sum(
+        int(item.get("failure_count") or 0)
+        for item in summary
+        if isinstance(item, dict)
+    )
+    print(
+        f"{status} {row.get('case')} variant={args.variant}: "
+        f"groups={len(summary)} failures={failures}"
+    )
+    return 0 if row.get("ok") else 1
+
+
+def _cmd_frontier_context_sweep(args: argparse.Namespace) -> int:
+    try:
+        frontiers = parse_frontiers(args.frontiers)
+        headers = _bearer_headers_from_env(args.api_key_env)
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+        row = run_frontier_context_sweep(
+            base_url=args.base_url,
+            model=args.model,
+            variant=args.variant,
+            case_name=args.case_name,
+            prompt_files=args.prompt_file or [],
+            frontiers=frontiers,
+            repeat_count=args.repeat_count,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            thinking_mode=args.thinking_mode,
+            timeout=args.timeout,
+            headers=headers,
+            extra_body=extra_body,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_frontier_context_sweep_markdown(args.markdown_output, row)
 
     status = "PASS" if row.get("ok") else "FAIL"
     summary = row.get("summary") if isinstance(row.get("summary"), list) else []
@@ -2098,6 +2154,32 @@ def build_parser() -> argparse.ArgumentParser:
     long_latency.add_argument("--json-output", type=Path)
     long_latency.add_argument("--markdown-output", type=Path)
     long_latency.set_defaults(func=_cmd_long_context_latency_matrix)
+
+    frontier = subparsers.add_parser("frontier-context-sweep")
+    frontier.add_argument("--base-url", default="http://127.0.0.1:8000")
+    frontier.add_argument("--model", default=DEFAULT_MODEL)
+    frontier.add_argument("--variant", default="manual")
+    frontier.add_argument("--case-name", default=DEFAULT_FRONTIER_CONTEXT_SWEEP_CASE_NAME)
+    frontier.add_argument("--prompt-file", type=Path, action="append", required=True)
+    frontier.add_argument(
+        "--frontiers",
+        default=",".join(str(value) for value in DEFAULT_FRONTIER_CONTEXT_SWEEP_FRONTIERS),
+        help=(
+            "comma-separated context frontier targets; the harness sends text "
+            "prefixes and records actual server prompt_tokens"
+        ),
+    )
+    frontier.add_argument("--repeat-count", type=int, default=1)
+    frontier.add_argument("--max-tokens", type=int, default=DEFAULT_FRONTIER_CONTEXT_SWEEP_MAX_TOKENS)
+    frontier.add_argument("--temperature", type=float, default=0.0)
+    frontier.add_argument("--top-p", type=float, default=1.0)
+    frontier.add_argument("--thinking-mode", default="non-thinking")
+    frontier.add_argument("--timeout", type=float, default=1800.0)
+    frontier.add_argument("--api-key-env")
+    frontier.add_argument("--extra-body-json")
+    frontier.add_argument("--json-output", type=Path)
+    frontier.add_argument("--markdown-output", type=Path)
+    frontier.set_defaults(func=_cmd_frontier_context_sweep)
 
     mixed_arrival = subparsers.add_parser("long-context-mixed-arrival")
     mixed_arrival.add_argument("--base-url", default="http://127.0.0.1:8000")

@@ -106,6 +106,10 @@ Use this harness to capture behavior around the vLLM-side tests:
   so a recovered Hugging Face dataset timeout is recorded as run context rather
   than as a model-quality failure.
 - `lm-eval` / `scripts/run_lm_eval.sh` for public GSM8K exact-match reporting.
+- `frontier-context-sweep` for ds4-style fixed prompt-file prefixes. It records
+  the server-returned prompt token count, TTFT, input/prefill tok/s, decode
+  tok/s, and ITL p95/p99 across context frontiers. Treat it as a development
+  observation gate until a stable same-host baseline exists.
 
 ## SM120 Refresh Promotion Gates
 
@@ -180,6 +184,13 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   local proxy for deciding whether best-effort single-instance scheduling is
   still enough, or whether a deployment needs stronger prefill/decode
   isolation.
+- DS4 prompt-file frontier and semantic gates: include
+  `frontier_context_sweep` in the development matrix, and include the full
+  `ds4_story_recall.txt` prompt in prompt-file latency when validating
+  long-context correctness. The story gate requires all sixteen `Name=number`
+  assignments; the security-audit prompt remains latency/streaming observation
+  only. Initial baseline label:
+  `20260524_ds4_harness_frontier_semantic_baseline`.
 
 The convenience profile `scripts/run_sm120_local_quality_gates.sh` wires the
 prefix-cache-disabled development gates together with the existing
@@ -195,7 +206,8 @@ MTP=1 prefix-cache stress shape in a separate prefix-cache-enabled serve, and
 writes one `user_feedback_matrix_summary.md` plus JSON summary. Use that
 combined summary to choose the tradeoff across C=1/2/4 short latency, 59K/124K
 long latency, issue #8 decode fairness, mixed-arrival pressure, issue #7
-streaming pressure, GSM8K, prefill throughput, and prefix-cache stability. The
+streaming pressure, GSM8K, prefill throughput, ds4-style frontier latency,
+ds4 story-recall semantic status, and prefix-cache stability. The
 profile hard-gates GSM8K limit-200 at `exact_match_flexible >= 0.94` and
 `exact_match_strict >= 0.925`, so any further correctness drop blocks the
 matrix rather than becoming a narrative footnote.

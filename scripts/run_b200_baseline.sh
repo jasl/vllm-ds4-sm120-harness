@@ -79,6 +79,17 @@ LONG_CONTEXT_LATENCY_TOP_P="${LONG_CONTEXT_LATENCY_TOP_P:-1.0}"
 LONG_CONTEXT_LATENCY_THINKING_MODE="${LONG_CONTEXT_LATENCY_THINKING_MODE:-non-thinking}"
 LONG_CONTEXT_LATENCY_TIMEOUT="${LONG_CONTEXT_LATENCY_TIMEOUT:-1800}"
 LONG_CONTEXT_LATENCY_PREWARM="${LONG_CONTEXT_LATENCY_PREWARM:-0}"
+RUN_FRONTIER_CONTEXT_SWEEP="${RUN_FRONTIER_CONTEXT_SWEEP:-0}"
+FRONTIER_CONTEXT_SWEEP_CASE_NAME="${FRONTIER_CONTEXT_SWEEP_CASE_NAME:-ds4_frontier_context_sweep}"
+FRONTIER_CONTEXT_SWEEP_PROMPT_FILES="${FRONTIER_CONTEXT_SWEEP_PROMPT_FILES:-${REPO_ROOT}/prompts/long_context/ds4_story_recall.txt,${REPO_ROOT}/prompts/long_context/ds4_security_audit.txt}"
+FRONTIER_CONTEXT_SWEEP_FRONTIERS="${FRONTIER_CONTEXT_SWEEP_FRONTIERS:-8192,16384,32768,65536,98304,124000}"
+FRONTIER_CONTEXT_SWEEP_REPEAT_COUNT="${FRONTIER_CONTEXT_SWEEP_REPEAT_COUNT:-1}"
+FRONTIER_CONTEXT_SWEEP_MAX_TOKENS="${FRONTIER_CONTEXT_SWEEP_MAX_TOKENS:-128}"
+FRONTIER_CONTEXT_SWEEP_TEMPERATURE="${FRONTIER_CONTEXT_SWEEP_TEMPERATURE:-0.0}"
+FRONTIER_CONTEXT_SWEEP_TOP_P="${FRONTIER_CONTEXT_SWEEP_TOP_P:-1.0}"
+FRONTIER_CONTEXT_SWEEP_THINKING_MODE="${FRONTIER_CONTEXT_SWEEP_THINKING_MODE:-non-thinking}"
+FRONTIER_CONTEXT_SWEEP_TIMEOUT="${FRONTIER_CONTEXT_SWEEP_TIMEOUT:-1800}"
+FRONTIER_CONTEXT_SWEEP_PREWARM="${FRONTIER_CONTEXT_SWEEP_PREWARM:-1}"
 RUN_LONG_CONTEXT_DECODE_CONCURRENCY="${RUN_LONG_CONTEXT_DECODE_CONCURRENCY:-0}"
 LONG_CONTEXT_DECODE_CASE_NAME="${LONG_CONTEXT_DECODE_CASE_NAME:-long_context_decode_concurrency}"
 LONG_CONTEXT_DECODE_LINE_COUNTS="${LONG_CONTEXT_DECODE_LINE_COUNTS:-4000}"
@@ -273,6 +284,12 @@ export LONG_CONTEXT_LATENCY_REPEAT_COUNT LONG_CONTEXT_LATENCY_MAX_TOKENS
 export LONG_CONTEXT_LATENCY_TEMPERATURE LONG_CONTEXT_LATENCY_TOP_P
 export LONG_CONTEXT_LATENCY_THINKING_MODE LONG_CONTEXT_LATENCY_TIMEOUT
 export LONG_CONTEXT_LATENCY_PREWARM
+export RUN_FRONTIER_CONTEXT_SWEEP FRONTIER_CONTEXT_SWEEP_CASE_NAME
+export FRONTIER_CONTEXT_SWEEP_PROMPT_FILES FRONTIER_CONTEXT_SWEEP_FRONTIERS
+export FRONTIER_CONTEXT_SWEEP_REPEAT_COUNT FRONTIER_CONTEXT_SWEEP_MAX_TOKENS
+export FRONTIER_CONTEXT_SWEEP_TEMPERATURE FRONTIER_CONTEXT_SWEEP_TOP_P
+export FRONTIER_CONTEXT_SWEEP_THINKING_MODE FRONTIER_CONTEXT_SWEEP_TIMEOUT
+export FRONTIER_CONTEXT_SWEEP_PREWARM
 export RUN_LONG_CONTEXT_DECODE_CONCURRENCY LONG_CONTEXT_DECODE_CASE_NAME
 export LONG_CONTEXT_DECODE_LINE_COUNTS LONG_CONTEXT_DECODE_PROMPT_FILES
 export LONG_CONTEXT_DECODE_CONCURRENCY LONG_CONTEXT_DECODE_CACHE_MODES
@@ -334,6 +351,7 @@ VALID_BASELINE_PHASES=(
   acceptance
   long_context_probe
   long_context_latency_matrix
+  frontier_context_sweep
   long_context_decode_concurrency
   long_context_mixed_arrival
   prefix_cache_probe
@@ -371,7 +389,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,streaming_pressure_soak,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,streaming_pressure_soak,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
   done
@@ -764,6 +782,10 @@ write_summary() {
       "${LONG_CONTEXT_LATENCY_CONCURRENCY}" "${LONG_CONTEXT_LATENCY_CACHE_MODES}" \
       "${LONG_CONTEXT_LATENCY_REPEAT_COUNT}" "${LONG_CONTEXT_LATENCY_MAX_TOKENS}" \
       "${LONG_CONTEXT_LATENCY_THINKING_MODE}"
+    printf -- '- frontier_context_sweep: `%s`, prompt files `%s`, frontiers `%s`, repeats `%s`, max tokens `%s`, thinking `%s`\n' \
+      "${RUN_FRONTIER_CONTEXT_SWEEP}" "${FRONTIER_CONTEXT_SWEEP_PROMPT_FILES}" \
+      "${FRONTIER_CONTEXT_SWEEP_FRONTIERS}" "${FRONTIER_CONTEXT_SWEEP_REPEAT_COUNT}" \
+      "${FRONTIER_CONTEXT_SWEEP_MAX_TOKENS}" "${FRONTIER_CONTEXT_SWEEP_THINKING_MODE}"
     printf -- '- long_context_decode_concurrency: `%s`, lines `%s`, concurrency `%s`, cache `%s`, repeats `%s`, max tokens `%s`, thinking `%s`\n' \
       "${RUN_LONG_CONTEXT_DECODE_CONCURRENCY}" "${LONG_CONTEXT_DECODE_LINE_COUNTS}" \
       "${LONG_CONTEXT_DECODE_CONCURRENCY}" "${LONG_CONTEXT_DECODE_CACHE_MODES}" \
@@ -1170,6 +1192,30 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_long_context_latency_matrix.sh"
+  fi
+
+  if phase_enabled "frontier_context_sweep" && { [[ "${RUN_FRONTIER_CONTEXT_SWEEP}" == "1" ]] || [[ "${RUN_FRONTIER_CONTEXT_SWEEP}" == "true" ]]; }; then
+    run_phase "${variant}" "frontier_context_sweep" "${variant_dir}/frontier_context_sweep" \
+      env OUT_DIR="${variant_dir}/frontier_context_sweep" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
+        FRONTIER_CONTEXT_SWEEP_VARIANT="${variant}" \
+        FRONTIER_CONTEXT_SWEEP_CASE_NAME="${FRONTIER_CONTEXT_SWEEP_CASE_NAME}" \
+        FRONTIER_CONTEXT_SWEEP_PROMPT_FILES="${FRONTIER_CONTEXT_SWEEP_PROMPT_FILES}" \
+        FRONTIER_CONTEXT_SWEEP_FRONTIERS="${FRONTIER_CONTEXT_SWEEP_FRONTIERS}" \
+        FRONTIER_CONTEXT_SWEEP_REPEAT_COUNT="${FRONTIER_CONTEXT_SWEEP_REPEAT_COUNT}" \
+        FRONTIER_CONTEXT_SWEEP_MAX_TOKENS="${FRONTIER_CONTEXT_SWEEP_MAX_TOKENS}" \
+        FRONTIER_CONTEXT_SWEEP_TEMPERATURE="${FRONTIER_CONTEXT_SWEEP_TEMPERATURE}" \
+        FRONTIER_CONTEXT_SWEEP_TOP_P="${FRONTIER_CONTEXT_SWEEP_TOP_P}" \
+        FRONTIER_CONTEXT_SWEEP_THINKING_MODE="${FRONTIER_CONTEXT_SWEEP_THINKING_MODE}" \
+        FRONTIER_CONTEXT_SWEEP_TIMEOUT="${FRONTIER_CONTEXT_SWEEP_TIMEOUT}" \
+        FRONTIER_CONTEXT_SWEEP_PREWARM="${FRONTIER_CONTEXT_SWEEP_PREWARM}" \
+        VLLM_VENV="${B200_VLLM_VENV}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_frontier_context_sweep.sh"
   fi
 
   if phase_enabled "long_context_decode_concurrency" && { [[ "${RUN_LONG_CONTEXT_DECODE_CONCURRENCY}" == "1" ]] || [[ "${RUN_LONG_CONTEXT_DECODE_CONCURRENCY}" == "true" ]]; }; then

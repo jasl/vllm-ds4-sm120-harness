@@ -1254,6 +1254,40 @@ broader long-context C=2 fairness problem. Per-request decode can still be
 imbalanced under mixed long-prefill pressure, so keep ITL p95/p99 and
 per-request min/max decode in promotion gates.
 
+## DS4 Harness Absorption Baseline Plan, 2026-05-24
+
+Baseline label: `20260524_ds4_harness_frontier_semantic_baseline`.
+
+Scope: Phase A is harness-only. Do not change vLLM inference code before this
+baseline is captured, and use the same matrix as the comparison point for later
+prefill, decode-overlap, prefix-cache, or logprob-drift experiments.
+
+Absorbed ideas from ds4:
+
+- Context-frontier sweeps over fixed long prompt files, reporting the actual
+  server `prompt_tokens` alongside TTFT and input/prefill throughput.
+- Story-recall semantic scoring for `ds4_story_recall.txt`: all sixteen
+  `Name=number` assignments must be present.
+- A realistic security-audit prompt as a long agent/security latency and
+  streaming sample, without making it a semantic correctness gate.
+
+Formal gates remain unchanged:
+
+- no server/CUDA/NCCL/driver regression,
+- GSM8K limit-200 must not drop below the fixed floors,
+- `FULL_AND_PIECEWISE` decode CUDA graph capture stays enabled,
+- short-context and 59K/124K latency/fairness gates must not regress.
+
+New development observations:
+
+- `frontier_context_sweep` is included in local quality and user-feedback
+  matrix summaries, but it is not a PR hard gate until the first stable
+  same-host baseline is accepted.
+- Story recall semantic failure is a prompt-file correctness failure for the
+  full long-context latency matrix.
+- Invalid inference experiments after this baseline must have their code
+  removed and only be recorded in rejected notes.
+
 ## Rejected Scheduling Experiment: Extreme Long Prefill /16, 2026-05-24
 
 Artifact label: `20260524_sched_extreme_long_prefill_probe`.

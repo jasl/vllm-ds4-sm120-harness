@@ -54,6 +54,7 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_prefix_cache_probe.sh",
         "run_prefix_cache_stress.sh",
         "run_long_context_latency_matrix.sh",
+        "run_frontier_context_sweep.sh",
         "run_long_context_decode_concurrency.sh",
         "run_long_context_mixed_arrival.sh",
         "run_needle_position_matrix.sh",
@@ -151,6 +152,24 @@ def test_long_context_latency_matrix_wrapper_records_runtime_artifacts():
     assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
 
 
+def test_frontier_context_sweep_wrapper_records_runtime_artifacts():
+    script = (ROOT / "scripts" / "run_frontier_context_sweep.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'FRONTIER_CONTEXT_SWEEP_FRONTIERS="${FRONTIER_CONTEXT_SWEEP_FRONTIERS:-8192,16384,32768,65536,98304,124000}"' in script
+    assert 'FRONTIER_CONTEXT_SWEEP_PROMPT_FILES="${FRONTIER_CONTEXT_SWEEP_PROMPT_FILES:-${REPO_ROOT}/prompts/long_context/ds4_story_recall.txt,${REPO_ROOT}/prompts/long_context/ds4_security_audit.txt}"' in script
+    assert "frontier-context-sweep" in script
+    assert '--json-output "${OUT_DIR}/frontier_context_sweep.json"' in script
+    assert '--markdown-output "${OUT_DIR}/frontier_context_sweep.md"' in script
+    assert '--frontiers "${FRONTIER_CONTEXT_SWEEP_FRONTIERS}"' in script
+    assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+    assert "start_gpu_stats" in script
+    assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+    assert "start_runtime_stats" in script
+    assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
 def test_long_context_decode_concurrency_wrapper_targets_c1_c2_decode():
     script = (ROOT / "scripts" / "run_long_context_decode_concurrency.sh").read_text(
         encoding="utf-8"
@@ -200,6 +219,18 @@ def test_b200_baseline_exposes_mixed_arrival_phase():
     assert 'LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS="${LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS:-' in script
     assert '"${variant_dir}/long_context_mixed_arrival"' in script
     assert '"${SCRIPT_DIR}/run_long_context_mixed_arrival.sh"' in script
+
+
+def test_b200_baseline_exposes_frontier_context_sweep_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "frontier_context_sweep" in script
+    assert 'RUN_FRONTIER_CONTEXT_SWEEP="${RUN_FRONTIER_CONTEXT_SWEEP:-0}"' in script
+    assert 'FRONTIER_CONTEXT_SWEEP_FRONTIERS="${FRONTIER_CONTEXT_SWEEP_FRONTIERS:-8192,16384,32768,65536,98304,124000}"' in script
+    assert '"${variant_dir}/frontier_context_sweep"' in script
+    assert '"${SCRIPT_DIR}/run_frontier_context_sweep.sh"' in script
 
 
 def test_b200_baseline_exposes_long_context_decode_concurrency_phase():
@@ -300,12 +331,15 @@ def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
     assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-disabled}"' in script
     assert 'RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-0}"' in script
     assert 'RUN_LONG_CONTEXT_DECODE_CONCURRENCY="${RUN_LONG_CONTEXT_DECODE_CONCURRENCY:-1}"' in script
+    assert 'LONG_CONTEXT_LATENCY_PROMPT_FILES="${LONG_CONTEXT_LATENCY_PROMPT_FILES:-${REPO_ROOT}/prompts/long_context/ds4_story_recall.txt}"' in script
     assert 'LM_EVAL_LIMIT="${LM_EVAL_LIMIT:-200}"' in script
     assert "long_context_decode_concurrency" in script
     assert "bench_random_prefill_sweep" in script
+    assert "frontier_context_sweep" in script
     assert "long_context_mixed_arrival" in script
     assert "long_context_latency_matrix" in script
     assert "streaming_pressure_matrix" in script
+    assert 'RUN_FRONTIER_CONTEXT_SWEEP="${RUN_FRONTIER_CONTEXT_SWEEP:-1}"' in script
     assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
 
 
@@ -419,7 +453,10 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
 
     assert "USER_FEEDBACK_MATRIX_LABEL" in script
     assert 'RUN_USER_FEEDBACK_ISSUE10="${RUN_USER_FEEDBACK_ISSUE10:-1}"' in script
-    assert "long_context_latency_matrix,long_context_decode_concurrency" in script
+    assert "long_context_latency_matrix,frontier_context_sweep,long_context_decode_concurrency" in script
+    assert 'LONG_CONTEXT_LATENCY_PROMPT_FILES="${LONG_CONTEXT_LATENCY_PROMPT_FILES:-${REPO_ROOT}/prompts/long_context/ds4_story_recall.txt}"' in script
+    assert "frontier_context_sweep" in script
+    assert 'RUN_FRONTIER_CONTEXT_SWEEP="${RUN_FRONTIER_CONTEXT_SWEEP:-1}"' in script
     assert "decode_then_59k:1900:1900:after_first_token" in script
     assert "decode_then_124k:4000:4000:after_first_token" in script
     assert "issue7_5k_c4:4:3:192:128" in script

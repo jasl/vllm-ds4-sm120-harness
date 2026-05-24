@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import statistics
 import threading
 import time
@@ -44,10 +45,94 @@ class LatencyPrompt:
     required_terms: tuple[str, ...]
     line_count: int | None = None
     prompt_file: str | None = None
+    semantic_check: str | None = None
 
     @property
     def sha256(self) -> str:
         return hashlib.sha256(self.text.encode("utf-8")).hexdigest()
+
+
+DS4_STORY_RECALL_SEMANTIC_CHECK = "ds4_story_recall"
+DS4_STORY_RECALL_EXPECTED: dict[str, int] = {
+    "Bob": 34,
+    "Alice": 52,
+    "Clara": 71,
+    "Diego": 93,
+    "Elena": 16,
+    "Felix": 88,
+    "Greta": 47,
+    "Hugo": 29,
+    "Iris": 64,
+    "Jonas": 12,
+    "Kira": 81,
+    "Leo": 39,
+    "Marta": 76,
+    "Nadia": 23,
+    "Owen": 58,
+    "Priya": 97,
+}
+_STORY_ASSIGNMENT_RE = re.compile(r"\b([A-Z][A-Za-z]+)\s*=\s*(-?\d+)\b")
+
+
+@dataclass(frozen=True)
+class StoryRecallEvaluation:
+    ok: bool
+    detail: str
+    matched_count: int
+    missing: list[str]
+    mismatched: dict[str, list[int]]
+    extra: dict[str, list[int]]
+
+
+def evaluate_ds4_story_recall_response(text: str) -> StoryRecallEvaluation:
+    values_by_name: dict[str, list[int]] = {}
+    for match in _STORY_ASSIGNMENT_RE.finditer(text):
+        name = match.group(1)
+        try:
+            number = int(match.group(2))
+        except ValueError:
+            continue
+        values_by_name.setdefault(name, []).append(number)
+
+    missing: list[str] = []
+    mismatched: dict[str, list[int]] = {}
+    matched_count = 0
+    for name, expected in DS4_STORY_RECALL_EXPECTED.items():
+        values = values_by_name.get(name, [])
+        if expected in values:
+            matched_count += 1
+        else:
+            missing.append(name)
+        wrong_values = sorted({value for value in values if value != expected})
+        if wrong_values:
+            mismatched[name] = wrong_values
+
+    extra = {
+        name: values
+        for name, values in sorted(values_by_name.items())
+        if name not in DS4_STORY_RECALL_EXPECTED
+    }
+    ok = not missing and not mismatched
+    if ok:
+        detail = f"matched all {len(DS4_STORY_RECALL_EXPECTED)} story assignments"
+    else:
+        parts = []
+        if missing:
+            parts.append("missing assignments: " + ", ".join(missing))
+        if mismatched:
+            formatted = ", ".join(
+                f"{name}={values}" for name, values in mismatched.items()
+            )
+            parts.append("mismatched assignments: " + formatted)
+        detail = "; ".join(parts) if parts else "story recall semantic check failed"
+    return StoryRecallEvaluation(
+        ok=ok,
+        detail=detail,
+        matched_count=matched_count,
+        missing=missing,
+        mismatched=mismatched,
+        extra=extra,
+    )
 
 
 @dataclass(frozen=True)
@@ -206,6 +291,11 @@ def build_file_latency_prompt(
 ) -> LatencyPrompt:
     text = path.read_text(encoding="utf-8")
     prompt_text = _with_salt(text, salt)
+    semantic_check = (
+        DS4_STORY_RECALL_SEMANTIC_CHECK
+        if path.name == "ds4_story_recall.txt"
+        else None
+    )
     return LatencyPrompt(
         name=_slug(path.stem),
         source="file",
@@ -213,6 +303,7 @@ def build_file_latency_prompt(
         required_terms=(),
         line_count=None,
         prompt_file=str(path),
+        semantic_check=semantic_check,
     )
 
 
@@ -339,6 +430,23 @@ def _request_ok(text: str, required_terms: tuple[str, ...]) -> tuple[bool, str]:
     return True, "matched required terms"
 
 
+def _semantic_check_result(text: str, semantic_check: str | None) -> tuple[bool, str, Json]:
+    if semantic_check is None:
+        return True, "", {}
+    if semantic_check != DS4_STORY_RECALL_SEMANTIC_CHECK:
+        return False, f"unsupported semantic check: {semantic_check}", {
+            "semantic_check": semantic_check
+        }
+    result = evaluate_ds4_story_recall_response(text)
+    return result.ok, result.detail, {
+        "semantic_check": semantic_check,
+        "story_recall_matched_count": result.matched_count,
+        "story_recall_missing": result.missing,
+        "story_recall_mismatched": result.mismatched,
+        "story_recall_extra": result.extra,
+    }
+
+
 def _assistant_text_artifact(prompt: LatencyPrompt, text: str) -> Json:
     artifact: Json = {
         "assistant_text_sha256": _sha256(text),
@@ -429,6 +537,12 @@ def _run_stream_request(
         response = result.get("response") if isinstance(result.get("response"), dict) else {}
         text = str(result.get("assistant_text") or assistant_text(response))
         ok, detail = _request_ok(text, prompt.required_terms)
+        semantic_ok, semantic_detail, semantic_artifact = _semantic_check_result(
+            text, prompt.semantic_check
+        )
+        if prompt.semantic_check is not None:
+            ok = ok and semantic_ok
+            detail = semantic_detail
         usage = _usage_tokens(response)
         elapsed = result.get("elapsed_seconds")
         if not isinstance(elapsed, int | float):
@@ -468,10 +582,12 @@ def _run_stream_request(
             "prompt_sha256": prompt.sha256,
             "line_count": prompt.line_count,
             "prompt_file": prompt.prompt_file,
+            "semantic_check": prompt.semantic_check,
         }
         if row_extra:
             row.update(row_extra)
         row.update(_assistant_text_artifact(prompt, text))
+        row.update(semantic_artifact)
         return row
     except Exception as exc:
         row = {
@@ -500,6 +616,7 @@ def _run_stream_request(
             "prompt_sha256": prompt.sha256,
             "line_count": prompt.line_count,
             "prompt_file": prompt.prompt_file,
+            "semantic_check": prompt.semantic_check,
         }
         if row_extra:
             row.update(row_extra)
@@ -672,6 +789,7 @@ def run_long_context_latency_matrix(
                 "sha256": base_prompt.sha256,
                 "excerpt": _prompt_excerpt(base_prompt.text),
                 "required_terms": list(base_prompt.required_terms),
+                "semantic_check": base_prompt.semantic_check,
             }
         )
         for cache_mode in cache_modes:
@@ -947,6 +1065,7 @@ def run_long_context_mixed_arrival_matrix(
                         "sha256": primary_prompt.sha256,
                         "excerpt": _prompt_excerpt(primary_prompt.text),
                         "required_terms": list(primary_prompt.required_terms),
+                        "semantic_check": primary_prompt.semantic_check,
                     },
                     {
                         "case": spec.name,
@@ -957,6 +1076,7 @@ def run_long_context_mixed_arrival_matrix(
                         "sha256": secondary_prompt.sha256,
                         "excerpt": _prompt_excerpt(secondary_prompt.text),
                         "required_terms": list(secondary_prompt.required_terms),
+                        "semantic_check": secondary_prompt.semantic_check,
                     },
                 ]
             )

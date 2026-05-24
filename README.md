@@ -837,10 +837,24 @@ path.
 For bundled ds4.c prompt-file latency runs, pass
 `LONG_CONTEXT_LATENCY_LINE_COUNTS=` and
 `LONG_CONTEXT_LATENCY_PROMPT_FILES=${REPO_ROOT}/prompts/long_context/ds4_story_recall.txt,${REPO_ROOT}/prompts/long_context/ds4_security_audit.txt`.
+The `ds4_story_recall.txt` prompt now has a semantic response check in the
+latency matrix: the assistant output must contain all sixteen `Name=number`
+assignments from the story. The `ds4_security_audit.txt` prompt is kept as a
+realistic agent/security latency and streaming sample and is still checked only
+for a non-empty response.
 Set `LONG_CONTEXT_LATENCY_PREWARM=1` to run `scripts/prewarm_serve.sh` after
 the server health gate and before the latency matrix. The prewarm uses real
 OpenAI-style requests, writes `prewarm.log` and `prewarm.exit_code`, and
 defaults `PREWARM_ISL` to `MAX_NUM_BATCHED_TOKENS` or `4096`.
+
+For ds4-style context-frontier latency, run
+`scripts/run_frontier_context_sweep.sh` or enable the
+`frontier_context_sweep` baseline phase. It sends fixed prompt-file prefixes at
+`FRONTIER_CONTEXT_SWEEP_FRONTIERS=8192,16384,32768,65536,98304,124000` by
+default and records the server-returned `prompt_tokens`, TTFT, approximate
+input/prefill tok/s, decode tok/s, and ITL p95/p99. This is a development
+observation gate rather than a PR hard gate until the first stable baseline is
+accepted.
 
 For suspected long-context decode concurrency cliffs, run
 `scripts/run_long_context_decode_concurrency.sh`. It defaults to a synthetic
@@ -928,7 +942,8 @@ server starts.
 Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
 the requested server variant. Valid phase names are `kv_layout_probe`,
 `acceptance`, `long_context_probe`, `long_context_latency_matrix`,
-`long_context_decode_concurrency`, `long_context_mixed_arrival`,
+`frontier_context_sweep`, `long_context_decode_concurrency`,
+`long_context_mixed_arrival`,
 `prefix_cache_probe`,
 `prefix_cache_stress`, `streaming_pressure_soak`, `streaming_pressure_matrix`,
 `bench_hf_mt_bench`, `eval_gsm8k`, `bench_random_prefill_sweep`,
@@ -1143,7 +1158,8 @@ Before promoting an optimization:
   `user_feedback_matrix_summary.md` at the matrix root so the first review
   surface contains phase status, 59K/124K latency, issue #8 decode
   concurrency, mixed-arrival pressure, issue #7 streaming pressure, short
-  bench throughput, GSM8K, prefill sweep, and prefix-cache stress data.
+  bench throughput, GSM8K, prefill sweep, ds4 story-recall semantic status,
+  ds4-style frontier latency, and prefix-cache stress data.
   The profile defaults to GSM8K limit-200 promotion floors of
   `exact_match_flexible >= 0.94` and `exact_match_strict >= 0.925`, matching
   the current accepted lower bound so later tuning cannot silently trade away

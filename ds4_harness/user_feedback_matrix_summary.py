@@ -223,6 +223,30 @@ def _collect_prefill_rows(run_label: str, variant: str, payload: Any) -> list[Js
     return rows
 
 
+def _collect_frontier_rows(run_label: str, variant: str, payload: Any) -> list[Json]:
+    rows: list[Json] = []
+    for row in _summary_rows(payload):
+        rows.append(
+            {
+                "run": run_label,
+                "variant": variant,
+                "prompt": row.get("prompt"),
+                "target_frontier_tokens": row.get("target_frontier_tokens"),
+                "requests": row.get("request_count"),
+                "failures": row.get("failure_count"),
+                "prompt_tokens": _round_float(row.get("prompt_tokens_mean"), 0),
+                "ttft_mean_s": _round_float(row.get("ttft_seconds_mean")),
+                "ttft_max_s": _round_float(row.get("ttft_seconds_max")),
+                "input_tps": _round_float(row.get("input_tokens_per_second_mean")),
+                "decode_mean_tps": _round_float(row.get("decode_tokens_per_second_mean")),
+                "itl_p95_s": _round_float(row.get("p95_inter_chunk_seconds")),
+                "itl_p99_s": _round_float(row.get("p99_inter_chunk_seconds")),
+                "itl_max_s": _round_float(row.get("max_inter_chunk_seconds")),
+            }
+        )
+    return rows
+
+
 def _collect_prefix_cache_rows(
     run_label: str,
     variant: str,
@@ -394,6 +418,7 @@ def summarize_run(label: str, run_root: Path) -> Json:
         "short_bench": [],
         "gsm8k": [],
         "prefill_sweep": [],
+        "frontier_context_sweep": [],
         "prefix_cache_stress": [],
         "monitoring": [],
     }
@@ -437,6 +462,13 @@ def summarize_run(label: str, run_root: Path) -> Json:
             variant_dir / "bench_random_prefill_sweep" / "prefill_sweep_summary.json"
         )
         result["prefill_sweep"].extend(_collect_prefill_rows(label, variant, prefill))
+
+        frontier = _load_json(
+            variant_dir / "frontier_context_sweep" / "frontier_context_sweep.json"
+        )
+        result["frontier_context_sweep"].extend(
+            _collect_frontier_rows(label, variant, frontier)
+        )
 
         prefix = _load_json(variant_dir / "prefix_cache_stress" / "prefix_cache_stress.json")
         result["prefix_cache_stress"].extend(
@@ -512,6 +544,7 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
     bench_rows: list[list[Any]] = []
     gsm_rows: list[list[Any]] = []
     prefill_rows: list[list[Any]] = []
+    frontier_rows: list[list[Any]] = []
     prefix_rows: list[list[Any]] = []
     monitoring_rows: list[list[Any]] = []
 
@@ -612,6 +645,22 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                     row["input_tps"],
                     row["ttft_mean_ms"],
                     row["ttft_p99_ms"],
+                ]
+            )
+        for row in run["frontier_context_sweep"]:
+            frontier_rows.append(
+                [
+                    row["run"],
+                    row["variant"],
+                    row["prompt"],
+                    row["target_frontier_tokens"],
+                    row["failures"],
+                    row["prompt_tokens"],
+                    row["ttft_mean_s"],
+                    row["ttft_max_s"],
+                    row["input_tps"],
+                    row["decode_mean_tps"],
+                    row["itl_p99_s"],
                 ]
             )
         for row in run["prefix_cache_stress"]:
@@ -742,6 +791,23 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
             "Random Prefill Sweep",
             ["Run", "Variant", "Case", "OK", "Input tok/s", "TTFT Mean ms", "TTFT P99 ms"],
             prefill_rows,
+        ),
+        (
+            "Frontier Context Sweep",
+            [
+                "Run",
+                "Variant",
+                "Prompt",
+                "Target Frontier",
+                "Failures",
+                "Prompt Tokens",
+                "TTFT Mean s",
+                "TTFT Max s",
+                "Input tok/s",
+                "Decode tok/s",
+                "ITL P99 s",
+            ],
+            frontier_rows,
         ),
         (
             "Prefix Cache Stress",

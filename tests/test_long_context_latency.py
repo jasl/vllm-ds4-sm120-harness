@@ -2,12 +2,60 @@ import json
 
 from ds4_harness import cli
 from ds4_harness.long_context_latency import (
+    DS4_STORY_RECALL_EXPECTED,
+    evaluate_ds4_story_recall_response,
     parse_mixed_arrival_case_spec,
     run_long_context_latency_matrix,
     run_long_context_mixed_arrival_matrix,
     write_long_context_latency_markdown,
     write_long_context_mixed_arrival_markdown,
 )
+
+
+def _story_recall_answer() -> str:
+    return "\n".join(
+        f"{name}={number}" for name, number in DS4_STORY_RECALL_EXPECTED.items()
+    )
+
+
+def test_ds4_story_recall_semantic_parser_accepts_all_assignments():
+    result = evaluate_ds4_story_recall_response(
+        "Here is the ledger:\n" + _story_recall_answer() + "\nDone."
+    )
+
+    assert result.ok is True
+    assert result.matched_count == 16
+    assert result.missing == []
+    assert result.mismatched == {}
+
+
+def test_ds4_story_recall_semantic_parser_rejects_missing_assignment():
+    lines = [
+        f"{name}={number}"
+        for name, number in DS4_STORY_RECALL_EXPECTED.items()
+        if name != "Priya"
+    ]
+
+    result = evaluate_ds4_story_recall_response("\n".join(lines))
+
+    assert result.ok is False
+    assert result.missing == ["Priya"]
+
+
+def test_ds4_story_recall_semantic_parser_rejects_wrong_duplicate_value():
+    result = evaluate_ds4_story_recall_response(
+        _story_recall_answer() + "\nBob=35\n"
+    )
+
+    assert result.ok is False
+    assert result.mismatched == {"Bob": [35]}
+
+
+def test_ds4_story_recall_semantic_parser_rejects_empty_output():
+    result = evaluate_ds4_story_recall_response("")
+
+    assert result.ok is False
+    assert result.missing == list(DS4_STORY_RECALL_EXPECTED)
 
 
 def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
@@ -178,6 +226,79 @@ def test_long_context_latency_matrix_supports_prompt_files(tmp_path):
     assert row["prompts"][0]["prompt_file"] == str(prompt_file)
     assert "assistant_text_sha256" in row["requests"][0]
     assert "assistant_text_excerpt" not in row["requests"][0]
+
+
+def test_long_context_latency_matrix_applies_ds4_story_semantic_check(tmp_path):
+    prompt_file = tmp_path / "ds4_story_recall.txt"
+    prompt_file.write_text("Story prompt", encoding="utf-8")
+
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        return {
+            "response": {
+                "choices": [
+                    {
+                        "message": {"content": _story_recall_answer()},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 2000, "completion_tokens": 32},
+            },
+            "assistant_text": _story_recall_answer(),
+            "ttft_seconds": 0.1,
+            "elapsed_seconds": 0.3,
+            "chunks": 1,
+        }
+
+    row = run_long_context_latency_matrix(
+        base_url="http://127.0.0.1:8000",
+        model="model",
+        variant="nomtp",
+        line_counts=[],
+        prompt_files=[prompt_file],
+        cache_modes=["cold"],
+        stream_func=fake_stream,
+    )
+
+    assert row["ok"] is True
+    assert row["prompts"][0]["semantic_check"] == "ds4_story_recall"
+    assert row["requests"][0]["semantic_check"] == "ds4_story_recall"
+    assert row["requests"][0]["story_recall_matched_count"] == 16
+
+
+def test_long_context_latency_matrix_fails_incomplete_ds4_story_answer(tmp_path):
+    prompt_file = tmp_path / "ds4_story_recall.txt"
+    prompt_file.write_text("Story prompt", encoding="utf-8")
+
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        return {
+            "response": {
+                "choices": [
+                    {
+                        "message": {"content": "Bob=34"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 2000, "completion_tokens": 2},
+            },
+            "assistant_text": "Bob=34",
+            "ttft_seconds": 0.1,
+            "elapsed_seconds": 0.3,
+            "chunks": 1,
+        }
+
+    row = run_long_context_latency_matrix(
+        base_url="http://127.0.0.1:8000",
+        model="model",
+        variant="nomtp",
+        line_counts=[],
+        prompt_files=[prompt_file],
+        cache_modes=["cold"],
+        stream_func=fake_stream,
+    )
+
+    assert row["ok"] is False
+    assert "missing assignments" in row["requests"][0]["detail"]
+    assert row["requests"][0]["story_recall_matched_count"] == 1
 
 
 def test_long_context_latency_markdown_includes_summary(tmp_path):

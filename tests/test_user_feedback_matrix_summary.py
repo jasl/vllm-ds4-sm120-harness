@@ -27,7 +27,8 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
         "mtp\tstreaming_pressure_matrix\t0\t/d\n"
         "mtp\tbench_hf_mt_bench\t0\t/e\n"
         "mtp\teval_gsm8k\t0\t/f\n"
-        "mtp\tbench_random_prefill_sweep\t0\t/g\n",
+        "mtp\tbench_random_prefill_sweep\t0\t/g\n"
+        "mtp\tfrontier_context_sweep\t0\t/i\n",
         encoding="utf-8",
     )
     (prefix / "phase_exit_codes.tsv").write_text(
@@ -178,6 +179,27 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
         },
     )
     write_json(
+        primary / "mtp/frontier_context_sweep/frontier_context_sweep.json",
+        {
+            "summary": [
+                {
+                    "prompt": "ds4_story_recall",
+                    "target_frontier_tokens": 65536,
+                    "request_count": 1,
+                    "failure_count": 0,
+                    "prompt_tokens_mean": 64200,
+                    "ttft_seconds_mean": 12.5,
+                    "ttft_seconds_max": 12.7,
+                    "input_tokens_per_second_mean": 5136.0,
+                    "decode_tokens_per_second_mean": 41.2,
+                    "p95_inter_chunk_seconds": 0.2,
+                    "p99_inter_chunk_seconds": 0.3,
+                    "max_inter_chunk_seconds": 0.4,
+                }
+            ]
+        },
+    )
+    write_json(
         prefix / "mtp1/prefix_cache_stress/prefix_cache_stress.json",
         {
             "ok": True,
@@ -198,6 +220,7 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
     assert primary_summary["latency"][0]["ttft_mean_s"] == 47.994
     assert primary_summary["decode_concurrency"][0]["decode_min_tps"] == 18.834
     assert primary_summary["short_bench"][0]["output_tps"] == 392.73
+    assert primary_summary["frontier_context_sweep"][0]["input_tps"] == 5136.0
     assert primary_summary["monitoring"][0]["gpu_utilization_avg"] == 91.4
     assert primary_summary["monitoring"][0]["serve_log_error_signals"] == 0
     assert primary_summary["monitoring"][0]["runtime_running_requests_max"] == 2.0
@@ -211,6 +234,8 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
     assert "GPU Util Avg" in markdown
     assert "CUDA Errors" in markdown
     assert "Prefix Cache Stress" in markdown
+    assert "Frontier Context Sweep" in markdown
+    assert "Target Frontier" in markdown
     assert "already-started decode stream fairness" in markdown
 
 
