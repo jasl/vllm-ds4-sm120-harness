@@ -284,6 +284,10 @@ reported four-card or 512K/1M shapes:
   The crash backlog now includes both the SM120 128K-class proxy fatal-driver
   state and the reporter's GB10 dual-node reboot-only reproduction at
   `a937d4b287`; resolve those separately from ordinary promotion baselines.
+  A post-reboot 59K-class MTP startup and prefix-cache proxy passed under
+  `20260525_issue10_safe_59k_mtp_prefix_proxy`; keep citing that only as SM120
+  scaled-down evidence. The 128K-class SM120 proxy and the 393K GB10 dual-node
+  report remain separate crash-backlog items.
 
 The convenience profile `scripts/run_sm120_external_reported_gates.sh` refuses
 to run unless `EXTERNAL_GATE_MAX_MODEL_LEN` is set, so 512K and 1M evidence is

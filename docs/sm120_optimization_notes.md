@@ -1361,12 +1361,25 @@ stable:
   repeated NVRM assertions followed by `uvm encountered global fatal error
   0x60, requiring os reboot to recover` and `GPU lost from the bus`. The
   artifact label is `20260525_issue8_local_proxy_124k_c2_decode1024`.
+  Post-reboot isolation did not make this a stable reproduction: the same
+  C=1/C=2 cold shape with the 1024-token output budget passed under
+  `20260525_issue8_recheck_original_124k_c1c2_mnbt4176_prefix_on_1024`, and
+  narrower 124K C=2-only, C=1/C=2 256-token, and warm prefix-hit probes also
+  passed without NVRM/Xid/UVM log signals. Keep the original fatal artifact in
+  the crash backlog, but describe the RTX PRO 6000 issue #8 proxy as
+  intermittent unless a future run reproduces it again.
 - SM120 issue #10 proxy: the 128K-class dual-card proxy with prefix cache,
   chunked prefill, FP8 KV, MTP=2, block size 256, disabled custom all-reduce,
   and `FULL_AND_PIECEWISE` triggered a sparse MLA prefill CUDA launch failure
   and left one GPU in a fatal driver state requiring an OS reboot. The
   artifact label is `20260524_ds4_harness_frontier_semantic_baseline_r2`; the
-  safe baseline summary excludes this diagnostic.
+  safe baseline summary excludes this diagnostic. The safer 59K-class MTP
+  startup and prefix-cache proxy passed under
+  `20260525_issue10_safe_59k_mtp_prefix_proxy`: long-context C=1/C=2 cold and
+  warm latency had zero failures, prefix-cache stress had zero failures, and
+  the follow-up kernel log check showed no NVRM/Xid/UVM signals. This supports
+  the ordinary SM120 MTP/prefix path, not the 128K-class crash proxy or the
+  GB10 dual-node 393K report.
 - GB10 issue #10 report: the reporter rebuilt
   [`jasl/vllm#10`](https://github.com/jasl/vllm/issues/10#issuecomment-4529246012)
   at `a937d4b287` and still reproduced a reboot-only crash on a dual-node GB10
