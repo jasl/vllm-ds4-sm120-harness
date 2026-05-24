@@ -1289,6 +1289,35 @@ New development observations:
 - Invalid inference experiments after this baseline must have their code
   removed and only be recorded in rejected notes.
 
+## Must-Fix Crash Backlog, 2026-05-25
+
+Keep these outside the default user-feedback matrix, but treat them as required
+follow-up work before claiming the GB10 or high-risk issue #10 shapes are
+stable:
+
+- SM120 issue #10 proxy: the 128K-class dual-card proxy with prefix cache,
+  chunked prefill, FP8 KV, MTP=2, block size 256, disabled custom all-reduce,
+  and `FULL_AND_PIECEWISE` triggered a sparse MLA prefill CUDA launch failure
+  and left one GPU in a fatal driver state requiring an OS reboot. The
+  artifact label is `20260524_ds4_harness_frontier_semantic_baseline_r2`; the
+  safe baseline summary excludes this diagnostic.
+- GB10 issue #10 report: the reporter rebuilt
+  [`jasl/vllm#10`](https://github.com/jasl/vllm/issues/10#issuecomment-4529246012)
+  at `a937d4b287` and still reproduced a reboot-only crash on a dual-node GB10
+  cluster. The public repro shape is TP=2 across two nodes, `max_model_len`
+  `393216`, `max_num_batched_tokens=16384`, `max_num_seqs=4`, prefix cache,
+  chunked prefill, FP8 KV, block size 256, disabled custom all-reduce, MTP=2,
+  and `FULL_AND_PIECEWISE`. The pasted log reaches checkpoint load and MoE
+  prepare/finalize, but does not yet include the failing kernel or driver
+  event.
+
+Next data to request or collect for the crash backlog: full serve log tail,
+kernel/Xid or NVRM/UVM lines from the failing boot, whether the peer node also
+enters a bad state, NCCL version and transport summary, and a reduced replay
+matrix that varies only one of MTP, prefix cache, chunked prefill, and sparse
+MLA per run. Do not run the 128K-class SM120 proxy again unless the host can be
+rebooted afterward.
+
 ## Rejected Scheduling Experiment: Extreme Long Prefill /16, 2026-05-24
 
 Artifact label: `20260524_sched_extreme_long_prefill_probe`.

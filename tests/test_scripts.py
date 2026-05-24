@@ -511,6 +511,7 @@ def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates()
     assert "run_sm120_issue10_startup_gate.sh" in docs
     assert "RUN_USER_FEEDBACK_ISSUE10=1" in docs
     assert "partial artifacts separate from promotion baselines" in docs
+    assert "GB10 dual-node reboot-only reproduction" in docs
     assert "prefix_cache_stress" in docs
     assert "bench_random_prefill_sweep" in docs
     assert "long_context_decode_concurrency" in docs

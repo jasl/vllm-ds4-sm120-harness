@@ -281,6 +281,9 @@ reported four-card or 512K/1M shapes:
   Keep this proxy out of the default user-feedback matrix. Run it with
   `RUN_USER_FEEDBACK_ISSUE10=1` only when the host can be rebooted afterward,
   and keep partial artifacts separate from promotion baselines.
+  The crash backlog now includes both the SM120 128K-class proxy fatal-driver
+  state and the reporter's GB10 dual-node reboot-only reproduction at
+  `a937d4b287`; resolve those separately from ordinary promotion baselines.
 
 The convenience profile `scripts/run_sm120_external_reported_gates.sh` refuses
 to run unless `EXTERNAL_GATE_MAX_MODEL_LEN` is set, so 512K and 1M evidence is
