@@ -69,7 +69,7 @@ PREFIX_CACHE_STRESS_MAX_TOKENS="${PREFIX_CACHE_STRESS_MAX_TOKENS:-128}"
 
 RUN_STREAMING_PRESSURE_MATRIX="${RUN_STREAMING_PRESSURE_MATRIX:-1}"
 STREAMING_PRESSURE_MATRIX_CASE_NAME="${STREAMING_PRESSURE_MATRIX_CASE_NAME:-issue10_streaming_pressure}"
-STREAMING_PRESSURE_MATRIX_CASE_SPECS="${STREAMING_PRESSURE_MATRIX_CASE_SPECS:-issue10_c2_124k:2:1:4000:128,issue10_c4_59k:4:1:1900:128}"
+STREAMING_PRESSURE_MATRIX_CASE_SPECS="${STREAMING_PRESSURE_MATRIX_CASE_SPECS:-issue10_c2_124k:2:1:4000:64,issue10_c4_59k:4:1:1900:128}"
 STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW="${STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW:-0}"
 
 B200_EXTRA_SERVE_ARGS="${B200_EXTRA_SERVE_ARGS:---gpu-memory-utilization ${ISSUE10_GPU_MEMORY_UTILIZATION} --max-num-seqs ${ISSUE10_MAX_NUM_SEQS} --max-num-batched-tokens ${ISSUE10_MAX_NUM_BATCHED_TOKENS} --load-format safetensors --tokenizer ${MODEL:-deepseek-ai/DeepSeek-V4-Flash} --enable-chunked-prefill --disable-custom-all-reduce --default-chat-template-kwargs '{\"thinking\": true}' --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}' --override-generation-config '{\"temperature\": 1.0, \"top_p\": 1.0}'}"

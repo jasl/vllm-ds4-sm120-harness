@@ -428,6 +428,7 @@ def test_sm120_issue10_startup_gate_matches_reported_gb10_shape_proxy():
     assert "--max-num-batched-tokens ${ISSUE10_MAX_NUM_BATCHED_TOKENS}" in script
     assert "--max-num-seqs ${ISSUE10_MAX_NUM_SEQS}" in script
     assert "--enable-chunked-prefill" in script
+    assert "issue10_c2_124k:2:1:4000:64" in script
     assert "--disable-custom-all-reduce" in script
     assert "FULL_AND_PIECEWISE" in script
     assert "issue10_startup_latency" in script
