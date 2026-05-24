@@ -1254,6 +1254,37 @@ broader long-context C=2 fairness problem. Per-request decode can still be
 imbalanced under mixed long-prefill pressure, so keep ITL p95/p99 and
 per-request min/max decode in promotion gates.
 
+## Rejected Scheduling Experiment: Extreme Long Prefill /16, 2026-05-24
+
+Artifact label: `20260524_sched_extreme_long_prefill_probe`.
+
+Experiment: keep the existing mixed decode/prefill policy for ordinary long
+prefill chunks, but when an already-running decode was scheduled and a prefill
+had more than 16 scheduling steps remaining, reduce that prefill chunk from
+`max_num_batched_tokens / 8` to `/ 16`.
+
+Decision: reject and remove the code. The experiment did not improve the
+measured user-feedback workload, and it regressed multiple gates compared with
+the prior healthy matrix `20260523_post_rebase_c8b85b7c_full3`:
+
+| Metric | Prior healthy matrix | `/16` experiment |
+| --- | ---: | ---: |
+| 59K C=1 TTFT | `12.249 s` | `14.164 s` |
+| 59K C=2 TTFT / ITL p99 | `19.335 s` / `0.132 s` | `23.457 s` / `0.553 s` |
+| 124K C=1 TTFT | `31.157 s` | `38.082 s` |
+| 124K C=2 TTFT / ITL p99 | `47.812 s` / `0.141 s` | `60.955 s` / `0.252 s` |
+| mixed `decode_then_124k` decode min/max | `0.283` | `0.174` |
+| streaming pressure ITL p99 | `0.855 s` | `1.184 s` |
+| short bench C=1/C=2/C=4 output | `160.71` / `257.10` / `389.05 tok/s` | `144.21` / `252.15` / `382.50 tok/s` |
+| GSM8K limit-50 flexible / strict | `0.955` / `0.925` | `0.94` / `0.92` |
+
+Runtime monitoring was useful: all measured phases reported zero CUDA, NCCL,
+driver, and engine error signals, so this was a performance/correctness gate
+failure rather than a crash reproduction. The result argues against blindly
+shrinking extreme prefill chunks. Future scheduling work should target a more
+shape-aware policy, likely distinguishing active-decode protection from equal
+long-prefill fairness, and must keep the same user-feedback matrix enabled.
+
 ## External Reference: DeepGEMM PR 324
 
 DeepGEMM PR
