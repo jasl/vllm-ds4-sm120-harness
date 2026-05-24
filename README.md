@@ -855,6 +855,10 @@ default and records the server-returned `prompt_tokens`, TTFT, approximate
 input/prefill tok/s, decode tok/s, and ITL p95/p99. This is a development
 observation gate rather than a PR hard gate until the first stable baseline is
 accepted.
+The local quality and user-feedback profiles run `ds4_story_recall_semantic`
+as a separate phase with `DS4_STORY_RECALL_MAX_TOKENS=128`, so the semantic
+answer budget does not change the existing 59K/124K latency matrix's
+`LONG_CONTEXT_LATENCY_MAX_TOKENS=64` measurement shape.
 
 For suspected long-context decode concurrency cliffs, run
 `scripts/run_long_context_decode_concurrency.sh`. It defaults to a synthetic
@@ -942,8 +946,8 @@ server starts.
 Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
 the requested server variant. Valid phase names are `kv_layout_probe`,
 `acceptance`, `long_context_probe`, `long_context_latency_matrix`,
-`frontier_context_sweep`, `long_context_decode_concurrency`,
-`long_context_mixed_arrival`,
+`frontier_context_sweep`, `ds4_story_recall_semantic`,
+`long_context_decode_concurrency`, `long_context_mixed_arrival`,
 `prefix_cache_probe`,
 `prefix_cache_stress`, `streaming_pressure_soak`, `streaming_pressure_matrix`,
 `bench_hf_mt_bench`, `eval_gsm8k`, `bench_random_prefill_sweep`,

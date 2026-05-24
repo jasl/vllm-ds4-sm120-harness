@@ -247,6 +247,68 @@ def _collect_frontier_rows(run_label: str, variant: str, payload: Any) -> list[J
     return rows
 
 
+def _collect_story_recall_rows(run_label: str, variant: str, payload: Any) -> list[Json]:
+    summary_rows = _summary_rows(payload)
+    request_rows = (
+        [
+            row
+            for row in payload.get("requests", [])
+            if isinstance(row, dict) and row.get("phase") == "measure"
+        ]
+        if isinstance(payload, dict) and isinstance(payload.get("requests"), list)
+        else []
+    )
+    matched_counts = [
+        value
+        for value in (
+            _round_float(row.get("story_recall_matched_count"), 0)
+            for row in request_rows
+            if row.get("semantic_check") == "ds4_story_recall"
+        )
+        if value is not None
+    ]
+    missing = sorted(
+        {
+            str(name)
+            for row in request_rows
+            for name in (
+                row.get("story_recall_missing")
+                if isinstance(row.get("story_recall_missing"), list)
+                else []
+            )
+        }
+    )
+    finish_reasons = sorted(
+        {
+            str(row.get("finish_reason"))
+            for row in request_rows
+            if row.get("finish_reason") is not None
+        }
+    )
+
+    rows: list[Json] = []
+    for row in summary_rows:
+        rows.append(
+            {
+                "run": run_label,
+                "variant": variant,
+                "prompt": row.get("prompt"),
+                "concurrency": row.get("concurrency"),
+                "requests": row.get("request_count"),
+                "failures": row.get("failure_count"),
+                "matched_min": min(matched_counts) if matched_counts else None,
+                "missing": ",".join(missing) if missing else "",
+                "finish_reasons": ",".join(finish_reasons) if finish_reasons else "",
+                "prompt_tokens": _round_float(row.get("prompt_tokens_mean"), 0),
+                "ttft_mean_s": _round_float(row.get("ttft_seconds_mean")),
+                "ttft_max_s": _round_float(row.get("ttft_seconds_max")),
+                "decode_mean_tps": _round_float(row.get("decode_tokens_per_second_mean")),
+                "itl_p99_s": _round_float(row.get("p99_inter_chunk_seconds")),
+            }
+        )
+    return rows
+
+
 def _collect_prefix_cache_rows(
     run_label: str,
     variant: str,
@@ -419,6 +481,7 @@ def summarize_run(label: str, run_root: Path) -> Json:
         "gsm8k": [],
         "prefill_sweep": [],
         "frontier_context_sweep": [],
+        "story_recall_semantic": [],
         "prefix_cache_stress": [],
         "monitoring": [],
     }
@@ -468,6 +531,15 @@ def summarize_run(label: str, run_root: Path) -> Json:
         )
         result["frontier_context_sweep"].extend(
             _collect_frontier_rows(label, variant, frontier)
+        )
+
+        story = _load_json(
+            variant_dir
+            / "ds4_story_recall_semantic"
+            / "long_context_latency_matrix.json"
+        )
+        result["story_recall_semantic"].extend(
+            _collect_story_recall_rows(label, variant, story)
         )
 
         prefix = _load_json(variant_dir / "prefix_cache_stress" / "prefix_cache_stress.json")
@@ -545,6 +617,7 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
     gsm_rows: list[list[Any]] = []
     prefill_rows: list[list[Any]] = []
     frontier_rows: list[list[Any]] = []
+    story_rows: list[list[Any]] = []
     prefix_rows: list[list[Any]] = []
     monitoring_rows: list[list[Any]] = []
 
@@ -659,6 +732,23 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                     row["ttft_mean_s"],
                     row["ttft_max_s"],
                     row["input_tps"],
+                    row["decode_mean_tps"],
+                    row["itl_p99_s"],
+                ]
+            )
+        for row in run["story_recall_semantic"]:
+            story_rows.append(
+                [
+                    row["run"],
+                    row["variant"],
+                    row["prompt"],
+                    row["concurrency"],
+                    row["failures"],
+                    row["matched_min"],
+                    row["missing"],
+                    row["finish_reasons"],
+                    row["prompt_tokens"],
+                    row["ttft_mean_s"],
                     row["decode_mean_tps"],
                     row["itl_p99_s"],
                 ]
@@ -808,6 +898,24 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                 "ITL P99 s",
             ],
             frontier_rows,
+        ),
+        (
+            "DS4 Story Recall Semantic",
+            [
+                "Run",
+                "Variant",
+                "Prompt",
+                "C",
+                "Failures",
+                "Matched Min",
+                "Missing",
+                "Finish",
+                "Prompt Tokens",
+                "TTFT Mean s",
+                "Decode tok/s",
+                "ITL P99 s",
+            ],
+            story_rows,
         ),
         (
             "Prefix Cache Stress",

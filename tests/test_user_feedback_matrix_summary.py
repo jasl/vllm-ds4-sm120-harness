@@ -28,7 +28,8 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
         "mtp\tbench_hf_mt_bench\t0\t/e\n"
         "mtp\teval_gsm8k\t0\t/f\n"
         "mtp\tbench_random_prefill_sweep\t0\t/g\n"
-        "mtp\tfrontier_context_sweep\t0\t/i\n",
+        "mtp\tfrontier_context_sweep\t0\t/i\n"
+        "mtp\tds4_story_recall_semantic\t0\t/j\n",
         encoding="utf-8",
     )
     (prefix / "phase_exit_codes.tsv").write_text(
@@ -200,6 +201,36 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
         },
     )
     write_json(
+        primary / "mtp/ds4_story_recall_semantic/long_context_latency_matrix.json",
+        {
+            "summary": [
+                {
+                    "prompt": "ds4_story_recall",
+                    "cache_mode": "cold",
+                    "concurrency": 1,
+                    "request_count": 1,
+                    "failure_count": 0,
+                    "ttft_seconds_mean": 6.1,
+                    "ttft_seconds_max": 6.1,
+                    "decode_tokens_per_second_mean": 84.0,
+                    "p99_inter_chunk_seconds": 0.02,
+                    "prompt_tokens_mean": 30478,
+                }
+            ],
+            "requests": [
+                {
+                    "phase": "measure",
+                    "prompt": "ds4_story_recall",
+                    "ok": True,
+                    "semantic_check": "ds4_story_recall",
+                    "story_recall_matched_count": 16,
+                    "story_recall_missing": [],
+                    "finish_reason": "stop",
+                }
+            ],
+        },
+    )
+    write_json(
         prefix / "mtp1/prefix_cache_stress/prefix_cache_stress.json",
         {
             "ok": True,
@@ -221,6 +252,7 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
     assert primary_summary["decode_concurrency"][0]["decode_min_tps"] == 18.834
     assert primary_summary["short_bench"][0]["output_tps"] == 392.73
     assert primary_summary["frontier_context_sweep"][0]["input_tps"] == 5136.0
+    assert primary_summary["story_recall_semantic"][0]["matched_min"] == 16
     assert primary_summary["monitoring"][0]["gpu_utilization_avg"] == 91.4
     assert primary_summary["monitoring"][0]["serve_log_error_signals"] == 0
     assert primary_summary["monitoring"][0]["runtime_running_requests_max"] == 2.0
@@ -236,6 +268,8 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
     assert "Prefix Cache Stress" in markdown
     assert "Frontier Context Sweep" in markdown
     assert "Target Frontier" in markdown
+    assert "DS4 Story Recall Semantic" in markdown
+    assert "Matched Min" in markdown
     assert "already-started decode stream fairness" in markdown
 
 

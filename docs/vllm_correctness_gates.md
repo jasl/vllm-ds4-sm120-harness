@@ -185,11 +185,12 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   still enough, or whether a deployment needs stronger prefill/decode
   isolation.
 - DS4 prompt-file frontier and semantic gates: include
-  `frontier_context_sweep` in the development matrix, and include the full
-  `ds4_story_recall.txt` prompt in prompt-file latency when validating
-  long-context correctness. The story gate requires all sixteen `Name=number`
-  assignments; the security-audit prompt remains latency/streaming observation
-  only. Initial baseline label:
+  `frontier_context_sweep` and `ds4_story_recall_semantic` in the development
+  matrix. The story gate uses the full `ds4_story_recall.txt` prompt with its
+  own 128-token answer budget so it does not change the 59K/124K latency
+  phase's 64-token measurement shape. The story gate requires all sixteen
+  `Name=number` assignments; the security-audit prompt remains
+  latency/streaming observation only. Initial baseline label:
   `20260524_ds4_harness_frontier_semantic_baseline`.
 
 The convenience profile `scripts/run_sm120_local_quality_gates.sh` wires the

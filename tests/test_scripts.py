@@ -233,6 +233,20 @@ def test_b200_baseline_exposes_frontier_context_sweep_phase():
     assert '"${SCRIPT_DIR}/run_frontier_context_sweep.sh"' in script
 
 
+def test_b200_baseline_exposes_ds4_story_recall_semantic_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ds4_story_recall_semantic" in script
+    assert 'RUN_DS4_STORY_RECALL_SEMANTIC="${RUN_DS4_STORY_RECALL_SEMANTIC:-0}"' in script
+    assert 'DS4_STORY_RECALL_MAX_TOKENS="${DS4_STORY_RECALL_MAX_TOKENS:-128}"' in script
+    assert '"${variant_dir}/ds4_story_recall_semantic"' in script
+    assert 'LONG_CONTEXT_LATENCY_LINE_COUNTS=""' in script
+    assert 'LONG_CONTEXT_LATENCY_PROMPT_FILES="${DS4_STORY_RECALL_PROMPT_FILE}"' in script
+    assert '"${SCRIPT_DIR}/run_long_context_latency_matrix.sh"' in script
+
+
 def test_b200_baseline_exposes_long_context_decode_concurrency_phase():
     script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
         encoding="utf-8"
@@ -331,11 +345,12 @@ def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
     assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-disabled}"' in script
     assert 'RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-0}"' in script
     assert 'RUN_LONG_CONTEXT_DECODE_CONCURRENCY="${RUN_LONG_CONTEXT_DECODE_CONCURRENCY:-1}"' in script
-    assert 'LONG_CONTEXT_LATENCY_PROMPT_FILES="${LONG_CONTEXT_LATENCY_PROMPT_FILES:-${REPO_ROOT}/prompts/long_context/ds4_story_recall.txt}"' in script
+    assert 'RUN_DS4_STORY_RECALL_SEMANTIC="${RUN_DS4_STORY_RECALL_SEMANTIC:-1}"' in script
     assert 'LM_EVAL_LIMIT="${LM_EVAL_LIMIT:-200}"' in script
     assert "long_context_decode_concurrency" in script
     assert "bench_random_prefill_sweep" in script
     assert "frontier_context_sweep" in script
+    assert "ds4_story_recall_semantic" in script
     assert "long_context_mixed_arrival" in script
     assert "long_context_latency_matrix" in script
     assert "streaming_pressure_matrix" in script
@@ -453,10 +468,11 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
 
     assert "USER_FEEDBACK_MATRIX_LABEL" in script
     assert 'RUN_USER_FEEDBACK_ISSUE10="${RUN_USER_FEEDBACK_ISSUE10:-1}"' in script
-    assert "long_context_latency_matrix,frontier_context_sweep,long_context_decode_concurrency" in script
-    assert 'LONG_CONTEXT_LATENCY_PROMPT_FILES="${LONG_CONTEXT_LATENCY_PROMPT_FILES:-${REPO_ROOT}/prompts/long_context/ds4_story_recall.txt}"' in script
+    assert "long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency" in script
     assert "frontier_context_sweep" in script
     assert 'RUN_FRONTIER_CONTEXT_SWEEP="${RUN_FRONTIER_CONTEXT_SWEEP:-1}"' in script
+    assert 'RUN_DS4_STORY_RECALL_SEMANTIC="${RUN_DS4_STORY_RECALL_SEMANTIC:-1}"' in script
+    assert 'DS4_STORY_RECALL_MAX_TOKENS="${DS4_STORY_RECALL_MAX_TOKENS:-128}"' in script
     assert "decode_then_59k:1900:1900:after_first_token" in script
     assert "decode_then_124k:4000:4000:after_first_token" in script
     assert "issue7_5k_c4:4:3:192:128" in script

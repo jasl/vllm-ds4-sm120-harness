@@ -1283,8 +1283,9 @@ New development observations:
 - `frontier_context_sweep` is included in local quality and user-feedback
   matrix summaries, but it is not a PR hard gate until the first stable
   same-host baseline is accepted.
-- Story recall semantic failure is a prompt-file correctness failure for the
-  full long-context latency matrix.
+- `ds4_story_recall_semantic` is a separate prompt-file correctness phase with
+  a 128-token answer budget; keep it separate from the existing 59K/124K
+  latency phase so that latency max-token settings remain comparable.
 - Invalid inference experiments after this baseline must have their code
   removed and only be recorded in rejected notes.
 

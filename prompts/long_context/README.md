@@ -15,9 +15,9 @@ The copied files are distributed under the ds4.c MIT license in
 
 Harness behavior:
 
-- `ds4_story_recall.txt` has a semantic gate in
-  `long-context-latency-matrix`: all sixteen `Name=number` assignments must be
-  present in the assistant response.
+- `ds4_story_recall.txt` has a semantic gate through the
+  `ds4_story_recall_semantic` baseline phase: all sixteen `Name=number`
+  assignments must be present in the assistant response.
 - `ds4_security_audit.txt` is used as a realistic long agent/security prompt
   for latency and streaming observations. The harness copy is kept public-safe
   and should not be overwritten from a local working tree without reviewing
