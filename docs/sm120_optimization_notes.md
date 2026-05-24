@@ -1344,6 +1344,20 @@ New development observations:
 - Invalid inference experiments after this baseline must have their code
   removed and only be recorded in rejected notes.
 
+DS4 inference audit follow-up:
+
+- The DS4 native engine is single-session and serialized at the inference
+  worker, so its implementation is not directly portable to vLLM's continuous
+  batching scheduler.
+- The parts worth absorbing are the engineering shape: fixed prompt frontier
+  measurement, semantic long-prompt recall, exact KV/prefix-state thinking,
+  and explicit safety around huge local model runs.
+- `scripts/run_sm120_ds4_absorption_stress.sh` packages that safety shape for
+  vLLM validation. By default it runs the user-feedback matrix and the safe
+  issue #10 proxy, then records driver/GPU health snapshots around each phase.
+  The known issue #8 128K-class crash proxy and the issue #10 128K-class proxy
+  are opt-in only through their `*_ALLOW_HOST_REBOOT_RISK=1` guards.
+
 ## Must-Fix Crash Backlog, 2026-05-25
 
 Keep these outside the default user-feedback matrix, but treat them as required
@@ -1389,6 +1403,10 @@ stable:
   and `FULL_AND_PIECEWISE`. The pasted log reaches checkpoint load and MoE
   prepare/finalize, but does not yet include the failing kernel or driver
   event.
+- Harness note: the safe SM120 issue #10 proxy intentionally keeps streaming
+  pressure at the 59K-class frontier. The 124K streaming shape belongs to the
+  explicit high-risk path because it does not fit the safe
+  `SERVE_MAX_MODEL_LEN=65536` budget once output tokens are included.
 
 Next data to request or collect for the crash backlog: full serve log tail,
 kernel/Xid or NVRM/UVM lines from the failing boot, whether the peer node also

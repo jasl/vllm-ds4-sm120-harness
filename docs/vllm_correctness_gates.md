@@ -213,6 +213,22 @@ profile hard-gates GSM8K limit-200 at `exact_match_flexible >= 0.94` and
 `exact_match_strict >= 0.925`, so any further correctness drop blocks the
 matrix rather than becoming a narrative footnote.
 
+For DS4-inspired follow-up work, use
+`scripts/run_sm120_ds4_absorption_stress.sh` as the combined validation wrapper
+after a candidate has passed a narrower probe. Its default path runs the
+user-feedback matrix plus the safe 59K-class issue #10 proxy and captures
+`nvidia-smi` and boot-kernel GPU signal snapshots before and after each phase.
+Known crash shapes stay opt-in:
+
+- `RUN_DS4_STRESS_ISSUE8_RECHECK=1 ISSUE8_ALLOW_HOST_REBOOT_RISK=1` replays the
+  2026-05-25 issue #8 128K-class no-MTP, prefix-cache-enabled, C=1/C=2,
+  1024-output-token proxy.
+- `RUN_DS4_STRESS_ISSUE10_HIGH_RISK=1 ISSUE10_ALLOW_HOST_REBOOT_RISK=1` enables
+  the issue #10 128K-class startup proxy path.
+
+Do not mix those opt-in crash probes into a promotion baseline unless the host
+can be rebooted afterward and partial artifacts are clearly labeled.
+
 ### User-Reported External Gates
 
 Keep the following as external/user-reported gates until a local four-card
@@ -258,7 +274,8 @@ reported four-card or 512K/1M shapes:
   `--max-num-batched-tokens 16384`; the RTX PRO 6000 proxy defaults to
   `SERVE_MAX_MODEL_LEN=65536`, `ISSUE10_GPU_MEMORY_UTILIZATION=0.977`, and
   `ISSUE10_MAX_NUM_BATCHED_TOKENS=4096` so the public script is safe enough for
-  regular startup and prefix-cache checks. For exact low-context recipe replay,
+  regular startup, prefix-cache, and 59K-class streaming checks. For exact
+  low-context recipe replay,
   set `ISSUE10_MAX_NUM_BATCHED_TOKENS=16384`; for exact memory replay on hosts
   with enough headroom, also set `ISSUE10_GPU_MEMORY_UTILIZATION=0.83`. The
   128K-class proxy is an isolation/debug run, not a default gate: set

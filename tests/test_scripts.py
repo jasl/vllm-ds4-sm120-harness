@@ -428,7 +428,8 @@ def test_sm120_issue10_startup_gate_matches_reported_gb10_shape_proxy():
     assert "--max-num-batched-tokens ${ISSUE10_MAX_NUM_BATCHED_TOKENS}" in script
     assert "--max-num-seqs ${ISSUE10_MAX_NUM_SEQS}" in script
     assert "--enable-chunked-prefill" in script
-    assert "issue10_c2_124k:2:1:4000:64" in script
+    assert "issue10_c2_59k:2:1:1900:64" in script
+    assert "issue10_c2_124k:2:1:4000:64" not in script
     assert "--disable-custom-all-reduce" in script
     assert "FULL_AND_PIECEWISE" in script
     assert "issue10_startup_latency" in script
@@ -494,6 +495,36 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
     assert "user_feedback_matrix_summary.md" in script
 
 
+def test_sm120_ds4_absorption_stress_matrix_collects_safe_and_opt_in_crash_shapes():
+    script = (ROOT / "scripts" / "run_sm120_ds4_absorption_stress.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "DS4_ABSORPTION_STRESS_LABEL" in script
+    assert 'RUN_DS4_STRESS_USER_FEEDBACK="${RUN_DS4_STRESS_USER_FEEDBACK:-1}"' in script
+    assert 'RUN_DS4_STRESS_ISSUE10_SAFE="${RUN_DS4_STRESS_ISSUE10_SAFE:-1}"' in script
+    assert 'RUN_DS4_STRESS_ISSUE8_RECHECK="${RUN_DS4_STRESS_ISSUE8_RECHECK:-0}"' in script
+    assert 'RUN_DS4_STRESS_ISSUE10_HIGH_RISK="${RUN_DS4_STRESS_ISSUE10_HIGH_RISK:-0}"' in script
+    assert "capture_driver_health" in script
+    assert "journalctl -b -k" in script
+    assert "nvidia-smi" in script
+    assert "phase_exit_codes.tsv" in script
+    assert "run_sm120_user_feedback_matrix.sh" in script
+    assert "run_sm120_issue10_startup_gate.sh" in script
+    assert "20260525_issue8_local_proxy_124k_c2_decode1024" in script
+    assert "ISSUE8_ALLOW_HOST_REBOOT_RISK" in script
+    assert "Refusing to run the issue #8 128K-class crash recheck by default" in script
+    assert "LONG_CONTEXT_DECODE_MAX_TOKENS=1024" in script
+    assert "LONG_CONTEXT_DECODE_LINE_COUNTS=4000" in script
+    assert "SERVE_PREFIX_CACHE_MODE=enabled" in script
+    assert "B200_BASELINE_VARIANTS=nomtp" in script
+    assert "--max-num-batched-tokens 4176" in script
+    assert "--max-num-seqs 8" in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert "STREAMING_PRESSURE_MATRIX_CASE_SPECS" in script
+    assert "issue10_c2_124k:2:1:4000:64" in script
+
+
 def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates():
     docs = (ROOT / "docs" / "vllm_correctness_gates.md").read_text(
         encoding="utf-8"
@@ -509,6 +540,9 @@ def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates()
     assert "github.com/jasl/vllm/issues/10" in docs
     assert "forums.developer.nvidia.com" in docs
     assert "run_sm120_issue10_startup_gate.sh" in docs
+    assert "run_sm120_ds4_absorption_stress.sh" in docs
+    assert "RUN_DS4_STRESS_ISSUE8_RECHECK=1" in docs
+    assert "ISSUE8_ALLOW_HOST_REBOOT_RISK=1" in docs
     assert "RUN_USER_FEEDBACK_ISSUE10=1" in docs
     assert "partial artifacts separate from promotion baselines" in docs
     assert "GB10 dual-node reboot-only reproduction" in docs
