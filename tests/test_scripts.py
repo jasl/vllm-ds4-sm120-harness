@@ -418,10 +418,13 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
     )
 
     assert "USER_FEEDBACK_MATRIX_LABEL" in script
+    assert 'RUN_USER_FEEDBACK_ISSUE10="${RUN_USER_FEEDBACK_ISSUE10:-1}"' in script
     assert "long_context_latency_matrix,long_context_decode_concurrency" in script
     assert "decode_then_59k:1900:1900:after_first_token" in script
     assert "decode_then_124k:4000:4000:after_first_token" in script
     assert "issue7_5k_c4:4:3:192:128" in script
+    assert "USER_FEEDBACK_ISSUE10_OUT_DIR" in script
+    assert "run_sm120_issue10_startup_gate.sh" in script
     assert "prefix_cache_stress" in script
     assert "run_sm120_mtp1_prefix_cache_diagnostics.sh" in script
     assert (

@@ -70,6 +70,30 @@ def test_summarize_runtime_stats_reads_vllm_metrics_and_serve_log(tmp_path):
         0.854,
         0.52,
     ]
+    assert summary["serve_log"]["error_signal_count"] == 0
+
+
+def test_summarize_runtime_stats_counts_serve_error_signals(tmp_path):
+    serve_log = tmp_path / "serve.log"
+    serve_log.write_text(
+        "\n".join(
+            [
+                "ERROR CUDA: unspecified launch failure in sparse MLA prefill",
+                "No available shared memory broadcast block found in 60 seconds",
+                "NVRM: Xid 79, GPU has fallen off the bus",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    summary = summarize_runtime_stats(None, serve_log)
+
+    assert summary["serve_log"]["available"] is True
+    assert summary["serve_log"]["error_signal_count"] == 3
+    assert summary["serve_log"]["cuda_error_count"] == 1
+    assert summary["serve_log"]["nccl_error_count"] == 1
+    assert summary["serve_log"]["driver_error_count"] == 1
 
 
 def test_runtime_summary_cli_writes_json_and_markdown(tmp_path):
@@ -110,6 +134,7 @@ def test_runtime_summary_cli_writes_json_and_markdown(tmp_path):
     assert "Prefill tokens delta" in report
     assert "Decode tokens delta" in report
     assert "Prefix cache hit rate" in report
+    assert "Error signals" in report
 
 
 def test_write_runtime_markdown_reports_unavailable_inputs(tmp_path):

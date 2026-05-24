@@ -288,6 +288,99 @@ def _collect_prefix_cache_diagnostic_rows(run_label: str, run_root: Path) -> lis
     return rows
 
 
+def _artifact_dir(run_root: Path, raw_path: str | Path | None) -> Path | None:
+    if not raw_path:
+        return None
+    artifact_dir = Path(raw_path)
+    if not artifact_dir.is_absolute():
+        artifact_dir = run_root / artifact_dir
+    return artifact_dir
+
+
+def _collect_monitoring_rows(run_label: str, run_root: Path) -> list[Json]:
+    rows: list[Json] = []
+    for phase in _phase_exit_codes(run_root):
+        artifact_dir = _artifact_dir(run_root, phase.get("artifact_dir"))
+        gpu_stats = _load_json(artifact_dir / "gpu_stats_summary.json") if artifact_dir else None
+        runtime_stats = (
+            _load_json(artifact_dir / "runtime_stats_summary.json") if artifact_dir else None
+        )
+        gpu_overall = (
+            gpu_stats.get("overall", {})
+            if isinstance(gpu_stats, dict) and isinstance(gpu_stats.get("overall"), dict)
+            else {}
+        )
+        metrics = (
+            runtime_stats.get("metrics", {})
+            if isinstance(runtime_stats, dict)
+            and isinstance(runtime_stats.get("metrics"), dict)
+            else {}
+        )
+        serve_log = (
+            runtime_stats.get("serve_log", {})
+            if isinstance(runtime_stats, dict)
+            and isinstance(runtime_stats.get("serve_log"), dict)
+            else {}
+        )
+        server_unresponsive = False
+        if artifact_dir and artifact_dir.exists():
+            server_unresponsive = (artifact_dir / "server_unresponsive.txt").exists() or any(
+                artifact_dir.glob("*.server_unresponsive")
+            )
+
+        rows.append(
+            {
+                "run": run_label,
+                "variant": phase.get("variant"),
+                "phase": phase.get("phase"),
+                "exit_code": phase.get("exit_code"),
+                "server_unresponsive": server_unresponsive,
+                "gpu_samples": (
+                    gpu_stats.get("sample_count") if isinstance(gpu_stats, dict) else None
+                ),
+                "gpu_utilization_avg": _round_float(
+                    gpu_overall.get("gpu_utilization_percent_avg")
+                ),
+                "gpu_utilization_max": _round_float(
+                    gpu_overall.get("gpu_utilization_percent_max")
+                ),
+                "gpu_memory_used_percent_max": _round_float(
+                    gpu_overall.get("memory_used_percent_max")
+                ),
+                "gpu_temp_max_c": _round_float(gpu_overall.get("temperature_gpu_c_max")),
+                "gpu_memory_temp_max_c": _round_float(
+                    gpu_overall.get("temperature_memory_c_max")
+                ),
+                "gpu_power_max_w": _round_float(gpu_overall.get("power_draw_w_max")),
+                "runtime_metric_samples": metrics.get("sample_count"),
+                "runtime_running_requests_max": _round_float(
+                    metrics.get("running_requests_max")
+                ),
+                "runtime_waiting_requests_max": _round_float(
+                    metrics.get("waiting_requests_max")
+                ),
+                "runtime_kv_cache_usage_percent_max": _round_float(
+                    metrics.get("gpu_kv_cache_usage_percent_max")
+                ),
+                "runtime_preemptions_delta": _round_float(metrics.get("preemptions_delta")),
+                "runtime_prefill_tps_avg": _round_float(
+                    metrics.get("prefill_throughput_tok_s_avg")
+                    or serve_log.get("prefill_throughput_tok_s_avg")
+                ),
+                "runtime_decode_tps_avg": _round_float(
+                    metrics.get("decode_throughput_tok_s_avg")
+                    or serve_log.get("decode_throughput_tok_s_avg")
+                ),
+                "serve_log_error_signals": serve_log.get("error_signal_count"),
+                "cuda_errors": serve_log.get("cuda_error_count"),
+                "nccl_errors": serve_log.get("nccl_error_count"),
+                "driver_errors": serve_log.get("driver_error_count"),
+                "engine_errors": serve_log.get("engine_error_count"),
+            }
+        )
+    return rows
+
+
 def summarize_run(label: str, run_root: Path) -> Json:
     run_root = run_root.resolve()
     result: Json = {
@@ -302,6 +395,7 @@ def summarize_run(label: str, run_root: Path) -> Json:
         "gsm8k": [],
         "prefill_sweep": [],
         "prefix_cache_stress": [],
+        "monitoring": [],
     }
     for variant_dir in _variant_dirs(run_root):
         variant = variant_dir.name
@@ -351,6 +445,7 @@ def summarize_run(label: str, run_root: Path) -> Json:
     result["prefix_cache_stress"].extend(
         _collect_prefix_cache_diagnostic_rows(label, run_root)
     )
+    result["monitoring"].extend(_collect_monitoring_rows(label, run_root))
     phase_codes = [row["exit_code"] for row in result["phase_exit_codes"]]
     result["ok"] = bool(phase_codes) and all(code == 0 for code in phase_codes)
     return result
@@ -364,6 +459,7 @@ def summarize_runs(runs: list[tuple[str, Path]]) -> Json:
         "tradeoff_policy": {
             "primary": [
                 "correctness and server stability must not regress",
+                "serve, CUDA, NCCL, and driver error signals are first-class regressions",
                 "C=1/C=2/C=4 latency and ITL are prioritized for edge deployment",
                 "already-started decode stream fairness beats second cold-prefill TTFT",
             ],
@@ -417,6 +513,7 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
     gsm_rows: list[list[Any]] = []
     prefill_rows: list[list[Any]] = []
     prefix_rows: list[list[Any]] = []
+    monitoring_rows: list[list[Any]] = []
 
     for run in summary["runs"]:
         for phase in run["phase_exit_codes"]:
@@ -532,6 +629,30 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                     row["concurrent_hit_rate_mean"],
                 ]
             )
+        for row in run["monitoring"]:
+            monitoring_rows.append(
+                [
+                    row["run"],
+                    row["variant"],
+                    row["phase"],
+                    row["exit_code"],
+                    row["server_unresponsive"],
+                    row["gpu_samples"],
+                    row["gpu_utilization_avg"],
+                    row["gpu_memory_used_percent_max"],
+                    row["gpu_temp_max_c"],
+                    row["runtime_metric_samples"],
+                    row["runtime_running_requests_max"],
+                    row["runtime_waiting_requests_max"],
+                    row["runtime_kv_cache_usage_percent_max"],
+                    row["runtime_preemptions_delta"],
+                    row["serve_log_error_signals"],
+                    row["cuda_errors"],
+                    row["nccl_errors"],
+                    row["driver_errors"],
+                    row["engine_errors"],
+                ]
+            )
 
     sections = [
         ("Phase Exit Codes", ["Run", "Variant", "Phase", "Exit"], phase_rows),
@@ -637,6 +758,31 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                 "Concurrent Hit Rate",
             ],
             prefix_rows,
+        ),
+        (
+            "Runtime Monitoring",
+            [
+                "Run",
+                "Variant",
+                "Phase",
+                "Exit",
+                "Server Unresponsive",
+                "GPU Samples",
+                "GPU Util Avg",
+                "GPU Mem Max %",
+                "GPU Temp Max C",
+                "Runtime Samples",
+                "Running Max",
+                "Waiting Max",
+                "KV Cache Max %",
+                "Preemptions",
+                "Serve Error Signals",
+                "CUDA Errors",
+                "NCCL Errors",
+                "Driver Errors",
+                "Engine Errors",
+            ],
+            monitoring_rows,
         ),
     ]
     for title, headers, rows in sections:

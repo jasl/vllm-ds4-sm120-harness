@@ -232,6 +232,27 @@ _SPEC_RE = re.compile(
     r"Per-position acceptance rate:\s*([^,]+(?:,\s*[^,]+)*),\s*"
     r"Avg Draft acceptance rate:\s*([0-9.]+)%",
 )
+_SERVE_LOG_ERROR_PATTERNS = {
+    "cuda_error_count": re.compile(
+        r"(CUDA.*(error|unspecified launch failure|illegal memory access)|"
+        r"unspecified launch failure|illegal memory access)",
+        re.IGNORECASE,
+    ),
+    "nccl_error_count": re.compile(
+        r"(NCCL.*(error|failed|failure|timeout|unhandled|warn)|"
+        r"No available shared memory broadcast block)",
+        re.IGNORECASE,
+    ),
+    "driver_error_count": re.compile(
+        r"\b(NVRM|Xid|UVM|GPU has fallen off the bus)\b",
+        re.IGNORECASE,
+    ),
+    "engine_error_count": re.compile(
+        r"((EngineCore|EngineCoreProc|engine core).*(error|exception|failed|died|dead)|"
+        r"Traceback|RuntimeError)",
+        re.IGNORECASE,
+    ),
+}
 
 
 def summarize_serve_log(path: Path | None) -> dict[str, Any]:
@@ -253,8 +274,18 @@ def summarize_serve_log(path: Path | None) -> dict[str, Any]:
     drafted_tokens: list[float] = []
     avg_draft_acceptance_rate: list[float] = []
     per_position_values: list[list[float]] = []
+    error_counts = {key: 0 for key in _SERVE_LOG_ERROR_PATTERNS}
+    error_signal_count = 0
 
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        matched_error = False
+        for key, pattern in _SERVE_LOG_ERROR_PATTERNS.items():
+            if pattern.search(line):
+                error_counts[key] += 1
+                matched_error = True
+        if matched_error:
+            error_signal_count += 1
+
         logger_match = _LOGGER_RE.search(line)
         if logger_match:
             values = [float(value) for value in logger_match.groups()]
@@ -287,12 +318,14 @@ def summarize_serve_log(path: Path | None) -> dict[str, Any]:
                 [float(value.strip()) for value in raw_per_position.split(",") if value.strip()]
             )
 
-    if not prefill and not mean_acceptance_length:
+    if not prefill and not mean_acceptance_length and not error_signal_count:
         return {"available": False, "reason": f"no vLLM runtime log lines parsed from: {path}"}
 
     summary: dict[str, Any] = {
         "available": True,
         "samples": len(prefill),
+        "error_signal_count": error_signal_count,
+        **error_counts,
     }
     metric_lists = {
         "prefill_throughput_tok_s": prefill,
@@ -391,13 +424,23 @@ def write_runtime_markdown(path: Path, summary: dict[str, Any]) -> None:
     lines.extend(["## Serve Log", ""])
     if not serve_log.get("available"):
         lines.extend(
-            ["- Available: no", f"- Reason: {serve_log.get('reason', 'no samples')}", ""]
+            [
+                "- Available: no",
+                f"- Reason: {serve_log.get('reason', 'no samples')}",
+                "- Error signals: n/a",
+                "",
+            ]
         )
     else:
         lines.extend(
             [
                 "- Available: yes",
                 f"- Samples: {serve_log.get('samples', 0)}",
+                f"- Error signals: {_format_value(serve_log.get('error_signal_count'))}",
+                f"- CUDA errors: {_format_value(serve_log.get('cuda_error_count'))}",
+                f"- NCCL errors: {_format_value(serve_log.get('nccl_error_count'))}",
+                f"- Driver errors: {_format_value(serve_log.get('driver_error_count'))}",
+                f"- Engine errors: {_format_value(serve_log.get('engine_error_count'))}",
                 (
                     "- Avg prefill throughput: "
                     f"{_format_value(serve_log.get('prefill_throughput_tok_s_avg'), ' tok/s')}"
