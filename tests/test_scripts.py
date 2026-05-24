@@ -343,6 +343,49 @@ def test_sm120_mtp1_prefix_cache_diagnostics_runs_kernel_path_controls():
     assert '"${SCRIPT_DIR}/run_sm120_mtp1_prefix_cache_stability.sh"' in script
 
 
+def test_sm120_issue10_startup_gate_matches_reported_gb10_shape_proxy():
+    script = (ROOT / "scripts" / "run_sm120_issue10_startup_gate.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-mtp}"' in script
+    assert 'B200_TENSOR_PARALLEL_SIZE="${B200_TENSOR_PARALLEL_SIZE:-2}"' in script
+    assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-65536}"' in script
+    assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-enabled}"' in script
+    assert 'B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"' in script
+    assert 'B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"' in script
+    assert 'VLLM_TRITON_MLA_SPARSE="${VLLM_TRITON_MLA_SPARSE:-1}"' in script
+    assert (
+        'FLASHINFER_DISABLE_VERSION_CHECK="${FLASHINFER_DISABLE_VERSION_CHECK:-1}"'
+        in script
+    )
+    assert (
+        'VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-1}"'
+        in script
+    )
+    assert (
+        'ISSUE10_GPU_MEMORY_UTILIZATION="${ISSUE10_GPU_MEMORY_UTILIZATION:-0.977}"'
+        in script
+    )
+    assert (
+        'ISSUE10_MAX_NUM_BATCHED_TOKENS="${ISSUE10_MAX_NUM_BATCHED_TOKENS:-4096}"'
+        in script
+    )
+    assert 'ISSUE10_MAX_NUM_SEQS="${ISSUE10_MAX_NUM_SEQS:-4}"' in script
+    assert 'ISSUE10_ALLOW_HOST_REBOOT_RISK="${ISSUE10_ALLOW_HOST_REBOOT_RISK:-0}"' in script
+    assert "Refusing to run the issue #10 128K-class SM120 proxy by default" in script
+    assert "SERVE_MAX_MODEL_LEN >= 131072" in script
+    assert "--gpu-memory-utilization ${ISSUE10_GPU_MEMORY_UTILIZATION}" in script
+    assert "--max-num-batched-tokens ${ISSUE10_MAX_NUM_BATCHED_TOKENS}" in script
+    assert "--max-num-seqs ${ISSUE10_MAX_NUM_SEQS}" in script
+    assert "--enable-chunked-prefill" in script
+    assert "--disable-custom-all-reduce" in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert "issue10_startup_latency" in script
+    assert "issue10_streaming_pressure" in script
+    assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
+
+
 def test_b200_baseline_records_sparse_mla_decode_diagnostic_env():
     script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
 
@@ -406,7 +449,9 @@ def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates()
     assert "issuecomment-4505504798" in docs
     assert "issuecomment-4507780873" in docs
     assert "github.com/jasl/vllm/issues/8" in docs
+    assert "github.com/jasl/vllm/issues/10" in docs
     assert "forums.developer.nvidia.com" in docs
+    assert "run_sm120_issue10_startup_gate.sh" in docs
     assert "prefix_cache_stress" in docs
     assert "bench_random_prefill_sweep" in docs
     assert "long_context_decode_concurrency" in docs

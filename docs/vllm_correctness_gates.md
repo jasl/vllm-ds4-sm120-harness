@@ -233,6 +233,38 @@ reported four-card or 512K/1M shapes:
   `max_num_batched_tokens`, `max_num_seqs`, prefix-cache mode, sampler/all-reduce
   flags, and NCCL/network environment before treating a 20-40% delta as a vLLM
   kernel regression.
+- TP=2 GB10 startup/crash proxy for
+  [jasl/vllm issue #10](https://github.com/jasl/vllm/issues/10): until the
+  GB10 cluster is available, run `scripts/run_sm120_issue10_startup_gate.sh`
+  on the dual-card RTX PRO 6000 host. This is a best-effort SM120 proxy, not a
+  full reproduction of the SM121 dual-node failure. It preserves the risky
+  serve knobs from the report where the 96GB memory budget allows it: MTP=2,
+  prefix cache enabled, chunked prefill, FP8 KV, block size 256,
+  `max_num_seqs=4`, `--disable-custom-all-reduce`, and FULL_AND_PIECEWISE CUDA
+  graph. The report used `--gpu-memory-utilization 0.83` and
+  `--max-num-batched-tokens 16384`; the RTX PRO 6000 proxy defaults to
+  `SERVE_MAX_MODEL_LEN=65536`, `ISSUE10_GPU_MEMORY_UTILIZATION=0.977`, and
+  `ISSUE10_MAX_NUM_BATCHED_TOKENS=4096` so the public script is safe enough for
+  regular startup and prefix-cache checks. For exact low-context recipe replay,
+  set `ISSUE10_MAX_NUM_BATCHED_TOKENS=16384`; for exact memory replay on hosts
+  with enough headroom, also set `ISSUE10_GPU_MEMORY_UTILIZATION=0.83`. The
+  128K-class proxy is an isolation/debug run, not a default gate: set
+  `SERVE_MAX_MODEL_LEN=131072`, matching line-count overrides, and
+  `ISSUE10_ALLOW_HOST_REBOOT_RISK=1` only on a host where an OS reboot is
+  acceptable, because this shape has produced NVRM/UVM fatal driver state on
+  dual-card SM120. The first observed Python-side failure in that 128K proxy was
+  `Triton Error [CUDA]: unspecified launch failure` from sparse MLA prefill
+  (`accumulate_indexed_sparse_mla_attention_chunk` /
+  `_accumulate_indexed_attention_chunk_multihead_kernel`), followed by NCCL
+  heartbeat disconnects and NVRM/UVM fatal state. Next isolation knobs should
+  keep FULL_AND_PIECEWISE CUDA graph enabled and compare
+  `VLLM_TRITON_MLA_SPARSE=1` versus `0`, then vary MTP and prefix cache
+  independently. Treat
+  startup timeout, server exit before readiness, post-probe unresponsiveness,
+  Xid/driver errors, or repeated health disconnects as evidence for further
+  isolation. If the proxy passes, keep the wording narrow: the SM120
+  scaled-down path stayed healthy; the original GB10 393K dual-node report
+  still needs GB10 validation.
 
 The convenience profile `scripts/run_sm120_external_reported_gates.sh` refuses
 to run unless `EXTERNAL_GATE_MAX_MODEL_LEN` is set, so 512K and 1M evidence is
