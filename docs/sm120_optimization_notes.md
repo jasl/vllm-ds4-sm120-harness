@@ -319,6 +319,74 @@ GSM8K flexible correctness, prefix-cache stability, or server responsiveness.
 The 256K+ / TP=4 path remains an external gate rather than a claim from this
 matrix.
 
+### DS4-Inspired Active Decode 1/16 Very-Long Prefill Cap
+
+After adding the DS4-style frontier and semantic gates, the first retained
+vLLM inference-side follow-up applied the DS4 serving principle that a live
+local session should keep making progress while new long prompt work arrives.
+The change is deliberately internal: no public knob is added, pure C=1 prefill
+is unchanged, and the no-active-decode waiting-request caps remain unchanged.
+Only the active-decode plus very-long-prefill branch tightens from 1/8 to 1/16
+of `max_num_batched_tokens`.
+
+Fixed user-feedback A/B, prefix cache disabled, 131K max-model-len, 4096
+max-num-batched-tokens, TP=2, MTP=2, `FULL_AND_PIECEWISE`:
+
+| Shape | Metric | Baseline | Active-Decode 1/16 | Delta |
+| --- | --- | ---: | ---: | ---: |
+| 59K C=1 cold | TTFT mean | 12.844 s | 12.233 s | -4.8% |
+| 59K C=2 cold | TTFT mean | 20.950 s | 20.149 s | -3.8% |
+| 59K C=2 cold | Decode min/max | 0.073 | 0.103 | +41.1% |
+| 59K C=2 cold | ITL P99 | 0.289 s | 0.215 s | -25.6% |
+| 124K C=1 cold | TTFT mean | 33.496 s | 31.090 s | -7.2% |
+| 124K C=2 cold | TTFT mean | 53.426 s | 48.404 s | -9.4% |
+| 124K C=2 cold | Decode min/max | 0.095 | 0.120 | +26.3% |
+| 124K C=2 cold | ITL P99 | 0.288 s | 0.239 s | -17.0% |
+| 124K decode-concurrency C=2 | Decode min | 19.161 tok/s | 28.266 tok/s | +47.5% |
+| 124K decode-concurrency C=2 | Decode min/max | 0.178 | 0.270 | +51.7% |
+| 124K decode-concurrency C=2 | ITL P99 | 0.305 s | 0.237 s | -22.3% |
+| Streaming pressure | Max TTFT | 66.714 s | 62.018 s | -7.0% |
+| Streaming pressure | ITL P99 | 1.209 s | 0.725 s | -40.0% |
+
+Mixed-arrival behavior confirms the intended tradeoff:
+
+| Case | Metric | Baseline | Active-Decode 1/16 |
+| --- | --- | ---: | ---: |
+| decode then 59K long | Decode min/max | 0.099 | 0.136 |
+| decode then 59K long | Secondary TTFT | 14.743 s | 14.871 s |
+| decode then 124K long | Decode min/max | 0.300 | 0.390 |
+| decode then 124K long | Secondary TTFT | 31.934 s | 37.951 s |
+| long then short | Decode min/max | 0.466 | 0.573 |
+| long then short | Secondary TTFT | 30.578 s | 30.248 s |
+
+The only meaningful cost is `decode_then_124K` secondary TTFT, where the new
+long request waits longer because the already-started decoder gets protected.
+This matches the current tradeoff policy for edge/local deployments: already
+streaming output smoothness is prioritized over a second cold long-prefill
+request's TTFT.
+
+Short-context and correctness gates on the retained candidate:
+
+| Gate | Result |
+| --- | --- |
+| HF/MT-Bench short bench C=1/2/4/8/16/24 | all 80/80 successful; output tok/s `162.68 / 255.96 / 393.49 / 562.84 / 797.34 / 919.69` |
+| GSM8K 5-shot limit-200, C=4 | `exact_match_flexible=0.965`, `exact_match_strict=0.950` |
+| Random prefill sweep C=1, OSL=1 | 1K/4K/16K/64K all successful; mean TTFT `0.162 / 0.678 / 2.958 / 14.240 s` |
+| Issue #10 safe proxy | startup latency, prefix-cache stress, and streaming pressure all passed; streaming max TTFT `23.459 s`; driver health showed no Xid/UVM/fatal signals |
+
+Artifact labels:
+`20260525_ds4_absorption_safe_baseline_dev`,
+`20260525_ds4_active_decode_prefill_cap_ab`, and
+`20260525_ds4_active_decode_prefill_cap_short_correctness`,
+`20260525_ds4_active_decode_prefill_cap_issue10_safe`.
+
+Decision: keep the 1/16 very-long active-decode cap on the Dev branch. It
+improves the current user-feedback matrix and does not regress GSM8K,
+short-context bench, or random prefill. Re-run the full DS4 absorption matrix
+before PR-branch promotion, and keep >128K/four-card behavior as an external
+gate. This supersedes the earlier 1/8 decode-overlap cap as the active Dev
+candidate.
+
 ### Sparse SWA MTP Reorder Correctness Fix
 
 The 64K-class MTP=2 C=3/C=4 retrieval miss was traced to a metadata split
