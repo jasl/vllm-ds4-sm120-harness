@@ -384,12 +384,57 @@ Artifact labels:
 `20260525_ds4_high_risk_crash_recheck_dev`, and
 `20260525_issue8_high_risk_payload_recheck_dev`.
 
+Full post-change safe baseline:
+`20260525_active_decode_prefill_cap_full_baseline/20260525091003`.
+This reran the complete safe DS4 absorption set after the harness guardrail:
+primary user-feedback matrix, prefix-cache stress sweep, and issue #10 safe
+proxy. Root phases were `user_feedback_matrix=0` and `issue10_safe_proxy=0`;
+all primary phases and all prefix-cache filler cases exited `0`. Driver health
+stayed clean: no Xid, UVM, fatal, GPU-lost, CUDA, or NCCL error signals were
+reported, and both GPUs returned to idle after cleanup.
+
+Compared with `20260525_ds4_absorption_safe_baseline_dev/20260525065224`:
+
+| Shape | Metric | Safe baseline | Full post-change | Delta |
+| --- | --- | ---: | ---: | ---: |
+| 59K C=1 cold | TTFT mean | 12.844 s | 12.189 s | -5.1% |
+| 59K C=2 cold | TTFT mean | 20.950 s | 19.614 s | -6.4% |
+| 59K C=2 cold | Decode min/max | 0.073 | 0.221 | +202.7% |
+| 59K C=2 cold | ITL P99 | 0.289 s | 0.092 s | -68.2% |
+| 124K C=1 cold | TTFT mean | 33.496 s | 30.982 s | -7.5% |
+| 124K C=2 cold | TTFT mean | 53.426 s | 49.110 s | -8.1% |
+| 124K C=2 cold | Decode min/max | 0.095 | 0.276 | +190.5% |
+| 124K C=2 cold | ITL P99 | 0.288 s | 0.099 s | -65.6% |
+| 124K decode-concurrency C=2 | Decode min | 19.161 tok/s | 29.786 tok/s | +55.5% |
+| 124K decode-concurrency C=2 | ITL P99 | 0.305 s | 0.098 s | -67.9% |
+| Streaming pressure | Max TTFT | 66.714 s | 58.884 s | -11.7% |
+| Streaming pressure | ITL P99 | 1.209 s | 0.726 s | -40.0% |
+
+Mixed-arrival full-baseline results:
+
+| Case | Baseline decode min/max | Full post-change decode min/max | Secondary TTFT |
+| --- | ---: | ---: | ---: |
+| decode then 124K long | 0.300 | 0.403 | 32.111 s |
+| decode then 59K long | 0.099 | 0.304 | 13.426 s |
+| long then short | 0.466 | 0.548 | 30.355 s |
+
+No-regression gates in the full baseline:
+
+| Gate | Result |
+| --- | --- |
+| HF/MT-Bench short bench C=1/2/4/8/16/24 | all 80/80 successful; output tok/s `162.57 / 255.43 / 396.98 / 566.99 / 802.14 / 920.38` |
+| GSM8K 5-shot limit-200, C=4 | `exact_match_flexible=0.955`, `exact_match_strict=0.945` |
+| Random prefill sweep C=1, OSL=1 | 1K/4K/16K/64K all successful; mean TTFT `0.161 / 0.678 / 2.958 / 14.250 s` |
+| Frontier context sweep | both DS4 prompt files passed all 12 frontier cases, with zero failures |
+| DS4 story recall semantic | all 16 required `Name=number` facts matched |
+| Prefix-cache stress | fillers `100/400/800/1600/3200` all passed; concurrent hit rate rose from `0.283` to `0.956` across the sweep |
+| Issue #10 safe proxy | startup latency, prefix-cache stress, and streaming pressure all passed; issue #10 streaming max TTFT `22.689 s` |
+
 Decision: keep the 1/16 very-long active-decode cap on the Dev branch. It
 improves the current user-feedback matrix and does not regress GSM8K,
-short-context bench, or random prefill. Re-run the full DS4 absorption matrix
-before PR-branch promotion, and keep >128K/four-card behavior as an external
-gate. This supersedes the earlier 1/8 decode-overlap cap as the active Dev
-candidate.
+short-context bench, random prefill, prefix-cache stress, issue #10 safe proxy,
+or driver stability. Keep >128K/four-card behavior as an external gate. This
+supersedes the earlier 1/8 decode-overlap cap as the active Dev candidate.
 
 Harness follow-up: the first issue #8 high-risk wrapper run only reached
 `server_startup` because `run_sm120_ds4_absorption_stress.sh` set
