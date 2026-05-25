@@ -2067,6 +2067,49 @@ def test_b200_baseline_driver_rejects_unknown_phase_before_launch(tmp_path):
     assert not launched.exists()
 
 
+def test_b200_baseline_driver_rejects_explicit_phase_disabled_by_run_flag_before_launch(
+    tmp_path,
+):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    fake_vllm = tmp_path / "fake-vllm"
+    launched = tmp_path / "launched"
+    fake_vllm.write_text(
+        "#!/usr/bin/env sh\n"
+        f"printf launched > {launched}\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    out_dir = tmp_path / "baseline"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "VLLM_BIN": str(fake_vllm),
+        "OUT_DIR": str(out_dir),
+        "B200_BASELINE_PHASES": "long_context_decode_concurrency",
+        "RUN_LONG_CONTEXT_DECODE_CONCURRENCY": "0",
+    }
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_b200_baseline.sh")],
+        check=False,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 2
+    assert (
+        "B200 baseline phase long_context_decode_concurrency requires "
+        "RUN_LONG_CONTEXT_DECODE_CONCURRENCY=1"
+    ) in result.stderr
+    assert not launched.exists()
+
+
 def test_b200_baseline_driver_preflights_lm_eval_before_launch(tmp_path):
     fake_python = tmp_path / "fake-python"
     fake_python.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")

@@ -398,6 +398,12 @@ Harness follow-up: the first issue #8 high-risk wrapper run only reached
 The wrapper was corrected, and the payload was rerun directly with the explicit
 flag before recording the issue #8 high-risk result above.
 
+Harness guardrail: `run_b200_baseline.sh` now rejects an explicitly listed
+`B200_BASELINE_PHASES` entry before launch when the matching `RUN_*` flag is
+disabled. This preserves the old `all` behavior, where disabled optional phases
+stay skipped, but prevents another targeted high-risk gate from silently running
+only `server_startup`.
+
 ### Sparse SWA MTP Reorder Correctness Fix
 
 The 64K-class MTP=2 C=3/C=4 retrieval miss was traced to a metadata split

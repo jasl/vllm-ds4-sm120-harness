@@ -385,10 +385,41 @@ VALID_BASELINE_PHASES=(
   eval_longbench2
 )
 
+phase_run_flag() {
+  local phase="$1"
+  case "${phase}" in
+    kv_layout_probe) printf '%s\n' RUN_KV_LAYOUT_PROBE ;;
+    acceptance) printf '%s\n' RUN_ACCEPTANCE ;;
+    long_context_probe) printf '%s\n' RUN_LONG_CONTEXT_PROBE ;;
+    long_context_latency_matrix) printf '%s\n' RUN_LONG_CONTEXT_LATENCY_MATRIX ;;
+    frontier_context_sweep) printf '%s\n' RUN_FRONTIER_CONTEXT_SWEEP ;;
+    ds4_story_recall_semantic) printf '%s\n' RUN_DS4_STORY_RECALL_SEMANTIC ;;
+    long_context_decode_concurrency) printf '%s\n' RUN_LONG_CONTEXT_DECODE_CONCURRENCY ;;
+    long_context_mixed_arrival) printf '%s\n' RUN_LONG_CONTEXT_MIXED_ARRIVAL ;;
+    prefix_cache_probe) printf '%s\n' RUN_PREFIX_CACHE_PROBE ;;
+    prefix_cache_stress) printf '%s\n' RUN_PREFIX_CACHE_STRESS ;;
+    streaming_pressure_soak) printf '%s\n' RUN_STREAMING_PRESSURE_SOAK ;;
+    streaming_pressure_matrix) printf '%s\n' RUN_STREAMING_PRESSURE_MATRIX ;;
+    bench_hf_mt_bench) printf '%s\n' RUN_BENCH_HF ;;
+    eval_gsm8k) printf '%s\n' RUN_LM_EVAL ;;
+    bench_random_prefill_sweep) printf '%s\n' RUN_RANDOM_PREFILL_SWEEP ;;
+    bench_random_8192x512) printf '%s\n' RUN_RANDOM_LONG ;;
+    oracle_export) printf '%s\n' RUN_ORACLE_EXPORT ;;
+    decode_profile) printf '%s\n' RUN_DECODE_PROFILE ;;
+    eval_longbench2) printf '%s\n' RUN_LONGBENCH2 ;;
+  esac
+}
+
+flag_enabled() {
+  local flag_value="$1"
+  [[ "${flag_value}" == "1" || "${flag_value}" == "true" ]]
+}
+
 validate_requested_phases() {
   local item
   local known
   local matched
+  local run_flag
   local -a requested_phases
 
   if [[ "${B200_BASELINE_PHASES}" == "all" ]]; then
@@ -408,6 +439,12 @@ validate_requested_phases() {
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
         'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,streaming_pressure_soak,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+      return 2
+    fi
+    run_flag="$(phase_run_flag "${item}")"
+    if [[ -n "${run_flag}" ]] && ! flag_enabled "${!run_flag:-}"; then
+      printf 'B200 baseline phase %s requires %s=1 when explicitly listed in B200_BASELINE_PHASES\n' \
+        "${item}" "${run_flag}" >&2
       return 2
     fi
   done
