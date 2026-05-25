@@ -373,12 +373,16 @@ Short-context and correctness gates on the retained candidate:
 | GSM8K 5-shot limit-200, C=4 | `exact_match_flexible=0.965`, `exact_match_strict=0.950` |
 | Random prefill sweep C=1, OSL=1 | 1K/4K/16K/64K all successful; mean TTFT `0.162 / 0.678 / 2.958 / 14.240 s` |
 | Issue #10 safe proxy | startup latency, prefix-cache stress, and streaming pressure all passed; streaming max TTFT `23.459 s`; driver health showed no Xid/UVM/fatal signals |
+| Issue #10 high-risk proxy | 131K max-model-len, prefix-cache on, MTP=2; startup latency, prefix-cache stress, and high-risk streaming pressure all passed; streaming max TTFT `60.050 s`; driver health showed no Xid/UVM/fatal signals |
+| Issue #8 high-risk payload | no-MTP, prefix-cache on, 124K C=1/C=2 cold, `max_tokens=1024`; both groups passed, C=2 TTFT mean `56.991 s`, slow request decode `4.286 tok/s`, ITL p99 `0.273 s`; driver health after the run showed no Xid/UVM/fatal signals |
 
 Artifact labels:
 `20260525_ds4_absorption_safe_baseline_dev`,
 `20260525_ds4_active_decode_prefill_cap_ab`, and
 `20260525_ds4_active_decode_prefill_cap_short_correctness`,
-`20260525_ds4_active_decode_prefill_cap_issue10_safe`.
+`20260525_ds4_active_decode_prefill_cap_issue10_safe`,
+`20260525_ds4_high_risk_crash_recheck_dev`, and
+`20260525_issue8_high_risk_payload_recheck_dev`.
 
 Decision: keep the 1/16 very-long active-decode cap on the Dev branch. It
 improves the current user-feedback matrix and does not regress GSM8K,
@@ -386,6 +390,13 @@ short-context bench, or random prefill. Re-run the full DS4 absorption matrix
 before PR-branch promotion, and keep >128K/four-card behavior as an external
 gate. This supersedes the earlier 1/8 decode-overlap cap as the active Dev
 candidate.
+
+Harness follow-up: the first issue #8 high-risk wrapper run only reached
+`server_startup` because `run_sm120_ds4_absorption_stress.sh` set
+`B200_BASELINE_PHASES=long_context_decode_concurrency` but did not also set
+`RUN_LONG_CONTEXT_DECODE_CONCURRENCY=1`, which `run_b200_baseline.sh` requires.
+The wrapper was corrected, and the payload was rerun directly with the explicit
+flag before recording the issue #8 high-risk result above.
 
 ### Sparse SWA MTP Reorder Correctness Fix
 

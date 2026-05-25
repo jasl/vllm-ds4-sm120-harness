@@ -514,6 +514,7 @@ def test_sm120_ds4_absorption_stress_matrix_collects_safe_and_opt_in_crash_shape
     assert "20260525_issue8_local_proxy_124k_c2_decode1024" in script
     assert "ISSUE8_ALLOW_HOST_REBOOT_RISK" in script
     assert "Refusing to run the issue #8 128K-class crash recheck by default" in script
+    assert "RUN_LONG_CONTEXT_DECODE_CONCURRENCY=1" in script
     assert "LONG_CONTEXT_DECODE_MAX_TOKENS=1024" in script
     assert "LONG_CONTEXT_DECODE_LINE_COUNTS=4000" in script
     assert "SERVE_PREFIX_CACHE_MODE=enabled" in script
