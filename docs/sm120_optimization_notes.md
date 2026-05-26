@@ -1524,6 +1524,48 @@ stable:
   the follow-up kernel log check showed no NVRM/Xid/UVM signals. This supports
   the ordinary SM120 MTP/prefix path, not the 128K-class crash proxy or the
   GB10 dual-node 393K report.
+- SM120 post-upstream-rebase startup/probe crash: after rebasing through
+  upstream `f51bbc694`, the first full baseline attempt exposed a runtime
+  dependency drift before measurement could begin. The newly restored
+  `humming-kernels[cu13]` dependency pulled a CUDA 13.2 Python nvcc/CCCL stack
+  into an environment otherwise pinned around CUDA 13.0, causing TileLang JIT
+  startup failure with `CUDA compiler and CUDA toolkit headers are
+  incompatible`. Downgrading the Python nvcc/CCCL stack to 13.0 instead hit the
+  CUDA 13.0 `rsqrt`/glibc header conflict. Pointing TileLang at the system CUDA
+  13.1 toolchain let the TP=2, MTP=2, FP8 KV, block-size-256,
+  `SERVE_MAX_MODEL_LEN=131072`, `max_num_batched_tokens=4096`,
+  prefix-cache-disabled, `FULL_AND_PIECEWISE` startup reach readiness, but the
+  first long-context probe then failed at a 4096-token prefill slice with
+  `Triton Error [CUDA]: unspecified launch failure` while loading/executing the
+  generated Triton binary. The driver then reported repeated NVRM/UVM
+  assertions and `GPU lost from the bus`, leaving one GPU unusable until reboot.
+  The artifact label/run id is
+  `20260526_post_upstream_f51bbc694_rebase_startup_smoke_cuda131/20260526233648`.
+  Post-reboot rechecks on the same rebased code did not reproduce the fatal:
+  59K-class startup/probe passed five consecutive default runs under
+  `20260527_sm120_destructive_repro_loop_{1..5}`, 130K-class startup/probe
+  passed twice under `20260527_sm120_130k_destructive_repro_loop_{1..2}_4200`,
+  the issue #10 high-risk proxy passed under
+  `20260527_issue10_high_risk_proxy_post_reboot`, and the issue #8 recheck
+  passed under `20260527_issue8_recheck_post_reboot`. The host reported no
+  NVRM/Xid/UVM signals after those runs. Keep this in the crash backlog as an
+  intermittent or state-dependent fatal until a reduced reproduction identifies
+  the first failing kernel; do not describe the reboot result as a fix.
+  A later full local-quality baseline on the same rebased code,
+  `20260527_post_rebase_f51bbc694_local_quality_full`, also did not reproduce
+  the fatal: startup, long-context probe, 59K/124K latency matrix, frontier
+  context sweep, story-recall semantic, 124K decode concurrency, mixed
+  long/short arrival, streaming pressure matrix, short MT-Bench-style
+  throughput, GSM8K limit-200, and random prefill sweep all completed without
+  NVRM/Xid/UVM signals. The overall run still exited nonzero because
+  acceptance bundled generation/tool-call/streaming checks had quality or
+  per-case failures, not because the GPU or vLLM engine crashed. A follow-up
+  exact `server_startup -> long_context_probe` replay passed three more fresh
+  startup loops under
+  `20260527_post_full_baseline_exact_startup_probe_loop_{1..3}`. This makes the
+  original crash more likely to depend on boot/runtime state, cache/toolchain
+  state, or a prior asynchronous CUDA error surfacing at Triton binary load,
+  rather than a currently deterministic long-context shape on SM120.
 - GB10 issue #10 report: the reporter rebuilt
   [`jasl/vllm#10`](https://github.com/jasl/vllm/issues/10#issuecomment-4529246012)
   at `a937d4b287` and still reproduced a reboot-only crash on a dual-node GB10
