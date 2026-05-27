@@ -315,9 +315,12 @@ reported four-card or 512K/1M shapes:
   Keep this proxy out of the default user-feedback matrix. Run it with
   `RUN_USER_FEEDBACK_ISSUE10=1` only when the host can be rebooted afterward,
   and keep partial artifacts separate from promotion baselines.
-  The crash backlog now includes both the SM120 128K-class proxy fatal-driver
-  state and the reporter's GB10 dual-node reboot-only reproduction at
-  `a937d4b287`; resolve those separately from ordinary promotion baselines.
+  The crash backlog now includes the SM120 128K-class proxy fatal-driver state,
+  the reporter's GB10 dual-node reboot-only reproduction at `a937d4b287`, and
+  [`jasl/vllm issue #13](https://github.com/jasl/vllm/issues/13), where a
+  120K-class dual-node GB10 NIAH-style eval ended in
+  `CUBLAS_STATUS_INTERNAL_ERROR` plus NVRM page-fault signals. Resolve those
+  separately from ordinary promotion baselines.
   A post-reboot 59K-class MTP startup and prefix-cache proxy passed under
   `20260525_issue10_safe_59k_mtp_prefix_proxy`; keep citing that only as SM120
   scaled-down evidence. The 128K-class SM120 proxy and the 393K GB10 dual-node
@@ -338,6 +341,13 @@ reported four-card or 512K/1M shapes:
   errors, or host reboot requirements as failures. This is an external
   user-reported gate, not a local default or promotion baseline, until a
   four-card SM120 environment and the required W4A16/AIME assets are available.
+  The current vLLM branch has absorbed the small community fixes for Marlin FP8
+  block-FP8 kernel selection, DeepSeek V4 `wo_a` scale-name fallback, and
+  Marlin MoE CUDA graph scratch/shared-memory sizing. Keep
+  `tests/model_executor/test_fp8_marlin_kernel_selection.py` and
+  `tests/kernels/moe/test_moe.py::test_fused_marlin_moe_cuda_graph` as required
+  preflight checks for this gate, then run the full issue #12 gate only when the
+  external artifact and runner are available.
 
 The convenience profile `scripts/run_sm120_external_reported_gates.sh` refuses
 to run unless `EXTERNAL_GATE_MAX_MODEL_LEN` is set, so 512K and 1M evidence is

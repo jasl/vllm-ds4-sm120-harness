@@ -1575,6 +1575,16 @@ stable:
   and `FULL_AND_PIECEWISE`. The pasted log reaches checkpoint load and MoE
   prepare/finalize, but does not yet include the failing kernel or driver
   event.
+- GB10 issue #13 report: a dual-node GB10 run against the PR branch produced
+  [`CUBLAS_STATUS_INTERNAL_ERROR`](https://github.com/jasl/vllm/issues/13)
+  during a 120K-class NIAH-style eval with `max_connections=2`. The successful
+  samples scored correctly, but most requests failed with API connection errors
+  after the engine died. The accompanying kernel log showed NVRM allocation
+  failures followed by a GPU page-fault signal (`FAULT_PTE
+  ACCESS_TYPE_VIRT_READ`), which makes this a high-priority GB10 driver/kernel
+  crash-backlog item. Treat it as related to, but not proven identical with,
+  issue #10 until a reduced replay isolates whether MTP, prefix cache, chunked
+  prefill, sparse MLA, or the GB10 driver/runtime state is the first trigger.
 - SM120 issue #12 W4A16 + Marlin MoE external gate: the reported four-card
   RTX PRO 6000 shape is outside the local two-card harness budget and depends
   on an external W4A16 artifact plus an AIME runner. Track it through
@@ -1588,6 +1598,21 @@ stable:
   later CUDA illegal-memory-access result has not been validated here. Keep it
   in the external crash/correctness backlog until a four-card run proves both
   token correctness and post-run server/driver health.
+- Accepted external SM120 fixes, 2026-05-27: absorb the small, dependency-free
+  pieces from the recent community reports instead of switching to an unmerged
+  FlashInfer/DeepGEMM stack. The branch now refuses block-FP8 layers in the
+  Marlin FP8 kernel selector so DSv4 block-FP8 compressor layers fall through to
+  the block-FP8-capable path even when operators force Marlin for W4A16/NVFP4
+  MoE layers; DeepSeek V4 `wo_a` scale lookup accepts both the Marlin-renamed
+  `weight_scale_inv` and the non-Marlin `weight_scale`; and Marlin MoE uses a
+  graph-stable `c_tmp` upper bound plus per-launch shared-memory size while
+  keeping the device maximum only for the CUDA function attribute. These map to
+  the issues discussed in vLLM PRs
+  [#43722](https://github.com/vllm-project/vllm/pull/43722),
+  [#43723](https://github.com/vllm-project/vllm/pull/43723), and
+  [#43730](https://github.com/vllm-project/vllm/pull/43730). They are targeted
+  hardening for W4A16/NVFP4 and CUDA-graph Marlin MoE behavior, not a proven
+  root-cause fix for the GB10 long-context crash reports.
 - Harness note: the safe SM120 issue #10 proxy intentionally keeps streaming
   pressure at the 59K-class frontier. The 124K streaming shape belongs to the
   explicit high-risk path because it does not fit the safe
@@ -1595,10 +1620,10 @@ stable:
 
 Next data to request or collect for the crash backlog: full serve log tail,
 kernel/Xid or NVRM/UVM lines from the failing boot, whether the peer node also
-enters a bad state, NCCL version and transport summary, and a reduced replay
-matrix that varies only one of MTP, prefix cache, chunked prefill, and sparse
-MLA per run. Do not run the 128K-class SM120 proxy again unless the host can be
-rebooted afterward.
+enters a bad state, NCCL version and transport summary, PyTorch/CUDA/Cutlass
+DSL/NCCL package versions, and a reduced replay matrix that varies only one of
+MTP, prefix cache, chunked prefill, and sparse MLA per run. Do not run the
+128K-class SM120 proxy again unless the host can be rebooted afterward.
 
 ## Rejected Scheduling Experiment: Extreme Long Prefill /16, 2026-05-24
 
