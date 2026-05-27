@@ -1666,6 +1666,37 @@ drop-in replacement for this branch yet: it depends on an unmerged FlashInfer
 backend, an external DeepGEMM branch, and does not cover this branch's MTP,
 GSM8K, prefix-cache, 59K/124K latency, mixed-arrival, or crash-stability gates.
 
+As of the 2026-05-27 inspection, the PR is open and not draft. Its local diff
+against upstream/main is roughly 23 files / 1751 insertions / 247 deletions.
+The useful implementation ideas to study are:
+
+- a new `SPARSE_MLA_SM120` FlashInfer backend built around
+  `BatchSparseMLAPagedAttentionWrapper`,
+- a `DSV4_SPARSE_MLA_SM120` model path that routes DeepSeek V4 sparse MLA
+  through the same FlashInfer wrapper,
+- DeepSeek V4 mHC and sparse-MLA warmup / autotune hooks, and
+- DeepGEMM MXFP4 utility and CMake integration work.
+
+Do not cherry-pick this route directly into the active Dev or PR branch. First
+test it as a separate no-MTP experiment branch because the current branch's
+customer value is tied to validated NVFP4 / FP8-KV / MTP behavior, not only to
+the no-MTP sparse-MLA backend.
+
+The
+[`pasta-paul` comment](https://github.com/vllm-project/vllm/pull/43477#issuecomment-4531193899)
+is a useful scope boundary:
+
+- Treat NVFP4-FP8-MTP as the currently validated production route for
+  `jasl/vllm@ds4-sm120-preview-dev`.
+- Treat PR 43477's FlashInfer sparse-MLA + DeepGEMM MXFP4 route as
+  complementary no-MTP work until MTP is wired and gated on the same matrix.
+- Treat W4A16-FP8-MTP / Marlin wna16 as a separate backend-stability lane:
+  native SM120 cubins such as
+  [`vllm-project/vllm#40923`](https://github.com/vllm-project/vllm/pull/40923)
+  can remove PTX-JIT corruption, but the reported `c_tmp` / workspace OOB
+  issue still needs its own reproduction and fix. Do not mix that work into the
+  NVFP4/MTP promotion branch.
+
 The PR's most useful performance comparison shape is DS4 TP=2, FP8 KV,
 `FULL_AND_PIECEWISE`, no-MTP, random ISL=8000 / OSL=1000, C=1/2/4/8/16/32.
 Track it locally with the `bench_random_8000x1000` phase:
@@ -1678,6 +1709,38 @@ Track it locally with the `bench_random_8000x1000` phase:
 This phase is now included in the SM120 local quality and user-feedback
 profiles. Treat it as a diagnostic apples-to-apples comparison against the
 FlashInfer sparse-MLA route, not as a promotion gate by itself.
+
+External article reference:
+[`22 轮才跑通：DeepSeek V4 MTP 番外`](https://mp.weixin.qq.com/s/qRk3sHeLz7ktHzaAshjDmg)
+is valuable mostly as reproduction methodology, not as a direct benchmark
+baseline. It independently describes the same split:
+
+- `#41834` / this branch is the validated MTP-capable route on SM120.
+- `#43477` is a second, more upstream-library-oriented FlashInfer + DeepGEMM
+  route, but should be considered no-MTP until proven otherwise.
+- CUDA 12.8 versus CUDA 13 can be the difference between MTP illegal-memory
+  access and a clean run on this stack. Keep CUDA version, PyTorch CUDA build,
+  `TORCH_CUDA_ARCH_LIST=12.0a`, `nvidia-cutlass-dsl`, expert parallel,
+  `FULL_AND_PIECEWISE`, FP8 KV, and FlashInfer sampler state visible in
+  artifacts and public recipes.
+- Do not compare the article's random 1024/256 MTP numbers, PR 43477's 8000/1000
+  no-MTP numbers, and this harness's 59K/124K long-context matrix directly.
+  Use the same harness phase before making a promotion claim.
+- MTP value is bounded by draft/target match quality. Always report acceptance
+  rate, acceptance length, and, when available, per-position acceptance next to
+  throughput so a dataset-driven acceptance change is not mistaken for a kernel
+  improvement or regression.
+
+Integration plan from these references:
+
+1. Keep the current NVFP4-FP8-MTP branch as the stable line.
+2. Use a separate experimental branch for PR 43477 / FlashInfer sparse MLA.
+3. Run `bench_random_8000x1000` first for the no-MTP apples-to-apples shape,
+   then the 59K/124K, mixed-arrival, prefix-cache, crash-proxy, and GSM8K gates.
+4. Attempt MTP integration on the FlashInfer route only after the no-MTP route
+   is stable and measurably better on at least one important gate.
+5. Keep W4A16/Marlin wna16 reproduction and fixes in a separate branch and
+   issue thread.
 
 ## Experiment Discipline
 
