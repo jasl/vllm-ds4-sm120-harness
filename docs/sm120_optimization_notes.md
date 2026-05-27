@@ -1742,6 +1742,57 @@ Integration plan from these references:
 5. Keep W4A16/Marlin wna16 reproduction and fixes in a separate branch and
    issue thread.
 
+## External Reference: canada-quant NVFP4-FP8-MTP Harness
+
+The
+[`canada-quant/dsv4-flash-nvfp4-fp8-mtp`](https://github.com/canada-quant/dsv4-flash-nvfp4-fp8-mtp)
+repo is a useful external user harness and artifact reproduction reference for
+the
+[`canada-quant/DeepSeek-V4-Flash-NVFP4-FP8-MTP`](https://huggingface.co/canada-quant/DeepSeek-V4-Flash-NVFP4-FP8-MTP)
+model. Treat it as an external workload source, not as a direct source of
+vLLM branch changes.
+
+High-signal observations from the repo as of 2026-05-27:
+
+- It separates the validated NVFP4-FP8-MTP route from the W4A16/Marlin wna16
+  route. The W4A16 path carries separate SM120 Marlin correctness and
+  workspace risks; do not mix those patches into the NVFP4/MTP branch without
+  a dedicated reproduction.
+- Its RTX PRO 6000 measurements use a four-GPU PCIe Server Edition host and
+  MTP `num_speculative_tokens=1`. Those numbers are not directly comparable to
+  this harness's two-GPU Workstation Edition, MTP=2, 59K/124K long-context
+  gates.
+- The reported TP=4 / C=8 thinking-mode collapse is consistent with the current
+  product tradeoff: prioritize single-stream and small-concurrency latency, and
+  treat high-concurrency TP-over-PCIe as a separate capacity / topology limit.
+- Its methodology note on MTP acceptance is directly relevant: acceptance rate
+  depends heavily on prompt shape and endpoint. Always pair acceptance with the
+  exact prompt format, endpoint, output length, and throughput from the same
+  run.
+
+Useful workload shapes to consider absorbing into this harness:
+
+- `vllm bench serve` random 256 input / 256 output, MTP on, concurrency
+  `1,4,16`, with output tok/s, TPOT, and MTP acceptance from the same run.
+- A small MTP acceptance smoke around 100 prompts, but rewritten to use the
+  harness's artifact layout and metrics parser instead of ad hoc log parsing.
+- GSM8K limit-50 as a quick smoke only; keep GSM8K limit-200 as the promotion
+  floor for this branch.
+- Optional AIME / thinking-mode concurrency sweeps only after the reasoning
+  parser and MTP capture behavior are stable enough to avoid conflating parser
+  drops with model or kernel correctness.
+
+Ideas not to import blindly:
+
+- One-line install scripts that patch arbitrary upstream revisions. This
+  harness should keep the local vLLM checkout as the source of truth and record
+  exact commits/artifacts.
+- Canada-quant artifact-specific patches such as Marlin block-FP8 dispatch
+  forcing, W4A16 workspace oversizing, or artifact key surgery unless the same
+  failure is reproduced on the active branch and target artifact.
+- Its published throughput numbers as branch baselines. Reproduce the same
+  shapes locally before using them in PR-facing claims.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
