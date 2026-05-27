@@ -1793,6 +1793,52 @@ Ideas not to import blindly:
 - Its published throughput numbers as branch baselines. Reproduce the same
   shapes locally before using them in PR-facing claims.
 
+Immediate harness follow-ups from this review:
+
+1. Extend the user-feedback summary for bench phases to include
+   `spec_acceptance_length` and per-position acceptance, not only aggregate
+   acceptance rate. The parser already extracts these fields; the missing piece
+   is carrying them through `user_feedback_matrix_summary.md/json`.
+2. Add a short canada-quant-style random MTP bench phase: random 256 input /
+   256 output, MTP on, concurrency `1,4,16`, with output tok/s, TPOT, TTFT,
+   ITL p99, acceptance rate, acceptance length, and per-position acceptance.
+   Keep it as a development observation first, not a hard PR gate.
+3. Keep `bench_random_8000x1000` as the PR 43477 / FlashInfer no-MTP
+   comparison shape. Do not replace it with the 256/256 shape; they answer
+   different questions.
+4. When publishing user-feedback matrix summaries, group external-user shapes
+   separately from local development shapes so a single outside workload does
+   not silently redefine the promotion criteria.
+5. Add an artifact/environment check section that makes CUDA version, PyTorch
+   CUDA build, `TORCH_CUDA_ARCH_LIST`, NCCL version, `FULL_AND_PIECEWISE`,
+   prefix-cache mode, MTP `num_speculative_tokens`, and FlashInfer sampler
+   state visible next to every promoted result.
+
+Immediate vLLM experiment plan once the workstation is available:
+
+1. Re-sync the workstation through `ssh jasl@home.jasl123.cn -p 22222`, verify
+   the harness commit and vLLM `ds4-sm120-preview-dev` commit, and confirm NCCL
+   is still upgraded after any vLLM reinstall.
+2. Run a lightweight current-branch smoke first: server startup, short MTP
+   bench C=1/2/4, and GSM8K limit-50. This catches environment drift before
+   long GPU jobs.
+3. Implement the summary-only harness changes above and run local unit tests;
+   then sync to the workstation and run a small phase smoke for the new
+   256/256 bench shape.
+4. Run the balanced user-feedback matrix on the current Dev branch as the
+   pre-experiment baseline, including 59K/124K, mixed arrival, streaming
+   pressure, prefix-cache stress, issue10 proxy, GSM8K limit-200, random
+   8000/1000, and the new 256/256 MTP observation.
+5. Create a separate vLLM experiment branch for PR 43477 / FlashInfer sparse
+   MLA. Start no-MTP only, because PR 43477 does not currently cover this
+   branch's MTP path.
+6. On that branch, run `bench_random_8000x1000` first. Continue to 59K/124K,
+   mixed-arrival, prefix-cache, crash-proxy, and GSM8K only if the 8000/1000
+   shape is stable and meaningfully better.
+7. Only after a no-MTP FlashInfer route passes the same gates should MTP
+   integration be attempted. If it does not pass, remove the code, keep only
+   rejected notes, and do not pollute the active Dev branch.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
