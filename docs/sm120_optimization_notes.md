@@ -1795,14 +1795,16 @@ Ideas not to import blindly:
 
 Immediate harness follow-ups from this review:
 
-1. Extend the user-feedback summary for bench phases to include
+1. Done in harness after this review: extend the user-feedback summary for
+   bench phases to include
    `spec_acceptance_length` and per-position acceptance, not only aggregate
-   acceptance rate. The parser already extracts these fields; the missing piece
-   is carrying them through `user_feedback_matrix_summary.md/json`.
-2. Add a short canada-quant-style random MTP bench phase: random 256 input /
-   256 output, MTP on, concurrency `1,4,16`, with output tok/s, TPOT, TTFT,
-   ITL p99, acceptance rate, acceptance length, and per-position acceptance.
-   Keep it as a development observation first, not a hard PR gate.
+   acceptance rate. The parser already extracts these fields; the summary now
+   carries them through `user_feedback_matrix_summary.md/json`.
+2. Done in harness after this review: add a short canada-quant-style random
+   MTP bench phase, `bench_random_256x256`: random 256 input / 256 output,
+   MTP on, concurrency `1,4,16`, with output tok/s, TPOT, TTFT, ITL p99,
+   acceptance rate, acceptance length, and per-position acceptance. Keep it as
+   a development observation first, not a hard PR gate.
 3. Keep `bench_random_8000x1000` as the PR 43477 / FlashInfer no-MTP
    comparison shape. Do not replace it with the 256/256 shape; they answer
    different questions.
@@ -1822,9 +1824,8 @@ Immediate vLLM experiment plan once the workstation is available:
 2. Run a lightweight current-branch smoke first: server startup, short MTP
    bench C=1/2/4, and GSM8K limit-50. This catches environment drift before
    long GPU jobs.
-3. Implement the summary-only harness changes above and run local unit tests;
-   then sync to the workstation and run a small phase smoke for the new
-   256/256 bench shape.
+3. Sync the summary-only harness changes to the workstation and run a small
+   phase smoke for the new 256/256 bench shape.
 4. Run the balanced user-feedback matrix on the current Dev branch as the
    pre-experiment baseline, including 59K/124K, mixed arrival, streaming
    pressure, prefix-cache stress, issue10 proxy, GSM8K limit-200, random

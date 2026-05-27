@@ -27,6 +27,7 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
         "mtp\tstreaming_pressure_matrix\t0\t/d\n"
         "mtp\tbench_hf_mt_bench\t0\t/e\n"
         "mtp\tbench_random_8000x1000\t0\t/k\n"
+        "mtp\tbench_random_256x256\t0\t/l\n"
         "mtp\teval_gsm8k\t0\t/f\n"
         "mtp\tbench_random_prefill_sweep\t0\t/g\n"
         "mtp\tfrontier_context_sweep\t0\t/i\n"
@@ -149,6 +150,8 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
                     "p99_ttft_ms": 304.99,
                     "p99_itl_ms": 44.68,
                     "spec_acceptance_rate_percent": 68.74,
+                    "spec_acceptance_length": 1.42,
+                    "spec_per_position_acceptance_percent": {"0": 81.2, "1": 56.3},
                 },
             }
         ],
@@ -165,6 +168,26 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
                     "p99_ttft_ms": 3707.22,
                     "p99_itl_ms": 85.42,
                     "spec_acceptance_rate_percent": 70.11,
+                    "spec_acceptance_length": 1.38,
+                    "spec_per_position_acceptance_percent": {"0": 82.0, "1": 52.0},
+                },
+            }
+        ],
+    )
+    write_json(
+        primary / "mtp/bench_random_256x256/bench.json",
+        [
+            {
+                "concurrency": 16,
+                "metrics": {
+                    "successful_requests": 80,
+                    "output_token_throughput_tok_s": 360.51,
+                    "mean_ttft_ms": 187.44,
+                    "p99_ttft_ms": 407.22,
+                    "p99_itl_ms": 35.42,
+                    "spec_acceptance_rate_percent": 72.11,
+                    "spec_acceptance_length": 1.51,
+                    "spec_per_position_acceptance_percent": {"0": 84.2, "1": 58.4},
                 },
             }
         ],
@@ -268,7 +291,14 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
     assert primary_summary["latency"][0]["ttft_mean_s"] == 47.994
     assert primary_summary["decode_concurrency"][0]["decode_min_tps"] == 18.834
     assert primary_summary["short_bench"][0]["output_tps"] == 392.73
+    assert primary_summary["short_bench"][0]["spec_acceptance_length"] == 1.42
+    assert primary_summary["short_bench"][0]["spec_per_position_acceptance_percent"] == {
+        "0": 81.2,
+        "1": 56.3,
+    }
     assert primary_summary["random_8000x1000_bench"][0]["output_tps"] == 198.62
+    assert primary_summary["random_256x256_bench"][0]["output_tps"] == 360.51
+    assert primary_summary["random_256x256_bench"][0]["spec_acceptance_length"] == 1.51
     assert primary_summary["frontier_context_sweep"][0]["input_tps"] == 5136.0
     assert primary_summary["story_recall_semantic"][0]["matched_min"] == 16
     assert primary_summary["monitoring"][0]["gpu_utilization_avg"] == 91.4
@@ -285,6 +315,10 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
     assert "CUDA Errors" in markdown
     assert "Prefix Cache Stress" in markdown
     assert "Random 8000/1000 Bench" in markdown
+    assert "Random 256/256 Bench" in markdown
+    assert "Spec Accept Len" in markdown
+    assert "Spec Accept Pos %" in markdown
+    assert "0:84.2, 1:58.4" in markdown
     assert "Frontier Context Sweep" in markdown
     assert "Target Frontier" in markdown
     assert "DS4 Story Recall Semantic" in markdown

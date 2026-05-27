@@ -78,6 +78,25 @@ def _round_float(value: Any, digits: int = 3) -> float | None:
         return None
 
 
+def _round_float_map(value: Any, digits: int = 3) -> Json | None:
+    if isinstance(value, list):
+        items = [(str(index), item) for index, item in enumerate(value)]
+    elif isinstance(value, dict):
+        keys = sorted(
+            value,
+            key=lambda item: int(item) if str(item).isdigit() else str(item),
+        )
+        items = [(str(key), value.get(key)) for key in keys]
+    else:
+        return None
+    rounded: Json = {}
+    for key, raw_value in items:
+        rounded_value = _round_float(raw_value, digits)
+        if rounded_value is not None:
+            rounded[key] = rounded_value
+    return rounded or None
+
+
 def _summary_rows(payload: Json | list[Any] | None) -> list[Json]:
     if isinstance(payload, dict) and isinstance(payload.get("summary"), list):
         return [row for row in payload["summary"] if isinstance(row, dict)]
@@ -176,6 +195,10 @@ def _collect_bench_rows(run_label: str, variant: str, payload: Any) -> list[Json
                 "itl_p99_ms": _round_float(metrics.get("p99_itl_ms")),
                 "spec_acceptance_percent": _round_float(
                     metrics.get("spec_acceptance_rate_percent")
+                ),
+                "spec_acceptance_length": _round_float(metrics.get("spec_acceptance_length")),
+                "spec_per_position_acceptance_percent": _round_float_map(
+                    metrics.get("spec_per_position_acceptance_percent")
                 ),
             }
         )
@@ -479,6 +502,7 @@ def summarize_run(label: str, run_root: Path) -> Json:
         "streaming_pressure": [],
         "short_bench": [],
         "random_8000x1000_bench": [],
+        "random_256x256_bench": [],
         "gsm8k": [],
         "prefill_sweep": [],
         "frontier_context_sweep": [],
@@ -522,6 +546,11 @@ def summarize_run(label: str, run_root: Path) -> Json:
         random_8k1k = _load_json(variant_dir / "bench_random_8000x1000" / "bench.json")
         result["random_8000x1000_bench"].extend(
             _collect_bench_rows(label, variant, random_8k1k)
+        )
+
+        random_256x256 = _load_json(variant_dir / "bench_random_256x256" / "bench.json")
+        result["random_256x256_bench"].extend(
+            _collect_bench_rows(label, variant, random_256x256)
         )
 
         gsm8k = _load_json(variant_dir / "eval_gsm8k" / "lm_eval_summary.json")
@@ -584,6 +613,8 @@ def summarize_runs(runs: list[tuple[str, Path]]) -> Json:
 def _fmt(value: Any) -> str:
     if value is None:
         return "n/a"
+    if isinstance(value, dict):
+        return ", ".join(f"{key}:{val}" for key, val in value.items()) or "n/a"
     return str(value)
 
 
@@ -621,6 +652,7 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
     streaming_rows: list[list[Any]] = []
     bench_rows: list[list[Any]] = []
     random_8k1k_rows: list[list[Any]] = []
+    random_256x256_rows: list[list[Any]] = []
     gsm_rows: list[list[Any]] = []
     prefill_rows: list[list[Any]] = []
     frontier_rows: list[list[Any]] = []
@@ -703,6 +735,8 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                     row["ttft_p99_ms"],
                     row["itl_p99_ms"],
                     row["spec_acceptance_percent"],
+                    row["spec_acceptance_length"],
+                    row["spec_per_position_acceptance_percent"],
                 ]
             )
         for row in run["random_8000x1000_bench"]:
@@ -717,6 +751,24 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                     row["ttft_p99_ms"],
                     row["itl_p99_ms"],
                     row["spec_acceptance_percent"],
+                    row["spec_acceptance_length"],
+                    row["spec_per_position_acceptance_percent"],
+                ]
+            )
+        for row in run["random_256x256_bench"]:
+            random_256x256_rows.append(
+                [
+                    row["run"],
+                    row["variant"],
+                    row["concurrency"],
+                    row["successful_requests"],
+                    row["output_tps"],
+                    row["ttft_mean_ms"],
+                    row["ttft_p99_ms"],
+                    row["itl_p99_ms"],
+                    row["spec_acceptance_percent"],
+                    row["spec_acceptance_length"],
+                    row["spec_per_position_acceptance_percent"],
                 ]
             )
         for row in run["gsm8k"]:
@@ -890,6 +942,8 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                 "TTFT P99 ms",
                 "ITL P99 ms",
                 "Spec Accept %",
+                "Spec Accept Len",
+                "Spec Accept Pos %",
             ],
             bench_rows,
         ),
@@ -905,8 +959,27 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                 "TTFT P99 ms",
                 "ITL P99 ms",
                 "Spec Accept %",
+                "Spec Accept Len",
+                "Spec Accept Pos %",
             ],
             random_8k1k_rows,
+        ),
+        (
+            "Random 256/256 Bench",
+            [
+                "Run",
+                "Variant",
+                "C",
+                "Successful",
+                "Output tok/s",
+                "TTFT Mean ms",
+                "TTFT P99 ms",
+                "ITL P99 ms",
+                "Spec Accept %",
+                "Spec Accept Len",
+                "Spec Accept Pos %",
+            ],
+            random_256x256_rows,
         ),
         (
             "GSM8K",

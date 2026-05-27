@@ -192,6 +192,13 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   `Name=number` assignments; the security-audit prompt remains
   latency/streaming observation only. Initial baseline label:
   `20260524_ds4_harness_frontier_semantic_baseline`.
+- External NVFP4-FP8-MTP short random observation: include
+  `bench_random_256x256` with random 256 input / 256 output, MTP on, and
+  concurrency `1,4,16`. This mirrors the canada-quant harness shape as a
+  development observation, not a replacement for the 59K/124K local gates or
+  the 8000/1000 FlashInfer-comparison shape. The summary must report output
+  tok/s, TTFT/ITL, aggregate MTP acceptance, acceptance length, and
+  per-position acceptance from the same run.
 
 The convenience profile `scripts/run_sm120_local_quality_gates.sh` wires the
 prefix-cache-disabled development gates together with the existing
@@ -208,8 +215,9 @@ writes one `user_feedback_matrix_summary.md` plus JSON summary. Use that
 combined summary to choose the tradeoff across C=1/2/4 short latency, 59K/124K
 long latency, issue #8 decode fairness, mixed-arrival pressure, issue #7
 streaming pressure, GSM8K, prefill throughput, the FlashInfer-comparison
-8000/1000 random bench, ds4-style frontier latency, ds4 story-recall semantic
-status, and prefix-cache stability. The
+8000/1000 random bench, the canada-quant-style 256/256 MTP random bench,
+ds4-style frontier latency, ds4 story-recall semantic status, and prefix-cache
+stability. The
 profile hard-gates GSM8K limit-200 at `exact_match_flexible >= 0.94` and
 `exact_match_strict >= 0.925`, so any further correctness drop blocks the
 matrix rather than becoming a narrative footnote.

@@ -356,6 +356,8 @@ def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
     assert "streaming_pressure_matrix" in script
     assert "bench_random_8000x1000" in script
     assert 'RUN_RANDOM_8K1K="${RUN_RANDOM_8K1K:-1}"' in script
+    assert "bench_random_256x256" in script
+    assert 'RUN_RANDOM_256X256="${RUN_RANDOM_256X256:-1}"' in script
     assert 'RUN_FRONTIER_CONTEXT_SWEEP="${RUN_FRONTIER_CONTEXT_SWEEP:-1}"' in script
     assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
 
@@ -603,6 +605,31 @@ def test_b200_baseline_exposes_flashinfer_reported_8k_1k_phase():
     assert "DATASET_NAME=random TOKENIZER_MODE=deepseek_v4" in script
     assert 'RANDOM_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN}"' in script
     assert 'RANDOM_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN}"' in script
+
+
+def test_b200_baseline_exposes_canada_quant_reported_256_256_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
+
+    assert "bench_random_256x256" in script
+    assert "RUN_RANDOM_256X256" in script
+    assert 'RANDOM_256X256_INPUT_LEN="${RANDOM_256X256_INPUT_LEN:-256}"' in script
+    assert 'RANDOM_256X256_OUTPUT_LEN="${RANDOM_256X256_OUTPUT_LEN:-256}"' in script
+    assert 'RANDOM_256X256_CONCURRENCY="${RANDOM_256X256_CONCURRENCY:-1,4,16}"' in script
+    assert '"${variant_dir}/bench_random_256x256"' in script
+    assert "DATASET_NAME=random TOKENIZER_MODE=deepseek_v4" in script
+    assert 'RANDOM_INPUT_LEN="${RANDOM_256X256_INPUT_LEN}"' in script
+    assert 'RANDOM_OUTPUT_LEN="${RANDOM_256X256_OUTPUT_LEN}"' in script
+
+
+def test_sm120_user_feedback_matrix_includes_external_random_256_256_observation():
+    script = (ROOT / "scripts" / "run_sm120_user_feedback_matrix.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "bench_random_256x256" in script
+    assert 'RUN_RANDOM_256X256="${RUN_RANDOM_256X256:-1}"' in script
+    assert 'RANDOM_256X256_CONCURRENCY="${RANDOM_256X256_CONCURRENCY:-1,4,16}"' in script
+    assert 'RANDOM_256X256_NUM_PROMPTS="${RANDOM_256X256_NUM_PROMPTS:-80}"' in script
 
 
 def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates():
