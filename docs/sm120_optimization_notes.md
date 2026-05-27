@@ -1875,6 +1875,48 @@ Immediate vLLM experiment plan once the workstation is available:
    integration be attempted. If it does not pass, remove the code, keep only
    rejected notes, and do not pollute the active Dev branch.
 
+Workstation follow-up on 2026-05-27:
+
+- Current Dev branch and harness were rechecked on the two-card SM120
+  workstation. vLLM was `0.21.1rc1.dev363+g27fd665bd`, NCCL was `2.30.4`,
+  prefix cache was disabled, max model length was 65,536, and
+  `FULL_AND_PIECEWISE` graph capture stayed enabled.
+- Lightweight smoke `20260527_dev_light_smoke/20260527141628` passed
+  `server_startup`, short MTP C=1/2/4, GSM8K limit-50, and random 256/256
+  C=1/4/16 with zero serve, CUDA, NCCL, driver, or engine error signals.
+
+| Shape | C | Output tok/s | ITL P99 | Spec Accept | Spec Accept Len |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Short MT-Bench MTP=2 | 1 | 144.77 | 13.04 ms | 63.55% | 2.27 |
+| Short MT-Bench MTP=2 | 2 | 237.32 | 43.81 ms | 62.08% | 2.24 |
+| Short MT-Bench MTP=2 | 4 | 369.05 | 45.46 ms | 63.03% | 2.26 |
+| Random 256/256 MTP=2 | 1 | 154.65 | 13.16 ms | 52.76% | 2.06 |
+| Random 256/256 MTP=2 | 4 | 344.64 | 67.41 ms | 53.34% | 2.07 |
+| Random 256/256 MTP=2 | 16 | 664.81 | 40.96 ms | 52.61% | 2.05 |
+
+GSM8K limit-50, 5-shot, MTP=2, C=4: flexible and strict exact match were both
+`0.98`. Treat this only as a drift smoke; the promotion floor remains GSM8K
+limit-200.
+
+Because the canada-quant RTX PRO 6000 report uses MTP=1, a narrow same-host
+MTP=1 256/256 comparison was also run under
+`20260527_dev_mtp1_256x256_smoke/20260527142329`. It passed with zero serve,
+CUDA, NCCL, driver, or engine error signals:
+
+| Shape | C | Output tok/s | ITL P99 | Spec Accept | Spec Accept Len |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Random 256/256 MTP=1 | 1 | 148.43 | 11.57 ms | 73.44% | 1.73 |
+| Random 256/256 MTP=1 | 4 | 370.36 | 66.72 ms | 76.39% | 1.76 |
+| Random 256/256 MTP=1 | 16 | 702.76 | 33.64 ms | 73.15% | 1.73 |
+
+Interpretation: MTP=1 is healthy on this short random external-user shape and
+is slightly better than MTP=2 at C=4/C=16 in this small 16-prompt smoke, while
+MTP=2 has a longer accepted-token step. This is useful for interpreting
+canada-quant-style reports, but it is not enough to switch the Dev default:
+the MTP=2 path remains the validated long-context/default branch until MTP=1
+passes the same 59K/124K, mixed-arrival, GSM8K limit-200, prefix-cache, and
+crash-proxy gates.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
