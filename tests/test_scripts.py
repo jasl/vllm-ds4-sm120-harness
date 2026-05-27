@@ -463,6 +463,64 @@ def test_sm120_external_quality_gate_profile_requires_explicit_context_ceiling()
     assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
 
 
+def test_external_command_gate_wrapper_records_user_supplied_runner_artifacts():
+    script = (ROOT / "scripts" / "run_external_command_gate.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'EXTERNAL_COMMAND="${EXTERNAL_COMMAND:-}"' in script
+    assert "EXTERNAL_COMMAND must be set" in script
+    assert "external_command.stdout" in script
+    assert "external_command.stderr" in script
+    assert "external_command.exit_code" in script
+    assert "external_command_summary.md" in script
+    assert "external_command_summary.json" in script
+    assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+    assert "start_gpu_stats" in script
+    assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+    assert "start_runtime_stats" in script
+    assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
+def test_b200_baseline_exposes_external_command_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "external_command" in script
+    assert 'RUN_EXTERNAL_COMMAND="${RUN_EXTERNAL_COMMAND:-0}"' in script
+    assert 'EXTERNAL_COMMAND="${EXTERNAL_COMMAND:-}"' in script
+    assert '"${variant_dir}/external_command"' in script
+    assert '"${SCRIPT_DIR}/run_external_command_gate.sh"' in script
+
+
+def test_sm120_issue12_w4a16_marlin_gate_matches_reported_shape():
+    script = (ROOT / "scripts" / "run_sm120_issue12_w4a16_marlin_gate.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ISSUE12_W4A16_MODEL must point to the W4A16 artifact" in script
+    assert "ISSUE12_AIME_RUNNER_COMMAND must be set" in script
+    assert 'B200_BASELINE_VARIANTS="${B200_BASELINE_VARIANTS:-mtp1}"' in script
+    assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-external_command}"' in script
+    assert 'RUN_EXTERNAL_COMMAND="${RUN_EXTERNAL_COMMAND:-1}"' in script
+    assert 'B200_TENSOR_PARALLEL_SIZE="${B200_TENSOR_PARALLEL_SIZE:-4}"' in script
+    assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-65536}"' in script
+    assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-disabled}"' in script
+    assert 'B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"' in script
+    assert 'B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"' in script
+    assert 'VLLM_TRITON_MLA_SPARSE="${VLLM_TRITON_MLA_SPARSE:-1}"' in script
+    assert 'VLLM_TRITON_MLA_SPARSE_HEAD_BLOCK_SIZE="${VLLM_TRITON_MLA_SPARSE_HEAD_BLOCK_SIZE:-4}"' in script
+    assert 'VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}"' in script
+    assert "--max-num-batched-tokens 8192" in script
+    assert "--max-num-seqs 8" in script
+    assert "--gpu-memory-utilization 0.92" in script
+    assert "--disable-custom-all-reduce" in script
+    assert "--load-format safetensors" in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
+
+
 def test_sm120_user_feedback_matrix_combines_reported_shapes():
     script = (ROOT / "scripts" / "run_sm120_user_feedback_matrix.sh").read_text(
         encoding="utf-8"
@@ -539,6 +597,8 @@ def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates()
     assert "issuecomment-4507780873" in docs
     assert "github.com/jasl/vllm/issues/8" in docs
     assert "github.com/jasl/vllm/issues/10" in docs
+    assert "github.com/jasl/vllm/issues/12" in docs
+    assert "run_sm120_issue12_w4a16_marlin_gate.sh" in docs
     assert "forums.developer.nvidia.com" in docs
     assert "run_sm120_issue10_startup_gate.sh" in docs
     assert "run_sm120_ds4_absorption_stress.sh" in docs

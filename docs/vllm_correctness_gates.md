@@ -305,6 +305,22 @@ reported four-card or 512K/1M shapes:
   `20260525_issue10_safe_59k_mtp_prefix_proxy`; keep citing that only as SM120
   scaled-down evidence. The 128K-class SM120 proxy and the 393K GB10 dual-node
   report remain separate crash-backlog items.
+- TP=4 W4A16 + Marlin MoE concurrent thinking-mode gate for
+  [jasl/vllm issue #12](https://github.com/jasl/vllm/issues/12): run
+  `scripts/run_sm120_issue12_w4a16_marlin_gate.sh` only when the external
+  W4A16 model artifact and AIME runner are available. Set
+  `ISSUE12_W4A16_MODEL` to the artifact and `ISSUE12_AIME_RUNNER_COMMAND` to a
+  command that drives the reported AIME 2024, C=4, thinking/high,
+  32K-output-token workload against `BASE_URL`. The profile preserves the
+  reported vLLM shape: TP=4, MTP=1, prefix cache disabled, FP8 KV, block size
+  256, `max_model_len=65536`, `max_num_seqs=8`,
+  `max_num_batched_tokens=8192`, sparse MLA with head block size 4,
+  `VLLM_USE_FLASHINFER_SAMPLER=0`, disabled custom all-reduce, safetensors load
+  format, and FULL_AND_PIECEWISE CUDA graph. Treat token-stream corruption,
+  CUDA illegal memory access, server unresponsiveness, Xid/NVRM/UVM driver
+  errors, or host reboot requirements as failures. This is an external
+  user-reported gate, not a local default or promotion baseline, until a
+  four-card SM120 environment and the required W4A16/AIME assets are available.
 
 The convenience profile `scripts/run_sm120_external_reported_gates.sh` refuses
 to run unless `EXTERNAL_GATE_MAX_MODEL_LEN` is set, so 512K and 1M evidence is

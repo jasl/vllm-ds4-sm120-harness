@@ -200,6 +200,10 @@ STREAMING_PRESSURE_MATRIX_REQUEST_RETRIES="${STREAMING_PRESSURE_MATRIX_REQUEST_R
 STREAMING_PRESSURE_MATRIX_MAX_TTFT_SECONDS="${STREAMING_PRESSURE_MATRIX_MAX_TTFT_SECONDS:-120}"
 STREAMING_PRESSURE_MATRIX_MAX_ELAPSED_SECONDS="${STREAMING_PRESSURE_MATRIX_MAX_ELAPSED_SECONDS:-900}"
 STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW="${STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW:-0}"
+RUN_EXTERNAL_COMMAND="${RUN_EXTERNAL_COMMAND:-0}"
+EXTERNAL_COMMAND="${EXTERNAL_COMMAND:-}"
+EXTERNAL_COMMAND_LABEL="${EXTERNAL_COMMAND_LABEL:-external_command}"
+EXTERNAL_COMMAND_TIMEOUT="${EXTERNAL_COMMAND_TIMEOUT:-7200}"
 RUN_ACCEPTANCE="${RUN_ACCEPTANCE:-1}"
 RUN_BENCH_HF="${RUN_BENCH_HF:-1}"
 RUN_LM_EVAL="${RUN_LM_EVAL:-1}"
@@ -342,6 +346,8 @@ export STREAMING_PRESSURE_TEMPERATURE STREAMING_PRESSURE_TOP_P
 export STREAMING_PRESSURE_THINKING_MODE STREAMING_PRESSURE_TIMEOUT
 export STREAMING_PRESSURE_REQUEST_RETRIES STREAMING_PRESSURE_MAX_TTFT_SECONDS
 export STREAMING_PRESSURE_MAX_ELAPSED_SECONDS STREAMING_PRESSURE_FAIL_ON_SLOW
+export RUN_EXTERNAL_COMMAND EXTERNAL_COMMAND EXTERNAL_COMMAND_LABEL
+export EXTERNAL_COMMAND_TIMEOUT
 export RUN_KV_LAYOUT_PROBE KV_LAYOUT_CASE_NAME KV_LAYOUT_NUM_BLOCKS
 export KV_LAYOUT_BLOCK_SIZE KV_LAYOUT_HEAD_DIM KV_LAYOUT_SCALE_BYTES
 export KV_LAYOUT_REQUIRE_HELPER_MATCH KV_LAYOUT_TIMEOUT
@@ -376,6 +382,7 @@ VALID_BASELINE_PHASES=(
   prefix_cache_stress
   streaming_pressure_soak
   streaming_pressure_matrix
+  external_command
   bench_hf_mt_bench
   eval_gsm8k
   bench_random_prefill_sweep
@@ -400,6 +407,7 @@ phase_run_flag() {
     prefix_cache_stress) printf '%s\n' RUN_PREFIX_CACHE_STRESS ;;
     streaming_pressure_soak) printf '%s\n' RUN_STREAMING_PRESSURE_SOAK ;;
     streaming_pressure_matrix) printf '%s\n' RUN_STREAMING_PRESSURE_MATRIX ;;
+    external_command) printf '%s\n' RUN_EXTERNAL_COMMAND ;;
     bench_hf_mt_bench) printf '%s\n' RUN_BENCH_HF ;;
     eval_gsm8k) printf '%s\n' RUN_LM_EVAL ;;
     bench_random_prefill_sweep) printf '%s\n' RUN_RANDOM_PREFILL_SWEEP ;;
@@ -438,7 +446,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,streaming_pressure_soak,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,streaming_pressure_soak,streaming_pressure_matrix,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
     run_flag="$(phase_run_flag "${item}")"
@@ -871,6 +879,8 @@ write_summary() {
       "${RUN_STREAMING_PRESSURE_MATRIX}" "${STREAMING_PRESSURE_MATRIX_CASE_SPECS}" \
       "${STREAMING_PRESSURE_MATRIX_THINKING_MODE:-non-thinking}" \
       "${STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW:-0}"
+    printf -- '- external_command: `%s`, label `%s`, timeout `%s`\n' \
+      "${RUN_EXTERNAL_COMMAND}" "${EXTERNAL_COMMAND_LABEL}" "${EXTERNAL_COMMAND_TIMEOUT}"
     printf -- '- hf_benchmark: `%s`\n' "${RUN_BENCH_HF}"
     printf -- '- lm_eval: `%s`, tasks `%s`, fewshot `%s`, limit `%s`, no-MTP concurrency `%s`, MTP concurrency `%s`\n' \
       "${RUN_LM_EVAL}" "${LM_EVAL_TASKS}" "${LM_EVAL_NUM_FEWSHOT}" \
@@ -1193,6 +1203,22 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_acceptance.sh"
+  fi
+
+  if phase_enabled "external_command" && { [[ "${RUN_EXTERNAL_COMMAND}" == "1" ]] || [[ "${RUN_EXTERNAL_COMMAND}" == "true" ]]; }; then
+    run_phase "${variant}" "external_command" "${variant_dir}/external_command" \
+      env OUT_DIR="${variant_dir}/external_command" \
+        BASE_URL="${BASE_URL}" HOST="${HOST}" PORT="${PORT}" MODEL="${MODEL}" \
+        PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
+        EXTERNAL_COMMAND="${EXTERNAL_COMMAND}" \
+        EXTERNAL_COMMAND_LABEL="${EXTERNAL_COMMAND_LABEL}" \
+        EXTERNAL_COMMAND_TIMEOUT="${EXTERNAL_COMMAND_TIMEOUT}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_external_command_gate.sh"
   fi
 
   case "${variant}" in

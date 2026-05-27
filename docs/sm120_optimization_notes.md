@@ -1575,6 +1575,19 @@ stable:
   and `FULL_AND_PIECEWISE`. The pasted log reaches checkpoint load and MoE
   prepare/finalize, but does not yet include the failing kernel or driver
   event.
+- SM120 issue #12 W4A16 + Marlin MoE external gate: the reported four-card
+  RTX PRO 6000 shape is outside the local two-card harness budget and depends
+  on an external W4A16 artifact plus an AIME runner. Track it through
+  `scripts/run_sm120_issue12_w4a16_marlin_gate.sh`, which fixes the serve
+  shape to TP=4, MTP=1, FP8 KV, prefix cache disabled, block size 256,
+  `max_model_len=65536`, `max_num_seqs=8`, `max_num_batched_tokens=8192`,
+  sparse MLA head block size 4, `VLLM_USE_FLASHINFER_SAMPLER=0`, disabled
+  custom all-reduce, safetensors load format, and `FULL_AND_PIECEWISE`. The
+  reporter's first corruption symptom is plausibly covered by the upstream
+  Marlin MoE SM12x arch-list fix already present in this branch, but their
+  later CUDA illegal-memory-access result has not been validated here. Keep it
+  in the external crash/correctness backlog until a four-card run proves both
+  token correctness and post-run server/driver health.
 - Harness note: the safe SM120 issue #10 proxy intentionally keeps streaming
   pressure at the 59K-class frontier. The 124K streaming shape belongs to the
   explicit high-risk path because it does not fit the safe
