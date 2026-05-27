@@ -41,8 +41,12 @@ mkdir -p "${USER_FEEDBACK_MATRIX_ROOT}"
 
 failures=0
 run_child() {
+  local child_out="$1"
+  shift
+
+  mkdir -p "${child_out}"
   set +e
-  "$@"
+  "$@" >"${child_out}/child.stdout.log" 2>"${child_out}/child.stderr.log"
   local code="$?"
   set -e
   if [[ "${code}" != "0" ]]; then
@@ -51,7 +55,7 @@ run_child() {
 }
 
 if [[ "${RUN_USER_FEEDBACK_PRIMARY}" == "1" || "${RUN_USER_FEEDBACK_PRIMARY}" == "true" ]]; then
-  run_child env \
+  run_child "${USER_FEEDBACK_PRIMARY_OUT_DIR}" env \
     OUT_DIR="${USER_FEEDBACK_PRIMARY_OUT_DIR}" \
     MODEL="${MODEL}" HOST="${HOST}" PORT="${PORT}" \
     B200_VLLM_REPO="${B200_VLLM_REPO}" B200_VLLM_VENV="${B200_VLLM_VENV}" \
@@ -123,7 +127,7 @@ if [[ "${RUN_USER_FEEDBACK_PRIMARY}" == "1" || "${RUN_USER_FEEDBACK_PRIMARY}" ==
 fi
 
 if [[ "${RUN_USER_FEEDBACK_PREFIX_CACHE}" == "1" || "${RUN_USER_FEEDBACK_PREFIX_CACHE}" == "true" ]]; then
-  run_child env \
+  run_child "${USER_FEEDBACK_PREFIX_CACHE_OUT_DIR}" env \
     OUT_DIR="${USER_FEEDBACK_PREFIX_CACHE_OUT_DIR}" \
     MODEL="${MODEL}" HOST="${HOST}" PORT="$((PORT + 1))" \
     B200_VLLM_REPO="${B200_VLLM_REPO}" B200_VLLM_VENV="${B200_VLLM_VENV}" \
@@ -151,7 +155,7 @@ if [[ "${RUN_USER_FEEDBACK_PREFIX_CACHE}" == "1" || "${RUN_USER_FEEDBACK_PREFIX_
 fi
 
 if [[ "${RUN_USER_FEEDBACK_ISSUE10}" == "1" || "${RUN_USER_FEEDBACK_ISSUE10}" == "true" ]]; then
-  run_child env \
+  run_child "${USER_FEEDBACK_ISSUE10_OUT_DIR}" env \
     OUT_DIR="${USER_FEEDBACK_ISSUE10_OUT_DIR}" \
     MODEL="${MODEL}" HOST="${HOST}" PORT="$((PORT + 2))" \
     B200_VLLM_REPO="${B200_VLLM_REPO}" B200_VLLM_VENV="${B200_VLLM_VENV}" \
@@ -179,7 +183,9 @@ if [[ "${RUN_USER_FEEDBACK_SUMMARY}" == "1" || "${RUN_USER_FEEDBACK_SUMMARY}" ==
     "${PYTHON}" "${SCRIPT_DIR}/summarize_sm120_user_feedback_matrix.py" \
       "${summary_args[@]}" \
       --json-output "${USER_FEEDBACK_MATRIX_ROOT}/user_feedback_matrix_summary.json" \
-      --markdown-output "${USER_FEEDBACK_MATRIX_ROOT}/user_feedback_matrix_summary.md"
+      --markdown-output "${USER_FEEDBACK_MATRIX_ROOT}/user_feedback_matrix_summary.md" \
+      >"${USER_FEEDBACK_MATRIX_ROOT}/summary.stdout.log" \
+      2>"${USER_FEEDBACK_MATRIX_ROOT}/summary.stderr.log"
     summary_code="$?"
     set -e
     if [[ "${summary_code}" != "0" ]]; then

@@ -632,6 +632,17 @@ def test_sm120_user_feedback_matrix_includes_external_random_256_256_observation
     assert 'RANDOM_256X256_NUM_PROMPTS="${RANDOM_256X256_NUM_PROMPTS:-80}"' in script
 
 
+def test_sm120_user_feedback_matrix_captures_child_and_summary_stdio():
+    script = (ROOT / "scripts" / "run_sm120_user_feedback_matrix.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert '>"${child_out}/child.stdout.log"' in script
+    assert '2>"${child_out}/child.stderr.log"' in script
+    assert '>"${USER_FEEDBACK_MATRIX_ROOT}/summary.stdout.log"' in script
+    assert '2>"${USER_FEEDBACK_MATRIX_ROOT}/summary.stderr.log"' in script
+
+
 def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates():
     docs = (ROOT / "docs" / "vllm_correctness_gates.md").read_text(
         encoding="utf-8"
@@ -2049,6 +2060,78 @@ def test_b200_baseline_driver_can_run_single_phase_with_mocked_tools(tmp_path):
     assert "oracle_export" not in phase_log
     assert (out_dir / "mtp" / "acceptance").exists()
     assert not (out_dir / "mtp" / "bench_hf_mt_bench").exists()
+
+
+def test_b200_baseline_driver_captures_phase_stdio_to_artifacts(tmp_path):
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        "#!/usr/bin/env sh\n"
+        "args=\"$*\"\n"
+        "write_arg_file() {\n"
+        "  flag=\"$1\"\n"
+        "  shift\n"
+        "  while [ \"$#\" -gt 0 ]; do\n"
+        "    if [ \"$1\" = \"$flag\" ]; then\n"
+        "      shift\n"
+        "      mkdir -p \"$(dirname \"$1\")\"\n"
+        "      printf '%s\\n' '{}' > \"$1\"\n"
+        "      return 0\n"
+        "    fi\n"
+        "    shift\n"
+        "  done\n"
+        "}\n"
+        "case \"$args\" in\n"
+        "  *' env-summary '*) write_arg_file --json-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
+        "  *' health'*) printf '%s\\n' '{\"ok\":true}'; exit 0 ;;\n"
+        "  *' chat-smoke '*) printf '%s\\n' child-stdout-marker; printf '%s\\n' child-stderr-marker >&2; write_arg_file --jsonl-output \"$@\"; write_arg_file --markdown-output \"$@\"; exit 0 ;;\n"
+        "  *' generation-matrix '*) write_arg_file --jsonl-output \"$@\"; exit 0 ;;\n"
+        "  *' toolcall15 '*) write_arg_file --json-output \"$@\"; exit 0 ;;\n"
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(fake_python.stat().st_mode | 0o111)
+    fake_vllm = tmp_path / "fake-vllm"
+    fake_vllm.write_text(
+        "#!/usr/bin/env sh\n"
+        "trap 'exit 0' TERM INT\n"
+        "while :; do sleep 1; done\n",
+        encoding="utf-8",
+    )
+    fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
+    out_dir = tmp_path / "baseline"
+    env = os.environ | {
+        "PYTHON": str(fake_python),
+        "VLLM_BIN": str(fake_vllm),
+        "OUT_DIR": str(out_dir),
+        "GPU_STATS": "0",
+        "RUNTIME_STATS": "0",
+        "VLLM_COLLECT_ENV": "0",
+        "B200_BASELINE_VARIANTS": "mtp",
+        "B200_BASELINE_PHASES": "acceptance",
+        "SERVER_STARTUP_TIMEOUT": "5",
+        "SERVER_STARTUP_INTERVAL_SECONDS": "0",
+    }
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run_b200_baseline.sh")],
+        check=True,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+
+    assert "child-stdout-marker" not in result.stdout
+    assert "child-stderr-marker" not in result.stderr
+    assert "child-stdout-marker" in (
+        out_dir / "mtp" / "acceptance" / "phase.stdout.log"
+    ).read_text(encoding="utf-8")
+    assert "child-stderr-marker" in (
+        out_dir / "mtp" / "acceptance" / "phase.stderr.log"
+    ).read_text(encoding="utf-8")
 
 
 def test_b200_baseline_driver_can_run_variants_in_parallel_with_gpu_splits(tmp_path):

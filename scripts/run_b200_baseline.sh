@@ -798,11 +798,14 @@ run_phase() {
   local variant="$1"
   local phase="$2"
   local artifact_dir="$3"
+  local stdout_log stderr_log
   shift 3
 
   mkdir -p "${artifact_dir}"
+  stdout_log="${artifact_dir}/phase.stdout.log"
+  stderr_log="${artifact_dir}/phase.stderr.log"
   set +e
-  "$@"
+  "$@" >"${stdout_log}" 2>"${stderr_log}"
   local code="$?"
   set -e
   record_phase "${variant}" "${phase}" "${code}" "${artifact_dir}"
