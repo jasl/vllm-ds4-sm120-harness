@@ -1701,9 +1701,21 @@ Local no-MTP startup check, 2026-05-27:
   layout transform on SM120. The DeepGEMM layout helper accepts the SM90 FP32
   layouts and SM100 packed-UE8M0 layouts, but the SM120/SM121 path falls
   through to `Unknown SF transformation` for the recipe used by the PR.
-- Keep the active branch's FP32-scale MXFP4 DeepGEMM route until a packed-scale
-  path is proven on SM120/SM121. This is a rejected experiment for now, not a
-  performance regression caused by disabling MTP or CUDA Graph.
+- `20260527_pr43477_nomtp_marlin_random256_smoke` forced
+  `--moe-backend marlin`. That isolated the MoE path but still failed during
+  FP8 linear weight post-processing through the PR's SM120 DeepGEMM linear
+  route with the same scale-layout assertion.
+- `20260527_pr43477_nomtp_marlin_tritonlin_random256_smoke` then forced both
+  `--moe-backend marlin` and `--linear-backend triton`. That got past model
+  loading, confirmed `MARLIN` for MXFP4 MoE, and reached the profile dummy run,
+  but failed during `FULL_AND_PIECEWISE` torch.compile with
+  `torch._inductor.exc.InductorError: AssertionError: auto_functionalized was
+  not removed`. Do not treat eager mode or disabling graph capture as an
+  acceptable fix for this branch.
+- Keep the active branch's current SM120 backend selection and FP32-scale
+  fallback behavior until a packed-scale DeepGEMM path is proven on
+  SM120/SM121. This is a rejected experiment for now, not a performance
+  regression caused by disabling MTP or CUDA Graph.
 
 The
 [`pasta-paul` comment](https://github.com/vllm-project/vllm/pull/43477#issuecomment-4531193899)
