@@ -1682,6 +1682,29 @@ test it as a separate no-MTP experiment branch because the current branch's
 customer value is tied to validated NVFP4 / FP8-KV / MTP behavior, not only to
 the no-MTP sparse-MLA backend.
 
+Local no-MTP startup check, 2026-05-27:
+
+- The PR head was tested as a separately built worktree against the same DS4
+  TP=2, FP8-KV, `FULL_AND_PIECEWISE`, prefix-cache-disabled profile used by the
+  active branch smoke.
+- `20260527_pr43477_nomtp_post_install_smoke` failed before benchmark
+  execution during worker startup. The first failure was
+  `RuntimeError: Assertion error (csrc/apis/layout.hpp:59): Unknown SF
+  transformation` from `deep_gemm.transform_sf_into_required_layout()` while
+  post-processing FP8 block scales.
+- `20260527_pr43477_nomtp_e8m0off_random256_smoke` repeated the startup with
+  `VLLM_USE_DEEP_GEMM_E8M0=0`. The log confirmed DeepGEMM E8M0 was disabled,
+  but startup still failed with the same assertion, now through the MXFP4 MoE
+  scale packing path.
+- Root cause hypothesis from the local evidence: this PR's attempted
+  DeepGEMM MXFP4 scale pre-pack is not compatible with the current DeepGEMM
+  layout transform on SM120. The DeepGEMM layout helper accepts the SM90 FP32
+  layouts and SM100 packed-UE8M0 layouts, but the SM120/SM121 path falls
+  through to `Unknown SF transformation` for the recipe used by the PR.
+- Keep the active branch's FP32-scale MXFP4 DeepGEMM route until a packed-scale
+  path is proven on SM120/SM121. This is a rejected experiment for now, not a
+  performance regression caused by disabling MTP or CUDA Graph.
+
 The
 [`pasta-paul` comment](https://github.com/vllm-project/vllm/pull/43477#issuecomment-4531193899)
 is a useful scope boundary:
