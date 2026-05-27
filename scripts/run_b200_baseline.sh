@@ -233,6 +233,12 @@ RANDOM_PREFILL_NUM_PROMPTS="${RANDOM_PREFILL_NUM_PROMPTS:-8}"
 RANDOM_PREFILL_BENCH_TIMEOUT="${RANDOM_PREFILL_BENCH_TIMEOUT:-1800}"
 RANDOM_PREFILL_TEMPERATURE="${RANDOM_PREFILL_TEMPERATURE:-0.0}"
 RANDOM_PREFILL_IGNORE_EOS="${RANDOM_PREFILL_IGNORE_EOS:-1}"
+RUN_RANDOM_8K1K="${RUN_RANDOM_8K1K:-0}"
+RANDOM_8K1K_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN:-8000}"
+RANDOM_8K1K_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN:-1000}"
+RANDOM_8K1K_CONCURRENCY="${RANDOM_8K1K_CONCURRENCY:-1,2,4,8,16,32}"
+RANDOM_8K1K_NUM_PROMPTS="${RANDOM_8K1K_NUM_PROMPTS:-80}"
+RANDOM_8K1K_BENCH_TIMEOUT="${RANDOM_8K1K_BENCH_TIMEOUT:-3600}"
 RANDOM_LONG_CONCURRENCY="${RANDOM_LONG_CONCURRENCY:-1,2}"
 RANDOM_LONG_NUM_PROMPTS="${RANDOM_LONG_NUM_PROMPTS:-8}"
 RANDOM_LONG_INPUT_LEN="${RANDOM_LONG_INPUT_LEN:-8192}"
@@ -289,6 +295,8 @@ export RUN_RANDOM_PREFILL_SWEEP RANDOM_PREFILL_INPUT_LENS
 export RANDOM_PREFILL_OUTPUT_LEN RANDOM_PREFILL_CONCURRENCY
 export RANDOM_PREFILL_NUM_PROMPTS RANDOM_PREFILL_BENCH_TIMEOUT
 export RANDOM_PREFILL_TEMPERATURE RANDOM_PREFILL_IGNORE_EOS
+export RUN_RANDOM_8K1K RANDOM_8K1K_INPUT_LEN RANDOM_8K1K_OUTPUT_LEN
+export RANDOM_8K1K_CONCURRENCY RANDOM_8K1K_NUM_PROMPTS RANDOM_8K1K_BENCH_TIMEOUT
 export RUN_LONG_CONTEXT_PROBE LONG_CONTEXT_CASE_NAME LONG_CONTEXT_LINE_COUNT
 export LONG_CONTEXT_MAX_TOKENS LONG_CONTEXT_TEMPERATURE LONG_CONTEXT_TOP_P
 export LONG_CONTEXT_THINKING_MODE LONG_CONTEXT_TIMEOUT LONG_CONTEXT_REQUEST_RETRIES
@@ -386,6 +394,7 @@ VALID_BASELINE_PHASES=(
   bench_hf_mt_bench
   eval_gsm8k
   bench_random_prefill_sweep
+  bench_random_8000x1000
   bench_random_8192x512
   oracle_export
   decode_profile
@@ -411,6 +420,7 @@ phase_run_flag() {
     bench_hf_mt_bench) printf '%s\n' RUN_BENCH_HF ;;
     eval_gsm8k) printf '%s\n' RUN_LM_EVAL ;;
     bench_random_prefill_sweep) printf '%s\n' RUN_RANDOM_PREFILL_SWEEP ;;
+    bench_random_8000x1000) printf '%s\n' RUN_RANDOM_8K1K ;;
     bench_random_8192x512) printf '%s\n' RUN_RANDOM_LONG ;;
     oracle_export) printf '%s\n' RUN_ORACLE_EXPORT ;;
     decode_profile) printf '%s\n' RUN_DECODE_PROFILE ;;
@@ -446,7 +456,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,streaming_pressure_soak,streaming_pressure_matrix,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,streaming_pressure_soak,streaming_pressure_matrix,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
     run_flag="$(phase_run_flag "${item}")"
@@ -894,6 +904,9 @@ write_summary() {
       "${RUN_RANDOM_PREFILL_SWEEP}" "${RANDOM_PREFILL_INPUT_LENS}" \
       "${RANDOM_PREFILL_OUTPUT_LEN}" "${RANDOM_PREFILL_CONCURRENCY}" \
       "${RANDOM_PREFILL_NUM_PROMPTS}"
+    printf -- '- random_8000x1000: `%s`, concurrency `%s`, shape `%s/%s`, prompts `%s`\n' \
+      "${RUN_RANDOM_8K1K}" "${RANDOM_8K1K_CONCURRENCY}" "${RANDOM_8K1K_INPUT_LEN}" \
+      "${RANDOM_8K1K_OUTPUT_LEN}" "${RANDOM_8K1K_NUM_PROMPTS}"
     printf -- '- random_long: `%s`, concurrency `%s`, shape `%s/%s`, prompts `%s`\n' \
       "${RUN_RANDOM_LONG}" "${RANDOM_LONG_CONCURRENCY}" "${RANDOM_LONG_INPUT_LEN}" \
       "${RANDOM_LONG_OUTPUT_LEN}" "${RANDOM_LONG_NUM_PROMPTS}"
@@ -1534,6 +1547,25 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_random_prefill_sweep.sh"
+  fi
+
+  if phase_enabled "bench_random_8000x1000" && { [[ "${RUN_RANDOM_8K1K}" == "1" ]] || [[ "${RUN_RANDOM_8K1K}" == "true" ]]; }; then
+    run_phase "${variant}" "bench_random_8000x1000" "${variant_dir}/bench_random_8000x1000" \
+      env OUT_DIR="${variant_dir}/bench_random_8000x1000" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
+        SERVE_LOG="${serve_log}" CONCURRENCY="${RANDOM_8K1K_CONCURRENCY}" \
+        DATASET_NAME=random TOKENIZER_MODE=deepseek_v4 \
+        RANDOM_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN}" \
+        RANDOM_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN}" \
+        NUM_PROMPTS="${RANDOM_8K1K_NUM_PROMPTS}" TEMPERATURE="${TEMPERATURE}" \
+        BENCH_TIMEOUT="${RANDOM_8K1K_BENCH_TIMEOUT}" IGNORE_EOS=1 \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_PROBE_TIMEOUT="${SERVER_FAILURE_PROBE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_bench_matrix.sh"
   fi
 
   if phase_enabled "bench_random_8192x512" && { [[ "${RUN_RANDOM_LONG}" == "1" ]] || [[ "${RUN_RANDOM_LONG}" == "true" ]]; }; then

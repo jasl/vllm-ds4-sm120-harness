@@ -354,6 +354,8 @@ def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
     assert "long_context_mixed_arrival" in script
     assert "long_context_latency_matrix" in script
     assert "streaming_pressure_matrix" in script
+    assert "bench_random_8000x1000" in script
+    assert 'RUN_RANDOM_8K1K="${RUN_RANDOM_8K1K:-1}"' in script
     assert 'RUN_FRONTIER_CONTEXT_SWEEP="${RUN_FRONTIER_CONTEXT_SWEEP:-1}"' in script
     assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
 
@@ -536,6 +538,11 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
     assert "decode_then_59k:1900:1900:after_first_token" in script
     assert "decode_then_124k:4000:4000:after_first_token" in script
     assert "issue7_5k_c4:4:3:192:128" in script
+    assert "bench_random_8000x1000" in script
+    assert 'RUN_RANDOM_8K1K="${RUN_RANDOM_8K1K:-1}"' in script
+    assert 'RANDOM_8K1K_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN:-8000}"' in script
+    assert 'RANDOM_8K1K_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN:-1000}"' in script
+    assert 'RANDOM_8K1K_CONCURRENCY="${RANDOM_8K1K_CONCURRENCY:-1,2,4,8,16,32}"' in script
     assert "USER_FEEDBACK_ISSUE10_OUT_DIR" in script
     assert "run_sm120_issue10_startup_gate.sh" in script
     assert "prefix_cache_stress" in script
@@ -582,6 +589,20 @@ def test_sm120_ds4_absorption_stress_matrix_collects_safe_and_opt_in_crash_shape
     assert "FULL_AND_PIECEWISE" in script
     assert "STREAMING_PRESSURE_MATRIX_CASE_SPECS" in script
     assert "issue10_c2_124k:2:1:4000:64" in script
+
+
+def test_b200_baseline_exposes_flashinfer_reported_8k_1k_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
+
+    assert "bench_random_8000x1000" in script
+    assert "RUN_RANDOM_8K1K" in script
+    assert "RANDOM_8K1K_INPUT_LEN" in script
+    assert "RANDOM_8K1K_OUTPUT_LEN" in script
+    assert "RANDOM_8K1K_CONCURRENCY" in script
+    assert '"${variant_dir}/bench_random_8000x1000"' in script
+    assert "DATASET_NAME=random TOKENIZER_MODE=deepseek_v4" in script
+    assert 'RANDOM_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN}"' in script
+    assert 'RANDOM_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN}"' in script
 
 
 def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates():

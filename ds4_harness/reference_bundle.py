@@ -18,6 +18,7 @@ VARIANTS = ("nomtp", "mtp")
 SMOKE_CASES = ("quick",)
 BENCH_PHASE_LABELS = {
     "bench_hf_mt_bench": "HF/MT-Bench",
+    "bench_random_8000x1000": "Random 8000/1000",
     "bench_random_8192x512": "Random 8192/512",
 }
 

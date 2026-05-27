@@ -207,8 +207,9 @@ MTP=1 prefix-cache stress shape in a separate prefix-cache-enabled serve, and
 writes one `user_feedback_matrix_summary.md` plus JSON summary. Use that
 combined summary to choose the tradeoff across C=1/2/4 short latency, 59K/124K
 long latency, issue #8 decode fairness, mixed-arrival pressure, issue #7
-streaming pressure, GSM8K, prefill throughput, ds4-style frontier latency,
-ds4 story-recall semantic status, and prefix-cache stability. The
+streaming pressure, GSM8K, prefill throughput, the FlashInfer-comparison
+8000/1000 random bench, ds4-style frontier latency, ds4 story-recall semantic
+status, and prefix-cache stability. The
 profile hard-gates GSM8K limit-200 at `exact_match_flexible >= 0.94` and
 `exact_match_strict >= 0.925`, so any further correctness drop blocks the
 matrix rather than becoming a narrative footnote.
@@ -262,6 +263,14 @@ reported four-card or 512K/1M shapes:
   `max_num_batched_tokens`, `max_num_seqs`, prefix-cache mode, sampler/all-reduce
   flags, and NCCL/network environment before treating a 20-40% delta as a vLLM
   kernel regression.
+- TP=2 RTX PRO 6000 FlashInfer sparse-MLA comparison tracking from
+  [vLLM PR #43477](https://github.com/vllm-project/vllm/pull/43477): run
+  `bench_random_8000x1000` with `RANDOM_8K1K_INPUT_LEN=8000`,
+  `RANDOM_8K1K_OUTPUT_LEN=1000`, and
+  `RANDOM_8K1K_CONCURRENCY=1,2,4,8,16,32` for both no-MTP and MTP when runtime
+  budget allows. Treat this as an apples-to-apples 8K/1K performance diagnostic
+  only; it does not replace GSM8K, prefix-cache, 59K/124K latency,
+  mixed-arrival, or crash-stability gates.
 - TP=2 GB10 startup/crash proxy for
   [jasl/vllm issue #10](https://github.com/jasl/vllm/issues/10): until the
   GB10 cluster is available, run `scripts/run_sm120_issue10_startup_gate.sh`

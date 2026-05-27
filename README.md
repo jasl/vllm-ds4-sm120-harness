@@ -134,6 +134,13 @@ tool-call turn.
     benchmark logs
   - is the development gate for short-prefill kernel regressions such as FP8
     MQA logits tile changes
+- Random 8000/1000 comparison bench:
+  - runs a controlled `bench serve` case at `RANDOM_8K1K_INPUT_LEN=8000` and
+    `RANDOM_8K1K_OUTPUT_LEN=1000`
+  - uses `RANDOM_8K1K_CONCURRENCY=1,2,4,8,16,32` by default to match public
+    FlashInfer sparse-MLA comparison reports
+  - is a diagnostic comparison phase; keep GSM8K, long-context, prefix-cache,
+    and mixed-arrival gates as the promotion criteria
 - vLLM `bench serve` comparison:
   - compares two `bench.json` files, such as CUDA graph off/on or branch A/B
   - reports SGLang-style batch/concurrency rows with output tok/s, TPOT, TTFT,
@@ -231,7 +238,8 @@ Use the harness as a layered gate, not as one monolithic command:
   philschmid/mt-bench` to avoid pure random prompts when judging user-visible
   progress.
 - Synthetic pressure: benchmark with `--dataset-name random` for controlled
-  short/long context shapes such as 1024/1024 decode or 8192/512 prefill.
+  short/long context shapes such as 1024/1024 decode, 8192/512 prefill, or
+  the FlashInfer-comparison 8000/1000 shape.
 - Long-context retrieval: run `long-context-probe` when a change may affect
   KV cache, indexer cache, chunking, or long-prefill behavior. It validates
   end-to-end sentinel retrieval rather than dumping raw KV tensors.
@@ -936,6 +944,13 @@ The random short-prefill sweep is enabled in baseline profiles by default with
 `prefill_sweep_summary.md`. Use it before promoting changes that touch direct
 prefill kernels, especially SM120 FP8 MQA logits row tiling.
 
+The FlashInfer-comparison random bench is available as
+`bench_random_8000x1000`. Local quality and user-feedback profiles enable it
+with `RUN_RANDOM_8K1K=1`, `RANDOM_8K1K_INPUT_LEN=8000`,
+`RANDOM_8K1K_OUTPUT_LEN=1000`, `RANDOM_8K1K_CONCURRENCY=1,2,4,8,16,32`, and
+`RANDOM_8K1K_NUM_PROMPTS=80`. Use it when comparing against public DS4 SM120
+FlashInfer sparse-MLA reports; do not use it alone to judge branch promotion.
+
 The default KV layout probe uses a synthetic packed FP8 indexer cache with
 `KV_LAYOUT_NUM_BLOCKS=2`, `KV_LAYOUT_BLOCK_SIZE=256`,
 `KV_LAYOUT_HEAD_DIM=448`, `KV_LAYOUT_SCALE_BYTES=8`, and
@@ -951,7 +966,8 @@ the requested server variant. Valid phase names are `kv_layout_probe`,
 `prefix_cache_probe`,
 `prefix_cache_stress`, `streaming_pressure_soak`, `streaming_pressure_matrix`,
 `bench_hf_mt_bench`, `eval_gsm8k`, `bench_random_prefill_sweep`,
-`bench_random_8192x512`, `oracle_export`, `decode_profile`, and
+`bench_random_8000x1000`, `bench_random_8192x512`, `oracle_export`,
+`decode_profile`, and
 `eval_longbench2`; the default is `all`. The
 `streaming_pressure_soak` phase still requires `RUN_STREAMING_PRESSURE_SOAK=1`
 because it is intentionally opt-in. For example:
@@ -1162,8 +1178,9 @@ Before promoting an optimization:
   `user_feedback_matrix_summary.md` at the matrix root so the first review
   surface contains phase status, 59K/124K latency, issue #8 decode
   concurrency, mixed-arrival pressure, issue #7 streaming pressure, short
-  bench throughput, GSM8K, prefill sweep, ds4 story-recall semantic status,
-  ds4-style frontier latency, and prefix-cache stress data.
+  bench throughput, GSM8K, prefill sweep, the FlashInfer-comparison 8000/1000
+  random bench, ds4 story-recall semantic status, ds4-style frontier latency,
+  and prefix-cache stress data.
   The profile defaults to GSM8K limit-200 promotion floors of
   `exact_match_flexible >= 0.94` and `exact_match_strict >= 0.925`, matching
   the current accepted lower bound so later tuning cannot silently trade away

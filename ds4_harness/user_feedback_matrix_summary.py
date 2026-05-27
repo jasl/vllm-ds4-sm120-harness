@@ -478,6 +478,7 @@ def summarize_run(label: str, run_root: Path) -> Json:
         "mixed_arrival": [],
         "streaming_pressure": [],
         "short_bench": [],
+        "random_8000x1000_bench": [],
         "gsm8k": [],
         "prefill_sweep": [],
         "frontier_context_sweep": [],
@@ -517,6 +518,11 @@ def summarize_run(label: str, run_root: Path) -> Json:
 
         bench = _load_json(variant_dir / "bench_hf_mt_bench" / "bench.json")
         result["short_bench"].extend(_collect_bench_rows(label, variant, bench))
+
+        random_8k1k = _load_json(variant_dir / "bench_random_8000x1000" / "bench.json")
+        result["random_8000x1000_bench"].extend(
+            _collect_bench_rows(label, variant, random_8k1k)
+        )
 
         gsm8k = _load_json(variant_dir / "eval_gsm8k" / "lm_eval_summary.json")
         result["gsm8k"].extend(_collect_gsm8k_rows(label, variant, gsm8k))
@@ -614,6 +620,7 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
     mixed_rows: list[list[Any]] = []
     streaming_rows: list[list[Any]] = []
     bench_rows: list[list[Any]] = []
+    random_8k1k_rows: list[list[Any]] = []
     gsm_rows: list[list[Any]] = []
     prefill_rows: list[list[Any]] = []
     frontier_rows: list[list[Any]] = []
@@ -693,6 +700,20 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                     row["concurrency"],
                     row["successful_requests"],
                     row["output_tps"],
+                    row["ttft_p99_ms"],
+                    row["itl_p99_ms"],
+                    row["spec_acceptance_percent"],
+                ]
+            )
+        for row in run["random_8000x1000_bench"]:
+            random_8k1k_rows.append(
+                [
+                    row["run"],
+                    row["variant"],
+                    row["concurrency"],
+                    row["successful_requests"],
+                    row["output_tps"],
+                    row["ttft_mean_ms"],
                     row["ttft_p99_ms"],
                     row["itl_p99_ms"],
                     row["spec_acceptance_percent"],
@@ -871,6 +892,21 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                 "Spec Accept %",
             ],
             bench_rows,
+        ),
+        (
+            "Random 8000/1000 Bench",
+            [
+                "Run",
+                "Variant",
+                "C",
+                "Successful",
+                "Output tok/s",
+                "TTFT Mean ms",
+                "TTFT P99 ms",
+                "ITL P99 ms",
+                "Spec Accept %",
+            ],
+            random_8k1k_rows,
         ),
         (
             "GSM8K",

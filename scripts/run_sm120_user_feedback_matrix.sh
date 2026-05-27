@@ -59,7 +59,7 @@ if [[ "${RUN_USER_FEEDBACK_PRIMARY}" == "1" || "${RUN_USER_FEEDBACK_PRIMARY}" ==
     B200_BASELINE_LABEL="${USER_FEEDBACK_PRIMARY_LABEL}" \
     ARTIFACT_ARCHIVE_PREVIOUS=0 \
     B200_BASELINE_VARIANTS="${USER_FEEDBACK_PRIMARY_VARIANTS:-mtp}" \
-    B200_BASELINE_PHASES="${USER_FEEDBACK_PRIMARY_PHASES:-long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep}" \
+    B200_BASELINE_PHASES="${USER_FEEDBACK_PRIMARY_PHASES:-long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,streaming_pressure_matrix,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000}" \
     B200_TENSOR_PARALLEL_SIZE="${B200_TENSOR_PARALLEL_SIZE:-2}" \
     B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}" \
     B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}" \
@@ -103,6 +103,11 @@ if [[ "${RUN_USER_FEEDBACK_PRIMARY}" == "1" || "${RUN_USER_FEEDBACK_PRIMARY}" ==
     RANDOM_PREFILL_OUTPUT_LEN="${RANDOM_PREFILL_OUTPUT_LEN:-1}" \
     RANDOM_PREFILL_CONCURRENCY="${RANDOM_PREFILL_CONCURRENCY:-1}" \
     RANDOM_PREFILL_NUM_PROMPTS="${RANDOM_PREFILL_NUM_PROMPTS:-8}" \
+    RUN_RANDOM_8K1K="${RUN_RANDOM_8K1K:-1}" \
+    RANDOM_8K1K_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN:-8000}" \
+    RANDOM_8K1K_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN:-1000}" \
+    RANDOM_8K1K_CONCURRENCY="${RANDOM_8K1K_CONCURRENCY:-1,2,4,8,16,32}" \
+    RANDOM_8K1K_NUM_PROMPTS="${RANDOM_8K1K_NUM_PROMPTS:-80}" \
     NUM_PROMPTS="${NUM_PROMPTS:-80}" \
     MTP_CONCURRENCY="${MTP_CONCURRENCY:-1,2,4,8,16,24}" \
     LM_EVAL_NUM_FEWSHOT="${LM_EVAL_NUM_FEWSHOT:-5}" \

@@ -1655,6 +1655,30 @@ Ideas to avoid carrying over blindly:
 - Large C++/JIT kernel ports unless a small, measured vLLM-owned variant is the
   only way to remove a proven bottleneck.
 
+## External Reference: vLLM PR 43477 / FlashInfer SM120 Sparse MLA
+
+vLLM PR
+[`vllm-project/vllm#43477`](https://github.com/vllm-project/vllm/pull/43477)
+and its FlashInfer dependency
+[`flashinfer-ai/flashinfer#3395`](https://github.com/flashinfer-ai/flashinfer/pull/3395)
+are high-signal references for SM120 DS4 sparse MLA work. The route is not a
+drop-in replacement for this branch yet: it depends on an unmerged FlashInfer
+backend, an external DeepGEMM branch, and does not cover this branch's MTP,
+GSM8K, prefix-cache, 59K/124K latency, mixed-arrival, or crash-stability gates.
+
+The PR's most useful performance comparison shape is DS4 TP=2, FP8 KV,
+`FULL_AND_PIECEWISE`, no-MTP, random ISL=8000 / OSL=1000, C=1/2/4/8/16/32.
+Track it locally with the `bench_random_8000x1000` phase:
+
+- `RUN_RANDOM_8K1K=1`
+- `RANDOM_8K1K_INPUT_LEN=8000`
+- `RANDOM_8K1K_OUTPUT_LEN=1000`
+- `RANDOM_8K1K_CONCURRENCY=1,2,4,8,16,32`
+
+This phase is now included in the SM120 local quality and user-feedback
+profiles. Treat it as a diagnostic apples-to-apples comparison against the
+FlashInfer sparse-MLA route, not as a promotion gate by itself.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
