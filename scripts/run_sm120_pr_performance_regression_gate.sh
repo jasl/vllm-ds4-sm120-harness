@@ -85,6 +85,7 @@ fi
   --candidate-json "${CANDIDATE_JSON}" \
   --baseline-label "accepted" \
   --candidate-label "candidate" \
+  --concurrency "${SM120_PR_PERF_CONCURRENCY}" \
   --fail-on-regression \
   --min-output-speedup "${SM120_PR_PERF_MIN_OUTPUT_SPEEDUP}" \
   --min-tpot-speedup "${SM120_PR_PERF_MIN_TPOT_SPEEDUP}" \

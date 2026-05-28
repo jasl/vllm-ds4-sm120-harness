@@ -1557,6 +1557,23 @@ def _cmd_bench_compare(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    if args.concurrency:
+        selected_concurrency = {
+            int(raw.strip())
+            for raw in args.concurrency.split(",")
+            if raw.strip()
+        }
+        baseline_rows = [
+            row
+            for row in baseline_rows
+            if row.get("concurrency") in selected_concurrency
+        ]
+        candidate_rows = [
+            row
+            for row in candidate_rows
+            if row.get("concurrency") in selected_concurrency
+        ]
+
     comparison = compare_bench_rows(
         baseline_rows,
         candidate_rows,
@@ -2390,6 +2407,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench_compare.add_argument("--candidate-json", type=Path, required=True)
     bench_compare.add_argument("--baseline-label", default="baseline")
     bench_compare.add_argument("--candidate-label", default="candidate")
+    bench_compare.add_argument("--concurrency")
     bench_compare.add_argument("--fail-on-regression", action="store_true")
     bench_compare.add_argument("--min-output-speedup", type=float, default=0.95)
     bench_compare.add_argument("--min-tpot-speedup", type=float, default=0.95)

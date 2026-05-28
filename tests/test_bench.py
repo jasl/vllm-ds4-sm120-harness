@@ -301,6 +301,69 @@ def test_bench_compare_cli_accepts_within_performance_tolerance(tmp_path):
     assert rc == 0
 
 
+def test_bench_compare_cli_filters_concurrency_before_regression_gate(tmp_path):
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    baseline.write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 100.0,
+                        "mean_tpot_ms": 10.0,
+                    },
+                },
+                {
+                    "concurrency": 8,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 200.0,
+                        "mean_tpot_ms": 5.0,
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 97.0,
+                        "mean_tpot_ms": 10.2,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    json_output = tmp_path / "comparison.json"
+
+    rc = cli.main(
+        [
+            "bench-compare",
+            "--baseline-json",
+            str(baseline),
+            "--candidate-json",
+            str(candidate),
+            "--concurrency",
+            "1",
+            "--fail-on-regression",
+            "--json-output",
+            str(json_output),
+        ]
+    )
+
+    assert rc == 0
+    data = json.loads(json_output.read_text(encoding="utf-8"))
+    assert [row["concurrency"] for row in data["rows"]] == [1]
+
+
 def test_bench_matrix_builds_hf_dataset_commands(monkeypatch, tmp_path):
     captured = []
 

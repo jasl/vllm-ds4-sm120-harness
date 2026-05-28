@@ -114,6 +114,7 @@ def test_sm120_pr_performance_regression_gate_is_hard_gate():
     assert 'RANDOM_8K1K_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN:-1000}"' in script
     assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-bench_random_8000x1000}"' in script
     assert "FULL_AND_PIECEWISE" in script
+    assert '--concurrency "${SM120_PR_PERF_CONCURRENCY}"' in script
     assert "--fail-on-regression" in script
     assert "--min-output-speedup" in script
     assert "--min-tpot-speedup" in script
