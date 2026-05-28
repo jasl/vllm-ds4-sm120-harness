@@ -1205,8 +1205,11 @@ Before promoting an optimization:
   against the latest accepted `bench_random_8000x1000/bench.json` reference:
   `PERF_BASELINE_JSON=/path/to/accepted/bench.json scripts/run_sm120_pr_performance_regression_gate.sh`.
   The gate starts the current 128K small-concurrency serve point, runs random
-  8000/1000 with C=1/2/4/8/16/32, and fails if output tok/s or TPOT speedup
-  drops below the configured tolerance. Defaults are
+  8000/1000 with C=1/2/4, and fails if output tok/s or TPOT speedup drops
+  below the configured tolerance. Keep C=8/16/32 in the full user-feedback
+  matrix as observation items because the conservative default
+  `--max-num-seqs 4` intentionally trades high-concurrency queueing for 128K
+  reliability. Defaults are
   `SM120_PR_PERF_MIN_OUTPUT_SPEEDUP=0.95` and
   `SM120_PR_PERF_MIN_TPOT_SPEEDUP=0.95`.
 - For SM120 branch promotion, use `docs/vllm_correctness_gates.md` as the

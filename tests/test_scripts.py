@@ -109,7 +109,7 @@ def test_sm120_pr_performance_regression_gate_is_hard_gate():
 
     assert 'PERF_BASELINE_JSON="${PERF_BASELINE_JSON:-}"' in script
     assert "PERF_BASELINE_JSON is required" in script
-    assert 'SM120_PR_PERF_CONCURRENCY="${SM120_PR_PERF_CONCURRENCY:-1,2,4,8,16,32}"' in script
+    assert 'SM120_PR_PERF_CONCURRENCY="${SM120_PR_PERF_CONCURRENCY:-1,2,4}"' in script
     assert 'RANDOM_8K1K_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN:-8000}"' in script
     assert 'RANDOM_8K1K_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN:-1000}"' in script
     assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-bench_random_8000x1000}"' in script
