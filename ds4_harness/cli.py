@@ -16,6 +16,7 @@ from ds4_harness.attention_dump import (
 )
 from ds4_harness.baseline_report import build_baseline_report, write_baseline_report
 from ds4_harness.bench import (
+    add_bench_performance_gate,
     compare_bench_rows,
     load_bench_json,
     run_bench_command,
@@ -1562,6 +1563,12 @@ def _cmd_bench_compare(args: argparse.Namespace) -> int:
         baseline_label=args.baseline_label,
         candidate_label=args.candidate_label,
     )
+    if args.fail_on_regression:
+        comparison = add_bench_performance_gate(
+            comparison,
+            min_output_speedup=args.min_output_speedup,
+            min_tpot_speedup=args.min_tpot_speedup,
+        )
     if args.json_output is not None:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
         args.json_output.write_text(
@@ -1571,6 +1578,9 @@ def _cmd_bench_compare(args: argparse.Namespace) -> int:
     if args.markdown_output is not None:
         write_bench_comparison_markdown(args.markdown_output, comparison)
     print(json.dumps(comparison, ensure_ascii=False))
+    gate = comparison.get("performance_gate")
+    if isinstance(gate, dict) and gate.get("ok") is not True:
+        return 1
     return 0
 
 
@@ -2380,6 +2390,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench_compare.add_argument("--candidate-json", type=Path, required=True)
     bench_compare.add_argument("--baseline-label", default="baseline")
     bench_compare.add_argument("--candidate-label", default="candidate")
+    bench_compare.add_argument("--fail-on-regression", action="store_true")
+    bench_compare.add_argument("--min-output-speedup", type=float, default=0.95)
+    bench_compare.add_argument("--min-tpot-speedup", type=float, default=0.95)
     bench_compare.add_argument("--json-output", type=Path)
     bench_compare.add_argument("--markdown-output", type=Path)
     bench_compare.set_defaults(func=_cmd_bench_compare)

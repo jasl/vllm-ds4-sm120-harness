@@ -187,6 +187,120 @@ def test_bench_compare_cli_writes_sglang_style_markdown(tmp_path):
     assert "TPOT speedup" in report
 
 
+def test_bench_compare_cli_fails_on_performance_regression(tmp_path):
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    baseline.write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 100.0,
+                        "mean_tpot_ms": 10.0,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 80.0,
+                        "mean_tpot_ms": 12.0,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    json_output = tmp_path / "comparison.json"
+    markdown_output = tmp_path / "comparison.md"
+
+    rc = cli.main(
+        [
+            "bench-compare",
+            "--baseline-json",
+            str(baseline),
+            "--candidate-json",
+            str(candidate),
+            "--fail-on-regression",
+            "--min-output-speedup",
+            "0.95",
+            "--min-tpot-speedup",
+            "0.95",
+            "--json-output",
+            str(json_output),
+            "--markdown-output",
+            str(markdown_output),
+        ]
+    )
+
+    assert rc == 1
+    data = json.loads(json_output.read_text(encoding="utf-8"))
+    assert data["performance_gate"]["ok"] is False
+    assert data["performance_gate"]["regressions"][0]["metric"] == "output_tok_s_speedup"
+    assert "Performance Gate" in markdown_output.read_text(encoding="utf-8")
+
+
+def test_bench_compare_cli_accepts_within_performance_tolerance(tmp_path):
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    baseline.write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 100.0,
+                        "mean_tpot_ms": 10.0,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 97.0,
+                        "mean_tpot_ms": 10.2,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rc = cli.main(
+        [
+            "bench-compare",
+            "--baseline-json",
+            str(baseline),
+            "--candidate-json",
+            str(candidate),
+            "--fail-on-regression",
+            "--min-output-speedup",
+            "0.95",
+            "--min-tpot-speedup",
+            "0.95",
+        ]
+    )
+
+    assert rc == 0
+
+
 def test_bench_matrix_builds_hf_dataset_commands(monkeypatch, tmp_path):
     captured = []
 

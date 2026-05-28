@@ -1181,6 +1181,13 @@ Before promoting an optimization:
   bench throughput, GSM8K, prefill sweep, the FlashInfer-comparison 8000/1000
   random bench, ds4 story-recall semantic status, ds4-style frontier latency,
   and prefix-cache stress data.
+  On dual RTX PRO 6000 the profile defaults to the current 128K
+  small-concurrency serve point:
+  `--gpu-memory-utilization 0.975 --max-num-batched-tokens 4096 --max-num-seqs 4 --enable-expert-parallel`.
+  Override `USER_FEEDBACK_GPU_MEMORY_UTILIZATION`,
+  `USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS`, `USER_FEEDBACK_MAX_NUM_SEQS`, or
+  `B200_EXTRA_SERVE_ARGS` when the goal is high-concurrency short-context
+  throughput rather than 124K/128K local reliability.
   The profile defaults to GSM8K limit-200 promotion floors of
   `exact_match_flexible >= 0.94` and `exact_match_strict >= 0.925`, matching
   the current accepted lower bound so later tuning cannot silently trade away
@@ -1194,6 +1201,14 @@ Before promoting an optimization:
   SM120. Run it only as an explicit isolation step with
   `RUN_USER_FEEDBACK_ISSUE10=1`, preserve partial artifacts, and do not treat
   a matrix that stops in this diagnostic as a complete promotion baseline.
+- Before pushing the vLLM PR branch, run the hard performance regression gate
+  against the latest accepted `bench_random_8000x1000/bench.json` reference:
+  `PERF_BASELINE_JSON=/path/to/accepted/bench.json scripts/run_sm120_pr_performance_regression_gate.sh`.
+  The gate starts the current 128K small-concurrency serve point, runs random
+  8000/1000 with C=1/2/4/8/16/32, and fails if output tok/s or TPOT speedup
+  drops below the configured tolerance. Defaults are
+  `SM120_PR_PERF_MIN_OUTPUT_SPEEDUP=0.95` and
+  `SM120_PR_PERF_MIN_TPOT_SPEEDUP=0.95`.
 - For SM120 branch promotion, use `docs/vllm_correctness_gates.md` as the
   authoritative checklist for the refresh watchlist: short-context C=1/2/4,
   fixed-order 59K/124K C=1/C=2, mixed long-context C=2 fairness, GSM8K, and the

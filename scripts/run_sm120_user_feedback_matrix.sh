@@ -34,7 +34,13 @@ USER_FEEDBACK_PRIMARY_LABEL="${USER_FEEDBACK_PRIMARY_LABEL:-${USER_FEEDBACK_MATR
 USER_FEEDBACK_PREFIX_CACHE_LABEL="${USER_FEEDBACK_PREFIX_CACHE_LABEL:-${USER_FEEDBACK_MATRIX_LABEL}_prefix_cache}"
 USER_FEEDBACK_ISSUE10_LABEL="${USER_FEEDBACK_ISSUE10_LABEL:-${USER_FEEDBACK_MATRIX_LABEL}_issue10}"
 
-_DEFAULT_USER_FEEDBACK_EXTRA_SERVE_ARGS="--gpu-memory-utilization 0.977 --max-num-batched-tokens 4096 --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}'"
+# Dual RTX PRO 6000 128K small-concurrency default. The measured 0.975 /
+# max_num_seqs=4 shape leaves enough KV cache for 124K/128K prompts while
+# avoiding the startup OOM seen when graph capture scales to larger batches.
+USER_FEEDBACK_GPU_MEMORY_UTILIZATION="${USER_FEEDBACK_GPU_MEMORY_UTILIZATION:-0.975}"
+USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS="${USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS:-4096}"
+USER_FEEDBACK_MAX_NUM_SEQS="${USER_FEEDBACK_MAX_NUM_SEQS:-4}"
+_DEFAULT_USER_FEEDBACK_EXTRA_SERVE_ARGS="--gpu-memory-utilization ${USER_FEEDBACK_GPU_MEMORY_UTILIZATION} --max-num-batched-tokens ${USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS} --max-num-seqs ${USER_FEEDBACK_MAX_NUM_SEQS} --enable-expert-parallel --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}'"
 B200_EXTRA_SERVE_ARGS="${B200_EXTRA_SERVE_ARGS:-${_DEFAULT_USER_FEEDBACK_EXTRA_SERVE_ARGS}}"
 
 mkdir -p "${USER_FEEDBACK_MATRIX_ROOT}"

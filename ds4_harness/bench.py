@@ -192,6 +192,78 @@ def compare_bench_rows(
     }
 
 
+def find_bench_regressions(
+    comparison: dict[str, Any],
+    *,
+    min_output_speedup: float,
+    min_tpot_speedup: float,
+) -> list[dict[str, Any]]:
+    regressions: list[dict[str, Any]] = []
+    for row in comparison.get("rows", []):
+        concurrency = row.get("concurrency")
+        if row.get("baseline_ok") is not True:
+            regressions.append(
+                {
+                    "concurrency": concurrency,
+                    "metric": "baseline_ok",
+                    "value": row.get("baseline_ok"),
+                    "threshold": True,
+                }
+            )
+        if row.get("candidate_ok") is not True:
+            regressions.append(
+                {
+                    "concurrency": concurrency,
+                    "metric": "candidate_ok",
+                    "value": row.get("candidate_ok"),
+                    "threshold": True,
+                }
+            )
+
+        output_speedup = _to_float(row.get("output_tok_s_speedup"))
+        if output_speedup is None or output_speedup < min_output_speedup:
+            regressions.append(
+                {
+                    "concurrency": concurrency,
+                    "metric": "output_tok_s_speedup",
+                    "value": output_speedup,
+                    "threshold": min_output_speedup,
+                }
+            )
+
+        tpot_speedup = _to_float(row.get("tpot_speedup"))
+        if tpot_speedup is None or tpot_speedup < min_tpot_speedup:
+            regressions.append(
+                {
+                    "concurrency": concurrency,
+                    "metric": "tpot_speedup",
+                    "value": tpot_speedup,
+                    "threshold": min_tpot_speedup,
+                }
+            )
+    return regressions
+
+
+def add_bench_performance_gate(
+    comparison: dict[str, Any],
+    *,
+    min_output_speedup: float,
+    min_tpot_speedup: float,
+) -> dict[str, Any]:
+    regressions = find_bench_regressions(
+        comparison,
+        min_output_speedup=min_output_speedup,
+        min_tpot_speedup=min_tpot_speedup,
+    )
+    comparison["performance_gate"] = {
+        "ok": len(regressions) == 0,
+        "min_output_speedup": min_output_speedup,
+        "min_tpot_speedup": min_tpot_speedup,
+        "regressions": regressions,
+    }
+    return comparison
+
+
 def load_bench_json(path: Path) -> list[dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, list):
@@ -228,6 +300,36 @@ def write_bench_comparison_markdown(path: Path, comparison: dict[str, Any]) -> N
             f"{_format_number(row.get('baseline_mean_ttft_ms'))} | "
             f"{_format_number(row.get('candidate_mean_ttft_ms'))} |"
         )
+    gate = comparison.get("performance_gate")
+    if isinstance(gate, dict):
+        lines.extend(
+            [
+                "",
+                "## Performance Gate",
+                "",
+                f"- OK: `{gate.get('ok')}`",
+                f"- Minimum tok/s speedup: `{_format_number(gate.get('min_output_speedup'))}`",
+                f"- Minimum TPOT speedup: `{_format_number(gate.get('min_tpot_speedup'))}`",
+            ]
+        )
+        regressions = gate.get("regressions")
+        if isinstance(regressions, list) and regressions:
+            lines.extend(
+                [
+                    "",
+                    "| C | Metric | Value | Threshold |",
+                    "| ---: | --- | ---: | ---: |",
+                ]
+            )
+            for regression in regressions:
+                if not isinstance(regression, dict):
+                    continue
+                lines.append(
+                    f"| {regression.get('concurrency')} | "
+                    f"{regression.get('metric')} | "
+                    f"{_format_number(regression.get('value'))} | "
+                    f"{_format_number(regression.get('threshold'))} |"
+                )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 

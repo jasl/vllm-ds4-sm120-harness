@@ -218,9 +218,32 @@ streaming pressure, GSM8K, prefill throughput, the FlashInfer-comparison
 8000/1000 random bench, the canada-quant-style 256/256 MTP random bench,
 ds4-style frontier latency, ds4 story-recall semantic status, and prefix-cache
 stability. The
+dual RTX PRO 6000 default serve point is the measured 128K small-concurrency
+configuration:
+`--gpu-memory-utilization 0.975 --max-num-batched-tokens 4096 --max-num-seqs 4 --enable-expert-parallel`.
+This keeps FULL_AND_PIECEWISE CUDA graphs enabled while limiting capture memory
+enough for 124K/128K prompts. Override the `USER_FEEDBACK_*` serve variables
+or `B200_EXTRA_SERVE_ARGS` for high-concurrency short-context sweeps, and do
+not compare those results directly to the 128K small-concurrency baseline.
+The
 profile hard-gates GSM8K limit-200 at `exact_match_flexible >= 0.94` and
 `exact_match_strict >= 0.925`, so any further correctness drop blocks the
 matrix rather than becoming a narrative footnote.
+
+Before pushing the vLLM PR branch, the minimum hard performance gate is:
+
+```bash
+PERF_BASELINE_JSON=/path/to/accepted/bench_random_8000x1000/bench.json \
+scripts/run_sm120_pr_performance_regression_gate.sh
+```
+
+This starts the 128K small-concurrency dual RTX PRO 6000 serve profile, runs
+random 8000/1000 at C=1/2/4/8/16/32, and then calls `bench-compare
+--fail-on-regression`. The default tolerance allows at most a 5% drop in output
+tok/s or TPOT speedup against the accepted reference. Treat a failure as a
+blocker for `codex/ds4-sm120-min-enable` until the regression is explained,
+fixed, or the reference is intentionally updated with a full user-feedback
+matrix.
 
 For DS4-inspired follow-up work, use
 `scripts/run_sm120_ds4_absorption_stress.sh` as the combined validation wrapper
@@ -289,7 +312,7 @@ reported four-card or 512K/1M shapes:
   `max_num_seqs=4`, `--disable-custom-all-reduce`, and FULL_AND_PIECEWISE CUDA
   graph. The report used `--gpu-memory-utilization 0.83` and
   `--max-num-batched-tokens 16384`; the RTX PRO 6000 proxy defaults to
-  `SERVE_MAX_MODEL_LEN=65536`, `ISSUE10_GPU_MEMORY_UTILIZATION=0.977`, and
+  `SERVE_MAX_MODEL_LEN=65536`, `ISSUE10_GPU_MEMORY_UTILIZATION=0.975`, and
   `ISSUE10_MAX_NUM_BATCHED_TOKENS=4096` so the public script is safe enough for
   regular startup, prefix-cache, and 59K-class streaming checks. For exact
   low-context recipe replay,

@@ -102,6 +102,23 @@ def test_bench_script_defaults_to_representative_hf_dataset():
     assert '${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}' in script
 
 
+def test_sm120_pr_performance_regression_gate_is_hard_gate():
+    script = (ROOT / "scripts" / "run_sm120_pr_performance_regression_gate.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'PERF_BASELINE_JSON="${PERF_BASELINE_JSON:-}"' in script
+    assert "PERF_BASELINE_JSON is required" in script
+    assert 'SM120_PR_PERF_CONCURRENCY="${SM120_PR_PERF_CONCURRENCY:-1,2,4,8,16,32}"' in script
+    assert 'RANDOM_8K1K_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN:-8000}"' in script
+    assert 'RANDOM_8K1K_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN:-1000}"' in script
+    assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-bench_random_8000x1000}"' in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert "--fail-on-regression" in script
+    assert "--min-output-speedup" in script
+    assert "--min-tpot-speedup" in script
+
+
 def test_random_prefill_sweep_wrapper_covers_short_prefill_regression_shapes():
     script = (ROOT / "scripts" / "run_random_prefill_sweep.sh").read_text(
         encoding="utf-8"
@@ -343,6 +360,13 @@ def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
     assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-131072}"' in script
     assert 'SERVE_USE_FP4_INDEXER_CACHE="${SERVE_USE_FP4_INDEXER_CACHE:-0}"' in script
     assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-disabled}"' in script
+    assert 'SM120_LOCAL_GPU_MEMORY_UTILIZATION="${SM120_LOCAL_GPU_MEMORY_UTILIZATION:-0.975}"' in script
+    assert 'SM120_LOCAL_MAX_NUM_BATCHED_TOKENS="${SM120_LOCAL_MAX_NUM_BATCHED_TOKENS:-4096}"' in script
+    assert 'SM120_LOCAL_MAX_NUM_SEQS="${SM120_LOCAL_MAX_NUM_SEQS:-4}"' in script
+    assert "--gpu-memory-utilization ${SM120_LOCAL_GPU_MEMORY_UTILIZATION}" in script
+    assert "--max-num-batched-tokens ${SM120_LOCAL_MAX_NUM_BATCHED_TOKENS}" in script
+    assert "--max-num-seqs ${SM120_LOCAL_MAX_NUM_SEQS}" in script
+    assert "--enable-expert-parallel" in script
     assert 'RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-0}"' in script
     assert 'RUN_LONG_CONTEXT_DECODE_CONCURRENCY="${RUN_LONG_CONTEXT_DECODE_CONCURRENCY:-1}"' in script
     assert 'RUN_DS4_STORY_RECALL_SEMANTIC="${RUN_DS4_STORY_RECALL_SEMANTIC:-1}"' in script
@@ -417,7 +441,7 @@ def test_sm120_issue10_startup_gate_matches_reported_gb10_shape_proxy():
         in script
     )
     assert (
-        'ISSUE10_GPU_MEMORY_UTILIZATION="${ISSUE10_GPU_MEMORY_UTILIZATION:-0.977}"'
+        'ISSUE10_GPU_MEMORY_UTILIZATION="${ISSUE10_GPU_MEMORY_UTILIZATION:-0.975}"'
         in script
     )
     assert (
@@ -431,6 +455,7 @@ def test_sm120_issue10_startup_gate_matches_reported_gb10_shape_proxy():
     assert "--gpu-memory-utilization ${ISSUE10_GPU_MEMORY_UTILIZATION}" in script
     assert "--max-num-batched-tokens ${ISSUE10_MAX_NUM_BATCHED_TOKENS}" in script
     assert "--max-num-seqs ${ISSUE10_MAX_NUM_SEQS}" in script
+    assert "--enable-expert-parallel" in script
     assert "--enable-chunked-prefill" in script
     assert "issue10_c2_59k:2:1:1900:64" in script
     assert "issue10_c2_124k:2:1:4000:64" not in script
@@ -532,6 +557,13 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
 
     assert "USER_FEEDBACK_MATRIX_LABEL" in script
     assert 'RUN_USER_FEEDBACK_ISSUE10="${RUN_USER_FEEDBACK_ISSUE10:-0}"' in script
+    assert 'USER_FEEDBACK_GPU_MEMORY_UTILIZATION="${USER_FEEDBACK_GPU_MEMORY_UTILIZATION:-0.975}"' in script
+    assert 'USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS="${USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS:-4096}"' in script
+    assert 'USER_FEEDBACK_MAX_NUM_SEQS="${USER_FEEDBACK_MAX_NUM_SEQS:-4}"' in script
+    assert "--gpu-memory-utilization ${USER_FEEDBACK_GPU_MEMORY_UTILIZATION}" in script
+    assert "--max-num-batched-tokens ${USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS}" in script
+    assert "--max-num-seqs ${USER_FEEDBACK_MAX_NUM_SEQS}" in script
+    assert "--enable-expert-parallel" in script
     assert "long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency" in script
     assert "frontier_context_sweep" in script
     assert 'RUN_FRONTIER_CONTEXT_SWEEP="${RUN_FRONTIER_CONTEXT_SWEEP:-1}"' in script
