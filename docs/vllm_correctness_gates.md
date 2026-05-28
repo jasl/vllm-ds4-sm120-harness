@@ -301,9 +301,11 @@ reported four-card or 512K/1M shapes:
   `bench_random_8000x1000` with `RANDOM_8K1K_INPUT_LEN=8000`,
   `RANDOM_8K1K_OUTPUT_LEN=1000`, and
   `RANDOM_8K1K_CONCURRENCY=1,2,4,8,16,32` for both no-MTP and MTP when runtime
-  budget allows. Treat this as an apples-to-apples 8K/1K performance diagnostic
-  only; it does not replace GSM8K, prefix-cache, 59K/124K latency,
-  mixed-arrival, or crash-stability gates.
+  budget allows. Use `TEMPERATURE=0.0` when comparing directly with PR 43477's
+  table; the harness default `TEMPERATURE=1.0` changes MTP acceptance enough to
+  make throughput numbers non-comparable. Treat this as an apples-to-apples
+  8K/1K performance diagnostic only; it does not replace GSM8K, prefix-cache,
+  59K/124K latency, mixed-arrival, or crash-stability gates.
 - TP=2 GB10 startup/crash proxy for
   [jasl/vllm issue #10](https://github.com/jasl/vllm/issues/10): until the
   GB10 cluster is available, run `scripts/run_sm120_issue10_startup_gate.sh`

@@ -1703,9 +1703,9 @@ The useful implementation ideas to study are:
 - DeepGEMM MXFP4 utility and CMake integration work.
 
 Do not cherry-pick this route directly into the active Dev or PR branch. First
-test it as a separate no-MTP experiment branch because the current branch's
-customer value is tied to validated NVFP4 / FP8-KV / MTP behavior, not only to
-the no-MTP sparse-MLA backend.
+test it as a separate experiment branch because the current branch's customer
+value is tied to validated NVFP4 / FP8-KV / MTP behavior, not only to the
+alternate sparse-MLA backend.
 
 Local no-MTP startup check, 2026-05-27:
 
@@ -1758,8 +1758,8 @@ is a useful scope boundary:
   NVFP4/MTP promotion branch.
 
 The PR's most useful performance comparison shape is DS4 TP=2, FP8 KV,
-`FULL_AND_PIECEWISE`, no-MTP, random ISL=8000 / OSL=1000, C=1/2/4/8/16/32.
-Track it locally with the `bench_random_8000x1000` phase:
+`FULL_AND_PIECEWISE`, random ISL=8000 / OSL=1000, C=1/2/4/8/16/32. Track it
+locally with the `bench_random_8000x1000` phase:
 
 - `RUN_RANDOM_8K1K=1`
 - `RANDOM_8K1K_INPUT_LEN=8000`
@@ -1769,6 +1769,35 @@ Track it locally with the `bench_random_8000x1000` phase:
 This phase is now included in the SM120 local quality and user-feedback
 profiles. Treat it as a diagnostic apples-to-apples comparison against the
 FlashInfer sparse-MLA route, not as a promotion gate by itself.
+
+Protocol calibration, 2026-05-29:
+
+- The apparent MTP=2 C=1 gap (`~110-127 tok/s` versus PR 43477's `158.5 tok/s`)
+  was mostly a benchmark-protocol mismatch. The local harness default used
+  `temperature=1.0`; PR 43477's table should be compared against
+  `temperature=0.0`.
+- With the same TP=2, FP8 KV, prefix-cache-disabled, 65K max-model-len,
+  `FULL_AND_PIECEWISE`, random 8000/1000, `temperature=0.0` protocol, the
+  active branch matched PR 43477 on no-MTP and was comparable or faster on MTP=2
+  for C=1/2/4:
+
+| Variant | C | Active branch tok/s | PR 43477 tok/s | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| no-MTP | 1 | `90.51` | `88.1` | `1.03x` |
+| no-MTP | 2 | `142.91` | `143.0` | `1.00x` |
+| no-MTP | 4 | `211.03` | `211.5` | `1.00x` |
+| MTP=2 | 1 | `153.47` | `158.5` | `0.97x` |
+| MTP=2 | 2 | `220.51` | `205.5` | `1.07x` |
+| MTP=2 | 4 | `275.58` | `197.4` | `1.40x` |
+
+- MTP acceptance moved with temperature: `temperature=1.0` C=1 produced about
+  `54%` acceptance and `127 tok/s`, while `temperature=0.0` produced
+  `82-87%` acceptance and `153-158 tok/s`. Do not treat that difference as a
+  sparse-MLA kernel regression.
+- The currently installed official FlashInfer package still lacks
+  `flashinfer.sparse_mla_sm120` / `BatchSparseMLAPagedAttentionWrapper`; enabling
+  `--enable-flashinfer-autotune` alone does not activate PR 43477's custom
+  SM120 sparse-MLA path.
 
 External article reference:
 [`22 轮才跑通：DeepSeek V4 MTP 番外`](https://mp.weixin.qq.com/s/qRk3sHeLz7ktHzaAshjDmg)
@@ -1794,11 +1823,14 @@ baseline. It independently describes the same split:
 Integration plan from these references:
 
 1. Keep the current NVFP4-FP8-MTP branch as the stable line.
-2. Use a separate experimental branch for PR 43477 / FlashInfer sparse MLA.
-3. Run `bench_random_8000x1000` first for the no-MTP apples-to-apples shape,
-   then the 59K/124K, mixed-arrival, prefix-cache, crash-proxy, and GSM8K gates.
-4. Attempt MTP integration on the FlashInfer route only after the no-MTP route
-   is stable and measurably better on at least one important gate.
+2. Use a separate experimental branch for PR 43477 / FlashInfer sparse MLA only
+   if the dependency branch lands or a local fork experiment is explicitly
+   requested.
+3. Run `bench_random_8000x1000` first for the apples-to-apples shape, then the
+   59K/124K, mixed-arrival, prefix-cache, crash-proxy, and GSM8K gates.
+4. Do not prioritize PR 43477 absorption based only on the 8K/1K table; after
+   protocol calibration the active branch already reaches that performance
+   envelope.
 5. Keep W4A16/Marlin wna16 reproduction and fixes in a separate branch and
    issue thread.
 
