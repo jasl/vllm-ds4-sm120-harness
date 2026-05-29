@@ -220,7 +220,7 @@ ds4-style frontier latency, ds4 story-recall semantic status, and prefix-cache
 stability. The
 dual RTX PRO 6000 default serve point is the measured 128K small-concurrency
 configuration:
-`--gpu-memory-utilization 0.975 --max-num-batched-tokens 4096 --max-num-seqs 4 --enable-expert-parallel`.
+`--gpu-memory-utilization 0.975 --max-num-batched-tokens 4096 --max-num-seqs 4 --enable-expert-parallel --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'`.
 This keeps FULL_AND_PIECEWISE CUDA graphs enabled while limiting capture memory
 enough for 124K/128K prompts. Override the `USER_FEEDBACK_*` serve variables
 or `B200_EXTRA_SERVE_ARGS` for high-concurrency short-context sweeps, and do

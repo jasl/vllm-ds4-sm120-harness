@@ -368,6 +368,7 @@ def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
     assert "--max-num-batched-tokens ${SM120_LOCAL_MAX_NUM_BATCHED_TOKENS}" in script
     assert "--max-num-seqs ${SM120_LOCAL_MAX_NUM_SEQS}" in script
     assert "--enable-expert-parallel" in script
+    assert "FULL_AND_PIECEWISE" in script
     assert 'RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-0}"' in script
     assert 'RUN_LONG_CONTEXT_DECODE_CONCURRENCY="${RUN_LONG_CONTEXT_DECODE_CONCURRENCY:-1}"' in script
     assert 'RUN_DS4_STORY_RECALL_SEMANTIC="${RUN_DS4_STORY_RECALL_SEMANTIC:-1}"' in script
