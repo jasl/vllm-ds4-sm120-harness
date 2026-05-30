@@ -1206,12 +1206,15 @@ Before promoting an optimization:
   `PERF_BASELINE_JSON=/path/to/accepted/bench.json scripts/run_sm120_pr_performance_regression_gate.sh`.
   The gate starts the current 128K small-concurrency serve point, runs random
   8000/1000 with C=1/2/4, and fails if output tok/s or TPOT speedup drops
-  below the configured tolerance. Keep C=8/16/32 in the full user-feedback
+  below the configured tolerance or MTP speculative acceptance falls below the
+  configured relative/absolute floor. Keep C=8/16/32 in the full user-feedback
   matrix as observation items because the conservative default
   `--max-num-seqs 4` intentionally trades high-concurrency queueing for 128K
   reliability. Defaults are
   `SM120_PR_PERF_MIN_OUTPUT_SPEEDUP=0.95` and
-  `SM120_PR_PERF_MIN_TPOT_SPEEDUP=0.95`.
+  `SM120_PR_PERF_MIN_TPOT_SPEEDUP=0.95`; for MTP acceptance they are
+  `SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_RATIO=0.98` and
+  `SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_PERCENT=65.0`.
 - For SM120 branch promotion, use `docs/vllm_correctness_gates.md` as the
   authoritative checklist for the refresh watchlist: short-context C=1/2/4,
   fixed-order 59K/124K C=1/C=2, mixed long-context C=2 fairness, GSM8K, and the

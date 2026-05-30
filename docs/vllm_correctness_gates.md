@@ -240,9 +240,11 @@ scripts/run_sm120_pr_performance_regression_gate.sh
 This starts the 128K small-concurrency dual RTX PRO 6000 serve profile, runs
 random 8000/1000 at C=1/2/4, and then calls `bench-compare
 --fail-on-regression`. The default tolerance allows at most a 5% drop in output
-tok/s or TPOT speedup against the accepted reference. Keep C=8/16/32 in the
-full user-feedback matrix as observation items because the conservative default
-`--max-num-seqs 4` intentionally prioritizes 128K reliability over
+tok/s or TPOT speedup against the accepted reference. It also blocks MTP
+speculative acceptance regressions by default: candidate acceptance must remain
+at least `0.98x` of the reference and at least `65.0%` absolute. Keep C=8/16/32
+in the full user-feedback matrix as observation items because the conservative
+default `--max-num-seqs 4` intentionally prioritizes 128K reliability over
 high-concurrency queueing. Treat a failure as a blocker for
 `codex/ds4-sm120-min-enable` until the regression is explained, fixed, or the
 reference is intentionally updated with a full user-feedback matrix.

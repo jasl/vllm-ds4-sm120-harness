@@ -113,11 +113,21 @@ def test_sm120_pr_performance_regression_gate_is_hard_gate():
     assert 'RANDOM_8K1K_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN:-8000}"' in script
     assert 'RANDOM_8K1K_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN:-1000}"' in script
     assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-bench_random_8000x1000}"' in script
+    assert (
+        'SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_RATIO="'
+        '${SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_RATIO:-0.98}"'
+    ) in script
+    assert (
+        'SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_PERCENT="'
+        '${SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_PERCENT:-65.0}"'
+    ) in script
     assert "FULL_AND_PIECEWISE" in script
     assert '--concurrency "${SM120_PR_PERF_CONCURRENCY}"' in script
     assert "--fail-on-regression" in script
     assert "--min-output-speedup" in script
     assert "--min-tpot-speedup" in script
+    assert "--min-spec-acceptance-ratio" in script
+    assert "--min-spec-acceptance-percent" in script
 
 
 def test_random_prefill_sweep_wrapper_covers_short_prefill_regression_shapes():

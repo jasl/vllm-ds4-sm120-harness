@@ -249,6 +249,69 @@ def test_bench_compare_cli_fails_on_performance_regression(tmp_path):
     assert "Performance Gate" in markdown_output.read_text(encoding="utf-8")
 
 
+def test_bench_compare_cli_fails_on_spec_acceptance_regression(tmp_path):
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    baseline.write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 100.0,
+                        "mean_tpot_ms": 10.0,
+                        "spec_acceptance_rate_percent": 67.7,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    candidate.write_text(
+        json.dumps(
+            [
+                {
+                    "concurrency": 1,
+                    "ok": True,
+                    "metrics": {
+                        "output_token_throughput_tok_s": 100.0,
+                        "mean_tpot_ms": 10.0,
+                        "spec_acceptance_rate_percent": 59.8,
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    json_output = tmp_path / "comparison.json"
+
+    rc = cli.main(
+        [
+            "bench-compare",
+            "--baseline-json",
+            str(baseline),
+            "--candidate-json",
+            str(candidate),
+            "--fail-on-regression",
+            "--min-spec-acceptance-ratio",
+            "0.98",
+            "--min-spec-acceptance-percent",
+            "65.0",
+            "--json-output",
+            str(json_output),
+        ]
+    )
+
+    assert rc == 1
+    data = json.loads(json_output.read_text(encoding="utf-8"))
+    regressions = data["performance_gate"]["regressions"]
+    assert {regression["metric"] for regression in regressions} == {
+        "spec_acceptance_ratio",
+        "spec_acceptance_rate_percent",
+    }
+
+
 def test_bench_compare_cli_accepts_within_performance_tolerance(tmp_path):
     baseline = tmp_path / "baseline.json"
     candidate = tmp_path / "candidate.json"

@@ -1585,6 +1585,8 @@ def _cmd_bench_compare(args: argparse.Namespace) -> int:
             comparison,
             min_output_speedup=args.min_output_speedup,
             min_tpot_speedup=args.min_tpot_speedup,
+            min_spec_acceptance_ratio=args.min_spec_acceptance_ratio,
+            min_spec_acceptance_percent=args.min_spec_acceptance_percent,
         )
     if args.json_output is not None:
         args.json_output.parent.mkdir(parents=True, exist_ok=True)
@@ -2411,6 +2413,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench_compare.add_argument("--fail-on-regression", action="store_true")
     bench_compare.add_argument("--min-output-speedup", type=float, default=0.95)
     bench_compare.add_argument("--min-tpot-speedup", type=float, default=0.95)
+    bench_compare.add_argument("--min-spec-acceptance-ratio", type=float)
+    bench_compare.add_argument("--min-spec-acceptance-percent", type=float)
     bench_compare.add_argument("--json-output", type=Path)
     bench_compare.add_argument("--markdown-output", type=Path)
     bench_compare.set_defaults(func=_cmd_bench_compare)

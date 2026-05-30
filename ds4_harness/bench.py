@@ -161,6 +161,12 @@ def compare_bench_rows(
         candidate_output = _to_float(
             candidate_metrics.get("output_token_throughput_tok_s")
         )
+        baseline_spec_acceptance = _to_float(
+            baseline_metrics.get("spec_acceptance_rate_percent")
+        )
+        candidate_spec_acceptance = _to_float(
+            candidate_metrics.get("spec_acceptance_rate_percent")
+        )
         rows.append(
             {
                 "batch_size": concurrency,
@@ -183,6 +189,15 @@ def compare_bench_rows(
                 "candidate_mean_ttft_ms": _to_float(
                     candidate_metrics.get("mean_ttft_ms")
                 ),
+                "baseline_spec_acceptance_rate_percent": baseline_spec_acceptance,
+                "candidate_spec_acceptance_rate_percent": candidate_spec_acceptance,
+                "spec_acceptance_ratio": _round_or_none(
+                    _safe_divide(
+                        candidate_spec_acceptance,
+                        baseline_spec_acceptance,
+                    ),
+                    digits=4,
+                ),
             }
         )
     return {
@@ -197,6 +212,8 @@ def find_bench_regressions(
     *,
     min_output_speedup: float,
     min_tpot_speedup: float,
+    min_spec_acceptance_ratio: float | None = None,
+    min_spec_acceptance_percent: float | None = None,
 ) -> list[dict[str, Any]]:
     regressions: list[dict[str, Any]] = []
     for row in comparison.get("rows", []):
@@ -241,6 +258,38 @@ def find_bench_regressions(
                     "threshold": min_tpot_speedup,
                 }
             )
+
+        if min_spec_acceptance_ratio is not None:
+            spec_acceptance_ratio = _to_float(row.get("spec_acceptance_ratio"))
+            if (
+                spec_acceptance_ratio is None
+                or spec_acceptance_ratio < min_spec_acceptance_ratio
+            ):
+                regressions.append(
+                    {
+                        "concurrency": concurrency,
+                        "metric": "spec_acceptance_ratio",
+                        "value": spec_acceptance_ratio,
+                        "threshold": min_spec_acceptance_ratio,
+                    }
+                )
+
+        if min_spec_acceptance_percent is not None:
+            candidate_spec_acceptance = _to_float(
+                row.get("candidate_spec_acceptance_rate_percent")
+            )
+            if (
+                candidate_spec_acceptance is None
+                or candidate_spec_acceptance < min_spec_acceptance_percent
+            ):
+                regressions.append(
+                    {
+                        "concurrency": concurrency,
+                        "metric": "spec_acceptance_rate_percent",
+                        "value": candidate_spec_acceptance,
+                        "threshold": min_spec_acceptance_percent,
+                    }
+                )
     return regressions
 
 
@@ -249,16 +298,22 @@ def add_bench_performance_gate(
     *,
     min_output_speedup: float,
     min_tpot_speedup: float,
+    min_spec_acceptance_ratio: float | None = None,
+    min_spec_acceptance_percent: float | None = None,
 ) -> dict[str, Any]:
     regressions = find_bench_regressions(
         comparison,
         min_output_speedup=min_output_speedup,
         min_tpot_speedup=min_tpot_speedup,
+        min_spec_acceptance_ratio=min_spec_acceptance_ratio,
+        min_spec_acceptance_percent=min_spec_acceptance_percent,
     )
     comparison["performance_gate"] = {
         "ok": len(regressions) == 0,
         "min_output_speedup": min_output_speedup,
         "min_tpot_speedup": min_tpot_speedup,
+        "min_spec_acceptance_ratio": min_spec_acceptance_ratio,
+        "min_spec_acceptance_percent": min_spec_acceptance_percent,
         "regressions": regressions,
     }
     return comparison
@@ -285,8 +340,13 @@ def write_bench_comparison_markdown(path: Path, comparison: dict[str, Any]) -> N
         "| BS/C | "
         f"{baseline_label} tok/s | {candidate_label} tok/s | tok/s speedup | "
         f"{baseline_label} TPOT ms | {candidate_label} TPOT ms | TPOT speedup | "
-        f"{baseline_label} TTFT ms | {candidate_label} TTFT ms |",
-        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        f"{baseline_label} TTFT ms | {candidate_label} TTFT ms | "
+        f"{baseline_label} spec acc % | {candidate_label} spec acc % | "
+        "spec acc ratio |",
+        (
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: "
+            "| ---: | ---: | ---: |"
+        ),
     ]
     for row in comparison.get("rows", []):
         lines.append(
@@ -298,7 +358,10 @@ def write_bench_comparison_markdown(path: Path, comparison: dict[str, Any]) -> N
             f"{_format_number(row.get('candidate_mean_tpot_ms'))} | "
             f"{_format_number(row.get('tpot_speedup'))} | "
             f"{_format_number(row.get('baseline_mean_ttft_ms'))} | "
-            f"{_format_number(row.get('candidate_mean_ttft_ms'))} |"
+            f"{_format_number(row.get('candidate_mean_ttft_ms'))} | "
+            f"{_format_number(row.get('baseline_spec_acceptance_rate_percent'))} | "
+            f"{_format_number(row.get('candidate_spec_acceptance_rate_percent'))} | "
+            f"{_format_number(row.get('spec_acceptance_ratio'))} |"
         )
     gate = comparison.get("performance_gate")
     if isinstance(gate, dict):
@@ -310,6 +373,14 @@ def write_bench_comparison_markdown(path: Path, comparison: dict[str, Any]) -> N
                 f"- OK: `{gate.get('ok')}`",
                 f"- Minimum tok/s speedup: `{_format_number(gate.get('min_output_speedup'))}`",
                 f"- Minimum TPOT speedup: `{_format_number(gate.get('min_tpot_speedup'))}`",
+                (
+                    "- Minimum speculative acceptance ratio: "
+                    f"`{_format_number(gate.get('min_spec_acceptance_ratio'))}`"
+                ),
+                (
+                    "- Minimum speculative acceptance percent: "
+                    f"`{_format_number(gate.get('min_spec_acceptance_percent'))}`"
+                ),
             ]
         )
         regressions = gate.get("regressions")
