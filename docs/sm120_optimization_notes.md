@@ -1974,6 +1974,52 @@ the MTP=2 path remains the validated long-context/default branch until MTP=1
 passes the same 59K/124K, mixed-arrival, GSM8K limit-200, prefix-cache, and
 crash-proxy gates.
 
+## Rejected Experiment: BF16 Torch MQA Top-K Fallback, 2026-05-30
+
+A GB10 field report suggested changing
+`_fp8_mqa_logits_topk_torch` from fp32 matmul inputs to bf16 tensor-core
+matmul inputs and increasing `_SM120_MQA_LOGITS_MAX_SCORE_BYTES` from 64 MiB
+to 1 GiB. The current Dev branch already differs from that report's older
+commit because it has the SM120 direct Triton logits and custom row-top-k
+fallbacks, so the hypothesis needed to be retested on the active branch.
+
+Microbench evidence was mixed:
+
+- DS4-like shape `m=1152, n=131072, h=128, d=512, topk=2048`:
+  fp32 cap64 was `569.88 ms`; bf16 cap64 was `348.07 ms`.
+- Raising the cap was not beneficial on the same shape: bf16 cap128/256/512/1024
+  measured `465.18/478.79/483.15/505.91 ms`, with higher memory pressure.
+- BF16 top-k selection was not bit-exact at this large shape. Average overlap
+  versus fp32 cap64 was about `99.69%`, minimum about `99.32%`.
+
+Endpoint A/B on the two-card SM120 workstation compared
+`20260530_topk_prefill_current_local_gate` with
+`20260530_topk_prefill_bf16_local_gate`, keeping TP=2, MTP=2, EP on, FP8 KV,
+prefix cache disabled, `max_num_batched_tokens=4096`, and
+`FULL_AND_PIECEWISE`.
+
+| Shape | Metric | Current | BF16 top-k | Delta |
+| --- | --- | ---: | ---: | ---: |
+| 59K C=1 | TTFT | 12.097 s | 12.147 s | +0.4% |
+| 59K C=1 | Decode | 139.55 tok/s | 132.48 tok/s | -5.1% |
+| 59K C=2 | TTFT | 18.996 s | 19.047 s | +0.3% |
+| 124K C=2 | TTFT | 46.989 s | 47.320 s | +0.7% |
+| Mixed `long_then_short` | ITL proxy p99 | 0.601 s | 0.605 s | +0.7% |
+| Streaming pressure | Max TTFT | 54.778 s | 55.917 s | +2.1% |
+| Random 65K/1 C=1 | Mean TTFT | 14.360 s | 14.398 s | +0.3% |
+| Random 65K/1 C=2 | Mean TTFT | 25.243 s | 25.367 s | +0.5% |
+| Random 8K/1K C=1 | Output tok/s | 111.83 | 109.90 | -1.7% |
+| Random 8K/1K C=2 | Output tok/s | 167.37 | 167.91 | +0.3% |
+| Random 8K/1K C=4 | Output tok/s | 235.38 | 235.70 | +0.1% |
+
+Decision: reject for the active Dev branch. The microbench shows bf16 can help
+the isolated torch fallback, but the promoted endpoint shapes did not improve
+and the large-shape top-k overlap is no longer exact. The 1 GiB cap should not
+be copied blindly; on the DS4-like microbench it was slower and used more
+memory than cap64. The temporary code change was removed. Revisit only if a
+future profile proves the torch top-k fallback, not the current Triton/custom
+top-k path or sparse prefill scheduling, is dominating an active workload.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
