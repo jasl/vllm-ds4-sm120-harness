@@ -2760,9 +2760,12 @@ lens:
   even when SM120 improves.
 - before collecting GB10 performance data, confirm that both nodes use the
   intended NCCL runtime. A preflight after Dev absorption found the venv package
-  `nvidia-nccl-cu13==2.30.4` present but `torch.cuda.nccl.version()` still
-  reporting `(2, 28, 9)`. Treat that as an environment/runtime issue to resolve
-  before interpreting GB10 hangs, stalls, or throughput gaps.
+  `nvidia-nccl-cu13==2.30.4` present, `/proc/<pid>/maps` loading the venv
+  `libnccl.so.2`, and the library/header reporting `2.30.4+cuda13.2`, while
+  `torch.cuda.nccl.version()` still reported `(2, 28, 9)`. Treat the torch value
+  as a compile-time signal unless a distributed runtime test proves otherwise;
+  record both the torch report and the loaded NCCL library path in GB10
+  artifacts.
 
 Profiling deliverables before a best-effort recommendation:
 
