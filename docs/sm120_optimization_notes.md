@@ -2612,6 +2612,112 @@ top-k prototype as a secondary experiment and require it to prove lower
 register/live-state pressure in the logits computation itself; reducing the
 `top_k_per_row_prefill` selection stage alone has too little headroom.
 
+### Sparse-MLA Partial-State Accumulate Prototype, 2026-06-01
+
+Branch: temporary vLLM branch `codex/sm120-sparse-mla-partial-state-experiment`.
+
+This experiment implements the two-pass sparse-MLA accumulate idea for the
+single-prefill SM120 Triton path only. The candidate writes per-candidate-tile
+online-softmax states `(max_score, denom, acc)`, then merges those states before
+the sink finish step. It intentionally does not change the multi-prefill path
+because the first full-path probe made C=2 long-context TTFT worse.
+
+Correctness coverage added on SM12x:
+
+- partial-state merge equals the existing single-pass accumulate;
+- partial-state accumulate plus merge equals single-pass accumulate;
+- 3+ partial parts plus scratch-buffer swapping equals single-pass accumulate.
+
+Remote targeted verification passed:
+
+- `pytest tests/v1/attention/test_sparse_mla_backends.py -q -k partial_state`
+  reported `3 passed`;
+- `ruff check` on the touched sparse MLA files passed;
+- `git diff --check` passed.
+
+Same-protocol A/B against clean `ds4-sm120-preview-dev`:
+
+| Gate | Clean | Candidate | Result |
+| --- | ---: | ---: | --- |
+| 59K C=1 TTFT mean | `12.146 s` | `11.790 s` | `-2.93%` |
+| 124K C=1 TTFT mean | `30.835 s` | `29.788 s` | `-3.40%` |
+| 59K C=2 TTFT mean | `23.741 s` | `23.849 s` | `+0.46%` |
+| 124K C=2 TTFT mean | `60.773 s` | `60.601 s` | `-0.28%` |
+| 59K C=2 ITL p99 | `0.854 s` | `0.842 s` | `-1.48%` |
+| 124K C=2 ITL p99 | `1.148 s` | `1.082 s` | `-5.75%` |
+| random prefill 1K input tok/s | `6068` | `6024` | `-0.74%` |
+| random prefill 4K input tok/s | `6125` | `6302` | `+2.88%` |
+| random prefill 16K input tok/s | `5611` | `5818` | `+3.68%` |
+| random prefill 65K input tok/s | `4639` | `4807` | `+3.62%` |
+
+Mixed-arrival repeat-3 result was mostly neutral-to-positive for long-prefill
+TTFT, but not fully clean:
+
+| Case | Metric | Clean | Candidate | Result |
+| --- | ---: | ---: | ---: | --- |
+| `decode_then_59k` | primary TTFT mean | `12.288 s` | `11.820 s` | `-3.81%` |
+| `decode_then_59k` | secondary TTFT mean | `13.322 s` | `13.556 s` | `+1.75%` |
+| `decode_then_59k` | ITL p99 | `0.137 s` | `0.167 s` | `+21.69%` |
+| `long_then_short` | primary TTFT mean | `31.970 s` | `30.743 s` | `-3.84%` |
+| `long_then_short` | secondary TTFT mean | `3.352 s` | `3.262 s` | `-2.67%` |
+| `long_then_short` | secondary ITL p99 | `26.641 s` | `25.537 s` | `-4.14%` |
+
+Current decision: keep this as a candidate, not yet as promoted code. It gives
+a repeatable C=1 and random-prefill TTFT/input-throughput improvement without
+obvious C=2 long-context regression, but the `decode_then_59k` ITL p99 movement
+needs another mixed-arrival repeat or trace before promotion. Before merging
+into the dev branch, run the fixed 59K/124K matrix, mixed-arrival, streaming
+pressure, prefix-cache/KV lifecycle, story-recall semantic, and GSM8K limit-200
+gates. Revert if the mixed decode-tail regression repeats or if GB10 shows
+higher stability risk under the extra scratch-state workspace.
+
+### Hardware-Informed Profiling Split
+
+Do not assume RTX PRO 6000 SM120 and GB10 SM121 failures have the same root
+cause. The optimization matrix should share workloads, but the profiling focus
+differs.
+
+RTX PRO 6000 Blackwell Workstation Edition is the primary kernel-development
+platform: 188 SMs, 96 GB GDDR7 ECC, 512-bit memory interface, 1792 GB/s memory
+bandwidth, and 600 W board power. For this target, long-context prefill
+experiments should prioritize:
+
+- SM occupancy, eligible warps, register pressure, and long-scoreboard stalls
+  for sparse MLA prefill kernels;
+- launch ordering and overlap between sparse prefill accumulate, FP8 MQA
+  logits, top-k, and decode kernels;
+- per-request ITL p95/p99 under `decode_then_long` and `long_then_short`
+  rather than only aggregate input/output throughput;
+- scratch-workspace size, because extra temporary state can still affect the
+  128K/131K ceiling even when the GPU has enough nominal VRAM.
+
+GB10/DGX Spark SM121 is a capacity-and-stability validation target: 128 GB
+LPDDR5x coherent unified memory, 256-bit interface, 273 GB/s memory bandwidth,
+and 140 W GB10 TDP. For this target, the same vLLM changes need an additional
+stability and bandwidth lens:
+
+- run no-MTP 128K startup/KV lifecycle first, then MTP as exploratory;
+- treat prefix-cache reclaimability and idle KV release as correctness gates,
+  because unified memory pressure can hide as slowly rising KV usage;
+- record driver/GPU health after each high-risk 128K+ probe, including Xid,
+  UVM, and GPU-lost signals;
+- compare scratch-heavy kernel prototypes against clean dev before promotion,
+  because GB10 has far less memory bandwidth than RTX PRO 6000 and may regress
+  even when SM120 improves.
+
+Profiling deliverables before a best-effort recommendation:
+
+1. SM120 NCU for `fp8_mqa_logits`, sparse MLA prefill accumulate, and
+   partial-state accumulate on 59K and 124K single-prefill shapes.
+2. SM120 Nsight Systems trace for `decode_then_59k`, `decode_then_124k`, and
+   `long_then_short`, with per-request TTFT and ITL p99 aligned to kernel
+   ranges.
+3. SM120 same-protocol A/B gates for 59K/124K C=1/C=2, random prefill sweep,
+   mixed-arrival, streaming pressure, story recall, prefix-cache/KV lifecycle,
+   and GSM8K limit-200.
+4. GB10 startup/KV lifecycle/long-context smoke using the same workload names
+   before claiming the SM120 best-effort choice scales to SM121.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
