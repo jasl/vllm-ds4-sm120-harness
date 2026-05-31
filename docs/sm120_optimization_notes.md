@@ -2102,9 +2102,9 @@ Immediate harness follow-ups from this review:
 
 Immediate vLLM experiment plan once the workstation is available:
 
-1. Re-sync the workstation through `ssh jasl@home.jasl123.cn -p 22222`, verify
-   the harness commit and vLLM `ds4-sm120-preview-dev` commit, and confirm NCCL
-   is still upgraded after any vLLM reinstall.
+1. Re-sync the workstation through the configured private SSH route, verify the
+   harness commit and vLLM `ds4-sm120-preview-dev` commit, and confirm NCCL is
+   still upgraded after any vLLM reinstall.
 2. Run a lightweight current-branch smoke first: server startup, short MTP
    bench C=1/2/4, and GSM8K limit-50. This catches environment drift before
    long GPU jobs.
@@ -2384,6 +2384,112 @@ patch. Exact top-k with `topk=2048` would need either large per-row live state
 or a more complex multi-stage selection design. The next kernel work should
 only proceed with a concrete design that reduces live state beyond this chunked
 merge and has gates for both long-context latency and semantic correctness.
+
+## Active SM12x Prefill/Decode Profiling Plan, 2026-06-01
+
+Current work is now explicitly split into three linked problems:
+
+1. long-context prefill/TTFT and reliability;
+2. 59K/124K C=2 fairness, measured by per-request decode min/max and ITL tail;
+3. prefill/decode interference, which is the most likely mechanism behind the
+   user-visible fairness problem but must be proven with traces before changing
+   more kernels.
+
+Hardware constraints matter enough that SM120 and SM121 should not share one
+undifferentiated tuning story:
+
+- RTX PRO 6000 Blackwell Workstation Edition is the SM120 target: 96GB GDDR7,
+  about 1.8TB/s memory bandwidth, PCIe Gen 5, 600W power envelope, and no
+  SM100-only TMA/TMEM/`tcgen05` assumptions. This is the right host for
+  aggressive sparse-MLA kernel profiling, scheduler A/B, and 128K-class
+  repeatability gates.
+- DGX Spark / GB10 is the SM121 target: 128GB LPDDR5X UMA, 273GB/s memory
+  bandwidth, 140W SoC envelope, integrated CPU/GPU, 10GbE plus ConnectX-7. It
+  has much less memory bandwidth and power headroom than RTX PRO 6000, and UMA
+  memory reporting can be misleading under pressure. Treat it first as a
+  reliability and memory-lifetime target, then as a performance target.
+
+Use two layers of evidence:
+
+| Layer | Purpose | SM120 Default | SM121 / GB10 Default |
+| --- | --- | --- | --- |
+| End-to-end gate | User-visible acceptance and no-regression result | `run_sm120_user_feedback_matrix.sh`, repeat fixed 59K/124K C=1/C=2, mixed arrival, decode-concurrency, GSM8K | GB10 no-MTP 128K sentinel, KV lifecycle, decode-concurrency, then MTP as exploratory |
+| Timeline trace | Explain whether prefill kernels interrupt decode cadence | `run_mixed_arrival_nsys_profile_launch.sh`, one mixed case per trace | Same tool only after startup/KV lifecycle is stable |
+| Kernel microprofile | Decide whether kernel work is justified | NCU on `_accumulate_indexed_attention_chunk_multihead_kernel` and `_fp8_mqa_logits_kernel` | Optional only after crash risk is controlled; expect bandwidth/power limits sooner |
+| Deployment probe | Decide whether single-instance best effort is enough | Simulate PD-style isolation only if C=2 ITL remains unacceptable after scheduler work | Consider PD/disagg earlier for long-context concurrent user testing, but do not claim throughput gains from it |
+
+Immediate trace sequence:
+
+1. `decode_then_124k`: an existing decode stream has emitted at least one token,
+   then a 124K-class prefill arrives. This is the primary prefill/decode
+   interference shape; compare top kernel time, launch order, and decode ITL.
+2. `long_then_short`: a 124K-class prefill starts first, then a short request
+   arrives. Previous scheduler traces showed the short request could complete
+   prefill and emit a first token, then wait behind the leading long prefill.
+   This should be kept separate from the kernel-boundary problem above.
+3. `long+long C=2`: keep as the promotion fairness gate. Do not tune solely
+   for `long_then_short` if it regresses 59K/124K C=2 TTFT or decode min/max.
+
+Optimization candidates should be tried in this order:
+
+1. Scheduler/admission changes that protect already-streaming decode without
+   exposing a public user knob. Any candidate must keep
+   `FULL_AND_PIECEWISE`, GSM8K, short C=1/2/4, and 59K/124K C=1/C=2 healthy.
+2. Sparse-MLA prefill algorithm changes only if traces still show
+   `_accumulate_indexed_attention_chunk_multihead_kernel` dominating while
+   decode is active. Do not resume launch-only sweeps already rejected on
+   2026-05-31.
+3. FP8 MQA logits live-state work only for shapes that exceed the current
+   full-logits threshold or regress the direct-MQA top-k fallback. The accepted
+   chunked top-k fallback is a narrow large-shape fix, not a general fairness
+   solution.
+4. Deployment-level prefill/decode separation only if the best single-instance
+   scheduler policy cannot control ITL p95/p99. vLLM's disaggregated prefill is
+   a tail-ITL control tool, not a default throughput improvement, and it adds
+   KV-transfer/TTFT overhead that is especially important on GB10.
+
+### SM120 mixed-arrival trace evidence, 2026-06-01
+
+The first Nsight Systems pass used the normal SM120 dev serve profile:
+`TP=2`, `MTP=2`, FP8 KV, prefix cache disabled, block size 256,
+`max_model_len=131072`, `max_num_batched_tokens=4096`, `max_num_seqs=4`,
+expert parallel enabled, and `FULL_AND_PIECEWISE` CUDA graphs.
+
+`decode_then_124k` completed cleanly. The existing decode stream had
+TTFT 30.809s, decode 36.785 tok/s, and p99 inter-chunk 0.205s; the arriving
+long request had TTFT 32.324s and decode 94.447 tok/s. The decode min/max
+ratio was 0.389. Kernel time was dominated by
+`_accumulate_indexed_attention_chunk_multihead_kernel` at 48.7%, followed by
+`_fp8_mqa_logits_kernel` at 12.1%, Marlin MoE at 10.3%, NCCL all-reduce at
+8.6%, and `_w8a8_triton_block_scaled_mm` at 5.0%.
+
+`long_then_short` also completed cleanly but exposed a different problem. The
+long request had TTFT 31.824s and decode 83.998 tok/s; the short request saw
+TTFT 3.344s but then stretched to 30.506s elapsed, 2.319 tok/s, and a 26.480s
+p99 inter-chunk gap. The kernel mix was similar:
+`_accumulate_indexed_attention_chunk_multihead_kernel` at 49.2%,
+`_fp8_mqa_logits_kernel` at 12.0%, Marlin MoE at 10.6%, NCCL at 9.1%, and
+W8A8 matmul at 5.0%.
+
+Interpretation: `decode_then_124k` is genuine prefill/decode interference with
+sparse-MLA prefill and FP8 MQA logits dominating the captured window.
+`long_then_short` is mostly RUNNING-queue/token-budget starvation: the short
+request reaches first token quickly, but then waits behind the leading long
+prefill. Keep these shapes separate when evaluating fixes.
+
+Rejected scheduler experiments from this pass:
+
+- Later-short-decode prefill cap: focused scheduler tests passed, and the GPU
+  gate exited cleanly, but changing the cap from 1/4 to 1/8 did not materially
+  improve `long_then_short`. The short request still took 32.138s elapsed at
+  about 2 tok/s with p99 1.961s, while the long request TTFT stayed around
+  33.807s. Do not keep this code path.
+- Full long-prefill deferral for a later short decode: the focused test proved
+  the intended scheduling order, but the real SM120 gate failed with CUDA
+  illegal memory access and NCCL watchdog termination. The failing scheduler
+  output scheduled only the short decode while another long request remained
+  running. Do not reintroduce this shape without a lower-level explanation of
+  the CUDA graph/spec-decode/model-runner assumptions it violates.
 
 ## Experiment Discipline
 

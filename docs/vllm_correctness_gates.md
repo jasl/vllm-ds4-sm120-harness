@@ -190,6 +190,14 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   local proxy for deciding whether best-effort single-instance scheduling is
   still enough, or whether a deployment needs stronger prefill/decode
   isolation.
+- Mixed-arrival Nsight Systems trace: when a scheduler or sparse-MLA kernel
+  change targets prefill/decode interference, run
+  `scripts/run_mixed_arrival_nsys_profile_launch.sh` with one case spec at a
+  time, starting with `decode_then_124k` and then `long_then_short`. This keeps
+  the capture window tight enough to compare launch order and top kernel time
+  against the per-request ITL/fairness result from the same request window.
+  Treat the trace as diagnostic evidence; promotion still requires the full
+  user-feedback matrix.
 - KV lifecycle and prefix-cache recoverability: run `kv_lifecycle_probe` in
   the prefix-cache-disabled primary matrix and in a separate prefix-cache-enabled
   serve. The disabled pass guards real block lifetime leaks; the enabled pass

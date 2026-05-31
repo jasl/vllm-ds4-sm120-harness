@@ -1412,6 +1412,31 @@ def test_long_context_nsys_profile_launcher_captures_request_window():
     assert "nsys_kernel_summary.md" in script
 
 
+def test_mixed_arrival_nsys_profile_launcher_captures_scheduler_window():
+    script = (
+        ROOT / "scripts" / "run_mixed_arrival_nsys_profile_launch.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'PYTHON="${PYTHON:-python}"' in script
+    assert 'SERVE_COMMAND="${SERVE_COMMAND:?set SERVE_COMMAND}"' in script
+    assert 'PROFILE_MIXED_ARRIVAL_CASE_SPECS=' in script
+    assert "decode_then_124k" in script
+    assert "long-context-mixed-arrival" not in script
+    assert '"${SCRIPT_DIR}/run_long_context_mixed_arrival.sh"' in script
+    assert 'LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS="${PROFILE_MIXED_ARRIVAL_CASE_SPECS}"' in script
+    assert '"${NSYS_BIN}" launch' in script
+    assert '"${NSYS_BIN}" start \\' in script
+    assert '--session="${NSYS_SESSION_NAME}" \\' in script
+    assert '--output "${nsys_rep%.nsys-rep}" \\' in script
+    assert '"${NSYS_BIN}" stop --session="${NSYS_SESSION_NAME}"' in script
+    assert '"${NSYS_BIN}" stop --session="${NSYS_SESSION_NAME}" \\' not in script
+    assert "--sample none" in script
+    assert "--cpuctxsw none" in script
+    assert "stop_nsys_agent" in script
+    assert "mixed_arrival/long_context_mixed_arrival.json" in script
+    assert "nsys_kernel_summary.md" in script
+
+
 def test_vllm_collect_env_helper_downloads_and_runs_official_script(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
