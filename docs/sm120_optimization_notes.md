@@ -2323,6 +2323,68 @@ problem is not solved by globally lowering `max_num_batched_tokens`; it needs a
 narrower admission, scheduling, or deployment-level strategy that does not
 penalize normal 124K C=1/C=2 prefill.
 
+## Accepted Direct MQA Chunked Top-K Fallback, 2026-06-01
+
+The prior NCU evidence showed the direct FP8 MQA logits kernel at 128K-class
+width was register/eligible-warp limited (`255` registers per thread and about
+`16%` achieved occupancy), so small launch/tile changes were stopped. The next
+algorithmic question was whether the SM120 direct-MQA top-k fallback could avoid
+materializing one large `(num_q, seq_len_kv)` fp32 logits matrix.
+
+The implemented candidate keeps the existing full-logits Triton path when the
+matrix is below `_SM120_MQA_TRITON_TOPK_MAX_LOGITS_BYTES`, but when it would
+previously fall through to the torch chunked path it now uses exact Triton
+logits chunks plus per-row top-k merge. This is not a single fused streaming
+top-k kernel, but it reduces live logits state for the large-fallback shape and
+keeps the small/medium fast path unchanged.
+
+Microbench artifacts are under `20260601_streaming_topk_probe`:
+
+| Shape | Variant | Mean | Peak Allocated | Correctness Signal |
+| --- | ---: | ---: | ---: | --- |
+| `256 x 131072`, topk `2048` | current full-logits Triton | `2.77 ms` | `152 MiB` | reference |
+| `256 x 131072`, topk `2048` | public dispatch after change | `2.73 ms` | `164 MiB` | exact vs full-logits |
+| `256 x 131072`, topk `2048` | prototype chunked `32768` | `3.64 ms` | `125 MiB` | exact, but slower |
+| `1152 x 131072`, topk `2048` | old torch chunked fallback | `129.10 ms` | `510 MiB` | `1151/1152` rows exact vs full Triton; one numerical boundary row |
+| `1152 x 131072`, topk `2048` | forced full-logits Triton | `13.61 ms` | `675 MiB` | reference |
+| `1152 x 131072`, topk `2048` | public dispatch after change | `14.70 ms` | `468 MiB` | exact vs forced full-logits |
+
+Targeted endpoint gate
+`20260601_streaming_topk_chunked_target_gate` passed server startup,
+long-context latency matrix, GSM8K limit-50, random prefill sweep, and
+random 256x256 (`exit 0` for every requested phase). Key smoke metrics:
+
+| Gate | Result |
+| --- | --- |
+| GSM8K limit-50 | flexible/strict exact match `0.98` / `0.98` |
+| Random prefill 65K/1 | input throughput `4623.76 tok/s`, mean TTFT `14.174 s` |
+| Random 256x256 C=1/4/16 | output throughput `136.15` / `344.63` / `339.19 tok/s` |
+| Runtime health | no CUDA/NCCL/driver/server error signals in requested phases |
+
+The same run showed 59K/124K C=2 fairness still weak, so an A/B repeat-3
+long-context gate compared the candidate with the old torch-fallback dispatch:
+
+| Gate | Candidate | Old Dispatch | Interpretation |
+| --- | ---: | ---: | --- |
+| 59K C=1 TTFT mean | `12.169 s` | `12.209 s` | unchanged |
+| 59K C=2 TTFT mean | `23.844 s` | `24.432 s` | unchanged/noise |
+| 124K C=1 TTFT mean | `30.901 s` | `30.900 s` | unchanged |
+| 124K C=2 TTFT mean | `60.903 s` | `60.848 s` | unchanged |
+| 124K C=2 decode min/max | `0.124` | `0.124` | unchanged |
+
+Decision: keep the chunked direct-MQA top-k fallback as a narrow large-logits
+fallback improvement. It removes a severe torch fallback cliff for the
+`>512 MiB` direct-MQA top-k shape without changing the normal full-logits
+Triton fast path. Do not claim it fixes the current 59K/124K C=2 long-prefill
+fairness problem; the old-path A/B reproduced the same slowdown, so that
+belongs to the scheduler/admission workstream.
+
+Further single-kernel fused streaming top-k should not be started as a quick
+patch. Exact top-k with `topk=2048` would need either large per-row live state
+or a more complex multi-stage selection design. The next kernel work should
+only proceed with a concrete design that reduces live state beyond this chunked
+merge and has gates for both long-context latency and semantic correctness.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
@@ -2371,20 +2433,11 @@ penalize normal 124K C=1/C=2 prefill.
    availability fix: short smoke, 64K/128K C=1/2/3/4, and GSM8K. Include
    failure counts and min/median/mean/max TTFT so one-shot cold variance does
    not drive promotion decisions.
-4. Profile the active FP8 MQA logits Triton path with NCU on representative
-   late-context 128K launches. Treat register pressure, eligible-warps, and
-   long-scoreboard stalls as the primary hypothesis until the new counters say
-   otherwise.
-5. Sweep small tile/register-pressure changes around direct FP8 MQA logits:
-   `BLOCK_M`, `BLOCK_N`, `BLOCK_H`, `BLOCK_D`, and `num_warps`. Keep each
-   candidate small enough to revert, and require both short-context and GSM8K
-   gates before promotion.
-6. Investigate a fused or streaming direct-top-k path for long prefill so the
-   SM120 fallback no longer has to materialize a large `(num_q, seq_len_kv)`
-   fp32 logits matrix before row-top-k selection.
-7. Re-profile `_accumulate_indexed_attention_chunk_multihead_kernel` after the
+4. Continue C=2 long-prefill fairness as scheduler/admission work. The
+   direct-MQA chunked top-k A/B did not move the 59K/124K C=2 slowdown.
+5. Re-profile `_accumulate_indexed_attention_chunk_multihead_kernel` after the
    FP8 MQA logits work. If it becomes the dominant prefill kernel, test only
    narrow changes around head grouping, candidate loop structure, and query/topk
    chunk sizes.
-8. After prefill is stable, move to paged MQA decode and small-M GEMM/BMM
+6. After prefill is stable, move to paged MQA decode and small-M GEMM/BMM
    experiments for long-context multi-turn latency.
