@@ -33,12 +33,22 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 PYTHON="${PYTHON:-python}"
+NSYS_BIN="${NSYS_BIN:-nsys}"
 SERVE_COMMAND="${SERVE_COMMAND:?set SERVE_COMMAND}"
 OUT_DIR="${OUT_DIR:?set OUT_DIR}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
 PROFILE_MODEL="${PROFILE_MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
 PREFILL_DECODE_PROFILE_LABEL="${PREFILL_DECODE_PROFILE_LABEL:-sm12x_prefill_decode_interference}"
 PREFILL_DECODE_PROFILE_CASE_SPECS="${PREFILL_DECODE_PROFILE_CASE_SPECS:-decode_then_59k:1900:1900:after_first_token:0:256:128;decode_then_124k:4000:4000:after_first_token:0:256:128;long_then_short:4000:192:fixed_delay:2:128:64}"
+PROFILE_REPEAT_COUNT="${PROFILE_REPEAT_COUNT:-1}"
+PROFILE_TEMPERATURE="${PROFILE_TEMPERATURE:-0.0}"
+PROFILE_TOP_P="${PROFILE_TOP_P:-1.0}"
+PROFILE_THINKING_MODE="${PROFILE_THINKING_MODE:-non-thinking}"
+PROFILE_TIMEOUT="${PROFILE_TIMEOUT:-3600}"
+PROFILE_PREWARM="${PROFILE_PREWARM:-1}"
+STARTUP_TIMEOUT_S="${STARTUP_TIMEOUT_S:-900}"
+NSYS_TRACE="${NSYS_TRACE:-cuda,nvtx}"
+NSYS_CAPTURE_MODE="${NSYS_CAPTURE_MODE:-bench_window}"
 
 mkdir -p "${OUT_DIR}"
 cases_tsv="${OUT_DIR}/profile_cases.tsv"
@@ -67,11 +77,23 @@ for raw_case_spec in "${case_specs[@]}"; do
   echo "[profile] case=${case_name} out=${case_out}"
   set +e
   OUT_DIR="${case_out}" \
+    PYTHON="${PYTHON}" \
+    NSYS_BIN="${NSYS_BIN}" \
+    SERVE_COMMAND="${SERVE_COMMAND}" \
     BASE_URL="${BASE_URL}" \
     PROFILE_MODEL="${PROFILE_MODEL}" \
     PROFILE_LABEL="${PREFILL_DECODE_PROFILE_LABEL}_${case_slug}" \
     PROFILE_CASE_NAME="${case_name}" \
     PROFILE_MIXED_ARRIVAL_CASE_SPECS="${case_spec}" \
+    PROFILE_REPEAT_COUNT="${PROFILE_REPEAT_COUNT}" \
+    PROFILE_TEMPERATURE="${PROFILE_TEMPERATURE}" \
+    PROFILE_TOP_P="${PROFILE_TOP_P}" \
+    PROFILE_THINKING_MODE="${PROFILE_THINKING_MODE}" \
+    PROFILE_TIMEOUT="${PROFILE_TIMEOUT}" \
+    PROFILE_PREWARM="${PROFILE_PREWARM}" \
+    STARTUP_TIMEOUT_S="${STARTUP_TIMEOUT_S}" \
+    NSYS_TRACE="${NSYS_TRACE}" \
+    NSYS_CAPTURE_MODE="${NSYS_CAPTURE_MODE}" \
     "${SCRIPT_DIR}/run_mixed_arrival_nsys_profile_launch.sh"
   code="$?"
   set -e

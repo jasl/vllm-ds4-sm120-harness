@@ -1448,7 +1448,13 @@ def test_sm12x_prefill_decode_profile_wrapper_runs_three_trace_shapes():
     assert "decode_then_124k:4000:4000:after_first_token:0:256:128" in script
     assert "long_then_short:4000:192:fixed_delay:2:128:64" in script
     assert '"${SCRIPT_DIR}/run_mixed_arrival_nsys_profile_launch.sh"' in script
+    assert 'PYTHON="${PYTHON}"' in script
+    assert 'NSYS_BIN="${NSYS_BIN}"' in script
+    assert 'SERVE_COMMAND="${SERVE_COMMAND}"' in script
     assert 'PROFILE_MIXED_ARRIVAL_CASE_SPECS="${case_spec}"' in script
+    assert 'PROFILE_REPEAT_COUNT="${PROFILE_REPEAT_COUNT}"' in script
+    assert 'PROFILE_PREWARM="${PROFILE_PREWARM}"' in script
+    assert 'NSYS_CAPTURE_MODE="${NSYS_CAPTURE_MODE}"' in script
     assert "profile_cases.tsv" in script
     assert "prefill_decode_interference_profiles_summary.json" in script
     assert "prefill_decode_interference_profiles_summary.md" in script
