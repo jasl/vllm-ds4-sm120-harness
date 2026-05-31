@@ -62,31 +62,39 @@ artifact to debug.
 1. **Keep partial-state sparse MLA as the current Dev baseline.**
    It has passed the SM120 promotion matrix, no-MTP GB10 smoke,
    prefix-cache-enabled GB10 lifecycle, and a guarded GB10 MTP=2 128K-class
-   smoke. It still needs GB10 MTP pressure/soak before a broad SM121
-   performance claim.
+   smoke. The first GB10 long C=2 pressure gate reproduced a high-SM,
+   no-token-progress stall in both MTP=2 and no-MTP profiles, so broad SM121
+   performance claims should wait for the reduced long-C=2 repro and fix.
 
-2. **Run the three-case interference profile before the next kernel change.**
-   Use the existing wrapper and compare against the latest Dev artifacts. The
-   decision question is whether partial-state accumulate is still the largest
-   active-window cost and whether FP8 MQA logits is still second.
+2. **Reduce and profile the GB10 long C=2 stall before the next kernel change.**
+   The pressure matrix now gives a concrete failure: the first two C=2 phases
+   complete, then the long-C=2 phase can keep both GPUs at high SM utilization
+   while prompt/decode counters stop. Capture a single-pair Nsys trace and
+   sweep chunk size before attributing the issue to one kernel.
 
-3. **Try algorithmic sparse MLA work only if it reduces live state or total
+3. **Run the three-case interference profile before the next retained kernel
+   change.** Use the existing wrapper and compare against the latest Dev
+   artifacts. The decision question is whether partial-state accumulate is
+   still the largest active-window cost and whether FP8 MQA logits is still
+   second.
+
+4. **Try algorithmic sparse MLA work only if it reduces live state or total
    work.**
    More local chunk/part/warp sweeps are exhausted. A retained candidate needs
    endpoint improvement on 59K/124K C=1/C=2 plus mixed-arrival, and it must not
    increase GB10 instability through scratch pressure.
 
-4. **Keep direct FP8 MQA streaming top-k as a secondary experiment.**
+5. **Keep direct FP8 MQA streaming top-k as a secondary experiment.**
    The current decomposition shows top-k selection itself is small, so the only
    useful version is one that reduces FP8 MQA logits live state or register
    pressure. A top-k-only speedup is not enough.
 
-5. **Treat scheduler-only fixes as high risk.**
+6. **Treat scheduler-only fixes as high risk.**
    The successful scheduler experiments improved one tail shape but regressed
    other C=2 shapes or hit graph/runtime assumptions. Do not promote another
    scheduler policy unless it passes the full user-feedback matrix.
 
-6. **Evaluate prefill/decode isolation only as a deployment fallback.**
+7. **Evaluate prefill/decode isolation only as a deployment fallback.**
    vLLM disaggregated prefill is designed to control tail ITL by moving prefill
    and decode into separate instances with KV transfer. It is not a raw
    throughput optimization. On the current dual RTX PRO 6000 setup, the full

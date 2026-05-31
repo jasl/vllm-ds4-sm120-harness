@@ -258,6 +258,74 @@ observation until the MTP concurrent correctness variance is better understood.
 
 Performance/quality refresh after the prewarm wiring fix:
 
+### GB10 Long C=2 Pressure Stall Reproduction
+
+The first bounded GB10 pressure gate after the 128K-class MTP startup smoke
+found a stronger failure shape than the earlier short deterministic and
+single-long-context probes. The service does not crash and the driver remains
+clean, but the long C=2 streaming-pressure phase can enter a high-SM,
+no-token-progress state.
+
+Common profile for both runs:
+
+- two-node GB10 / SM121, TP=2, PP=1, EP enabled, FP8 KV, prefix cache disabled;
+- `max_model_len=131072`, `max_num_batched_tokens=4176`,
+  `max_num_seqs=2`, block size 256;
+- `FULL_AND_PIECEWISE` graph mode remained enabled;
+- matrix cases were `short_c2`, issue-7-like `5K_c2`, then `long_c2`.
+
+MTP=2 pressure artifact label:
+`20260601_gb10_mtp2_bounded_pressure/streaming_pressure_matrix_c2`.
+
+| Signal | Result |
+| --- | ---: |
+| Successful requests before stop | 12 |
+| Prefill tokens delta | 210,324 |
+| Decode tokens delta | 399 |
+| Runtime avg prefill throughput | 1,314.21 tok/s |
+| Runtime avg decode throughput | 2.49 tok/s |
+| Max running / waiting requests | 2 / 1 |
+| Max KV usage from metrics | 39.42% |
+| GPU util avg / max | 90.96% / 96.0% |
+| Runtime CUDA/NCCL/driver/engine errors | 0 |
+
+The MTP run reached `long_c2` after the first 12 requests, then stayed at
+`running=2`, `waiting=0`, with prompt/decode/spec-decode counters flat while
+GPU SM utilization remained around 95-96%. Interrupting the client released the
+requests and returned the server to idle. Kernel-driver health logs showed no
+Xid, UVM, launch-failure, or GPU-lost signal.
+
+No-MTP control artifact label:
+`20260601_gb10_nomtp_bounded_pressure_control/streaming_pressure_matrix_c2`.
+
+| Signal | Result |
+| --- | ---: |
+| Successful requests before stop | 12 |
+| Prefill tokens delta | 210,324 |
+| Decode tokens delta | 388 |
+| Runtime avg prefill throughput | 1,314.45 tok/s |
+| Runtime avg decode throughput | 2.42 tok/s |
+| Max running / waiting requests | 2 / 1 |
+| Max KV usage from metrics | 30.23% |
+| GPU util avg / max | 91.87% / 96.0% |
+| Runtime CUDA/NCCL/driver/engine errors | 0 |
+
+The no-MTP control reproduced the same high-SM, no-token-progress pattern in
+the `long_c2` phase. This moves the root-cause hypothesis away from
+speculative decoding alone and toward the long C=2 scheduler/attention
+interaction. MTP is still relevant as extra overhead and capacity pressure, but
+the base no-MTP path is sufficient to reproduce the stall.
+
+Next debugging direction:
+
+- reduce the reproduction to a single `long_c2` pair and capture Nsys around
+  the stalled window;
+- compare `max_num_batched_tokens=2048/3072/4176` before changing kernels;
+- separate the cases where the server makes slow progress from cases where
+  counters stop entirely;
+- only after that, evaluate whether the fix belongs in scheduler chunking,
+  sparse-MLA prefill, FP8 MQA logits, or graph replay shape handling.
+
 The first full local-quality attempt
 `codex_issue8_1eighth_local_quality_refresh_20260522/20260522103723` was stopped
 after full acceptance generation at temperature 1.0 produced subjective
