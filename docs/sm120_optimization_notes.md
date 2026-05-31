@@ -2491,6 +2491,86 @@ Rejected scheduler experiments from this pass:
   running. Do not reintroduce this shape without a lower-level explanation of
   the CUDA graph/spec-decode/model-runner assumptions it violates.
 
+### Next algorithm-level candidates
+
+The current evidence rules out more cheap launch/tile tuning:
+
+- Nsight Systems repeatedly puts `_accumulate_indexed_attention_chunk_multihead_kernel`
+  at about half of captured CUDA kernel time and `_fp8_mqa_logits_kernel` at
+  about 12% for the 124K mixed-arrival shapes.
+- NCU showed low DRAM throughput on both kernels. SM120 is not simply GDDR7
+  bandwidth-bound here; the dominant signals are low eligible warps, dependency
+  stalls, and very high register pressure in FP8 MQA logits.
+- Prior A/Bs rejected top-k chunk changes, query chunk reductions,
+  `HEAD_BLOCK=4`, `num_warps=8`, direct MQA tile changes, BF16 torch top-k,
+  and scheduler-only late-short-decode policies.
+
+Therefore the next vLLM experiments should be algorithmic and narrow:
+
+1. **Direct FP8 MQA streaming top-k prototype.**
+   Replace the current large-shape path that repeatedly materializes
+   `chunk_logits` and merges with `torch.topk` by a Triton prototype that
+   computes scores and maintains per-row top-k candidates directly. The first
+   version should cover only the existing SM120 FP8-Q / FP8-K direct prefill
+   path: `q_scale is None`, `q_values.dim() == 3`, `k_values.dim() == 2`,
+   DS4-compatible `head_dim`, and long `seq_len_kv`. Do not expose a user knob.
+   Prove output parity against `fp8_fp4_mqa_topk_indices` on synthetic shapes
+   before any endpoint run.
+
+   Minimum evidence before keeping code:
+
+   - unit/microbench parity for top-k indices on short, 32K, 64K, and 131K KV
+     widths, with deterministic inputs that avoid ambiguous ties;
+   - NCU confirming lower register pressure or shorter elapsed time than
+     `_fp8_mqa_logits_kernel` plus merge-top-k, not just a different launch
+     count;
+   - endpoint gates: 59K/124K C=1/C=2, `decode_then_124k`,
+     `long_then_short`, random prefill sweep, story-recall semantic, and
+     GSM8K limit-200.
+
+   Revert if the top-k set is not stable, if C=1 TTFT regresses, or if the
+   59K/124K C=2 fairness floor worsens. This path is correctness-sensitive:
+   a small top-k drift can later look like an attention or retrieval bug.
+
+2. **Two-pass sparse-MLA prefill accumulate prototype.**
+   The current accumulate kernel performs an online softmax over the candidate
+   list inside one program for each token/head block. A two-pass variant would
+   split large candidate lists into candidate tiles, write partial
+   `(max_score, denom, acc)` states, then merge those partial states. The goal
+   is not less arithmetic; it is shorter per-program dependency chains and
+   better scheduler eligibility for long prefill chunks.
+
+   Scope it tightly:
+
+   - enable only when `combined_topk_size > 1024` and the scratch-state memory
+     budget is acceptable;
+   - keep the existing single-pass kernel for short prompts and small top-k;
+   - start with a standalone microbench that reports scratch bytes, kernel
+     count, elapsed time, eligible warps, registers/thread, and achieved
+     occupancy;
+   - then run only the same mixed-arrival and 59K/124K gates if the microbench
+     is clearly positive.
+
+   Revert if the extra launch and scratch traffic erase the shorter dependency
+   chain, or if GB10/SM121 becomes less stable under UMA memory pressure. On
+   GB10 this candidate is higher risk because LPDDR5X bandwidth and shared
+   memory pressure are much tighter than RTX PRO 6000.
+
+3. **Deployment-level prefill/decode isolation fallback.**
+   If both kernel candidates fail or are too invasive, treat single-instance
+   scheduling as best-effort and test a deployment policy instead: separate
+   long-prefill admission from latency-sensitive decode, or use a PD/disagg
+   style shape for customers who need multi-user 256K+ contexts. Record it as
+   a tail-ITL control tradeoff, not as a raw throughput win; it adds KV transfer
+   and TTFT overhead and is likely more important on GB10 than on RTX PRO 6000.
+
+Current best-effort direction: do **not** promote another scheduler-only fix.
+Start with the direct FP8 MQA streaming top-k prototype because it attacks the
+highest-register-pressure path and already has a narrow top-k API boundary.
+Only move to the two-pass sparse-MLA accumulate design if the top-k prototype
+does not move endpoint metrics or if fresh traces show accumulate remains the
+dominant long-prefill cost after the top-k path is improved.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
@@ -2527,23 +2607,21 @@ Rejected scheduler experiments from this pass:
 
 ## Near-Term Work Queue
 
-1. Add and promote the KV lifecycle gate before further scheduler or kernel
-   experiments. The user-reported symptom is high idle KV usage carrying across
-   unrelated sessions; first distinguish prefix-cache-retained but reclaimable
-   blocks from a real prefix-disabled block lifetime leak.
-2. Track C=2 long-prefill scheduling as a separate fairness project. Current
-   data indicates the second long cold prefill is largely serialized behind the
-   first on both SM120 workstation and GB10-style shapes; do not mix that
-   scheduler work with KV lifetime correctness fixes.
-3. Refresh the PR-facing long-context gate after the latest rebase and CUTeDSL
-   availability fix: short smoke, 64K/128K C=1/2/3/4, and GSM8K. Include
-   failure counts and min/median/mean/max TTFT so one-shot cold variance does
-   not drive promotion decisions.
-4. Continue C=2 long-prefill fairness as scheduler/admission work. The
-   direct-MQA chunked top-k A/B did not move the 59K/124K C=2 slowdown.
-5. Re-profile `_accumulate_indexed_attention_chunk_multihead_kernel` after the
-   FP8 MQA logits work. If it becomes the dominant prefill kernel, test only
-   narrow changes around head grouping, candidate loop structure, and query/topk
-   chunk sizes.
-6. After prefill is stable, move to paged MQA decode and small-M GEMM/BMM
-   experiments for long-context multi-turn latency.
+1. Keep KV lifecycle and prefix-cache recoverability in the development and
+   user-feedback matrices. This remains a reliability gate, not a performance
+   optimization.
+2. Treat C=2 long-prefill fairness as a promotion gate and diagnostic signal,
+   not as a reason to add more scheduler-only hacks. The later-short-decode
+   scheduler experiments above were rejected.
+3. Implement the direct FP8 MQA streaming top-k prototype on a temporary vLLM
+   branch, with parity tests and a standalone microbench before endpoint gates.
+4. If streaming top-k is positive, run the fixed 59K/124K C=1/C=2,
+   mixed-arrival, random prefill, story-recall, and GSM8K gates before keeping
+   code. If it is negative or ambiguous, revert and record only the rejected
+   note.
+5. If fresh traces still show sparse-MLA accumulate as the dominant residual
+   cost, design the two-pass partial-state accumulate prototype. Do not resume
+   `HEAD_BLOCK`, `num_warps`, or chunk-size sweeps.
+6. After single-instance kernel options are exhausted, evaluate deployment-level
+   prefill/decode isolation as the best-effort answer for longer GB10 / 4-card
+   contexts, explicitly trading TTFT/KV-transfer overhead for ITL tail control.
