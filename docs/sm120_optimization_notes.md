@@ -654,6 +654,21 @@ kernel:
 | `20260601_mqa_topk_decompose_131k` | `top_k_per_row_prefill` on existing logits | `0.084 ms` | `0.089 ms` |
 | `20260601_mqa_topk_decompose_131k` | full `fp8_fp4_mqa_topk_indices` | `2.718 ms` | `2.725 ms` |
 
+Sparse MLA prefill accumulate now has a standalone microbench at
+`scripts/run_sm120_sparse_mla_accumulate_microbench.py`. On the target
+`q=256x64x128`, `kv=131072x128` shape, candidate chunking itself is not the
+primary cost; the current online state update is nearly linear in candidates
+and the 256-way multi-request chunking is close to the single-call baseline:
+
+| Artifact Label | Candidates | Chunk Size | Calls | Mean | p95 |
+| --- | ---: | --- | ---: | ---: | ---: |
+| `20260601_sparse_mla_accumulate_microbench_default` | 512 | single | 1 | `0.348 ms` | `0.353 ms` |
+| `20260601_sparse_mla_accumulate_microbench_default` | 512 | 256 | 2 | `0.346 ms` | `0.348 ms` |
+| `20260601_sparse_mla_accumulate_microbench_default` | 1024 | single | 1 | `0.668 ms` | `0.673 ms` |
+| `20260601_sparse_mla_accumulate_microbench_default` | 1024 | 256 | 4 | `0.689 ms` | `0.757 ms` |
+| `20260601_sparse_mla_accumulate_microbench_default` | 1152 | single | 1 | `0.747 ms` | `0.754 ms` |
+| `20260601_sparse_mla_accumulate_microbench_default` | 1152 | 256 | 5 | `0.753 ms` | `0.756 ms` |
+
 Current stop condition for local kernel-launch tuning: the cheap "cut kernels
 shorter" levers have now been tested across sparse-MLA query chunk, topk chunk,
 head grouping, accumulate warps, and direct FP8 MQA tile/warp dimensions. The
@@ -2640,8 +2655,11 @@ register/live-state pressure in the logits computation itself; reducing the
    not as a reason to add more scheduler-only hacks. The later-short-decode
    scheduler experiments above were rejected.
 3. Design the two-pass sparse-MLA partial-state accumulate prototype on a
-   temporary vLLM branch. Start from a standalone microbench before endpoint
-   gates; do not resume `HEAD_BLOCK`, `num_warps`, or chunk-size sweeps.
+   temporary vLLM branch. Start from
+   `scripts/run_sm120_sparse_mla_accumulate_microbench.py`; the prototype must
+   beat the current `1152`-candidate baseline of roughly `0.75 ms` including
+   any merge/scratch overhead. Do not resume `HEAD_BLOCK`, `num_warps`, or
+   chunk-size sweeps.
 4. Keep the direct FP8 MQA streaming top-k prototype as a secondary candidate.
    Its microbench must beat the full logits path itself, not just replace the
    already-small top-k selection stage.
