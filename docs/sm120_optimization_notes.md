@@ -2048,6 +2048,36 @@ well below the 90% recoverability threshold in the tested shape. If future
 reports show monotonic growth toward 95%, rerun this gate with larger
 `KV_LIFECYCLE_SESSION_COUNT` or prompt line counts before changing vLLM code.
 
+## Rejected Active-Decode 1/32 Very-Long Prefill Cap, 2026-05-31
+
+After the KV lifecycle gate, the next narrow C=2 fairness question was whether
+the retained active-decode plus very-long-prefill cap should tighten from
+`max_num_batched_tokens // 16` to `// 32`. The hypothesis was that smaller
+prefill chunks might raise the slow request's decode rate and further reduce
+ITL tail latency. Same-host A/B used TP=2, MTP=2, FP8 KV, prefix cache
+disabled, `FULL_AND_PIECEWISE`, 131K max-model-len, 4096
+max-num-batched-tokens, max-num-seqs 4, and repeat count 3.
+
+| Case | 1/16 Current | 1/32 Candidate | Decision Signal |
+| --- | ---: | ---: | --- |
+| 59K C=2 decode min | 31.665 tok/s | 31.936 tok/s | +0.9%, noise-level |
+| 59K C=2 ITL p99 | 0.0887 s | 0.0877 s | -1.1%, noise-level |
+| 124K C=2 TTFT mean | 47.826 s | 48.192 s | +0.8% regression |
+| 124K C=2 decode min | 29.941 tok/s | 30.611 tok/s | +2.2%, too small |
+| 124K C=2 decode min/max | 0.292 | 0.288 | slightly worse |
+| `decode_then_124k` decode min | 42.495 tok/s | 42.377 tok/s | no improvement |
+| `long_then_short` decode min/max | 0.568 | 0.551 | worse |
+
+Artifact labels: `20260531_c2_fairness_current_a03c87c` and
+`20260531_c2_fairness_cap32_experiment`.
+
+Decision: reject and remove the 1/32 code. The retained 1/16 policy already
+keeps 59K/124K C=2 ITL p99 around 0.09-0.10 s on the dual-card 128K shape.
+Tightening further does not materially improve user-visible fairness and costs
+TTFT or other mixed-arrival metrics. Future C=2 work should investigate a
+different mechanism, such as admission/ordering or decode/prefill separation,
+rather than only shrinking the active-decode prefill chunk again.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
