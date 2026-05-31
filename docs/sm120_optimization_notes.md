@@ -449,6 +449,52 @@ disabled. This preserves the old `all` behavior, where disabled optional phases
 stay skipped, but prevents another targeted high-risk gate from silently running
 only `server_startup`.
 
+### Running-Prefill Budget Pressure
+
+The next C=2 fairness pass found a smaller scheduler hole after the active
+decode caps: once a short prefill is admitted behind a long prefill, both
+requests become RUNNING. On the following step, the leading long prefill could
+consume the whole scheduler budget because the previous guard only considered
+waiting requests. The retained development candidate treats a later unfinished
+RUNNING prefill as the same budget-pressure signal, so the leading long
+prefill continues to leave room for the already-admitted shorter prefill.
+
+Narrow A/B, prefix cache disabled, 131K max-model-len, 4096
+max-num-batched-tokens, TP=2, MTP=2, `FULL_AND_PIECEWISE`, repeat count 3:
+
+| Shape | Metric | Current 1/16 Policy | Running-Prefill Pressure | Delta |
+| --- | --- | ---: | ---: | ---: |
+| 59K C=2 cold | TTFT mean | 19.459 s | 19.256 s | -1.0% |
+| 59K C=2 cold | TTFT max | 27.276 s | 25.860 s | -5.2% |
+| 59K C=2 cold | Decode min | 31.665 tok/s | 31.797 tok/s | +0.4% |
+| 59K C=2 cold | ITL P99 | 0.0887 s | 0.0866 s | -2.4% |
+| 124K C=2 cold | TTFT mean | 47.826 s | 47.987 s | +0.3% |
+| 124K C=2 cold | Decode min | 29.941 tok/s | 30.653 tok/s | +2.4% |
+| 124K C=2 cold | Decode min/max | 0.292 | 0.300 | +2.6% |
+| `decode_then_59K` | Decode min | 39.896 tok/s | 41.137 tok/s | +3.1% |
+| `decode_then_124K` | Decode min | 42.495 tok/s | 44.918 tok/s | +5.7% |
+| `long_then_short` | Secondary TTFT | 30.325 s | 30.374 s | +0.2% |
+
+Artifact labels: `20260531_c2_fairness_current_a03c87c` and
+`20260531_running_prefill_fairness_candidate`.
+
+Full user-feedback matrix artifact:
+`20260531_running_prefill_fairness_user_feedback/20260531184641`.
+
+Promotion gate result: all primary, prefix-cache, and KV-lifecycle phases
+exited `0`; GSM8K 5-shot limit-200 was `0.950` flexible / `0.935` strict;
+short HF/MT C=1/2/4 output throughput was `153.72 / 241.55 / 357.55` tok/s;
+124K C=2 decode-concurrency slow request was `30.848` tok/s with ITL p99
+`0.096 s`; prefix-cache stress passed all filler sizes with zero failures;
+prefix-disabled idle KV returned to `0.000%`; prefix-enabled idle KV stayed at
+`5.894%`, below the `90%` recoverability threshold. Runtime monitoring showed
+no server unresponsive, CUDA, NCCL, driver, or engine error signals.
+
+Decision: keep and promote. The change fixes a real RUNNING-queue fairness
+case and modestly improves C=2 / decode-then-long metrics without moving the
+broader no-regression gates materially. It does not solve `long_then_short`;
+that shape needs a different scheduling or admission mechanism.
+
 ### Sparse SWA MTP Reorder Correctness Fix
 
 The 64K-class MTP=2 C=3/C=4 retrieval miss was traced to a metadata split
@@ -2077,6 +2123,33 @@ Tightening further does not materially improve user-visible fairness and costs
 TTFT or other mixed-arrival metrics. Future C=2 work should investigate a
 different mechanism, such as admission/ordering or decode/prefill separation,
 rather than only shrinking the active-decode prefill chunk again.
+
+## Rejected No-Decode Very-Long 1/4 Waiting-Prefill Cap, 2026-05-31
+
+A follow-up tested whether the no-active-decode very-long path should leave
+more room for a waiting short prefill by tightening the cap from
+`max_num_batched_tokens // 2` to `// 4`. The target was the `long_then_short`
+shape, where a short prompt arrives while a 124K-class cold prefill is already
+running.
+
+The experiment did not materially help the target shape and regressed the
+main C=2 long-context gate:
+
+| Case | Current 1/2 Waiting Cap | 1/4 Waiting Candidate | Decision Signal |
+| --- | ---: | ---: | --- |
+| 124K C=2 TTFT mean | 47.826 s | 49.085 s | +2.6% regression |
+| 124K C=2 TTFT max | 63.983 s | 71.381 s | +11.6% regression |
+| 124K C=2 decode min | 29.941 tok/s | 29.376 tok/s | worse |
+| 124K C=2 decode min/max | 0.292 | 0.287 | worse |
+| `long_then_short` secondary TTFT | 30.325 s | 30.238 s | -0.3%, noise-level |
+| `long_then_short` secondary ITL P99 | 0.0314 s | 0.0334 s | worse |
+
+Artifact labels: `20260531_c2_fairness_current_a03c87c` and
+`20260531_waiting_prefill_quarter_candidate`.
+
+Decision: reject and remove the code and test. Do not tighten the
+no-active-decode waiting-request cap for now. The target improvement is
+noise-level, while the 124K C=2 TTFT max regression is too large.
 
 ## Experiment Discipline
 
