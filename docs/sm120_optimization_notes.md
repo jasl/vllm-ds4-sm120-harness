@@ -336,12 +336,38 @@ hypothesis that the issue is only an oversized prefill chunk. The next trace
 should therefore capture the first long-C=2 sparse-MLA prefill window, not only
 late decode.
 
+Follow-up Nsys window artifact label:
+`20260601_gb10_nomtp_longc2_nsys_chunk2048/serve_20260601071049`.
+
+This run launched both GB10 ranks under dormant Nsys sessions, started capture
+only for the reduced `long_c2` request window, and stopped capture after the
+same high-SM/no-token-progress state was observed. Both ranks showed the same
+kernel mix:
+
+| Rank | Top Kernel | Time Share | Total Time | Instances | Avg |
+| --- | --- | ---: | ---: | ---: | ---: |
+| head | `_accumulate_indexed_attention_chunk_multihead_kernel` | 35.1% | 21.557 s | 33,368 | 0.646 ms |
+| worker | `_accumulate_indexed_attention_chunk_multihead_kernel` | 35.1% | 23.061 s | 35,592 | 0.648 ms |
+| head | MXFP4 Marlin MoE | 18.2% | 11.136 s | 2,658 | 4.190 ms |
+| worker | MXFP4 Marlin MoE | 17.8% | 11.666 s | 2,826 | 4.128 ms |
+| head | `_fp8_mqa_logits_kernel` | 7.6% | 4.680 s | 649 | 7.211 ms |
+| worker | `_fp8_mqa_logits_kernel` | 8.0% | 5.269 s | 690 | 7.636 ms |
+| head | NCCL bf16 all-reduce | 6.4% | 3.898 s | 2,690 | 1.449 ms |
+| worker | NCCL bf16 all-reduce | 7.0% | 4.601 s | 2,859 | 1.609 ms |
+
+Interpretation: the stall window is not an idle scheduler wait. The GPUs are
+actively executing a repeated sparse-MLA prefill/attention + MoE + collective
+sequence while vLLM-visible prompt/decode counters do not advance. The next
+kernel experiment should focus on reducing or restructuring
+`_accumulate_indexed_attention_chunk_multihead_kernel` work for the GB10
+long-C=2 shape before revisiting MTP-specific changes.
+
 Next debugging direction:
 
-- reduce the reproduction to a single `long_c2` pair and capture Nsys around
-  the stalled sparse-MLA prefill window;
-- compare `max_num_batched_tokens=3072/4176` only after the 2048 trace, because
-  2048 already reproduces the stop;
+- build a reduced sparse-MLA prefill microbench or endpoint experiment that
+  targets the `long_c2` shape seen in the Nsys window;
+- use NCU on `_accumulate_indexed_attention_chunk_multihead_kernel` for this
+  shape if counter permissions are available on the target node;
 - separate the cases where the server makes slow progress from cases where
   counters stop entirely;
 - only after that, evaluate whether the fix belongs in scheduler chunking,

@@ -939,8 +939,8 @@ def test_gb10_sm121_profile_uses_public_machine_independent_settings():
         ROOT / "configs" / "gb10_sm121_serve.env.example"
     ).read_text(encoding="utf-8")
 
-    assert 'CUDA_HOME="/usr/local/cuda-13.2"' in profile
-    assert 'TRITON_PTXAS_PATH="/usr/local/cuda-13.2/bin/ptxas"' in profile
+    assert 'CUDA_HOME="/usr/local/cuda"' in profile
+    assert 'TRITON_PTXAS_PATH="/usr/local/cuda/bin/ptxas"' in profile
     assert 'CUDA_ARCH_LIST="121a"' in profile
     assert 'TORCH_CUDA_ARCH_LIST="12.1a"' in profile
     assert 'GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-1x_nvidia_gb10}"' in profile
@@ -1088,6 +1088,24 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "10.0.0." not in script
     assert "/home/" not in script
     assert "/Users/" not in script
+
+
+def test_dgx_spark_mp_serve_helper_can_launch_nsys_sessions():
+    script = (
+        ROOT / "scripts" / "dgx_spark_start_mp_serve.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'SERVE_NSYS_MODE="${SERVE_NSYS_MODE:-none}"' in script
+    assert 'NSYS_BIN_REMOTE="${NSYS_BIN_REMOTE:-nsys}"' in script
+    assert 'NSYS_TRACE="${NSYS_TRACE:-cuda,nvtx}"' in script
+    assert 'NSYS_SESSION_NAME_PREFIX="${NSYS_SESSION_NAME_PREFIX:-dgx_spark_mp}"' in script
+    assert 'printf \'%s\\n\' "${nsys_session}" > "${RUN_DIR}/worker.nsys_session"' in script
+    assert 'printf \'%s\\n\' "${nsys_session}" > "${RUN_DIR}/head.nsys_session"' in script
+    assert '"${NSYS_BIN_REMOTE}" launch' in script
+    assert '--session-new="${nsys_session}"' in script
+    assert '--trace "${NSYS_TRACE}"' in script
+    assert 'case "${SERVE_NSYS_MODE}" in' in script
+    assert 'none|head|worker|both)' in script
 
 
 def test_vllm_correctness_gate_docs_use_public_gsm8k_slice():

@@ -66,11 +66,15 @@ artifact to debug.
    no-token-progress stall in both MTP=2 and no-MTP profiles, so broad SM121
    performance claims should wait for the reduced long-C=2 repro and fix.
 
-2. **Reduce and profile the GB10 long C=2 stall before the next kernel change.**
+2. **Use the GB10 long C=2 Nsys trace to guide the next kernel change.**
    The pressure matrix now gives a concrete failure: the first two C=2 phases
    complete, then the long-C=2 phase can keep both GPUs at high SM utilization
-   while prompt/decode counters stop. Capture a single-pair Nsys trace and
-   sweep chunk size before attributing the issue to one kernel.
+   while prompt/decode counters stop. The reduced no-MTP 2048-token trace shows
+   both ranks spending the largest share of GPU time in
+   `_accumulate_indexed_attention_chunk_multihead_kernel`, with MXFP4 MoE,
+   FP8 MQA logits, and NCCL behind it. The next experiment should reduce or
+   restructure sparse-MLA prefill work for this shape before adding another
+   scheduler policy.
 
 3. **Run the three-case interference profile before the next retained kernel
    change.** Use the existing wrapper and compare against the latest Dev

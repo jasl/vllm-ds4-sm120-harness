@@ -60,6 +60,20 @@ SERVE_SPECULATIVE_CONFIG="${SERVE_SPECULATIVE_CONFIG:-}"
 SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS="${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS:-}"
 SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-auto}"
 SERVE_EXTRA_ARGS="${SERVE_EXTRA_ARGS:-}"
+SERVE_NSYS_MODE="${SERVE_NSYS_MODE:-none}"
+NSYS_BIN_REMOTE="${NSYS_BIN_REMOTE:-nsys}"
+NSYS_TRACE="${NSYS_TRACE:-cuda,nvtx}"
+NSYS_SESSION_NAME_PREFIX="${NSYS_SESSION_NAME_PREFIX:-dgx_spark_mp}"
+
+case "${SERVE_NSYS_MODE}" in
+  none|head|worker|both)
+    ;;
+  *)
+    printf 'invalid SERVE_NSYS_MODE=%s; expected none, head, worker, or both\n' \
+      "${SERVE_NSYS_MODE}" >&2
+    exit 2
+    ;;
+esac
 
 shell_quote() {
   printf '%q' "$1"
@@ -105,6 +119,10 @@ remote_env_prefix() {
   printf 'SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS=%s ' "$(shell_quote "${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS}")"
   printf 'SERVE_PREFIX_CACHE_MODE=%s ' "$(shell_quote "${SERVE_PREFIX_CACHE_MODE}")"
   printf 'SERVE_EXTRA_ARGS=%s ' "$(shell_quote "${SERVE_EXTRA_ARGS}")"
+  printf 'SERVE_NSYS_MODE=%s ' "$(shell_quote "${SERVE_NSYS_MODE}")"
+  printf 'NSYS_BIN_REMOTE=%s ' "$(shell_quote "${NSYS_BIN_REMOTE}")"
+  printf 'NSYS_TRACE=%s ' "$(shell_quote "${NSYS_TRACE}")"
+  printf 'NSYS_SESSION_NAME_PREFIX=%s ' "$(shell_quote "${NSYS_SESSION_NAME_PREFIX}")"
   remote_env_optional PYTORCH_CUDA_ALLOC_CONF
   remote_env_optional CUDA_ARCH_LIST
   remote_env_optional TORCH_CUDA_ARCH_LIST
@@ -265,7 +283,8 @@ if [[ -n "${SERVE_EXTRA_ARGS}" ]]; then
   extra_args=(${SERVE_EXTRA_ARGS})
   serve_args+=("${extra_args[@]}")
 fi
-nohup env \
+serve_cmd=(
+  env \
   PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}" \
   CUDA_HOME="${CUDA_HOME_REMOTE}" \
   TRITON_PTXAS_PATH="${CUDA_HOME_REMOTE}/bin/ptxas" \
@@ -279,8 +298,20 @@ nohup env \
   NCCL_DEBUG="${NCCL_DEBUG:-WARN}" \
   NCCL_DEBUG_SUBSYS="${NCCL_DEBUG_SUBSYS:-}" \
   VLLM_MARLIN_USE_ATOMIC_ADD="1" \
-  "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main "${serve_args[@]}" \
-  > "${RUN_DIR}/worker.log" 2>&1 < /dev/null &
+  "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main "${serve_args[@]}"
+)
+if [[ "${SERVE_NSYS_MODE}" == "worker" || "${SERVE_NSYS_MODE}" == "both" ]]; then
+  nsys_session="${NSYS_SESSION_NAME_PREFIX}_worker"
+  printf '%s\n' "${nsys_session}" > "${RUN_DIR}/worker.nsys_session"
+  nohup "${NSYS_BIN_REMOTE}" launch \
+    --session-new="${nsys_session}" \
+    --trace "${NSYS_TRACE}" \
+    --cuda-flush-interval 1000 \
+    -- "${serve_cmd[@]}" > "${RUN_DIR}/worker.log" 2>&1 < /dev/null &
+else
+  rm -f "${RUN_DIR}/worker.nsys_session"
+  nohup "${serve_cmd[@]}" > "${RUN_DIR}/worker.log" 2>&1 < /dev/null &
+fi
 echo "$!" > "${RUN_DIR}/worker.pid"
 printf 'worker_run_dir=%s\nworker_pid=%s\n' "${RUN_DIR}" "$(cat "${RUN_DIR}/worker.pid")"
 REMOTE
@@ -352,7 +383,8 @@ if [[ -n "${SERVE_EXTRA_ARGS}" ]]; then
   extra_args=(${SERVE_EXTRA_ARGS})
   serve_args+=("${extra_args[@]}")
 fi
-nohup env \
+serve_cmd=(
+  env \
   PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}" \
   CUDA_HOME="${CUDA_HOME_REMOTE}" \
   TRITON_PTXAS_PATH="${CUDA_HOME_REMOTE}/bin/ptxas" \
@@ -366,8 +398,20 @@ nohup env \
   NCCL_DEBUG="${NCCL_DEBUG:-WARN}" \
   NCCL_DEBUG_SUBSYS="${NCCL_DEBUG_SUBSYS:-}" \
   VLLM_MARLIN_USE_ATOMIC_ADD="1" \
-  "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main "${serve_args[@]}" \
-  > "${RUN_DIR}/head.log" 2>&1 < /dev/null &
+  "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main "${serve_args[@]}"
+)
+if [[ "${SERVE_NSYS_MODE}" == "head" || "${SERVE_NSYS_MODE}" == "both" ]]; then
+  nsys_session="${NSYS_SESSION_NAME_PREFIX}_head"
+  printf '%s\n' "${nsys_session}" > "${RUN_DIR}/head.nsys_session"
+  nohup "${NSYS_BIN_REMOTE}" launch \
+    --session-new="${nsys_session}" \
+    --trace "${NSYS_TRACE}" \
+    --cuda-flush-interval 1000 \
+    -- "${serve_cmd[@]}" > "${RUN_DIR}/head.log" 2>&1 < /dev/null &
+else
+  rm -f "${RUN_DIR}/head.nsys_session"
+  nohup "${serve_cmd[@]}" > "${RUN_DIR}/head.log" 2>&1 < /dev/null &
+fi
 echo "$!" > "${RUN_DIR}/head.pid"
 printf 'head_run_dir=%s\nhead_pid=%s\n' "${RUN_DIR}" "$(cat "${RUN_DIR}/head.pid")"
 REMOTE
