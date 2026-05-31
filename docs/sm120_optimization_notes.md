@@ -495,9 +495,86 @@ case and modestly improves C=2 / decode-then-long metrics without moving the
 broader no-regression gates materially. It does not solve `long_then_short`;
 that shape needs a different scheduling or admission mechanism.
 
+### Later Running Decode Budget Pressure
+
+The next trace separated two mixed-arrival problem classes that should not be
+collapsed into one kernel bug:
+
+1. `decode_then_long`: an existing decode stream has already emitted tokens,
+   then a long prefill is admitted behind it. This is still the main
+   kernel-boundary interference shape for sparse-MLA prefill work.
+2. `long_then_short`: a long prefill has already started, then a short request
+   arrives later. The short request can be admitted and can complete prefill,
+   but its subsequent decode can sit behind the leading long prefill in the
+   RUNNING queue.
+
+Scheduler trace artifact
+`20260531_sched_trace_mixed_arrival_synced/20260531215912` showed the second
+shape directly. The short request entered RUNNING, received prefill budget,
+and emitted its first token, but the following scheduler steps resumed the
+leading long prefill with full 4096-token chunks. The result was a
+`long_then_short` secondary elapsed time of `30.828 s` and a secondary
+p99/max inter-chunk gap of `26.572 s`.
+
+A first diagnostic fix treated the later decode exactly like an already
+scheduled decode and applied the existing 1/16 very-long active-decode cap.
+It fixed starvation but overshot the tradeoff: artifact
+`20260531_later_decode_budget_experiment_trace/20260531220637` reduced the
+secondary elapsed time to `8.796 s`, but regressed the primary long-prefill
+TTFT to `43.399 s`.
+
+Two narrower caps were then tested for the later-running-decode-only path:
+
+| Candidate | Artifact | `long_then_short` Primary TTFT | Secondary Elapsed | Secondary ITL P95 | Decision |
+| --- | --- | ---: | ---: | ---: | --- |
+| 1/4 cap | `20260531_later_decode_budget_quarter_trace/20260531221304` | 34.837 s | 11.202 s | 0.464 s | promising |
+| 1/2 cap | `20260531_later_decode_budget_half_trace/20260531221715` | 33.538 s | 16.432 s | 0.649 s | reject as too weak |
+
+The broad 1/4 cap was rerun without trace logging, repeat count 3:
+`20260531_later_decode_budget_quarter_mixed_arrival_r3/20260531222109`.
+
+| Case | Requests | Failures | Primary TTFT Mean | Secondary TTFT Mean | Secondary ITL P95 | Decode Min/Max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `decode_then_124k` | 6 | 0 | 30.549 s | 31.719 s | 0.029 s | 0.349 |
+| `long_then_short` | 6 | 0 | 32.639 s | 3.355 s | 0.261 s | 0.111 |
+
+Runtime monitoring for the repeat-3 run showed zero CUDA, NCCL, driver,
+engine, or server error signals.
+
+However, a follow-up 59K/124K C=1/C=2 latency smoke showed that applying the
+later-decode cap to all later decoders is too broad for the long+long shape:
+artifact `20260531_later_decode_budget_quarter_latency_smoke/20260531222935`
+reported 124K C=2 TTFT mean `64.052 s`.
+
+The implementation was narrowed to later short decoders only, where "short"
+means the later request's prompt is no more than four scheduler steps. That
+keeps the user-visible `long_then_short` fix while avoiding the long+long C=2
+policy change. The narrowed policy is covered by two scheduler tests:
+
+- a short later decode behind a leading long prefill receives budget in the
+  same step;
+- a long later decode behind a leading long prefill does not trigger this
+  reserve path.
+
+Validation artifact
+`20260531_later_short_decode_budget_validation/20260531223629`:
+
+| Gate | Result |
+| --- | --- |
+| `long_then_short`, repeat 3 | failures `0`; primary TTFT mean `32.581 s`; secondary TTFT mean `3.368 s`; secondary elapsed about `8.7-9.0 s`; secondary ITL p95 `0.259 s` |
+| `decode_then_124k`, repeat 3 | failures `0`; primary TTFT mean `30.846 s`; secondary TTFT mean `31.777 s`; secondary ITL p95 `0.028 s` |
+| 59K/124K C=1/C=2 latency smoke, repeat 1 | failures `0`; 59K C=1 `12.086 s`, 124K C=1 `30.435 s`, 124K C=2 `60.302 s` |
+| Runtime monitoring | zero CUDA, NCCL, driver, engine, or server error signals |
+
+Decision: keep this as a Dev-branch candidate only. It keeps the public surface
+unchanged and preserves `FULL_AND_PIECEWISE`, but the current repeat-1 long+long
+C=2 latency remains too high to promote. Before PR-branch promotion, rerun the
+fixed-protocol repeat-3 user-feedback matrix and compare 59K/124K C=2 against
+the latest accepted same-branch baseline.
+
 ### Open Follow-Up: Prefill/Decode Interference Trace
 
-The next development branch work should keep two interference classes separate:
+Future kernel work should continue to keep two interference classes separate:
 
 1. `decode_then_long`: an existing decode stream has already emitted tokens,
    then a long prefill is admitted behind it. This is the most plausible
@@ -505,11 +582,9 @@ The next development branch work should keep two interference classes separate:
    compare CUDA kernel duration, launch order, sparse-MLA prefill kernels, and
    paged-MQA decode kernels while the decode stream is active.
 2. `long_then_short`: a long prefill has already started, then a short request
-   arrives later. The latest 4096 and 2048-token gates show the short request
-   still waits around the long-prefill TTFT. This may be admission /
-   scheduler-step visibility rather than a pure kernel issue, so scheduler
-   traces must record when the client starts the secondary request, when vLLM
-   admits it, when it first receives token budget, and when it emits TTFT.
+   arrives later. The latest trace points at RUNNING-queue budget pressure
+   after the short request has completed prefill, not at initial admission or
+   pure paged-MQA decode throughput.
 
 Do not add a user-facing knob for either class. Keep `FULL_AND_PIECEWISE`
 enabled. Experimental changes stay on development or temporary branches until
@@ -524,6 +599,14 @@ Nsight Systems traces on 2026-05-31 narrowed the kernel-side bottleneck:
 | `20260531_decode_then_124k_nsys_trace/20260531210706` | primary TTFT `31.116 s`, secondary TTFT `32.238 s`, decode min/max `0.386`, p99 ITL `0.110 s` | `_accumulate_indexed_attention_chunk_multihead_kernel` `48.3%`, `_fp8_mqa_logits_kernel` `12.0%`, `_combine_topk_swa_indices_kernel` `0.1%` |
 | `20260531_long_then_short_nsys_trace/20260531211134` | primary TTFT `31.282 s`, secondary TTFT `29.847 s`, decode min/max `0.580`, p99 ITL `0.566 s` | `_accumulate_indexed_attention_chunk_multihead_kernel` `49.1%`, `_fp8_mqa_logits_kernel` `11.8%`, `_combine_topk_swa_indices_kernel` `0.1%` |
 
+The clean dev branch was re-profiled after removing the unpromoted scheduler
+candidate:
+
+| Trace | Key Metrics | Top Kernel Signal |
+| --- | --- | --- |
+| `20260601_decode_then_124k_nsys_clean_dev/20260531225627` | primary TTFT `30.384 s`, secondary TTFT `32.194 s`, decode min/max `0.329`, secondary ITL p95 `0.029 s` | `_accumulate_indexed_attention_chunk_multihead_kernel` `48.8%`, `_fp8_mqa_logits_kernel` `12.0%`, `_combine_topk_swa_indices_kernel` below top 30 |
+| `20260601_long_then_short_nsys_clean_dev/20260531225952` | primary TTFT `31.671 s`, secondary TTFT `3.285 s`, secondary elapsed `30.358 s`, secondary ITL p99 `26.385 s`, decode min/max `0.028` | `_accumulate_indexed_attention_chunk_multihead_kernel` `49.3%`, `_fp8_mqa_logits_kernel` `11.9%`, `_combine_topk_swa_indices_kernel` `0.1%` |
+
 Interpretation: the next kernel work should focus on the sparse MLA prefill
 accumulate path and FP8 MQA logits path. The combine-topk kernel is visible in
 the trace, but it is not currently large enough to be the first optimization
@@ -536,6 +619,18 @@ Rejected experiments from the same trace cycle:
 | Force `VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE=256` | `20260531_sparse_topk256_mixed_arrival_probe/20260531211601` | `decode_then_124k` secondary TTFT regressed from same-protocol `31.769 s` to `34.294 s`; `long_then_short` decode min/max improved only slightly while secondary ITL p99 worsened `0.034 s` to `0.041 s` | reject |
 | Lower `VLLM_SPARSE_INDEXER_MAX_LOGITS_MB=256` | `20260531_sparse_indexer_logits256_mixed_arrival_probe/20260531212235` | TTFT movement was noise-level; `decode_then_124k` decode min/max `0.332` to `0.356`, but `long_then_short` decode min/max `0.604` to `0.555` | reject |
 | Change prefill indexed attention `HEAD_BLOCK` from `8` to `4` | `20260531_prefill_headblock4_mixed_arrival_probe/20260531213603` | `decode_then_124k` was effectively unchanged; `long_then_short` decode min/max regressed `0.604` to `0.568` | reject and revert code |
+| Change prefill indexed attention multihead launch from `num_warps=4` to `8` | `20260601_prefill_accumulate_warps8_mixed_probe/20260531230321` | `decode_then_124k` stayed noise-level (`primary TTFT 30.408 s`, `secondary TTFT 31.865 s`, decode mean `64.746 tok/s`), while `long_then_short` worsened slightly (`primary TTFT 32.073 s`, `secondary TTFT 3.437 s`, secondary ITL p99 `26.636 s`) | reject and revert code |
+| Change direct FP8 MQA logits launch from `num_warps=4` to `8` | `20260601_fp8_mqa_warps8_mixed_probe/20260531230927` | clear regression: `decode_then_124k` primary/secondary TTFT regressed to `35.926 s` / `39.824 s`, decode min/max fell to `0.183`, and `long_then_short` secondary ITL p99 worsened to `32.279 s` | reject and revert code |
+
+Current stop condition for local kernel-launch tuning: the cheap "cut kernels
+shorter" levers have now been tested across sparse-MLA query chunk, topk chunk,
+head grouping, accumulate warps, and direct FP8 MQA tile/warp dimensions. The
+profile still points at the same two kernels, but local launch/tile changes
+either do not move the mixed-arrival metrics or regress them. Do not continue
+small launch-parameter sweeps without a new profiler signal such as NCU
+register/eligible-warp evidence or a design that changes the algorithmic
+structure, for example a fused streaming top-k path that avoids materializing
+the large fp32 logits matrix.
 
 ### Sparse SWA MTP Reorder Correctness Fix
 
