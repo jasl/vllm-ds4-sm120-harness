@@ -316,11 +316,32 @@ speculative decoding alone and toward the long C=2 scheduler/attention
 interaction. MTP is still relevant as extra overhead and capacity pressure, but
 the base no-MTP path is sufficient to reproduce the stall.
 
+No-MTP `max_num_batched_tokens=2048` single-`long_c2` probe artifact label:
+`20260601_gb10_nomtp_longc2_chunk2048_probe/streaming_pressure_longc2`.
+
+| Signal | Result |
+| --- | ---: |
+| Max running / waiting requests | 2 / 0 |
+| Phase prefill tokens delta | 0 |
+| Phase decode tokens delta | 0 |
+| Runtime avg prefill throughput | 0.0 tok/s |
+| Runtime avg decode throughput | 0.0 tok/s |
+| Max KV usage from metrics | 17.58% |
+| GPU util max | 96.0% |
+| Runtime CUDA/NCCL/driver/engine errors | 0 |
+
+This smaller-chunk single-pair probe stalled earlier than the 4176-token
+matrix run, immediately after first seeing the long C=2 shape. It weakens the
+hypothesis that the issue is only an oversized prefill chunk. The next trace
+should therefore capture the first long-C=2 sparse-MLA prefill window, not only
+late decode.
+
 Next debugging direction:
 
 - reduce the reproduction to a single `long_c2` pair and capture Nsys around
-  the stalled window;
-- compare `max_num_batched_tokens=2048/3072/4176` before changing kernels;
+  the stalled sparse-MLA prefill window;
+- compare `max_num_batched_tokens=3072/4176` only after the 2048 trace, because
+  2048 already reproduces the stop;
 - separate the cases where the server makes slow progress from cases where
   counters stop entirely;
 - only after that, evaluate whether the fix belongs in scheduler chunking,
