@@ -88,16 +88,17 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         f"- warmup / iterations: `{payload['warmup']} / {payload['iterations']}`",
         "",
         (
-            "| candidates | chunk size | calls | mean ms | p95 ms | "
-            "min ms | max ms |"
+            "| mode | candidates | chunk/part size | calls/parts | "
+            "mean ms | p95 ms | min ms | max ms | accumulate ms | merge ms |"
         ),
-        "| ---: | --- | ---: | ---: | ---: | ---: | ---: |",
+        "| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in payload["rows"]:
         lines.append(
             (
-                "| {num_candidates} | {chunk_size_label} | {call_count} | "
-                "{mean_ms:.3f} | {p95_ms:.3f} | {min_ms:.3f} | {max_ms:.3f} |"
+                "| {mode} | {num_candidates} | {chunk_size_label} | {call_count} | "
+                "{mean_ms:.3f} | {p95_ms:.3f} | {min_ms:.3f} | {max_ms:.3f} | "
+                "{accumulate_ms_mean:.3f} | {merge_ms_mean:.3f} |"
             ).format(**row)
         )
     lines.append("")
@@ -111,6 +112,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--candidate-lens", type=_parse_int_list, default="512,1024,1152")
     parser.add_argument("--chunk-sizes", type=_parse_chunk_list, default="single,256,512,1024")
+    parser.add_argument("--partial-state-part-sizes", type=_parse_int_list, default=[])
     parser.add_argument("--num-tokens", type=int, default=256)
     parser.add_argument("--num-heads", type=int, default=64)
     parser.add_argument("--head-dim", type=int, default=128)
@@ -143,7 +145,9 @@ def main() -> int:
     torch.cuda.manual_seed_all(args.seed)
 
     from vllm.v1.attention.backends.mla.sparse_mla_kernels import (
+        accumulate_indexed_sparse_mla_attention_partial_states,
         accumulate_indexed_sparse_mla_attention_chunk,
+        merge_sparse_mla_attention_states,
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -241,12 +245,128 @@ def main() -> int:
 
             rows.append(
                 {
+                    "mode": "chunked",
                     "num_candidates": num_candidates,
                     "chunk_size": chunk_size,
                     "chunk_size_label": _chunk_label(chunk_size),
                     "effective_chunk_size": effective_chunk,
                     "call_count": call_count,
+                    "accumulate_ms_mean": 0.0,
+                    "merge_ms_mean": 0.0,
                     **_summarize_ms(samples_ms),
+                }
+            )
+
+        for part_size in args.partial_state_part_sizes:
+            num_parts = (num_candidates + part_size - 1) // part_size
+            partial_max = torch.empty(
+                num_parts,
+                args.num_tokens,
+                args.num_heads,
+                device=device,
+                dtype=torch.float32,
+            )
+            partial_denom = torch.empty_like(partial_max)
+            partial_acc = torch.empty(
+                num_parts,
+                args.num_tokens,
+                args.num_heads,
+                args.head_dim,
+                device=device,
+                dtype=torch.float32,
+            )
+            merged_max = torch.empty_like(max_score)
+            merged_denom = torch.empty_like(denom)
+            merged_acc = torch.empty_like(acc)
+            scratch_max = torch.empty_like(max_score)
+            scratch_denom = torch.empty_like(denom)
+            scratch_acc = torch.empty_like(acc)
+
+            def reset_partial_state() -> None:
+                partial_max.fill_(float("-inf"))
+                partial_denom.zero_()
+                partial_acc.zero_()
+                merged_max.fill_(float("-inf"))
+                merged_denom.zero_()
+                merged_acc.zero_()
+                scratch_max.fill_(float("-inf"))
+                scratch_denom.zero_()
+                scratch_acc.zero_()
+
+            def run_partial_accumulate() -> None:
+                accumulate_indexed_sparse_mla_attention_partial_states(
+                    q=q,
+                    kv_flat=kv_flat,
+                    indices=indices,
+                    lens=lens,
+                    scale=args.scale,
+                    part_size=part_size,
+                    max_score=partial_max,
+                    denom=partial_denom,
+                    acc=partial_acc,
+                )
+
+            def run_partial_merge() -> None:
+                merged_max.copy_(partial_max[0])
+                merged_denom.copy_(partial_denom[0])
+                merged_acc.copy_(partial_acc[0])
+                for part_idx in range(1, num_parts):
+                    merge_sparse_mla_attention_states(
+                        merged_max,
+                        merged_denom,
+                        merged_acc,
+                        partial_max[part_idx],
+                        partial_denom[part_idx],
+                        partial_acc[part_idx],
+                        scratch_max,
+                        scratch_denom,
+                        scratch_acc,
+                    )
+                    merged_max.copy_(scratch_max)
+                    merged_denom.copy_(scratch_denom)
+                    merged_acc.copy_(scratch_acc)
+
+            for _ in range(args.warmup):
+                reset_partial_state()
+                run_partial_accumulate()
+                run_partial_merge()
+            torch.cuda.synchronize()
+
+            total_samples_ms: list[float] = []
+            accumulate_samples_ms: list[float] = []
+            merge_samples_ms: list[float] = []
+            for _ in range(args.iterations):
+                reset_partial_state()
+                torch.cuda.synchronize()
+                start_accumulate = torch.cuda.Event(enable_timing=True)
+                end_accumulate = torch.cuda.Event(enable_timing=True)
+                start_merge = torch.cuda.Event(enable_timing=True)
+                end_merge = torch.cuda.Event(enable_timing=True)
+                start_accumulate.record()
+                run_partial_accumulate()
+                end_accumulate.record()
+                torch.cuda.synchronize()
+                start_merge.record()
+                run_partial_merge()
+                end_merge.record()
+                torch.cuda.synchronize()
+                accumulate_ms = float(start_accumulate.elapsed_time(end_accumulate))
+                merge_ms = float(start_merge.elapsed_time(end_merge))
+                accumulate_samples_ms.append(accumulate_ms)
+                merge_samples_ms.append(merge_ms)
+                total_samples_ms.append(accumulate_ms + merge_ms)
+
+            rows.append(
+                {
+                    "mode": "partial_state",
+                    "num_candidates": num_candidates,
+                    "chunk_size": part_size,
+                    "chunk_size_label": str(part_size),
+                    "effective_chunk_size": part_size,
+                    "call_count": num_parts,
+                    "accumulate_ms_mean": statistics.fmean(accumulate_samples_ms),
+                    "merge_ms_mean": statistics.fmean(merge_samples_ms),
+                    **_summarize_ms(total_samples_ms),
                 }
             )
 

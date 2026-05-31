@@ -1502,6 +1502,21 @@ def test_sm120_sparse_mla_accumulate_microbench_records_chunk_shapes():
     assert "/Users/" not in script
 
 
+def test_sm120_sparse_mla_accumulate_microbench_records_partial_state_shapes():
+    script = (
+        ROOT / "scripts" / "run_sm120_sparse_mla_accumulate_microbench.py"
+    ).read_text(encoding="utf-8")
+
+    assert "accumulate_indexed_sparse_mla_attention_partial_states" in script
+    assert "merge_sparse_mla_attention_states" in script
+    assert "--partial-state-part-sizes" in script
+    assert "partial_state" in script
+    assert "merge_ms" in script
+    assert "10.0.0." not in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+
+
 def test_vllm_collect_env_helper_downloads_and_runs_official_script(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
