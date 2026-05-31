@@ -640,6 +640,9 @@ parity criterion:
 | --- | --- | ---: | ---: | --- | --- | --- | --- |
 | `20260601_mqa_topk_microbench_default` | q `256x64x128`, KV `4096x128`, top-k `2048` | `0.169 ms` | `0.181 ms` | pass | fail | pass | fail |
 | `20260601_mqa_topk_microbench_default` | q `256x64x128`, KV `32768x128`, top-k `2048` | `0.778 ms` | `0.789 ms` | pass | fail | skipped | skipped |
+| `20260601_mqa_topk_microbench_frontiers` | q `256x64x128`, KV `58957x128`, top-k `2048` | `1.272 ms` | `1.284 ms` | pass | fail | skipped | skipped |
+| `20260601_mqa_topk_microbench_frontiers` | q `256x64x128`, KV `124000x128`, top-k `2048` | `2.599 ms` | `2.606 ms` | pass | fail | skipped | skipped |
+| `20260601_mqa_topk_microbench_131k` | q `256x64x128`, KV `131072x128`, top-k `2048` | `2.719 ms` | `2.725 ms` | pass | fail | skipped | skipped |
 
 Current stop condition for local kernel-launch tuning: the cheap "cut kernels
 shorter" levers have now been tested across sparse-MLA query chunk, topk chunk,
