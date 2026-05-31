@@ -2662,14 +2662,12 @@ TTFT, but not fully clean:
 | `long_then_short` | secondary TTFT mean | `3.352 s` | `3.262 s` | `-2.67%` |
 | `long_then_short` | secondary ITL p99 | `26.641 s` | `25.537 s` | `-4.14%` |
 
-Current decision: keep this as a candidate, not yet as promoted code. It gives
+Initial decision: keep this as a candidate, not yet as promoted code. It gives
 a repeatable C=1 and random-prefill TTFT/input-throughput improvement without
 obvious C=2 long-context regression, but the `decode_then_59k` ITL p99 movement
-needs another mixed-arrival repeat or trace before promotion. Before merging
-into the dev branch, run the fixed 59K/124K matrix, mixed-arrival, streaming
-pressure, prefix-cache/KV lifecycle, story-recall semantic, and GSM8K limit-200
-gates. Revert if the mixed decode-tail regression repeats or if GB10 shows
-higher stability risk under the extra scratch-state workspace.
+needed another mixed-arrival repeat or trace before promotion. Revert if the
+mixed decode-tail regression repeats or if GB10 shows higher stability risk
+under the extra scratch-state workspace.
 
 Follow-up trace and correctness gates:
 
@@ -2683,13 +2681,39 @@ Follow-up trace and correctness gates:
 | MTP=1 prefix-cache stress | n/a | 5/5 trials, health `200`, concurrent hit rate mean `72.8%` | passes |
 | prefix-cache enabled KV lifecycle | n/a | final idle KV `5.894%`, bounded under diagnostic `30%` threshold | passes |
 
-The paired nsys run weakens the earlier mixed-arrival concern: both clean and
-candidate show about a 200 ms `decode_then_59k` p99 ITL under nsys overhead, so
-the repeat-3 p99 movement is not yet evidence of a candidate-specific
-regression. The candidate still needs a complete promotion matrix before dev
-absorption, but the current best-effort direction remains promising:
-single-prefill sparse-MLA partial states improve prefill latency without
-breaking GSM8K, prefix-cache stress, or KV lifecycle gates on RTX PRO 6000.
+The paired nsys run weakened the earlier mixed-arrival concern: both clean and
+candidate showed about a 200 ms `decode_then_59k` p99 ITL under nsys overhead,
+so the repeat-3 p99 movement was not evidence of a candidate-specific
+regression.
+
+Full SM120 promotion matrix:
+`20260601_partial_state_promotion_matrix/20260601030721`.
+
+| Gate | Result |
+| --- | --- |
+| Matrix status | OK, all primary, prefix-cache, and KV-lifecycle phases exited `0` |
+| 59K C=1 | TTFT mean `11.713 s`, decode `139.345 tok/s`, ITL p99 `0.022 s` |
+| 59K C=2 | TTFT mean `23.535 s`, decode `70.112 tok/s`, decode min/max `0.113`, ITL p99 `0.301 s` |
+| 124K C=1 | TTFT mean `29.687 s`, decode `105.038 tok/s`, ITL p99 `0.029 s` |
+| 124K C=2 | TTFT mean `60.560 s`, decode `52.683 tok/s`, decode min/max `0.131`, ITL p99 `1.081 s` |
+| Decode-concurrency 124K C=2 | TTFT mean `60.662 s`, decode min `13.629 tok/s`, decode min/max `0.143`, ITL p99 `1.099 s` |
+| Mixed `decode_then_124k` | primary TTFT `29.907 s`, secondary TTFT `30.746 s`, decode min/max `0.404`, secondary ITL p99 `0.035 s` |
+| Mixed `decode_then_59k` | primary TTFT `12.128 s`, secondary TTFT `12.983 s`, decode min/max `0.310`, secondary ITL p99 `0.022 s` |
+| Mixed `long_then_short` | primary TTFT `30.903 s`, secondary TTFT `3.295 s`, decode min/max `0.025`, secondary ITL p99 `25.615 s` |
+| Streaming pressure | 36 requests, 0 failures, 0 slow cases, max TTFT `56.683 s`, ITL p99 `0.971 s` |
+| GSM8K limit-200 5-shot | flexible `0.955`, strict `0.940` |
+| Random prefill sweep | 1K/4K/16K/65K input throughput `6159 / 6171 / 5736 / 4768 tok/s` |
+| Prefix-cache stress | all filler sizes passed, 0 failures, concurrent hit rates `0.2709` to `0.9594` |
+| KV lifecycle | prefix disabled final idle KV `0.0%`; prefix enabled final idle KV `5.894%` |
+| Runtime health | no server unresponsive signal; CUDA/NCCL/driver/engine error counters all `0` |
+
+Decision: the partial-state sparse-MLA candidate has enough SM120 evidence for
+Dev-branch absorption after one final code review and targeted test rerun. Do
+not promote it to the PR branch or use it for SM121 claims until GB10 startup,
+KV lifecycle, and a 128K-class long-context smoke pass. The remaining
+`long_then_short` tail is not introduced by this candidate; it is the known
+single-instance prefill/decode admission problem and stays in the separate
+scheduler/deployment workstream.
 
 ### Hardware-Informed Profiling Split
 
@@ -2699,8 +2723,10 @@ differs.
 
 RTX PRO 6000 Blackwell Workstation Edition is the primary kernel-development
 platform: 188 SMs, 96 GB GDDR7 ECC, 512-bit memory interface, 1792 GB/s memory
-bandwidth, and 600 W board power. For this target, long-context prefill
-experiments should prioritize:
+bandwidth, and 600 W board power. NVIDIA's public RTX PRO 6000 page lists
+96 GB GDDR7 ECC, 1792 GB/s memory bandwidth, and 600 W max power; the exact SM
+count is kept from the local hardware inventory. For this target,
+long-context prefill experiments should prioritize:
 
 - SM occupancy, eligible warps, register pressure, and long-scoreboard stalls
   for sparse MLA prefill kernels;
@@ -2713,8 +2739,10 @@ experiments should prioritize:
 
 GB10/DGX Spark SM121 is a capacity-and-stability validation target: 128 GB
 LPDDR5x coherent unified memory, 256-bit interface, 273 GB/s memory bandwidth,
-and 140 W GB10 TDP. For this target, the same vLLM changes need an additional
-stability and bandwidth lens:
+and 140 W GB10 TDP. NVIDIA's public DGX Spark user guide lists the same memory
+capacity, 256-bit LPDDR5x interface, 273 GB/s bandwidth, and 140 W SoC TDP. For
+this target, the same vLLM changes need an additional stability and bandwidth
+lens:
 
 - run no-MTP 128K startup/KV lifecycle first, then MTP as exploratory;
 - treat prefix-cache reclaimability and idle KV release as correctness gates,
@@ -2737,6 +2765,8 @@ Profiling deliverables before a best-effort recommendation:
    and GSM8K limit-200.
 4. GB10 startup/KV lifecycle/long-context smoke using the same workload names
    before claiming the SM120 best-effort choice scales to SM121.
+5. A final decision note that separates three outcomes: keep in Dev only,
+   promote to PR, or reject and preserve the branch as a backup experiment.
 
 ## Experiment Discipline
 
@@ -2780,19 +2810,20 @@ Profiling deliverables before a best-effort recommendation:
 2. Treat C=2 long-prefill fairness as a promotion gate and diagnostic signal,
    not as a reason to add more scheduler-only hacks. The later-short-decode
    scheduler experiments above were rejected.
-3. Design the two-pass sparse-MLA partial-state accumulate prototype on a
-   temporary vLLM branch. Start from
-   `scripts/run_sm120_sparse_mla_accumulate_microbench.py`; the prototype must
-   beat the current `1152`-candidate baseline of roughly `0.75 ms` including
-   any merge/scratch overhead. Do not resume `HEAD_BLOCK`, `num_warps`, or
-   chunk-size sweeps.
-4. Keep the direct FP8 MQA streaming top-k prototype as a secondary candidate.
+3. Review and, if still clean, absorb the partial-state sparse-MLA accumulate
+   candidate into the Dev branch only. The SM120 full promotion matrix has
+   passed, but GB10 has not yet validated the scratch-heavy path.
+4. Run GB10 no-MTP startup, KV lifecycle, and 128K-class long-context smoke on
+   the same candidate before any PR-branch promotion or SM121 performance
+   claim. If GB10 regresses or crashes, leave the code out of PR and preserve
+   the branch as the backup experiment.
+5. Keep the direct FP8 MQA streaming top-k prototype as a secondary candidate.
    Its microbench must beat the full logits path itself, not just replace the
    already-small top-k selection stage.
-5. If a kernel experiment is positive, run the fixed 59K/124K C=1/C=2,
+6. If a kernel experiment is positive, run the fixed 59K/124K C=1/C=2,
    mixed-arrival, random prefill, story-recall, and GSM8K gates before keeping
    code. If it is negative or ambiguous, revert and record only the rejected
    note.
-6. After single-instance kernel options are exhausted, evaluate deployment-level
+7. After single-instance kernel options are exhausted, evaluate deployment-level
    prefill/decode isolation as the best-effort answer for longer GB10 / 4-card
    contexts, explicitly trading TTFT/KV-transfer overhead for ITL tail control.
