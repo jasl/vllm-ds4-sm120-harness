@@ -2,7 +2,7 @@
 # Start a 2-node vLLM mp cluster on DGX Spark with RoCE.
 #
 # NCCL_IB_DISABLE default is 0 (IB verbs over the RoCE HCA). Measured on the
-# 2x GB10 cluster (SM121, RoCE iface enp1s0f1np1, vLLM 2760932cf):
+# 2x GB10 cluster (SM121, vLLM 2760932cf):
 #   IB=0  c=1 21.94 tok/s  (mt-bench HF, num-prompts=80)
 #   IB=1  c=1 15.12 tok/s  (-31%)
 # Override with `NCCL_IB_DISABLE=1` only when the IB stack is unavailable.
