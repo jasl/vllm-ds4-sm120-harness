@@ -2791,6 +2791,41 @@ smoke are healthy on the Dev branch. This is still not a PR-promotion gate for
 MTP or 393K-class GB10 reports; run MTP and prefix-cache-enabled GB10 profiles
 as separate exploratory gates before making broader SM121 claims.
 
+GB10 no-MTP prefix-cache-enabled lifecycle follow-up:
+
+| Gate | Result |
+| --- | --- |
+| Initial startup attempt | failed during FlashInfer sampler helper JIT because the public profile pointed at a missing `/usr/local/cuda-13.2/bin/nvcc`; the current nodes expose the active toolkit through `/usr/local/cuda` |
+| Corrected startup | TP=2, PP=1, EP on, FP8 KV, prefix cache enabled, `max_model_len=131072`, `max_num_batched_tokens=4176`, `max_num_seqs=2`, `FULL_AND_PIECEWISE`; `/health=200`; PYNCCL log reported `nccl==2.30.4` |
+| Capacity | model load used `73.92 GiB`; available KV cache memory `7.31 GiB`; GPU KV cache size `477,766` tokens |
+| Prefix-cache lifecycle | `KV_LIFECYCLE_LINE_COUNT=4200`, complete + complete + abort, `max_tokens=64`; artifact `20260601_gb10_prefix_cache_lifecycle_cuda130/kv_prefix_enabled_4200` |
+| Result | `PASS`; requests `3`, failures `0`, idle failures `0`; initial idle KV `2.047%`, final idle KV `15.867%`, max idle KV `15.867%` under diagnostic threshold `30%` |
+| Driver health | no Xid, UVM, GPU-lost, fatal, launch-failure, or NVIDIA driver OOM signals in the run window on either node |
+
+Interpretation: the user-reported "old sessions keep filling GPU KV cache"
+shape was not reproduced on the current GB10 no-MTP prefix-cache-enabled
+profile. Cached blocks remain resident, as expected with prefix cache enabled,
+but the lifecycle probe stayed bounded and became idle after complete and
+client-aborted long requests. MTP remains a separate GB10 liveness gate.
+
+GB10 MTP=2 startup and guarded 128K-class smoke:
+
+| Gate | Result |
+| --- | --- |
+| Startup | TP=2, PP=1, EP on, FP8 KV, prefix cache disabled, MTP `num_speculative_tokens=2`, `max_model_len=131072`, `max_num_batched_tokens=4176`, `max_num_seqs=2`, `FULL_AND_PIECEWISE`; `/health=200`; PYNCCL log reported `nccl==2.30.4` |
+| Capacity | model + drafter load used `75.62 GiB`; available KV cache memory `5.56 GiB`; GPU KV cache size `339,116` tokens; maximum concurrency for 131,072 tokens per request `2.59x` |
+| Short deterministic | artifact `20260601_gb10_mtp2_startup_short/short_deterministic`; `2+2` returned `4`, HTTP `200`, elapsed `0.707 s` |
+| 128K-class long-context probe | artifact `20260601_gb10_mtp2_startup_short/long_context_probe_4200`; `LONG_CONTEXT_LINE_COUNT=4200`, prompt tokens `130,257`, completion tokens `64`; matched `alpha-cobalt-17`, `beta-quartz-29`, and `gamma-onyx-43`; exit code `0` |
+| Spec decode counters during probe | after the short and long probes, draft tokens `72`, accepted tokens `29`, accepted per position `21 / 8` |
+| Driver health | no Xid, UVM, GPU-lost, fatal, launch-failure, or NVIDIA driver OOM signals in the run window on either node |
+
+Interpretation: the current Dev branch no longer has an immediate GB10
+MTP=2 startup or 128K-class correctness blocker under the guarded profile.
+This is still a smoke, not a soak: the prior GB10 liveness failures were
+cumulative/high-pressure shapes, so the next GB10 MTP work should be a bounded
+streaming or ToolCall-style pressure gate with runtime counters, not a broad
+performance claim.
+
 ### Hardware-Informed Profiling Split
 
 Do not assume RTX PRO 6000 SM120 and GB10 SM121 failures have the same root
@@ -2896,11 +2931,14 @@ Profiling deliverables before a best-effort recommendation:
    scheduler experiments above were rejected.
 3. The partial-state sparse-MLA accumulate candidate has been absorbed into
    the Dev branch only as `caea1cb55`. The SM120 full promotion matrix has
-   passed, but GB10 has not yet validated the scratch-heavy path.
-4. Run GB10 no-MTP startup, KV lifecycle, and 128K-class long-context smoke on
-   the same candidate before any PR-branch promotion or SM121 performance
-   claim. If GB10 regresses or crashes, leave the code out of PR and preserve
-   the branch as the backup experiment.
+   passed. GB10 no-MTP startup, prefix-cache-disabled lifecycle, 128K-class
+   long-context smoke, prefix-cache-enabled lifecycle, MTP=2 startup, short
+   deterministic generation, and guarded 128K-class MTP smoke have passed.
+4. Run GB10 MTP bounded pressure next, for example a short streaming or
+   ToolCall-style gate that watches `sample_tokens`, shared-memory broadcast,
+   spec-decode counters, and KV usage over repeated requests. If GB10 regresses
+   or crashes, leave the code out of PR and preserve the branch as the backup
+   experiment.
 5. Keep the direct FP8 MQA streaming top-k prototype as a secondary candidate.
    Its microbench must beat the full logits path itself, not just replace the
    already-small top-k selection stage.

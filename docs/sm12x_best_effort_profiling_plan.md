@@ -60,9 +60,10 @@ artifact to debug.
 ## Experiment Order
 
 1. **Keep partial-state sparse MLA as the current Dev baseline.**
-   It has passed the SM120 promotion matrix and no-MTP GB10 smoke, but it
-   should not become a broad SM121 performance claim until GB10 MTP and
-   prefix-cache-enabled lifecycle gates pass.
+   It has passed the SM120 promotion matrix, no-MTP GB10 smoke,
+   prefix-cache-enabled GB10 lifecycle, and a guarded GB10 MTP=2 128K-class
+   smoke. It still needs GB10 MTP pressure/soak before a broad SM121
+   performance claim.
 
 2. **Run the three-case interference profile before the next kernel change.**
    Use the existing wrapper and compare against the latest Dev artifacts. The

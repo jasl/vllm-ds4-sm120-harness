@@ -45,6 +45,12 @@ behavior. On 2026-05-11 the current NVIDIA download page lists NCCL `2.30.4`
 for CUDA 13.2, with Ubuntu/Deb packages `2.30.4-1+cuda13.2`; recheck the NVIDIA
 NCCL download page for newer builds when creating the next environment.
 
+Use the active CUDA toolkit symlink (`/usr/local/cuda`) in public GB10 profiles
+unless a site-specific note proves a versioned path exists on every node.
+FlashInfer runtime helper JITs call `nvcc` during startup; if the profile points
+at a missing versioned toolkit such as `/usr/local/cuda-13.2`, startup can fail
+while building the sampling helper even though vLLM and torch import normally.
+
 For Ubuntu/Debian DGX Spark nodes using CUDA 13.2, install from the NVIDIA CUDA
 repository for the node architecture, then pin the matching NCCL package on both
 nodes:

@@ -47,8 +47,9 @@ source configs/gb10_sm121_serve.env.example
 ```
 
 The GB10 profile records the current SM121 shape: one `NVIDIA GB10` device,
-CUDA 13.2 tools under `/usr/local/cuda-13.2`, `CUDA_ARCH_LIST=121a`, and
-`TORCH_CUDA_ARCH_LIST=12.1a`. It also narrows required GB10 acceptance to the
+the active CUDA toolkit symlink under `/usr/local/cuda`,
+`CUDA_ARCH_LIST=121a`, and `TORCH_CUDA_ARCH_LIST=12.1a`. It also narrows
+required GB10 acceptance to the
 no-MTP `non-thinking` matrix with a 128K-class long-context sentinel. Treat
 `think-high` and MTP as exploratory on GB10, and do not use `think-max` as a
 GB10 gate until a 384K+ prompt is reliable. It sets
