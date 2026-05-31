@@ -644,6 +644,16 @@ parity criterion:
 | `20260601_mqa_topk_microbench_frontiers` | q `256x64x128`, KV `124000x128`, top-k `2048` | `2.599 ms` | `2.606 ms` | pass | fail | skipped | skipped |
 | `20260601_mqa_topk_microbench_131k` | q `256x64x128`, KV `131072x128`, top-k `2048` | `2.719 ms` | `2.725 ms` | pass | fail | skipped | skipped |
 
+The 131K direct top-k path was decomposed on the same shape. The `top_k`
+selection stage is small; nearly all time is still in the FP8 MQA logits
+kernel:
+
+| Artifact Label | Stage | Mean | p95 |
+| --- | --- | ---: | ---: |
+| `20260601_mqa_topk_decompose_131k` | `fp8_mqa_logits_triton` | `2.575 ms` | `2.588 ms` |
+| `20260601_mqa_topk_decompose_131k` | `top_k_per_row_prefill` on existing logits | `0.084 ms` | `0.089 ms` |
+| `20260601_mqa_topk_decompose_131k` | full `fp8_fp4_mqa_topk_indices` | `2.718 ms` | `2.725 ms` |
+
 Current stop condition for local kernel-launch tuning: the cheap "cut kernels
 shorter" levers have now been tested across sparse-MLA query chunk, topk chunk,
 head grouping, accumulate warps, and direct FP8 MQA tile/warp dimensions. The
@@ -652,8 +662,9 @@ either do not move the mixed-arrival metrics or regress them. The NCU evidence
 shows low DRAM pressure and scheduler/register limits, so do not continue small
 launch-parameter sweeps. A future kernel project would need an algorithmic
 change that reduces live state or avoids materializing the large fp32 logits
-matrix, for example a fused streaming top-k path; treat that as a separate
-design effort rather than another quick tuning pass.
+matrix, but the direct top-k decomposition shows that simply fusing top-k
+selection is unlikely to be enough; treat any streaming top-k work as a
+register/live-state experiment, not as a top-k-selection experiment.
 
 ### Sparse SWA MTP Reorder Correctness Fix
 
@@ -2579,11 +2590,12 @@ Therefore the next vLLM experiments should be algorithmic and narrow:
    and TTFT overhead and is likely more important on GB10 than on RTX PRO 6000.
 
 Current best-effort direction: do **not** promote another scheduler-only fix.
-Start with the direct FP8 MQA streaming top-k prototype because it attacks the
-highest-register-pressure path and already has a narrow top-k API boundary.
-Only move to the two-pass sparse-MLA accumulate design if the top-k prototype
-does not move endpoint metrics or if fresh traces show accumulate remains the
-dominant long-prefill cost after the top-k path is improved.
+After the direct top-k decomposition, prioritize the two-pass sparse-MLA
+accumulate design first because that kernel is about half of captured CUDA
+kernel time in the mixed-arrival traces. Keep the direct FP8 MQA streaming
+top-k prototype as a secondary experiment and require it to prove lower
+register/live-state pressure in the logits computation itself; reducing the
+`top_k_per_row_prefill` selection stage alone has too little headroom.
 
 ## Experiment Discipline
 
@@ -2627,17 +2639,16 @@ dominant long-prefill cost after the top-k path is improved.
 2. Treat C=2 long-prefill fairness as a promotion gate and diagnostic signal,
    not as a reason to add more scheduler-only hacks. The later-short-decode
    scheduler experiments above were rejected.
-3. Implement the direct FP8 MQA streaming top-k prototype on a temporary vLLM
-   branch, with parity tests and the reusable
-   `scripts/run_sm120_mqa_topk_microbench.py` standalone microbench before
-   endpoint gates.
-4. If streaming top-k is positive, run the fixed 59K/124K C=1/C=2,
+3. Design the two-pass sparse-MLA partial-state accumulate prototype on a
+   temporary vLLM branch. Start from a standalone microbench before endpoint
+   gates; do not resume `HEAD_BLOCK`, `num_warps`, or chunk-size sweeps.
+4. Keep the direct FP8 MQA streaming top-k prototype as a secondary candidate.
+   Its microbench must beat the full logits path itself, not just replace the
+   already-small top-k selection stage.
+5. If a kernel experiment is positive, run the fixed 59K/124K C=1/C=2,
    mixed-arrival, random prefill, story-recall, and GSM8K gates before keeping
    code. If it is negative or ambiguous, revert and record only the rejected
    note.
-5. If fresh traces still show sparse-MLA accumulate as the dominant residual
-   cost, design the two-pass partial-state accumulate prototype. Do not resume
-   `HEAD_BLOCK`, `num_warps`, or chunk-size sweeps.
 6. After single-instance kernel options are exhausted, evaluate deployment-level
    prefill/decode isolation as the best-effort answer for longer GB10 / 4-card
    contexts, explicitly trading TTFT/KV-transfer overhead for ITL tail control.
