@@ -2708,9 +2708,15 @@ Full SM120 promotion matrix:
 | Runtime health | no server unresponsive signal; CUDA/NCCL/driver/engine error counters all `0` |
 
 Decision: the partial-state sparse-MLA candidate has enough SM120 evidence for
-Dev-branch absorption after one final code review and targeted test rerun. Do
-not promote it to the PR branch or use it for SM121 claims until GB10 startup,
-KV lifecycle, and a 128K-class long-context smoke pass. The remaining
+Dev-branch absorption. Final targeted rerun on the exact Dev commit passed:
+`pytest tests/v1/attention/test_sparse_mla_backends.py -q -k partial_state`
+reported `3 passed`, `ruff check` on the touched files passed, and
+`git diff --check HEAD~1..HEAD` passed. The change is now on
+`ds4-sm120-preview-dev` as `caea1cb55 Add SM120 sparse MLA partial-state
+prefill`.
+
+Do not promote it to the PR branch or use it for SM121 claims until GB10
+startup, KV lifecycle, and a 128K-class long-context smoke pass. The remaining
 `long_then_short` tail is not introduced by this candidate; it is the known
 single-instance prefill/decode admission problem and stays in the separate
 scheduler/deployment workstream.
@@ -2752,6 +2758,11 @@ lens:
 - compare scratch-heavy kernel prototypes against clean dev before promotion,
   because GB10 has far less memory bandwidth than RTX PRO 6000 and may regress
   even when SM120 improves.
+- before collecting GB10 performance data, confirm that both nodes use the
+  intended NCCL runtime. A preflight after Dev absorption found the venv package
+  `nvidia-nccl-cu13==2.30.4` present but `torch.cuda.nccl.version()` still
+  reporting `(2, 28, 9)`. Treat that as an environment/runtime issue to resolve
+  before interpreting GB10 hangs, stalls, or throughput gaps.
 
 Profiling deliverables before a best-effort recommendation:
 
@@ -2810,8 +2821,8 @@ Profiling deliverables before a best-effort recommendation:
 2. Treat C=2 long-prefill fairness as a promotion gate and diagnostic signal,
    not as a reason to add more scheduler-only hacks. The later-short-decode
    scheduler experiments above were rejected.
-3. Review and, if still clean, absorb the partial-state sparse-MLA accumulate
-   candidate into the Dev branch only. The SM120 full promotion matrix has
+3. The partial-state sparse-MLA accumulate candidate has been absorbed into
+   the Dev branch only as `caea1cb55`. The SM120 full promotion matrix has
    passed, but GB10 has not yet validated the scratch-heavy path.
 4. Run GB10 no-MTP startup, KV lifecycle, and 128K-class long-context smoke on
    the same candidate before any PR-branch promotion or SM121 performance
