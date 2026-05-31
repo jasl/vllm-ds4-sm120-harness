@@ -1437,6 +1437,26 @@ def test_mixed_arrival_nsys_profile_launcher_captures_scheduler_window():
     assert "nsys_kernel_summary.md" in script
 
 
+def test_sm120_mqa_topk_microbench_records_reusable_shapes():
+    script = (ROOT / "scripts" / "run_sm120_mqa_topk_microbench.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "fp8_fp4_mqa_topk_indices" in script
+    assert "_fp8_mqa_logits_torch" in script
+    assert "--seq-len-kv" in script
+    assert "--num-q" in script
+    assert "--topk-tokens" in script
+    assert "--reference-max-kv" in script
+    assert "repeat_set_ok" in script
+    assert "reference_set_ok" in script
+    assert "mqa_topk_microbench.json" in script
+    assert "mqa_topk_microbench.md" in script
+    assert "10.0.0." not in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+
+
 def test_vllm_collect_env_helper_downloads_and_runs_official_script(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()

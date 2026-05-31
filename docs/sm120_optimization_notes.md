@@ -630,6 +630,17 @@ NCU microbench evidence, artifact directory
 | `_accumulate_indexed_attention_chunk_multihead_kernel` | q `256x64x128`, candidates `1024` | `707.97 us` | `74.30%` | `1.33%` | `1.31` | `40` | `100%` / `72.80%` | not GDDR7 bandwidth-bound; scheduler eligibility and dependency stalls dominate enough that `num_warps=8` was not a useful cut |
 | `_fp8_mqa_logits_kernel` | q `256x64x128`, KV `131072x128` | `2.89 ms` | `76.55%` | `2.18%` | `0.35` | `255` | `16.67%` / `16.38%` | register-limited occupancy explains the `num_warps=8` regression; further launch-level tuning should not continue without reducing live state |
 
+Direct FP8 MQA top-k microbench evidence was added as a reusable pre-endpoint
+gate for the streaming-top-k experiment. The current implementation returns the
+same top-k set across repeated calls and matches the full-logits torch
+reference as a set, but the order is not stable and should not be used as a
+parity criterion:
+
+| Artifact Label | Shape | Mean | p95 | Repeat Set | Repeat Order | Reference Set | Reference Order |
+| --- | --- | ---: | ---: | --- | --- | --- | --- |
+| `20260601_mqa_topk_microbench_default` | q `256x64x128`, KV `4096x128`, top-k `2048` | `0.169 ms` | `0.181 ms` | pass | fail | pass | fail |
+| `20260601_mqa_topk_microbench_default` | q `256x64x128`, KV `32768x128`, top-k `2048` | `0.778 ms` | `0.789 ms` | pass | fail | skipped | skipped |
+
 Current stop condition for local kernel-launch tuning: the cheap "cut kernels
 shorter" levers have now been tested across sparse-MLA query chunk, topk chunk,
 head grouping, accumulate warps, and direct FP8 MQA tile/warp dimensions. The
@@ -2614,7 +2625,9 @@ dominant long-prefill cost after the top-k path is improved.
    not as a reason to add more scheduler-only hacks. The later-short-decode
    scheduler experiments above were rejected.
 3. Implement the direct FP8 MQA streaming top-k prototype on a temporary vLLM
-   branch, with parity tests and a standalone microbench before endpoint gates.
+   branch, with parity tests and the reusable
+   `scripts/run_sm120_mqa_topk_microbench.py` standalone microbench before
+   endpoint gates.
 4. If streaming top-k is positive, run the fixed 59K/124K C=1/C=2,
    mixed-arrival, random prefill, story-recall, and GSM8K gates before keeping
    code. If it is negative or ambiguous, revert and record only the rejected
