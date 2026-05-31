@@ -2523,6 +2523,28 @@ sparse-MLA prefill and FP8 MQA logits dominating the captured window.
 request reaches first token quickly, but then waits behind the leading long
 prefill. Keep these shapes separate when evaluating fixes.
 
+The new three-case wrapper was validated after partial-state sparse MLA was
+absorbed into Dev. Artifact
+`20260601_prefill_decode_interference_profiles/20260601053228` used the same
+SM120 serve recipe and all cases exited `0`; runtime summaries reported
+CUDA errors `0` and NCCL errors `0`, and a post-run driver scan showed no new
+Xid, UVM, GPU-lost, fatal, or launch-failure signals for the run window.
+
+| Case | Primary TTFT | Secondary TTFT | Decode Min/Max | ITL P99 | Top Kernel |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `decode_then_59k` | 12.002 s | 13.406 s | 0.264 | 0.201 s | `_accumulate_indexed_attention_partial_states_multihead_kernel` 40.9% |
+| `decode_then_124k` | 29.379 s | 31.232 s | 0.323 | 0.211 s | `_accumulate_indexed_attention_partial_states_multihead_kernel` 43.7%, `_fp8_mqa_logits_kernel` 12.7% |
+| `long_then_short` | 30.638 s | 3.263 s | 0.028 | 25.374 s | `_accumulate_indexed_attention_partial_states_multihead_kernel` 41.5%, `_fp8_mqa_logits_kernel` 12.6% |
+
+Interpretation after partial-state remains the same. The `decode_then_*`
+cases show bounded but real prefill/decode interference, with sparse-MLA
+partial-state accumulate still dominating the capture and FP8 MQA logits still
+the second attention-side target. `long_then_short` is not primarily a kernel
+throughput problem: the short request reaches first token quickly, then hits a
+25s-class inter-chunk gap. Continue to treat it as scheduler/admission or
+deployment-isolation work, not as evidence that the decode kernel alone has
+collapsed.
+
 Rejected scheduler experiments from this pass:
 
 - Later-short-decode prefill cap: focused scheduler tests passed, and the GPU
