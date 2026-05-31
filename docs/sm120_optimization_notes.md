@@ -622,15 +622,24 @@ Rejected experiments from the same trace cycle:
 | Change prefill indexed attention multihead launch from `num_warps=4` to `8` | `20260601_prefill_accumulate_warps8_mixed_probe/20260531230321` | `decode_then_124k` stayed noise-level (`primary TTFT 30.408 s`, `secondary TTFT 31.865 s`, decode mean `64.746 tok/s`), while `long_then_short` worsened slightly (`primary TTFT 32.073 s`, `secondary TTFT 3.437 s`, secondary ITL p99 `26.636 s`) | reject and revert code |
 | Change direct FP8 MQA logits launch from `num_warps=4` to `8` | `20260601_fp8_mqa_warps8_mixed_probe/20260531230927` | clear regression: `decode_then_124k` primary/secondary TTFT regressed to `35.926 s` / `39.824 s`, decode min/max fell to `0.183`, and `long_then_short` secondary ITL p99 worsened to `32.279 s` | reject and revert code |
 
+NCU microbench evidence, artifact directory
+`20260601_ncu_kernel_microbench`, supports stopping local launch/tile sweeps:
+
+| Kernel | Shape | Duration | Compute Throughput | DRAM Throughput | Eligible Warps / Scheduler | Registers / Thread | Theoretical / Achieved Occupancy | Interpretation |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `_accumulate_indexed_attention_chunk_multihead_kernel` | q `256x64x128`, candidates `1024` | `707.97 us` | `74.30%` | `1.33%` | `1.31` | `40` | `100%` / `72.80%` | not GDDR7 bandwidth-bound; scheduler eligibility and dependency stalls dominate enough that `num_warps=8` was not a useful cut |
+| `_fp8_mqa_logits_kernel` | q `256x64x128`, KV `131072x128` | `2.89 ms` | `76.55%` | `2.18%` | `0.35` | `255` | `16.67%` / `16.38%` | register-limited occupancy explains the `num_warps=8` regression; further launch-level tuning should not continue without reducing live state |
+
 Current stop condition for local kernel-launch tuning: the cheap "cut kernels
 shorter" levers have now been tested across sparse-MLA query chunk, topk chunk,
 head grouping, accumulate warps, and direct FP8 MQA tile/warp dimensions. The
 profile still points at the same two kernels, but local launch/tile changes
-either do not move the mixed-arrival metrics or regress them. Do not continue
-small launch-parameter sweeps without a new profiler signal such as NCU
-register/eligible-warp evidence or a design that changes the algorithmic
-structure, for example a fused streaming top-k path that avoids materializing
-the large fp32 logits matrix.
+either do not move the mixed-arrival metrics or regress them. The NCU evidence
+shows low DRAM pressure and scheduler/register limits, so do not continue small
+launch-parameter sweeps. A future kernel project would need an algorithmic
+change that reduces live state or avoids materializing the large fp32 logits
+matrix, for example a fused streaming top-k path; treat that as a separate
+design effort rather than another quick tuning pass.
 
 ### Sparse SWA MTP Reorder Correctness Fix
 
