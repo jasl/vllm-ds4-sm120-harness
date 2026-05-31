@@ -2721,6 +2721,24 @@ startup, KV lifecycle, and a 128K-class long-context smoke pass. The remaining
 single-instance prefill/decode admission problem and stays in the separate
 scheduler/deployment workstream.
 
+GB10 no-MTP smoke after Dev absorption:
+
+| Gate | Result |
+| --- | --- |
+| Serve startup | TP=2, PP=1, EP on, FP8 KV, prefix cache disabled, `max_model_len=131072`, `max_num_batched_tokens=4176`, `FULL_AND_PIECEWISE`; `/health=200` |
+| Runtime NCCL | vLLM log reported `nccl==2.30.4` through PYNCCL; torch still reports compile-time `(2, 28, 9)` |
+| Capacity | model load used `73.92 GiB`; available KV cache memory `8.35 GiB`; GPU KV cache size `502,989` tokens |
+| Simple completion | service stayed responsive and answered the `2+2` smoke with `4` in the returned text |
+| 128K-class sentinel | `LONG_CONTEXT_LINE_COUNT=4200`, `LONG_CONTEXT_MAX_TOKENS=128` passed; artifact label `gb10_sm121_partial_state_nomtp_128k_smoke/20260601045913_lc4200` |
+| Overlength boundary | `4226` lines failed cleanly with HTTP 400 because prompt plus output budget exceeded 131072 by one token; this is a harness sizing issue, not a runtime crash |
+| KV lifecycle | prefix-cache disabled, 1 complete + 1 abort, `max_idle_kv=0.0%`, threshold `2.0%`; artifact label `gb10_sm121_partial_state_nomtp_128k_smoke/20260601050201_kv_disabled` |
+| Driver health | no Xid/UVM/GPU-lost/fatal driver signals in the current boot after the smoke |
+
+Decision update: GB10 no-MTP startup, KV lifecycle, and 128K-class long-context
+smoke are healthy on the Dev branch. This is still not a PR-promotion gate for
+MTP or 393K-class GB10 reports; run MTP and prefix-cache-enabled GB10 profiles
+as separate exploratory gates before making broader SM121 claims.
+
 ### Hardware-Informed Profiling Split
 
 Do not assume RTX PRO 6000 SM120 and GB10 SM121 failures have the same root
