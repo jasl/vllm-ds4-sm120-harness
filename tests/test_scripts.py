@@ -956,6 +956,7 @@ def test_dgx_spark_ray_start_helper_uses_vllm_python_and_fail_closed_guards():
 
     assert '"${VLLM_VENV}/bin/python" -m ray.scripts.scripts start' in script
     assert '"${VLLM_VENV}/bin/python" -m ray.scripts.scripts status' in script
+    assert 'PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}"' in script
     assert "import torch" in script
     assert "import ray" in script
     assert "import vllm" in script
@@ -972,6 +973,8 @@ def test_dgx_spark_ray_start_helper_uses_vllm_python_and_fail_closed_guards():
     assert "scripts/dgx_spark_start_ray_cluster.sh" in docs
     assert "RAY_BIN" not in docs
     assert "$VLLM_VENV/bin/python -m ray.scripts.scripts" in docs
+    assert "PATH='$VLLM_VENV/bin:/usr/local/cuda/bin:'" in docs
+    assert "Ray workers can fail to find `ninja`" in docs
 
 
 def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():

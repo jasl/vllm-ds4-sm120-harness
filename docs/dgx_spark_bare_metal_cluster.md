@@ -31,10 +31,12 @@ export RAY_PYTHON="$VLLM_VENV/bin/python"
 export MODEL_ID="deepseek-ai/DeepSeek-V4-Flash"
 ```
 
-The vLLM venv must import the Ray cgraph build and must also contain the CUDA
-runtime packages that vLLM workers need, including `torch`. A simple setup is to
-install Ray cgraph in the vLLM venv. Another workable setup is a `.pth` file in
-the vLLM venv site-packages pointing at the Ray cgraph venv site-packages.
+The vLLM venv must contain the runtime packages that vLLM workers need,
+including `torch`, `ray`, and `ninja`. For the current routine GB10 Ray
+validation path, `ray[default]==2.48.0` in the vLLM venv has been sufficient.
+Install `ray[cgraph,default]` in the same venv only when validating Ray compiled
+graph or pipeline-parallel test paths. Avoid a standalone Ray venv unless the
+vLLM venv imports that same site-packages tree explicitly.
 
 Before using a fresh GB10/DGX Spark environment for DeepSeek V4, upgrade NCCL to
 the latest NVIDIA build that matches the CUDA runtime. Do this as part of
@@ -58,16 +60,13 @@ the binding and NCCL runtime from the same current release family when possible.
 Record the installed NCCL package version and `torch.cuda.nccl.version()` in the
 run artifact or local handoff note before running the MTP/TP=2 gates.
 
-Start Ray through the vLLM Python executable, not through a standalone Ray
-venv. Ray workers inherit the Python executable used by `ray start`; if that
-executable cannot import `torch`, the remote actor can fail with
+Start Ray through the vLLM Python executable, not through a standalone Ray venv.
+Ray workers inherit the Python executable and environment used by `ray start`;
+if that executable cannot import `torch`, the remote actor can fail with
 `No module named 'torch'` even though the vLLM API server was launched from the
-right venv.
-
-For no-Ray `mp` runs, also keep `$VLLM_VENV/bin` at the front of `PATH`.
-FlashInfer and sampling JIT paths may invoke `ninja` during startup or first
-generation; a venv with `ninja` installed can still fail if the launch
-environment hides that directory.
+right venv. Ray workers can fail to find `ninja` during FlashInfer sampler
+profiling for the same reason. Keep `$VLLM_VENV/bin` at the front of `PATH` for
+both Ray and no-Ray `mp` runs.
 
 ## Preflight
 
@@ -249,7 +248,7 @@ ssh "$HEAD_HOST" "
   set -euo pipefail
   '$RAY_PYTHON' -m ray.scripts.scripts stop --force || true
   env \
-    PATH='/usr/local/cuda/bin:'\"\$PATH\" \
+    PATH='$VLLM_VENV/bin:/usr/local/cuda/bin:'\"\$PATH\" \
     CUDA_HOME='/usr/local/cuda' \
     TRITON_PTXAS_PATH='/usr/local/cuda/bin/ptxas' \
     PYTHONPATH='$VLLM_ROOT' \
@@ -278,7 +277,7 @@ ssh "$WORKER_HOST" "
   set -euo pipefail
   '$RAY_PYTHON' -m ray.scripts.scripts stop --force || true
   env \
-    PATH='/usr/local/cuda/bin:'\"\$PATH\" \
+    PATH='$VLLM_VENV/bin:/usr/local/cuda/bin:'\"\$PATH\" \
     CUDA_HOME='/usr/local/cuda' \
     TRITON_PTXAS_PATH='/usr/local/cuda/bin/ptxas' \
     PYTHONPATH='$VLLM_ROOT' \
@@ -324,7 +323,7 @@ ssh "$HEAD_HOST" "
   mkdir -p \"\$RUN_DIR\"
   cd '$VLLM_ROOT'
   nohup env \
-    PATH='/usr/local/cuda/bin:'\"\$PATH\" \
+    PATH='$VLLM_VENV/bin:/usr/local/cuda/bin:'\"\$PATH\" \
     CUDA_HOME='/usr/local/cuda' \
     TRITON_PTXAS_PATH='/usr/local/cuda/bin/ptxas' \
     PYTHONPATH='$VLLM_ROOT' \

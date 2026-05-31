@@ -131,7 +131,7 @@ start_head() {
 set -euo pipefail
 
 env \
-  PATH="${CUDA_HOME_REMOTE}/bin:${PATH}" \
+  PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}" \
   CUDA_HOME="${CUDA_HOME_REMOTE}" \
   TRITON_PTXAS_PATH="${CUDA_HOME_REMOTE}/bin/ptxas" \
   PYTHONPATH="${VLLM_ROOT}" \
@@ -163,7 +163,7 @@ start_worker() {
 set -euo pipefail
 
 env \
-  PATH="${CUDA_HOME_REMOTE}/bin:${PATH}" \
+  PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}" \
   CUDA_HOME="${CUDA_HOME_REMOTE}" \
   TRITON_PTXAS_PATH="${CUDA_HOME_REMOTE}/bin/ptxas" \
   PYTHONPATH="${VLLM_ROOT}" \
