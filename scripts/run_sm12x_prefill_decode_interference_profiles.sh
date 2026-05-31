@@ -12,6 +12,8 @@
 #
 # Optional env:
 #   PYTHON              Python interpreter for the client and summary.
+#   VLLM_VENV           vLLM virtualenv. If unset and PYTHON looks like
+#                       <venv>/bin/python, derive it from PYTHON.
 #   NSYS_BIN            Nsight Systems binary.
 #   BASE_URL            Default http://127.0.0.1:8000.
 #   PROFILE_MODEL       Default deepseek-ai/DeepSeek-V4-Flash.
@@ -33,6 +35,10 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 PYTHON="${PYTHON:-python}"
+VLLM_VENV="${VLLM_VENV:-}"
+if [[ -z "${VLLM_VENV}" && "${PYTHON}" == */bin/python ]]; then
+  VLLM_VENV="$(cd "$(dirname "${PYTHON}")/.." && pwd)"
+fi
 NSYS_BIN="${NSYS_BIN:-nsys}"
 SERVE_COMMAND="${SERVE_COMMAND:?set SERVE_COMMAND}"
 OUT_DIR="${OUT_DIR:?set OUT_DIR}"
@@ -78,6 +84,7 @@ for raw_case_spec in "${case_specs[@]}"; do
   set +e
   OUT_DIR="${case_out}" \
     PYTHON="${PYTHON}" \
+    VLLM_VENV="${VLLM_VENV}" \
     NSYS_BIN="${NSYS_BIN}" \
     SERVE_COMMAND="${SERVE_COMMAND}" \
     BASE_URL="${BASE_URL}" \
