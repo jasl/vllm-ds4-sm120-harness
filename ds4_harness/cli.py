@@ -58,6 +58,16 @@ from ds4_harness.kv_layout_probe import (
     run_kv_layout_probe,
     write_kv_layout_markdown,
 )
+from ds4_harness.kv_lifecycle_probe import (
+    DEFAULT_CASE_NAME as DEFAULT_KV_LIFECYCLE_CASE_NAME,
+    DEFAULT_LINE_COUNT as DEFAULT_KV_LIFECYCLE_LINE_COUNT,
+    DEFAULT_MAX_TOKENS as DEFAULT_KV_LIFECYCLE_MAX_TOKENS,
+    DEFAULT_SESSION_COUNT as DEFAULT_KV_LIFECYCLE_SESSION_COUNT,
+    DEFAULT_SETTLE_INTERVAL as DEFAULT_KV_LIFECYCLE_SETTLE_INTERVAL,
+    DEFAULT_SETTLE_TIMEOUT as DEFAULT_KV_LIFECYCLE_SETTLE_TIMEOUT,
+    run_kv_lifecycle_probe,
+    write_kv_lifecycle_probe_markdown,
+)
 from ds4_harness.lm_eval import (
     build_lm_eval_command,
     compare_lm_eval_summaries,
@@ -971,6 +981,58 @@ def _cmd_prefix_cache_stress(args: argparse.Namespace) -> int:
         rate=summary.get("concurrent_hit_rate_mean", "n/a"),
     )
     print(f"{status} {row.get('case')}: {detail}")
+    return 0 if row.get("ok") else 1
+
+
+def _cmd_kv_lifecycle_probe(args: argparse.Namespace) -> int:
+    try:
+        headers = _bearer_headers_from_env(args.api_key_env)
+        row = run_kv_lifecycle_probe(
+            base_url=args.base_url,
+            model=args.model,
+            variant=args.variant,
+            cache_mode=args.cache_mode,
+            case_name=args.case_name,
+            session_count=args.session_count,
+            line_count=args.line_count,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            thinking_mode=args.thinking_mode,
+            timeout=args.timeout,
+            metrics_timeout=args.metrics_timeout,
+            settle_timeout=args.settle_timeout,
+            settle_interval=args.settle_interval,
+            max_idle_kv_usage_percent=args.max_idle_kv_usage_percent,
+            include_abort=args.include_abort,
+            headers=headers,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_kv_lifecycle_probe_markdown(args.markdown_output, row)
+
+    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    status = "PASS" if row.get("ok") else "FAIL"
+    detail = (
+        "requests={requests} failures={failures} idle_failures={idle_failures} "
+        "max_idle_kv={max_idle_kv}% threshold={threshold}%"
+    ).format(
+        requests=summary.get("request_count", "n/a"),
+        failures=summary.get("failure_count", "n/a"),
+        idle_failures=summary.get("idle_failure_count", "n/a"),
+        max_idle_kv=summary.get("max_idle_kv_usage_percent", "n/a"),
+        threshold=summary.get("max_idle_kv_usage_percent_threshold", "n/a"),
+    )
+    print(f"{status} {row.get('case')} variant={args.variant}: {detail}")
     return 0 if row.get("ok") else 1
 
 
@@ -2149,6 +2211,54 @@ def build_parser() -> argparse.ArgumentParser:
     prefix_stress.add_argument("--json-output", type=Path)
     prefix_stress.add_argument("--markdown-output", type=Path)
     prefix_stress.set_defaults(func=_cmd_prefix_cache_stress)
+
+    kv_lifecycle = subparsers.add_parser("kv-lifecycle-probe")
+    kv_lifecycle.add_argument("--base-url", default="http://127.0.0.1:8000")
+    kv_lifecycle.add_argument("--model", default=DEFAULT_MODEL)
+    kv_lifecycle.add_argument("--variant", default="manual")
+    kv_lifecycle.add_argument("--case-name", default=DEFAULT_KV_LIFECYCLE_CASE_NAME)
+    kv_lifecycle.add_argument(
+        "--cache-mode",
+        choices=("disabled", "enabled"),
+        required=True,
+        help="Prefix-cache mode the running server is expected to use.",
+    )
+    kv_lifecycle.add_argument(
+        "--session-count",
+        type=int,
+        default=DEFAULT_KV_LIFECYCLE_SESSION_COUNT,
+    )
+    kv_lifecycle.add_argument(
+        "--line-count",
+        type=int,
+        default=DEFAULT_KV_LIFECYCLE_LINE_COUNT,
+    )
+    kv_lifecycle.add_argument(
+        "--max-tokens",
+        type=int,
+        default=DEFAULT_KV_LIFECYCLE_MAX_TOKENS,
+    )
+    kv_lifecycle.add_argument("--temperature", type=float, default=0.0)
+    kv_lifecycle.add_argument("--top-p", type=float, default=1.0)
+    kv_lifecycle.add_argument("--thinking-mode", default="non-thinking")
+    kv_lifecycle.add_argument("--timeout", type=float, default=1800.0)
+    kv_lifecycle.add_argument("--metrics-timeout", type=float, default=10.0)
+    kv_lifecycle.add_argument(
+        "--settle-timeout",
+        type=float,
+        default=DEFAULT_KV_LIFECYCLE_SETTLE_TIMEOUT,
+    )
+    kv_lifecycle.add_argument(
+        "--settle-interval",
+        type=float,
+        default=DEFAULT_KV_LIFECYCLE_SETTLE_INTERVAL,
+    )
+    kv_lifecycle.add_argument("--max-idle-kv-usage-percent", type=float)
+    kv_lifecycle.add_argument("--include-abort", action="store_true")
+    kv_lifecycle.add_argument("--api-key-env")
+    kv_lifecycle.add_argument("--json-output", type=Path)
+    kv_lifecycle.add_argument("--markdown-output", type=Path)
+    kv_lifecycle.set_defaults(func=_cmd_kv_lifecycle_probe)
 
     long_latency = subparsers.add_parser("long-context-latency-matrix")
     long_latency.add_argument("--base-url", default="http://127.0.0.1:8000")

@@ -110,6 +110,12 @@ Use this harness to capture behavior around the vLLM-side tests:
   the server-returned prompt token count, TTFT, input/prefill tok/s, decode
   tok/s, and ITL p95/p99 across context frontiers. Treat it as a development
   observation gate until a stable same-host baseline exists.
+- `kv-lifecycle-probe` for idle KV block lifetime and prefix-cache
+  recoverability. Run it once against a prefix-cache-disabled serve, where idle
+  GPU KV usage should return near zero after completed and client-aborted long
+  requests, and once against a prefix-cache-enabled serve, where cached blocks
+  may remain but must stay bounded and reclaimable under unrelated long-session
+  pressure.
 
 ## SM120 Refresh Promotion Gates
 
@@ -184,6 +190,12 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   local proxy for deciding whether best-effort single-instance scheduling is
   still enough, or whether a deployment needs stronger prefill/decode
   isolation.
+- KV lifecycle and prefix-cache recoverability: run `kv_lifecycle_probe` in
+  the prefix-cache-disabled primary matrix and in a separate prefix-cache-enabled
+  serve. The disabled pass guards real block lifetime leaks; the enabled pass
+  guards the user-reported "old sessions keep filling GPU KV cache until
+  repeated re-prefill" shape by checking that idle KV use remains bounded after
+  unrelated long sessions and client-abort cleanup.
 - DS4 prompt-file frontier and semantic gates: include
   `frontier_context_sweep` and `ds4_story_recall_semantic` in the development
   matrix. The story gate uses the full `ds4_story_recall.txt` prompt with its
@@ -210,14 +222,15 @@ profile because it needs `SERVE_PREFIX_CACHE_MODE=enabled` and a separate
 For branch-promotion tradeoff decisions, prefer
 `scripts/run_sm120_user_feedback_matrix.sh` over running one reported shape at
 a time. It executes the prefix-cache-disabled local matrix first, then runs the
-MTP=1 prefix-cache stress shape in a separate prefix-cache-enabled serve, and
-writes one `user_feedback_matrix_summary.md` plus JSON summary. Use that
+MTP=1 prefix-cache stress shape plus the KV lifecycle recoverability probe in
+separate prefix-cache-enabled serves, and writes one
+`user_feedback_matrix_summary.md` plus JSON summary. Use that
 combined summary to choose the tradeoff across C=1/2/4 short latency, 59K/124K
 long latency, issue #8 decode fairness, mixed-arrival pressure, issue #7
 streaming pressure, GSM8K, prefill throughput, the FlashInfer-comparison
 8000/1000 random bench, the canada-quant-style 256/256 MTP random bench,
 ds4-style frontier latency, ds4 story-recall semantic status, and prefix-cache
-stability. The
+stability and recoverability. The
 dual RTX PRO 6000 default serve point is the measured 128K small-concurrency
 configuration:
 `--gpu-memory-utilization 0.975 --max-num-batched-tokens 4096 --max-num-seqs 4 --enable-expert-parallel --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'`.

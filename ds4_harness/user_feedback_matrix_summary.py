@@ -397,6 +397,37 @@ def _collect_prefix_cache_diagnostic_rows(run_label: str, run_root: Path) -> lis
     return rows
 
 
+def _collect_kv_lifecycle_rows(run_label: str, variant: str, payload: Any) -> list[Json]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("summary"), dict):
+        return []
+    summary = payload["summary"]
+    return [
+        {
+            "run": run_label,
+            "variant": variant,
+            "case": payload.get("case"),
+            "cache_mode": payload.get("cache_mode"),
+            "ok": payload.get("ok"),
+            "requests": summary.get("request_count"),
+            "failures": summary.get("failure_count"),
+            "idle_failures": summary.get("idle_failure_count"),
+            "initial_idle_kv_percent": _round_float(
+                summary.get("initial_idle_kv_usage_percent")
+            ),
+            "final_idle_kv_percent": _round_float(
+                summary.get("final_idle_kv_usage_percent")
+            ),
+            "max_idle_kv_percent": _round_float(summary.get("max_idle_kv_usage_percent")),
+            "threshold_percent": _round_float(
+                summary.get("max_idle_kv_usage_percent_threshold")
+            ),
+            "idle_kv_within_threshold": summary.get("idle_kv_within_threshold"),
+            "prefix_hits_delta": summary.get("prefix_cache_hits_delta"),
+            "prefix_queries_delta": summary.get("prefix_cache_queries_delta"),
+        }
+    ]
+
+
 def _artifact_dir(run_root: Path, raw_path: str | Path | None) -> Path | None:
     if not raw_path:
         return None
@@ -508,6 +539,7 @@ def summarize_run(label: str, run_root: Path) -> Json:
         "frontier_context_sweep": [],
         "story_recall_semantic": [],
         "prefix_cache_stress": [],
+        "kv_lifecycle": [],
         "monitoring": [],
     }
     for variant_dir in _variant_dirs(run_root):
@@ -580,6 +612,13 @@ def summarize_run(label: str, run_root: Path) -> Json:
         prefix = _load_json(variant_dir / "prefix_cache_stress" / "prefix_cache_stress.json")
         result["prefix_cache_stress"].extend(
             _collect_prefix_cache_rows(label, variant, prefix)
+        )
+
+        kv_lifecycle = _load_json(
+            variant_dir / "kv_lifecycle_probe" / "kv_lifecycle_probe.json"
+        )
+        result["kv_lifecycle"].extend(
+            _collect_kv_lifecycle_rows(label, variant, kv_lifecycle)
         )
     result["prefix_cache_stress"].extend(
         _collect_prefix_cache_diagnostic_rows(label, run_root)
@@ -658,6 +697,7 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
     frontier_rows: list[list[Any]] = []
     story_rows: list[list[Any]] = []
     prefix_rows: list[list[Any]] = []
+    kv_lifecycle_rows: list[list[Any]] = []
     monitoring_rows: list[list[Any]] = []
 
     for run in summary["runs"]:
@@ -839,6 +879,26 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                     row["failures"],
                     row["solo_hit_rate_mean"],
                     row["concurrent_hit_rate_mean"],
+                ]
+            )
+        for row in run["kv_lifecycle"]:
+            kv_lifecycle_rows.append(
+                [
+                    row["run"],
+                    row["variant"],
+                    row["case"],
+                    row["cache_mode"],
+                    row["ok"],
+                    row["requests"],
+                    row["failures"],
+                    row["idle_failures"],
+                    row["initial_idle_kv_percent"],
+                    row["final_idle_kv_percent"],
+                    row["max_idle_kv_percent"],
+                    row["threshold_percent"],
+                    row["idle_kv_within_threshold"],
+                    row["prefix_hits_delta"],
+                    row["prefix_queries_delta"],
                 ]
             )
         for row in run["monitoring"]:
@@ -1041,6 +1101,27 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                 "Concurrent Hit Rate",
             ],
             prefix_rows,
+        ),
+        (
+            "KV Lifecycle",
+            [
+                "Run",
+                "Variant",
+                "Case",
+                "Cache",
+                "OK",
+                "Requests",
+                "Failures",
+                "Idle Failures",
+                "Initial KV %",
+                "Final KV %",
+                "Max Idle KV %",
+                "Threshold %",
+                "Within Threshold",
+                "Prefix Hits Delta",
+                "Prefix Queries Delta",
+            ],
+            kv_lifecycle_rows,
         ),
         (
             "Runtime Monitoring",

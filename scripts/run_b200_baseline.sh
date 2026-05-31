@@ -175,6 +175,21 @@ PREFIX_CACHE_STRESS_TOP_P="${PREFIX_CACHE_STRESS_TOP_P:-1.0}"
 PREFIX_CACHE_STRESS_TIMEOUT="${PREFIX_CACHE_STRESS_TIMEOUT:-180}"
 PREFIX_CACHE_STRESS_METRICS_TIMEOUT="${PREFIX_CACHE_STRESS_METRICS_TIMEOUT:-10}"
 PREFIX_CACHE_STRESS_HEALTH_TIMEOUT="${PREFIX_CACHE_STRESS_HEALTH_TIMEOUT:-10}"
+RUN_KV_LIFECYCLE_PROBE="${RUN_KV_LIFECYCLE_PROBE:-0}"
+KV_LIFECYCLE_CASE_NAME="${KV_LIFECYCLE_CASE_NAME:-kv_lifecycle_idle_recovery}"
+KV_LIFECYCLE_CACHE_MODE="${KV_LIFECYCLE_CACHE_MODE:-disabled}"
+KV_LIFECYCLE_SESSION_COUNT="${KV_LIFECYCLE_SESSION_COUNT:-3}"
+KV_LIFECYCLE_LINE_COUNT="${KV_LIFECYCLE_LINE_COUNT:-1900}"
+KV_LIFECYCLE_MAX_TOKENS="${KV_LIFECYCLE_MAX_TOKENS:-64}"
+KV_LIFECYCLE_TEMPERATURE="${KV_LIFECYCLE_TEMPERATURE:-0.0}"
+KV_LIFECYCLE_TOP_P="${KV_LIFECYCLE_TOP_P:-1.0}"
+KV_LIFECYCLE_THINKING_MODE="${KV_LIFECYCLE_THINKING_MODE:-non-thinking}"
+KV_LIFECYCLE_TIMEOUT="${KV_LIFECYCLE_TIMEOUT:-1800}"
+KV_LIFECYCLE_METRICS_TIMEOUT="${KV_LIFECYCLE_METRICS_TIMEOUT:-10}"
+KV_LIFECYCLE_SETTLE_TIMEOUT="${KV_LIFECYCLE_SETTLE_TIMEOUT:-60}"
+KV_LIFECYCLE_SETTLE_INTERVAL="${KV_LIFECYCLE_SETTLE_INTERVAL:-2}"
+KV_LIFECYCLE_MAX_IDLE_KV_PERCENT="${KV_LIFECYCLE_MAX_IDLE_KV_PERCENT:-}"
+KV_LIFECYCLE_INCLUDE_ABORT="${KV_LIFECYCLE_INCLUDE_ABORT:-1}"
 RUN_STREAMING_PRESSURE_SOAK="${RUN_STREAMING_PRESSURE_SOAK:-0}"
 STREAMING_PRESSURE_CASE_NAME="${STREAMING_PRESSURE_CASE_NAME:-streaming_pressure_short_soak}"
 STREAMING_PRESSURE_CONCURRENCY="${STREAMING_PRESSURE_CONCURRENCY:-4}"
@@ -356,6 +371,13 @@ export PREFIX_CACHE_STRESS_TURNS PREFIX_CACHE_STRESS_MAX_TOKENS
 export PREFIX_CACHE_STRESS_TEMPERATURE PREFIX_CACHE_STRESS_TOP_P
 export PREFIX_CACHE_STRESS_TIMEOUT PREFIX_CACHE_STRESS_METRICS_TIMEOUT
 export PREFIX_CACHE_STRESS_HEALTH_TIMEOUT
+export RUN_KV_LIFECYCLE_PROBE KV_LIFECYCLE_CASE_NAME KV_LIFECYCLE_CACHE_MODE
+export KV_LIFECYCLE_SESSION_COUNT KV_LIFECYCLE_LINE_COUNT
+export KV_LIFECYCLE_MAX_TOKENS KV_LIFECYCLE_TEMPERATURE KV_LIFECYCLE_TOP_P
+export KV_LIFECYCLE_THINKING_MODE KV_LIFECYCLE_TIMEOUT
+export KV_LIFECYCLE_METRICS_TIMEOUT KV_LIFECYCLE_SETTLE_TIMEOUT
+export KV_LIFECYCLE_SETTLE_INTERVAL KV_LIFECYCLE_MAX_IDLE_KV_PERCENT
+export KV_LIFECYCLE_INCLUDE_ABORT
 export RUN_STREAMING_PRESSURE_SOAK STREAMING_PRESSURE_CASE_NAME
 export STREAMING_PRESSURE_CONCURRENCY STREAMING_PRESSURE_ROUND_COUNT
 export STREAMING_PRESSURE_LINE_COUNT STREAMING_PRESSURE_MAX_TOKENS
@@ -397,6 +419,7 @@ VALID_BASELINE_PHASES=(
   long_context_mixed_arrival
   prefix_cache_probe
   prefix_cache_stress
+  kv_lifecycle_probe
   streaming_pressure_soak
   streaming_pressure_matrix
   external_command
@@ -424,6 +447,7 @@ phase_run_flag() {
     long_context_mixed_arrival) printf '%s\n' RUN_LONG_CONTEXT_MIXED_ARRIVAL ;;
     prefix_cache_probe) printf '%s\n' RUN_PREFIX_CACHE_PROBE ;;
     prefix_cache_stress) printf '%s\n' RUN_PREFIX_CACHE_STRESS ;;
+    kv_lifecycle_probe) printf '%s\n' RUN_KV_LIFECYCLE_PROBE ;;
     streaming_pressure_soak) printf '%s\n' RUN_STREAMING_PRESSURE_SOAK ;;
     streaming_pressure_matrix) printf '%s\n' RUN_STREAMING_PRESSURE_MATRIX ;;
     external_command) printf '%s\n' RUN_EXTERNAL_COMMAND ;;
@@ -467,7 +491,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,streaming_pressure_soak,streaming_pressure_matrix,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_256x256,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,kv_lifecycle_probe,streaming_pressure_soak,streaming_pressure_matrix,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_256x256,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
     run_flag="$(phase_run_flag "${item}")"
@@ -894,6 +918,11 @@ write_summary() {
       "${RUN_PREFIX_CACHE_STRESS}" "${PREFIX_CACHE_STRESS_TRIALS}" \
       "${PREFIX_CACHE_STRESS_FILLER_WORDS}" "${PREFIX_CACHE_STRESS_TURNS}" \
       "${PREFIX_CACHE_STRESS_MAX_TOKENS}"
+    printf -- '- kv_lifecycle_probe: `%s`, cache `%s`, sessions `%s`, lines `%s`, max tokens `%s`, include_abort `%s`, max idle KV `%s`\n' \
+      "${RUN_KV_LIFECYCLE_PROBE}" "${KV_LIFECYCLE_CACHE_MODE}" \
+      "${KV_LIFECYCLE_SESSION_COUNT}" "${KV_LIFECYCLE_LINE_COUNT}" \
+      "${KV_LIFECYCLE_MAX_TOKENS}" "${KV_LIFECYCLE_INCLUDE_ABORT}" \
+      "${KV_LIFECYCLE_MAX_IDLE_KV_PERCENT:-default}"
     printf -- '- streaming_pressure_soak: `%s`, concurrency `%s`, rounds `%s`, lines `%s`, max tokens `%s`, thinking `%s`, fail_on_slow `%s`\n' \
       "${RUN_STREAMING_PRESSURE_SOAK}" "${STREAMING_PRESSURE_CONCURRENCY:-4}" \
       "${STREAMING_PRESSURE_ROUND_COUNT:-3}" "${STREAMING_PRESSURE_LINE_COUNT:-1200}" \
@@ -1449,6 +1478,33 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_prefix_cache_stress.sh"
+  fi
+
+  if phase_enabled "kv_lifecycle_probe" && { [[ "${RUN_KV_LIFECYCLE_PROBE}" == "1" ]] || [[ "${RUN_KV_LIFECYCLE_PROBE}" == "true" ]]; }; then
+    run_phase "${variant}" "kv_lifecycle_probe" "${variant_dir}/kv_lifecycle_probe" \
+      env OUT_DIR="${variant_dir}/kv_lifecycle_probe" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
+        KV_LIFECYCLE_VARIANT="${variant}" \
+        KV_LIFECYCLE_CASE_NAME="${KV_LIFECYCLE_CASE_NAME}" \
+        KV_LIFECYCLE_CACHE_MODE="${KV_LIFECYCLE_CACHE_MODE}" \
+        KV_LIFECYCLE_SESSION_COUNT="${KV_LIFECYCLE_SESSION_COUNT}" \
+        KV_LIFECYCLE_LINE_COUNT="${KV_LIFECYCLE_LINE_COUNT}" \
+        KV_LIFECYCLE_MAX_TOKENS="${KV_LIFECYCLE_MAX_TOKENS}" \
+        KV_LIFECYCLE_TEMPERATURE="${KV_LIFECYCLE_TEMPERATURE}" \
+        KV_LIFECYCLE_TOP_P="${KV_LIFECYCLE_TOP_P}" \
+        KV_LIFECYCLE_THINKING_MODE="${KV_LIFECYCLE_THINKING_MODE}" \
+        KV_LIFECYCLE_TIMEOUT="${KV_LIFECYCLE_TIMEOUT}" \
+        KV_LIFECYCLE_METRICS_TIMEOUT="${KV_LIFECYCLE_METRICS_TIMEOUT}" \
+        KV_LIFECYCLE_SETTLE_TIMEOUT="${KV_LIFECYCLE_SETTLE_TIMEOUT}" \
+        KV_LIFECYCLE_SETTLE_INTERVAL="${KV_LIFECYCLE_SETTLE_INTERVAL}" \
+        KV_LIFECYCLE_MAX_IDLE_KV_PERCENT="${KV_LIFECYCLE_MAX_IDLE_KV_PERCENT}" \
+        KV_LIFECYCLE_INCLUDE_ABORT="${KV_LIFECYCLE_INCLUDE_ABORT}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_kv_lifecycle_probe.sh"
   fi
 
   if phase_enabled "streaming_pressure_soak" && { [[ "${RUN_STREAMING_PRESSURE_SOAK}" == "1" ]] || [[ "${RUN_STREAMING_PRESSURE_SOAK}" == "true" ]]; }; then

@@ -52,6 +52,7 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_lm_eval.sh",
         "run_kv_layout_probe.sh",
         "run_prefix_cache_probe.sh",
+        "run_kv_lifecycle_probe.sh",
         "run_prefix_cache_stress.sh",
         "run_long_context_latency_matrix.sh",
         "run_frontier_context_sweep.sh",
@@ -158,6 +159,24 @@ def test_prefix_cache_probe_wrapper_records_kv_runtime_artifacts():
     assert "prefix-cache-probe" in script
     assert '--json-output "${OUT_DIR}/prefix_cache_probe.json"' in script
     assert '--markdown-output "${OUT_DIR}/prefix_cache_probe.md"' in script
+    assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
+    assert "start_gpu_stats" in script
+    assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
+    assert "start_runtime_stats" in script
+    assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
+def test_kv_lifecycle_probe_wrapper_records_idle_kv_gate_artifacts():
+    script = (ROOT / "scripts" / "run_kv_lifecycle_probe.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "kv-lifecycle-probe" in script
+    assert 'KV_LIFECYCLE_CACHE_MODE="${KV_LIFECYCLE_CACHE_MODE:-disabled}"' in script
+    assert '--json-output "${OUT_DIR}/kv_lifecycle_probe.json"' in script
+    assert '--markdown-output "${OUT_DIR}/kv_lifecycle_probe.md"' in script
+    assert "--max-idle-kv-usage-percent" in script
+    assert "--include-abort" in script
     assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
     assert "start_gpu_stats" in script
     assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
@@ -294,6 +313,18 @@ def test_b200_baseline_exposes_long_context_decode_concurrency_phase():
     assert 'VLLM_VENV="${B200_VLLM_VENV}"' in script
     assert '"${variant_dir}/long_context_decode_concurrency"' in script
     assert '"${SCRIPT_DIR}/run_long_context_decode_concurrency.sh"' in script
+
+
+def test_b200_baseline_exposes_kv_lifecycle_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "kv_lifecycle_probe" in script
+    assert 'RUN_KV_LIFECYCLE_PROBE="${RUN_KV_LIFECYCLE_PROBE:-0}"' in script
+    assert 'KV_LIFECYCLE_CACHE_MODE="${KV_LIFECYCLE_CACHE_MODE:-disabled}"' in script
+    assert '"${variant_dir}/kv_lifecycle_probe"' in script
+    assert '"${SCRIPT_DIR}/run_kv_lifecycle_probe.sh"' in script
 
 
 def test_needle_position_matrix_wrapper_targets_tail_correctness():
@@ -576,6 +607,7 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
 
     assert "USER_FEEDBACK_MATRIX_LABEL" in script
     assert 'RUN_USER_FEEDBACK_ISSUE10="${RUN_USER_FEEDBACK_ISSUE10:-0}"' in script
+    assert 'RUN_USER_FEEDBACK_KV_LIFECYCLE="${RUN_USER_FEEDBACK_KV_LIFECYCLE:-1}"' in script
     assert 'USER_FEEDBACK_GPU_MEMORY_UTILIZATION="${USER_FEEDBACK_GPU_MEMORY_UTILIZATION:-0.975}"' in script
     assert 'USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS="${USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS:-4096}"' in script
     assert 'USER_FEEDBACK_MAX_NUM_SEQS="${USER_FEEDBACK_MAX_NUM_SEQS:-4}"' in script
@@ -599,6 +631,9 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
     assert "USER_FEEDBACK_ISSUE10_OUT_DIR" in script
     assert "run_sm120_issue10_startup_gate.sh" in script
     assert "prefix_cache_stress" in script
+    assert "kv_lifecycle_probe" in script
+    assert "USER_FEEDBACK_KV_LIFECYCLE_OUT_DIR" in script
+    assert 'KV_LIFECYCLE_CACHE_MODE="enabled"' in script
     assert "run_sm120_mtp1_prefix_cache_diagnostics.sh" in script
     assert (
         'PREFIX_CACHE_STRESS_FILLER_WORDS_LIST="${PREFIX_CACHE_STRESS_FILLER_WORDS_LIST:-100,400,800,1600,3200}"'

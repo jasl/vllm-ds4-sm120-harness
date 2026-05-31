@@ -2020,6 +2020,34 @@ memory than cap64. The temporary code change was removed. Revisit only if a
 future profile proves the torch top-k fallback, not the current Triton/custom
 top-k path or sparse prefill scheduling, is dominating an active workload.
 
+## KV Lifecycle And Prefix-Cache Recoverability Gate, 2026-05-31
+
+User feedback reported GPU KV cache usage carrying over across unrelated
+sessions and climbing until repeated re-prefill. The new `kv_lifecycle_probe`
+separates two cases:
+
+- prefix cache disabled: idle KV usage should return near zero after completed
+  and client-aborted long requests,
+- prefix cache enabled: idle KV may retain cached blocks, but unrelated
+  sessions must stay bounded and server/runtime health must remain clean.
+
+Validation used TP=2, MTP=2, FP8 KV, `FULL_AND_PIECEWISE`, expert parallelism,
+and 59K-class deterministic prompts.
+
+| Topology | Prefix Cache | Requests | Final Idle KV | Max Idle KV | Runtime KV Peak | TTFT Shape | Errors |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| 2x RTX PRO 6000 SM120 | disabled | 2 complete + 1 abort | 0.000% | 0.000% | 12.12% | ~10.2-10.6 s | 0 CUDA/NCCL/driver/engine |
+| 2x RTX PRO 6000 SM120 | enabled | 3 complete + 1 abort | 5.894% | 5.894% | 16.43% | ~10.3-10.4 s | 0 CUDA/NCCL/driver/engine |
+| 2x GB10 SM121 | disabled | 1 complete + 1 abort | 0.000% | 0.000% | 31.23% | ~67.8-68.6 s | 0 CUDA/NCCL/driver/engine |
+| 2x GB10 SM121 | enabled | 2 complete + 1 abort | 10.869% | 10.869% | 37.62% | ~68.3-68.4 s | 0 CUDA/NCCL/driver/engine |
+
+Decision: keep the gate in the user-feedback matrix. Current evidence does not
+show a prefix-disabled KV lifetime leak on either tested SM12x topology. With
+prefix cache enabled, KV retention is visible and expected, but stayed bounded
+well below the 90% recoverability threshold in the tested shape. If future
+reports show monotonic growth toward 95%, rerun this gate with larger
+`KV_LIFECYCLE_SESSION_COUNT` or prompt line counts before changing vLLM code.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
@@ -2041,6 +2069,11 @@ top-k path or sparse prefill scheduling, is dominating an active workload.
   - long-context pressure reports should include inter-chunk p95/p99 as an ITL
     proxy so prefill/decode scheduling stalls are visible beyond TTFT and
     elapsed time,
+  - KV lifecycle correctness must be gated in both modes: with prefix cache
+    disabled, idle GPU KV usage should return near zero after completed and
+    client-aborted long requests; with prefix cache enabled, unrelated long
+    sessions may leave cached blocks but must stay bounded and reclaimable under
+    pressure,
   - deterministic GSM8K must not drop below the fixed lower bound: keep
     `exact_match_flexible >= 0.94` and `exact_match_strict >= 0.925` for the
     current 5-shot limit-200 MTP C=4 promotion gate; use
@@ -2051,24 +2084,32 @@ top-k path or sparse prefill scheduling, is dominating an active workload.
 
 ## Near-Term Work Queue
 
-1. Refresh the PR-facing long-context gate after the latest rebase and CUTeDSL
+1. Add and promote the KV lifecycle gate before further scheduler or kernel
+   experiments. The user-reported symptom is high idle KV usage carrying across
+   unrelated sessions; first distinguish prefix-cache-retained but reclaimable
+   blocks from a real prefix-disabled block lifetime leak.
+2. Track C=2 long-prefill scheduling as a separate fairness project. Current
+   data indicates the second long cold prefill is largely serialized behind the
+   first on both SM120 workstation and GB10-style shapes; do not mix that
+   scheduler work with KV lifetime correctness fixes.
+3. Refresh the PR-facing long-context gate after the latest rebase and CUTeDSL
    availability fix: short smoke, 64K/128K C=1/2/3/4, and GSM8K. Include
    failure counts and min/median/mean/max TTFT so one-shot cold variance does
    not drive promotion decisions.
-2. Profile the active FP8 MQA logits Triton path with NCU on representative
+4. Profile the active FP8 MQA logits Triton path with NCU on representative
    late-context 128K launches. Treat register pressure, eligible-warps, and
    long-scoreboard stalls as the primary hypothesis until the new counters say
    otherwise.
-3. Sweep small tile/register-pressure changes around direct FP8 MQA logits:
+5. Sweep small tile/register-pressure changes around direct FP8 MQA logits:
    `BLOCK_M`, `BLOCK_N`, `BLOCK_H`, `BLOCK_D`, and `num_warps`. Keep each
    candidate small enough to revert, and require both short-context and GSM8K
    gates before promotion.
-4. Investigate a fused or streaming direct-top-k path for long prefill so the
+6. Investigate a fused or streaming direct-top-k path for long prefill so the
    SM120 fallback no longer has to materialize a large `(num_q, seq_len_kv)`
    fp32 logits matrix before row-top-k selection.
-5. Re-profile `_accumulate_indexed_attention_chunk_multihead_kernel` after the
+7. Re-profile `_accumulate_indexed_attention_chunk_multihead_kernel` after the
    FP8 MQA logits work. If it becomes the dominant prefill kernel, test only
    narrow changes around head grouping, candidate loop structure, and query/topk
    chunk sizes.
-6. After prefill is stable, move to paged MQA decode and small-M GEMM/BMM
+8. After prefill is stable, move to paged MQA decode and small-M GEMM/BMM
    experiments for long-context multi-turn latency.
