@@ -19,6 +19,21 @@ load_harness_env() {
   fi
 }
 
+harness_pythonpath() {
+  local vllm_root="${VLLM_ROOT:-${REPO_ROOT}/vllm}"
+  local parts=()
+  if [[ -d "${vllm_root}/vllm" ]]; then
+    parts+=("${vllm_root}")
+  fi
+  parts+=("${REPO_ROOT}")
+  if [[ -n "${PYTHONPATH:-}" ]]; then
+    parts+=("${PYTHONPATH}")
+  fi
+
+  local IFS=:
+  printf '%s' "${parts[*]}"
+}
+
 slugify_context_value() {
   printf '%s' "$1" \
     | tr '[:upper:]' '[:lower:]' \

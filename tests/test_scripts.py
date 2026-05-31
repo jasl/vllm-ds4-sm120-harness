@@ -134,6 +134,9 @@ def test_random_prefill_sweep_wrapper_covers_short_prefill_regression_shapes():
     script = (ROOT / "scripts" / "run_random_prefill_sweep.sh").read_text(
         encoding="utf-8"
     )
+    bench_script = (ROOT / "scripts" / "run_bench_matrix.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert 'RANDOM_PREFILL_INPUT_LENS="${RANDOM_PREFILL_INPUT_LENS:-1024,4096,16384,65536}"' in script
     assert 'RANDOM_PREFILL_OUTPUT_LEN="${RANDOM_PREFILL_OUTPUT_LEN:-1}"' in script
@@ -143,6 +146,8 @@ def test_random_prefill_sweep_wrapper_covers_short_prefill_regression_shapes():
     assert 'RANDOM_OUTPUT_LEN="${RANDOM_PREFILL_OUTPUT_LEN}"' in script
     assert "prefill_sweep_summary.json" in script
     assert "prefill_sweep_summary.md" in script
+    assert 'VLLM_ROOT="${VLLM_ROOT:-${REPO_ROOT}/vllm}"' in bench_script
+    assert 'PYTHONPATH="$(harness_pythonpath)"' in bench_script
 
 
 def test_prefix_cache_probe_wrapper_records_kv_runtime_artifacts():
@@ -167,12 +172,14 @@ def test_long_context_latency_matrix_wrapper_records_runtime_artifacts():
 
     assert 'LONG_CONTEXT_LATENCY_LINE_COUNTS="${LONG_CONTEXT_LATENCY_LINE_COUNTS-1900}"' in script
     assert 'LONG_CONTEXT_LATENCY_CONCURRENCY="${LONG_CONTEXT_LATENCY_CONCURRENCY:-1,2,3,4}"' in script
+    assert 'LONG_CONTEXT_LATENCY_EVALUATION_MODE="${LONG_CONTEXT_LATENCY_EVALUATION_MODE:-semantic}"' in script
     assert "long-context-latency-matrix" in script
     assert '--json-output "${OUT_DIR}/long_context_latency_matrix.json"' in script
     assert '--markdown-output "${OUT_DIR}/long_context_latency_matrix.md"' in script
     assert '--line-counts "${LONG_CONTEXT_LATENCY_LINE_COUNTS}"' in script
     assert '--concurrency "${LONG_CONTEXT_LATENCY_CONCURRENCY}"' in script
     assert '--cache-modes "${LONG_CONTEXT_LATENCY_CACHE_MODES}"' in script
+    assert '--evaluation-mode "${LONG_CONTEXT_LATENCY_EVALUATION_MODE}"' in script
     assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
     assert "start_gpu_stats" in script
     assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script

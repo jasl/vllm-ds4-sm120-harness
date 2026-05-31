@@ -29,6 +29,8 @@ DEFAULT_LINE_COUNTS = (DEFAULT_LINE_COUNT,)
 DEFAULT_CONCURRENCY = (1,)
 DEFAULT_CACHE_MODES = ("cold", "warm")
 DEFAULT_MAX_TOKENS = 64
+DEFAULT_EVALUATION_MODE = "semantic"
+EVALUATION_MODES = ("semantic", "ttft-only")
 DEFAULT_MIXED_ARRIVAL_CASE_NAME = "long_context_mixed_arrival"
 DEFAULT_MIXED_ARRIVAL_CASE_SPECS = (
     "decode_then_long:1900:1900:after_first_token:0:256:128",
@@ -447,6 +449,12 @@ def _semantic_check_result(text: str, semantic_check: str | None) -> tuple[bool,
     }
 
 
+def _timing_check_result(ttft_seconds: Any) -> tuple[bool, str]:
+    if isinstance(ttft_seconds, int | float):
+        return True, "ttft recorded"
+    return False, "missing ttft_seconds"
+
+
 def _assistant_text_artifact(prompt: LatencyPrompt, text: str) -> Json:
     artifact: Json = {
         "assistant_text_sha256": _sha256(text),
@@ -502,6 +510,7 @@ def _run_stream_request(
     phase: str = "measure",
     probe_metadata_extra: dict[str, Any] | None = None,
     row_extra: Json | None = None,
+    evaluation_mode: str = DEFAULT_EVALUATION_MODE,
 ) -> Json:
     payload = _build_payload(
         prompt,
@@ -536,18 +545,22 @@ def _run_stream_request(
         )
         response = result.get("response") if isinstance(result.get("response"), dict) else {}
         text = str(result.get("assistant_text") or assistant_text(response))
-        ok, detail = _request_ok(text, prompt.required_terms)
-        semantic_ok, semantic_detail, semantic_artifact = _semantic_check_result(
-            text, prompt.semantic_check
-        )
-        if prompt.semantic_check is not None:
-            ok = ok and semantic_ok
-            detail = semantic_detail
         usage = _usage_tokens(response)
         elapsed = result.get("elapsed_seconds")
         if not isinstance(elapsed, int | float):
             elapsed = time.monotonic() - started
         ttft = result.get("ttft_seconds")
+        if evaluation_mode == "ttft-only":
+            ok, detail = _timing_check_result(ttft)
+            semantic_artifact: Json = {}
+        else:
+            ok, detail = _request_ok(text, prompt.required_terms)
+            semantic_ok, semantic_detail, semantic_artifact = _semantic_check_result(
+                text, prompt.semantic_check
+            )
+            if prompt.semantic_check is not None:
+                ok = ok and semantic_ok
+                detail = semantic_detail
         completion_tokens = usage.get("completion_tokens")
         decode_tps = _decode_tokens_per_second(
             completion_tokens=completion_tokens,
@@ -583,6 +596,7 @@ def _run_stream_request(
             "line_count": prompt.line_count,
             "prompt_file": prompt.prompt_file,
             "semantic_check": prompt.semantic_check,
+            "evaluation_mode": evaluation_mode,
         }
         if row_extra:
             row.update(row_extra)
@@ -617,6 +631,7 @@ def _run_stream_request(
             "line_count": prompt.line_count,
             "prompt_file": prompt.prompt_file,
             "semantic_check": prompt.semantic_check,
+            "evaluation_mode": evaluation_mode,
         }
         if row_extra:
             row.update(row_extra)
@@ -750,6 +765,7 @@ def run_long_context_latency_matrix(
     headers: dict[str, str] | None = None,
     extra_body: Json | None = None,
     stream_func: StreamFunc = stream_chat_completion,
+    evaluation_mode: str = DEFAULT_EVALUATION_MODE,
 ) -> Json:
     line_counts = (
         list(DEFAULT_LINE_COUNTS) if line_counts is None else list(line_counts)
@@ -770,6 +786,11 @@ def run_long_context_latency_matrix(
     invalid_modes = [mode for mode in cache_modes if mode not in {"cold", "warm"}]
     if invalid_modes:
         raise ValueError("unsupported cache modes: " + ", ".join(invalid_modes))
+    if evaluation_mode not in EVALUATION_MODES:
+        raise ValueError(
+            "unsupported evaluation mode: "
+            f"{evaluation_mode}; expected one of: {', '.join(EVALUATION_MODES)}"
+        )
     if not line_counts and not prompt_files:
         raise ValueError("at least one line count or prompt file is required")
 
@@ -813,6 +834,7 @@ def run_long_context_latency_matrix(
                     extra_body=extra_body,
                     stream_func=stream_func,
                     phase="warmup",
+                    evaluation_mode=evaluation_mode,
                 )
                 rows.append(warmup)
 
@@ -859,6 +881,7 @@ def run_long_context_latency_matrix(
                                 headers=headers,
                                 extra_body=extra_body,
                                 stream_func=stream_func,
+                                evaluation_mode=evaluation_mode,
                             )
                         )
                         continue
@@ -884,6 +907,7 @@ def run_long_context_latency_matrix(
                                 headers=headers,
                                 extra_body=extra_body,
                                 stream_func=stream_func,
+                                evaluation_mode=evaluation_mode,
                             )
                             for request_index, prompt in requests
                         ]
@@ -909,6 +933,7 @@ def run_long_context_latency_matrix(
         "temperature": temperature,
         "top_p": top_p,
         "max_tokens": max_tokens,
+        "evaluation_mode": evaluation_mode,
         "repeat_count": repeat_count,
         "concurrencies": concurrencies,
         "cache_modes": cache_modes,
@@ -1204,6 +1229,7 @@ def write_long_context_latency_markdown(path: Path, row: Json) -> None:
         f"- Model: `{row.get('model')}`",
         f"- Thinking mode: `{row.get('thinking_mode')}`",
         f"- Max tokens: `{row.get('max_tokens')}`",
+        f"- Evaluation mode: `{row.get('evaluation_mode', DEFAULT_EVALUATION_MODE)}`",
         f"- Repeat count: `{row.get('repeat_count')}`",
         f"- Concurrency: `{', '.join(str(v) for v in row.get('concurrencies', []))}`",
         f"- Cache modes: `{', '.join(str(v) for v in row.get('cache_modes', []))}`",

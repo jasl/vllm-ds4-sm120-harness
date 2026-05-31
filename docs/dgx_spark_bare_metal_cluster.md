@@ -232,6 +232,12 @@ and MTP can be recorded as exploratory allowed-failure runs on GB10, but
 invokes the `long-context-probe` CLI command and records GPU/runtime telemetry
 beside the probe JSON and Markdown outputs.
 
+For very long-context TTFT exploration, prefer the latency matrix wrapper with
+`LONG_CONTEXT_LATENCY_EVALUATION_MODE=ttft-only` and a tiny output budget such
+as `LONG_CONTEXT_LATENCY_MAX_TOKENS=1`. This mode records TTFT without turning
+the intentionally truncated answer into a semantic failure. Keep the default
+`semantic` mode for correctness gates and for all prompt-file semantic checks.
+
 For generation quality gates, keep `GENERATION_MAX_CASE_TOKENS=32768` or
 higher on GB10. The checked-in frontend and code prompts can legitimately need
 more than 4096 completion tokens; a 4096 cap is useful only for quick smoke and

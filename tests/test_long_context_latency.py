@@ -142,6 +142,75 @@ def test_long_context_latency_matrix_records_cold_and_warm_streaming_rows():
     assert first_request["p99_inter_chunk_seconds"] == 1.2
 
 
+def test_long_context_latency_matrix_ttft_only_mode_accepts_truncated_response():
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        return {
+            "response": {
+                "usage": {
+                    "prompt_tokens": 131086,
+                    "completion_tokens": 1,
+                    "total_tokens": 131087,
+                }
+            },
+            "assistant_text": "alpha",
+            "ttft_seconds": 151.253409,
+            "elapsed_seconds": 151.253482,
+            "inter_chunk_seconds": [],
+        }
+
+    row = run_long_context_latency_matrix(
+        base_url="http://127.0.0.1:8000",
+        model="model",
+        variant="gb10",
+        line_counts=[128],
+        concurrencies=[1],
+        cache_modes=["cold"],
+        max_tokens=1,
+        evaluation_mode="ttft-only",
+        stream_func=fake_stream,
+    )
+
+    assert row["ok"] is True
+    assert row["evaluation_mode"] == "ttft-only"
+    assert row["summary"][0]["failure_count"] == 0
+    assert row["requests"][0]["ok"] is True
+    assert row["requests"][0]["detail"] == "ttft recorded"
+    assert row["requests"][0]["ttft_seconds"] == 151.253409
+
+
+def test_long_context_latency_matrix_semantic_mode_still_checks_terms():
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        return {
+            "response": {
+                "usage": {
+                    "prompt_tokens": 131086,
+                    "completion_tokens": 1,
+                    "total_tokens": 131087,
+                }
+            },
+            "assistant_text": "alpha",
+            "ttft_seconds": 151.253409,
+            "elapsed_seconds": 151.253482,
+            "inter_chunk_seconds": [],
+        }
+
+    row = run_long_context_latency_matrix(
+        base_url="http://127.0.0.1:8000",
+        model="model",
+        variant="gb10",
+        line_counts=[128],
+        concurrencies=[1],
+        cache_modes=["cold"],
+        max_tokens=1,
+        stream_func=fake_stream,
+    )
+
+    assert row["ok"] is False
+    assert row["evaluation_mode"] == "semantic"
+    assert row["summary"][0]["failure_count"] == 1
+    assert "missing required terms" in row["requests"][0]["detail"]
+
+
 def test_long_context_latency_matrix_quantifies_decode_collapse_vs_c1():
     def fake_stream(base_url, path, payload, timeout, **kwargs):
         metadata = kwargs["probe_metadata"]
@@ -502,12 +571,16 @@ def test_long_context_mixed_arrival_markdown_includes_roles(tmp_path):
 
 
 def test_long_context_latency_cli_writes_json_and_markdown(monkeypatch, tmp_path):
+    captured = {}
+
     def fake_run_long_context_latency_matrix(**kwargs):
+        captured.update(kwargs)
         return {
             "case": kwargs["case_name"],
             "variant": kwargs["variant"],
             "model": kwargs["model"],
             "ok": True,
+            "evaluation_mode": kwargs["evaluation_mode"],
             "summary": [{"failure_count": 0}],
             "requests": [],
             "prompts": [],
@@ -532,6 +605,8 @@ def test_long_context_latency_cli_writes_json_and_markdown(monkeypatch, tmp_path
             "1,2",
             "--cache-modes",
             "cold,warm",
+            "--evaluation-mode",
+            "ttft-only",
             "--json-output",
             str(json_output),
             "--markdown-output",
@@ -542,6 +617,8 @@ def test_long_context_latency_cli_writes_json_and_markdown(monkeypatch, tmp_path
     assert rc == 0
     data = json.loads(json_output.read_text(encoding="utf-8"))
     assert data["variant"] == "mtp"
+    assert data["evaluation_mode"] == "ttft-only"
+    assert captured["evaluation_mode"] == "ttft-only"
     assert "Long Context Latency Matrix" in markdown_output.read_text(
         encoding="utf-8"
     )

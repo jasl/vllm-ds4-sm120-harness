@@ -75,10 +75,12 @@ from ds4_harness.long_context_latency import (
     DEFAULT_CACHE_MODES as DEFAULT_LONG_CONTEXT_LATENCY_CACHE_MODES,
     DEFAULT_CASE_NAME as DEFAULT_LONG_CONTEXT_LATENCY_CASE_NAME,
     DEFAULT_CONCURRENCY as DEFAULT_LONG_CONTEXT_LATENCY_CONCURRENCY,
+    DEFAULT_EVALUATION_MODE as DEFAULT_LONG_CONTEXT_LATENCY_EVALUATION_MODE,
     DEFAULT_LINE_COUNTS as DEFAULT_LONG_CONTEXT_LATENCY_LINE_COUNTS,
     DEFAULT_MAX_TOKENS as DEFAULT_LONG_CONTEXT_LATENCY_MAX_TOKENS,
     DEFAULT_MIXED_ARRIVAL_CASE_NAME as DEFAULT_LONG_CONTEXT_MIXED_ARRIVAL_CASE_NAME,
     DEFAULT_MIXED_ARRIVAL_CASE_SPECS as DEFAULT_LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS,
+    EVALUATION_MODES as LONG_CONTEXT_LATENCY_EVALUATION_MODES,
     run_long_context_latency_matrix,
     run_long_context_mixed_arrival_matrix,
     write_long_context_latency_markdown,
@@ -1001,6 +1003,7 @@ def _cmd_long_context_latency_matrix(args: argparse.Namespace) -> int:
             timeout=args.timeout,
             headers=headers,
             extra_body=extra_body,
+            evaluation_mode=args.evaluation_mode,
         )
     except (KeyError, ValueError, RuntimeError, json.JSONDecodeError, OSError) as exc:
         print(str(exc), file=sys.stderr)
@@ -2177,6 +2180,15 @@ def build_parser() -> argparse.ArgumentParser:
     long_latency.add_argument("--temperature", type=float, default=0.0)
     long_latency.add_argument("--top-p", type=float, default=1.0)
     long_latency.add_argument("--thinking-mode", default="non-thinking")
+    long_latency.add_argument(
+        "--evaluation-mode",
+        choices=LONG_CONTEXT_LATENCY_EVALUATION_MODES,
+        default=DEFAULT_LONG_CONTEXT_LATENCY_EVALUATION_MODE,
+        help=(
+            "`semantic` requires the expected answer terms; `ttft-only` only "
+            "requires a successful stream with TTFT timing."
+        ),
+    )
     long_latency.add_argument("--timeout", type=float, default=1800.0)
     long_latency.add_argument("--api-key-env")
     long_latency.add_argument("--extra-body-json")
