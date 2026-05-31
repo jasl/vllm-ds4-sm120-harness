@@ -362,12 +362,28 @@ kernel experiment should focus on reducing or restructuring
 `_accumulate_indexed_attention_chunk_multihead_kernel` work for the GB10
 long-C=2 shape before revisiting MTP-specific changes.
 
+Rejected follow-up:
+
+| Experiment | Artifact | Result | Decision |
+| --- | --- | --- | --- |
+| Force `VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE=128` for the same no-MTP long-C=2 shape | `gb10_topk128_probe/2x_gb10_sm121/streaming_pressure_longc2` | Both requests timed out at `120.433 s` with no TTFT. Runtime sampling saw `prefill tokens delta = 0`, `decode tokens delta = 0`, `max running = 2`, `max waiting = 0`, and KV usage around `16.41%`. | reject: simply halving the per-kernel candidate chunk does not restore progress |
+| Temporary `PREFILL_CHUNK_SIZE=1` vLLM experiment branch | `gb10_prefillchunk1_probe/2x_gb10_sm121/streaming_pressure_longc2` | One request completed with `TTFT=220.354 s`, `elapsed=243.355 s`, `prompt_tokens=100079`, and ITL p99 `1.874 s`; the paired request timed out with no chunks. Runtime sampling saw `prefill tokens delta = 100079`, `decode tokens delta = 39`, `max running = 2`, `max waiting = 0`, and KV usage around `20.01%`. | reject for retention: single-request slicing changes the failure from no-progress to slow unfair progress, but still does not meet long-C=2 fairness or latency needs |
+
+Conservative control:
+
+| Experiment | Artifact | Result | Decision |
+| --- | --- | --- | --- |
+| Restore normal vLLM code and set `max_num_seqs=1` for the same two-client long-C=2 request shape | `gb10_maxseq1_control/2x_gb10_sm121/streaming_pressure_longc2` | Both requests completed: `failures=0`, max TTFT `238.383 s`, max elapsed `240.536 s`, ITL p95 `0.066 s`, ITL p99 `0.080 s`, with `max running = 1` and `max waiting = 1`. | accept as a GB10 best-effort safety profile for 100K-class long-prefill concurrency until sparse-MLA prefill can be fixed |
+
 Next debugging direction:
 
 - build a reduced sparse-MLA prefill microbench or endpoint experiment that
   targets the `long_c2` shape seen in the Nsys window;
 - use NCU on `_accumulate_indexed_attention_chunk_multihead_kernel` for this
   shape if counter permissions are available on the target node;
+- keep `max_num_seqs=1` as the GB10 conservative long-context safety profile
+  for 100K-class C=2 user-facing tests, and only relax it after a kernel-level
+  fix shows both requests can make progress with low ITL tail;
 - separate the cases where the server makes slow progress from cases where
   counters stop entirely;
 - only after that, evaluate whether the fix belongs in scheduler chunking,

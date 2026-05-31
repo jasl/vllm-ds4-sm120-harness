@@ -74,7 +74,16 @@ artifact to debug.
    `_accumulate_indexed_attention_chunk_multihead_kernel`, with MXFP4 MoE,
    FP8 MQA logits, and NCCL behind it. The next experiment should reduce or
    restructure sparse-MLA prefill work for this shape before adding another
-   scheduler policy.
+   scheduler policy. A `VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE=128` probe still
+   timed out with zero prefill/decode progress, so do not spend more time on
+   simply shrinking the candidate chunk. A temporary `PREFILL_CHUNK_SIZE=1`
+   probe changed the failure from no-progress to one very slow completed
+   request plus one timed-out peer, which is useful evidence but not a
+   retention-quality fix. The no-code `max_num_seqs=1` control completed both
+   100K-class requests with ITL p99 around `80 ms`, at the expected cost of
+   queuing one request and max TTFT around `238 s`. Treat this as the current
+   GB10 conservative safety profile for 100K-class long-prefill concurrency
+   until sparse-MLA prefill is fixed.
 
 3. **Run the three-case interference profile before the next retained kernel
    change.** Use the existing wrapper and compare against the latest Dev

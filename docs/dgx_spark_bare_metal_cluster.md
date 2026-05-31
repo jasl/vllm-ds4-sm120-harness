@@ -149,11 +149,20 @@ TP_SIZE=2 \
 PP_SIZE=1 \
 MAX_MODEL_LEN=393216 \
 GPU_MEMORY_UTILIZATION=0.70 \
-MAX_NUM_SEQS=2 \
+MAX_NUM_SEQS=1 \
 MAX_NUM_BATCHED_TOKENS=4176 \
 MIN_AVAILABLE_MEM_GIB=96 \
 scripts/dgx_spark_start_mp_serve.sh
 ```
+
+For 100K-class or larger long-prefill validation on the current two-node GB10
+cluster, keep `MAX_NUM_SEQS=1` unless the goal is explicitly to reproduce the
+long-C=2 sparse-MLA stall. A controlled C=2 client run with server
+`MAX_NUM_SEQS=1` completed both 100K-token requests with no failures and ITL
+p99 around `80 ms`; allowing two long prefills to run together can enter a
+high-GPU-utilization, no-progress or extremely unfair state. Use
+`MAX_NUM_SEQS=2` only for shorter-context concurrency gates or targeted
+debugging of that failure mode.
 
 The helper stops stale drop-cache loops, refuses to continue if vLLM is already
 running unless `ALLOW_EXISTING_VLLM=1`, reclaims file cache when passwordless
