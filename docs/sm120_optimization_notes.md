@@ -2714,6 +2714,27 @@ candidate showed about a 200 ms `decode_then_59k` p99 ITL under nsys overhead,
 so the repeat-3 p99 movement was not evidence of a candidate-specific
 regression.
 
+After the three-case wrapper made the partial-state kernel visible as the top
+mixed-arrival kernel, the sparse-MLA microbench gained a partial-state mode.
+Target-shape smoke artifact
+`20260601_partial_state_microbench_target/20260601054348`, on
+`num_tokens=256`, `num_heads=64`, `head_dim=128`, `kv_tokens=131072`:
+
+| Candidates | Mode | Calls/Parts | Mean | Accumulate | Merge | Interpretation |
+| ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 512 | single-pass | 1 | 0.374 ms | n/a | n/a | baseline |
+| 512 | chunked 256 | 2 | 0.347 ms | n/a | n/a | slightly faster in isolation |
+| 512 | partial-state 256 | 2 | 0.372 ms | 0.325 ms | 0.047 ms | no isolated speedup |
+| 1024 | single-pass | 1 | 0.670 ms | n/a | n/a | baseline |
+| 1024 | chunked 256 | 4 | 0.672 ms | n/a | n/a | same as baseline |
+| 1024 | partial-state 256 | 4 | 0.682 ms | 0.588 ms | 0.094 ms | same to slightly slower in isolation |
+
+Interpretation: the retained partial-state change should be treated as an
+end-to-end scheduling/trace improvement for large prefill, not as proof that
+the partial-state kernel is faster in a standalone microbench. Further
+sparse-MLA work needs to reduce live state or total work; another local
+chunk/part-size sweep is unlikely to buy much.
+
 Full SM120 promotion matrix:
 `20260601_partial_state_promotion_matrix/20260601030721`.
 
