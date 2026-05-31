@@ -2151,6 +2151,32 @@ Decision: reject and remove the code and test. Do not tighten the
 no-active-decode waiting-request cap for now. The target improvement is
 noise-level, while the 124K C=2 TTFT max regression is too large.
 
+## Rejected Mixed Long/Short Global 2048 Token Budget, 2026-05-31
+
+After promoting the running-prefill fairness fix, a no-code scheduling probe
+tested whether reducing the whole serve profile from 4096 to 2048
+`max_num_batched_tokens` would help the `long_then_short` case. The hypothesis
+was that smaller global prefill chunks might expose the short request to the
+scheduler earlier.
+
+The result was negative:
+
+| Case | 4096 Current | 2048 Probe | Decision Signal |
+| --- | ---: | ---: | --- |
+| `long_then_short` primary TTFT mean | 31.539 s | 34.719 s | +10.1% regression |
+| `long_then_short` secondary TTFT mean | 30.094 s | 33.894 s | +12.6% regression |
+| `long_then_short` decode min/max | 0.585 | 0.274 | much worse |
+| Runtime errors | 0 | 0 | stable but slower |
+
+Artifact labels:
+`20260531_running_prefill_fairness_user_feedback/20260531184641` and
+`20260531_mixed_long_short_mbt2048_experiment/20260531202458`.
+
+Decision: reject as a default or broad tuning direction. The mixed long/short
+problem is not solved by globally lowering `max_num_batched_tokens`; it needs a
+narrower admission, scheduling, or deployment-level strategy that does not
+penalize normal 124K C=1/C=2 prefill.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
