@@ -198,6 +198,10 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   against the per-request ITL/fairness result from the same request window.
   Treat the trace as diagnostic evidence; promotion still requires the full
   user-feedback matrix.
+  Use `scripts/run_sm12x_prefill_decode_interference_profiles.sh` when you want
+  the standard `decode_then_59k`, `decode_then_124k`, and `long_then_short`
+  captures in one artifact tree before choosing the next kernel or scheduler
+  experiment.
 - KV lifecycle and prefix-cache recoverability: run `kv_lifecycle_probe` in
   the prefix-cache-disabled primary matrix and in a separate prefix-cache-enabled
   serve. The disabled pass guards real block lifetime leaks; the enabled pass

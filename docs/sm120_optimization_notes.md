@@ -2458,6 +2458,12 @@ Use two layers of evidence:
 | Kernel microprofile | Decide whether kernel work is justified | NCU on `_accumulate_indexed_attention_chunk_multihead_kernel` and `_fp8_mqa_logits_kernel` | Optional only after crash risk is controlled; expect bandwidth/power limits sooner |
 | Deployment probe | Decide whether single-instance best effort is enough | Simulate PD-style isolation only if C=2 ITL remains unacceptable after scheduler work | Consider PD/disagg earlier for long-context concurrent user testing, but do not claim throughput gains from it |
 
+For repeatability, use
+`scripts/run_sm12x_prefill_decode_interference_profiles.sh` to capture the
+three standard mixed-arrival traces into one summary. It is only an
+orchestrator around the existing per-case Nsight Systems launcher and does not
+change the serve recipe or add any public tuning knob.
+
 Immediate trace sequence:
 
 1. `decode_then_124k`: an existing decode stream has emitted at least one token,

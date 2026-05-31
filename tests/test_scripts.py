@@ -1437,6 +1437,26 @@ def test_mixed_arrival_nsys_profile_launcher_captures_scheduler_window():
     assert "nsys_kernel_summary.md" in script
 
 
+def test_sm12x_prefill_decode_profile_wrapper_runs_three_trace_shapes():
+    script = (
+        ROOT / "scripts" / "run_sm12x_prefill_decode_interference_profiles.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'SERVE_COMMAND="${SERVE_COMMAND:?set SERVE_COMMAND}"' in script
+    assert 'OUT_DIR="${OUT_DIR:?set OUT_DIR}"' in script
+    assert "decode_then_59k:1900:1900:after_first_token:0:256:128" in script
+    assert "decode_then_124k:4000:4000:after_first_token:0:256:128" in script
+    assert "long_then_short:4000:192:fixed_delay:2:128:64" in script
+    assert '"${SCRIPT_DIR}/run_mixed_arrival_nsys_profile_launch.sh"' in script
+    assert 'PROFILE_MIXED_ARRIVAL_CASE_SPECS="${case_spec}"' in script
+    assert "profile_cases.tsv" in script
+    assert "prefill_decode_interference_profiles_summary.json" in script
+    assert "prefill_decode_interference_profiles_summary.md" in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+    assert "10.0.0." not in script
+
+
 def test_sm120_mqa_topk_microbench_records_reusable_shapes():
     script = (ROOT / "scripts" / "run_sm120_mqa_topk_microbench.py").read_text(
         encoding="utf-8"
