@@ -2671,6 +2671,26 @@ pressure, prefix-cache/KV lifecycle, story-recall semantic, and GSM8K limit-200
 gates. Revert if the mixed decode-tail regression repeats or if GB10 shows
 higher stability risk under the extra scratch-state workspace.
 
+Follow-up trace and correctness gates:
+
+| Gate | Clean | Candidate | Result |
+| --- | ---: | ---: | --- |
+| `decode_then_59k` nsys primary TTFT | `12.387 s` | `12.037 s` | candidate faster |
+| `decode_then_59k` nsys p99 ITL | `0.207 s` | `0.204 s` | no trace-level regression |
+| nsys sparse accumulate total | `22.596 s` single-pass | `20.144 s` partial-state + `0.897 s` merge | about `-6.9%` |
+| GSM8K limit-200 5-shot | n/a | flexible `0.960`, strict `0.935` | passes fixed floor |
+| prefix-cache disabled KV lifecycle | n/a | final idle KV `0.0%`, abort included | passes |
+| MTP=1 prefix-cache stress | n/a | 5/5 trials, health `200`, concurrent hit rate mean `72.8%` | passes |
+| prefix-cache enabled KV lifecycle | n/a | final idle KV `5.894%`, bounded under diagnostic `30%` threshold | passes |
+
+The paired nsys run weakens the earlier mixed-arrival concern: both clean and
+candidate show about a 200 ms `decode_then_59k` p99 ITL under nsys overhead, so
+the repeat-3 p99 movement is not yet evidence of a candidate-specific
+regression. The candidate still needs a complete promotion matrix before dev
+absorption, but the current best-effort direction remains promising:
+single-prefill sparse-MLA partial states improve prefill latency without
+breaking GSM8K, prefix-cache stress, or KV lifecycle gates on RTX PRO 6000.
+
 ### Hardware-Informed Profiling Split
 
 Do not assume RTX PRO 6000 SM120 and GB10 SM121 failures have the same root
