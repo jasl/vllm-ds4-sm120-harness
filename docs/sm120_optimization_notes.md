@@ -5,6 +5,9 @@ performance work. They are intentionally separate from historical baseline
 reports so later tuning does not accidentally inherit outdated architecture
 assumptions.
 
+For the current short-form profiling and experiment sequence across SM120 and
+SM121, start with `docs/sm12x_best_effort_profiling_plan.md`.
+
 ## Hardware Assumptions
 
 - Target hardware: NVIDIA RTX PRO 6000 Blackwell Workstation Edition,
