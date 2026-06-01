@@ -179,7 +179,7 @@ FROM base AS runner
 
 ARG VLLM_REPO=https://github.com/jasl/vllm.git
 ARG VLLM_REF=codex/ds4-sm120-min-enable
-ARG FLASHINFER_VERSION=0.6.11.post2
+ARG FLASHINFER_VERSION=0.6.12
 ARG NCCL_REF=v2.30u1
 
 LABEL org.opencontainers.image.title="DeepSeek V4 SM121 vLLM PR image"
@@ -198,8 +198,9 @@ COPY --from=vllm-builder /workspace/wheels/ /workspace/wheels/
 
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv pip install \
+      --no-deps \
       --override /tmp/gb10-uv-override.txt \
-      "flashinfer-python[cu13]==${FLASHINFER_VERSION}" \
+      "flashinfer-python==${FLASHINFER_VERSION}" \
       "flashinfer-cubin==${FLASHINFER_VERSION}" \
       "flashinfer-jit-cache==${FLASHINFER_VERSION}" \
       --find-links https://flashinfer.ai/whl/cu130/flashinfer-jit-cache/ && \

@@ -10,8 +10,8 @@ The Dockerfile is intentionally self-contained:
 - builds for GB10 / SM121 with `TORCH_CUDA_ARCH_LIST=12.1a`;
 - installs the FlashInfer Python, cubin, and JIT cache wheels matching vLLM
   requirements, instead of source-building the large AOT cubin cache;
-- installs `flashinfer-python[cu13]` so Blackwell / SM100+ CuTe DSL kernels are
-  available;
+- keeps FlashInfer dependency installation from mutating the pinned PyTorch /
+  CUDA stack; CUDA 13 CUTLASS DSL support comes from the vLLM requirement pin;
 - builds NCCL `v2.30u1` and redirects the Python NCCL wheel path to that system
   library to avoid the known DGX Spark load-order hang;
 - pins CUDA compiler Python wheels to the CUDA 13.0 family used by PyTorch
