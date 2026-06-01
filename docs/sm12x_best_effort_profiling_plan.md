@@ -141,6 +141,17 @@ artifact to debug.
    targets the partial-state sparse-MLA path. Keep a scheduler/admission track
    open for `long_then_short`, but do not mix it into the first kernel patch.
 
+   Follow-up NCU artifact
+   `20260601_ncu_sparse_mla_expanded_shapes_seq` profiled chunk and
+   partial-state sparse-MLA accumulate sequentially on q `256x64x512`,
+   candidates `1152`. Both kernels showed low DRAM throughput (`1.41%` chunk,
+   `1.90%` partial), low eligible warps per scheduler (`1.05` and `1.15`),
+   similar register pressure (`118` and `116` registers/thread), and similar
+   scoreboard/wait stall shape. That means partial-state's endpoint cost is
+   more about launch count and total candidate work than an obviously worse
+   per-launch kernel. Keep the next experiment focused on reducing total
+   sparse-MLA work or dependency depth.
+
 4. **Try algorithmic sparse MLA work only if it reduces live state or total
    work.**
    More local chunk/part/warp sweeps are exhausted. A retained candidate needs
