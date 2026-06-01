@@ -62,7 +62,7 @@ artifact to debug.
 | --- | --- | --- | --- |
 | Health preflight | Confirm CUDA/NCCL/Triton/vLLM versions and graph mode before comparing numbers. | Confirm both nodes use the intended NCCL runtime and no current-boot driver OOM/Xid state exists. | collect-env, loaded NCCL library path when available, serve command, graph mode, driver-health scan. |
 | Baseline user matrix | Fix the performance floor before profiling. | Establish no-MTP 128K stability first; MTP remains exploratory until it survives the same shape. | 59K/124K C=1/C=2, decode-concurrency, mixed-arrival, random prefill, streaming pressure, story recall, GSM8K limit-200, KV lifecycle. |
-| Three-case Nsys | Explain the difference between `decode_then_59k`, `decode_then_124k`, and `long_then_short`. | Run only after stability gates pass; use shorter or no-MTP shapes if needed. | Per-request TTFT/decode/ITL plus top CUDA kernels and launch order. Use `scripts/run_sm12x_prefill_decode_interference_profiles.sh`. |
+| Interference Nsys | Explain the difference between simultaneous long C=2, decode-then-long, decode-then-short, short-decode-then-long, and long-prefill-then-short. | Run only after stability gates pass; use shorter or no-MTP shapes if needed. | Per-request TTFT/decode/ITL plus top CUDA kernels and launch order. Use `scripts/run_sm12x_prefill_decode_interference_profiles.sh`. |
 | Focused NCU | Decide whether a kernel change can plausibly help. | Optional and lower priority; GB10 NCU is for regressions, not for deriving SM120 launch parameters. | Duration, registers/thread, occupancy, eligible warps/scheduler, long scoreboard, DRAM throughput for sparse MLA accumulate and FP8 MQA logits. |
 | Microbench | Prove a kernel hypothesis before endpoint runs. | Check scratch-sensitive candidates for obvious GB10 risk. | Synthetic parity, mean/p95, scratch bytes, launch count. Use `scripts/run_sparse_mla_accumulate_microbench.py` and the MQA top-k microbench scripts. |
 | Deployment probe | Decide if single-instance best effort is enough. | More important for long contexts once there are enough nodes to isolate roles. | Tail ITL, TTFT overhead, KV-transfer overhead, connector errors, and driver health. Do not claim throughput gains from prefill/decode disaggregation. |
@@ -112,11 +112,14 @@ artifact to debug.
    not just endpoint scheduling noise; the sparse-MLA prefill kernel itself has
    much less latency headroom on SM121.
 
-3. **Run the three-case interference profile before the next retained kernel
-   change.** Use the existing wrapper and compare against the latest Dev
-   artifacts. The decision question is whether partial-state accumulate is
-   still the largest active-window cost and whether FP8 MQA logits is still
-   second.
+3. **Run the interference profile before the next retained kernel change.**
+   Use the existing wrapper and compare against the latest Dev artifacts. The
+   default trace set now covers the combined fairness/interference matrix:
+   simultaneous long+long C=2, long decode then long prefill, long decode then
+   short prefill, short decode then long prefill, and long prefill then short
+   request. The decision question is whether partial-state accumulate is still
+   the largest active-window cost, whether FP8 MQA logits is still second, and
+   whether a candidate helps the interference class that actually regressed.
 
 4. **Try algorithmic sparse MLA work only if it reduces live state or total
    work.**
