@@ -742,6 +742,44 @@ candidate:
 | `20260601_decode_then_124k_nsys_clean_dev/20260531225627` | primary TTFT `30.384 s`, secondary TTFT `32.194 s`, decode min/max `0.329`, secondary ITL p95 `0.029 s` | `_accumulate_indexed_attention_chunk_multihead_kernel` `48.8%`, `_fp8_mqa_logits_kernel` `12.0%`, `_combine_topk_swa_indices_kernel` below top 30 |
 | `20260601_long_then_short_nsys_clean_dev/20260531225952` | primary TTFT `31.671 s`, secondary TTFT `3.285 s`, secondary elapsed `30.358 s`, secondary ITL p99 `26.385 s`, decode min/max `0.028` | `_accumulate_indexed_attention_chunk_multihead_kernel` `49.3%`, `_fp8_mqa_logits_kernel` `11.9%`, `_combine_topk_swa_indices_kernel` `0.1%` |
 
+The expanded RTX PRO 6000 interference profile then used the same serve
+profile to cover the full fairness/interference matrix:
+`20260601_prefill_decode_interference_profiles_expanded/20260601084525`.
+All six cases exited `0`, all text artifacts and Nsys reports were generated,
+and the service left no vLLM/Ray/Nsys residual processes. Driver health after
+the run showed no Xid, UVM, GPU-lost, launch-failure, or fatal signal; the
+kernel log did contain repeated `NVRM refcntRequestReference_IMPL` teardown
+noise around service exits, while `nvidia-smi` returned both GPUs to idle with
+only `2 MiB` used per device.
+
+| Case | Primary / Secondary TTFT | Primary / Secondary Decode | Decode Min/Max | ITL P99 | Top Kernel Signal |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `long_long_c2` | `63.566 s` / `57.970 s` | `82.863` / `11.616 tok/s` | `0.140` | `1.762 s` | `_accumulate_indexed_attention_chunk_multihead_kernel` `45.2%`, `_fp8_mqa_logits_kernel` `12.7%` |
+| `decode_then_59k` | `12.114 s` / `13.585 s` | `31.802` / `130.231 tok/s` | `0.244` | `0.209 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `40.6%`, `_fp8_mqa_logits_kernel` `8.7%` |
+| `decode_then_124k` | `29.536 s` / `31.220 s` | `36.747` / `99.333 tok/s` | `0.370` | `0.210 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `43.8%`, `_fp8_mqa_logits_kernel` `12.7%` |
+| `long_decode_then_short` | `29.588 s` / `1.708 s` | `30.286` / `89.306 tok/s` | `0.339` | `1.158 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `44.2%`, `_fp8_mqa_logits_kernel` `12.4%` |
+| `short_decode_then_124k` | `1.664 s` / `38.066 s` | `20.254` / `100.056 tok/s` | `0.202` | `0.416 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `43.6%`, `_fp8_mqa_logits_kernel` `12.2%` |
+| `long_then_short` | `30.637 s` / `3.249 s` | `87.761` / `2.456 tok/s` | `0.028` | `25.387 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `41.5%`, `_fp8_mqa_logits_kernel` `12.6%` |
+
+Interpretation:
+
+- `long_long_c2` is still the worst pure long-context fairness shape. It is
+  the only expanded case where the non-partial
+  `_accumulate_indexed_attention_chunk_multihead_kernel` dominates the trace,
+  and the slower stream has a much worse decode rate and ITL tail.
+- Staggered decode-then-long cases are healthier than pure `long_long_c2` but
+  still show decode imbalance. Their dominant attention-side kernel is the
+  partial-state sparse-MLA accumulate path, not combine-topk.
+- `long_then_short` is a distinct scheduler/admission problem. The short
+  request reaches first token quickly, then its decode stalls behind the
+  leading long prefill, producing a `25.387 s` ITL p99. A pure sparse-kernel
+  speedup may reduce the stall length, but it is unlikely to remove the
+  scheduling mechanism that lets the short decoder wait behind long prefill.
+- `short_decode_then_124k` confirms the inverse interactive shape is also
+  relevant: a short stream that has already started can be slowed by a later
+  124K prefill. This is less severe than `long_then_short`, but it matters for
+  local-agent UX.
+
 Interpretation: the next kernel work should focus on the sparse MLA prefill
 accumulate path and FP8 MQA logits path. The combine-topk kernel is visible in
 the trace, but it is not currently large enough to be the first optimization

@@ -121,6 +121,26 @@ artifact to debug.
    the largest active-window cost, whether FP8 MQA logits is still second, and
    whether a candidate helps the interference class that actually regressed.
 
+   RTX PRO 6000 artifact
+   `20260601_prefill_decode_interference_profiles_expanded/20260601084525`
+   completed that trace set on the current Dev branch. It split the problem
+   into two concrete work items:
+
+   - pure long+long C=2 fairness remains the worst long-context case
+     (`long_long_c2` decode min/max `0.140`, ITL p99 `1.762 s`) and is the
+     shape where the non-partial
+     `_accumulate_indexed_attention_chunk_multihead_kernel` dominates;
+   - staggered mixed-arrival cases are dominated by
+     `_accumulate_indexed_attention_partial_states_multihead_kernel`, with
+     `long_then_short` still showing a separate scheduler/admission tail
+     (`3.249 s` secondary TTFT, but `25.387 s` ITL p99 after first token).
+
+   Therefore the next kernel experiment should not be a global launch retune.
+   Profile `long_long_c2` and `decode_then_124k` separately with NCU: the
+   former targets the chunk sparse-MLA accumulate path, while the latter
+   targets the partial-state sparse-MLA path. Keep a scheduler/admission track
+   open for `long_then_short`, but do not mix it into the first kernel patch.
+
 4. **Try algorithmic sparse MLA work only if it reduces live state or total
    work.**
    More local chunk/part/warp sweeps are exhausted. A retained candidate needs
