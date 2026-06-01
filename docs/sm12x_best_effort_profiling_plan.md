@@ -173,6 +173,23 @@ artifact to debug.
    `0.866`, while C4 partial prefill was `0.118` and SWA-only was `0.010`.
    Treat that as a work-reduction target, not yet as proof of an endpoint win.
 
+   The follow-up case-split artifact
+   `20260601_sparse_mla_stats_case_split/20260601101443` separated the two
+   mixed-arrival shapes. `long_long_c2` and `decode_then_124k` had nearly the
+   same total sparse-MLA effective visits (`13.15B`) and the same rectangular
+   candidate-slot padding ratio (`0.304`). The padding ratio is a shape-pressure
+   signal, not full dot-product work, because the current kernel already caps
+   the per-token loop with `combined_lens`. The layer-type split was different:
+   `long_long_c2` spent most C128 work in the multi-prefill chunk path
+   (C128 chunk padding ratio `0.484`, plus C128 partial padding ratio `0.462`)
+   and decode fairness stayed poor with min/max ratio `0.126`. `decode_then_124k`
+   spent the C128 work in the partial path (C128 partial padding ratio `0.481`)
+   but fairness was better at min/max ratio `0.337`. Therefore the next retained
+   kernel experiment should target the multi-prefill C128 chunk path first,
+   especially its launch shape, live state, and request coupling. Treat the
+   partial path as a secondary target unless a later trace shows it causing the
+   user-visible slow-stream tail.
+
 5. **Keep direct FP8 MQA streaming top-k as a secondary experiment.**
    The current decomposition shows top-k selection itself is small, so the only
    useful version is one that reduces FP8 MQA logits live state or register
