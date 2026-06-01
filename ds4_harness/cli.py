@@ -137,6 +137,11 @@ from ds4_harness.runtime_stats import (
     write_runtime_json,
     write_runtime_markdown,
 )
+from ds4_harness.sparse_mla_stats import (
+    build_sparse_mla_stats_report,
+    write_sparse_mla_stats_json,
+    write_sparse_mla_stats_markdown,
+)
 from ds4_harness.streaming_pressure_soak import (
     DEFAULT_CASE_NAME as DEFAULT_STREAMING_PRESSURE_CASE_NAME,
     DEFAULT_CONCURRENCY as DEFAULT_STREAMING_PRESSURE_CONCURRENCY,
@@ -683,6 +688,17 @@ def _cmd_sparse_mla_dump_report(args: argparse.Namespace) -> int:
         write_attention_dump_json(args.json_output, report)
     if args.markdown_output is not None:
         write_attention_dump_markdown(args.markdown_output, report)
+    if args.json_output is None and args.markdown_output is None:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_sparse_mla_stats_report(args: argparse.Namespace) -> int:
+    report = build_sparse_mla_stats_report(args.stats_path)
+    if args.json_output is not None:
+        write_sparse_mla_stats_json(args.json_output, report)
+    if args.markdown_output is not None:
+        write_sparse_mla_stats_markdown(args.markdown_output, report)
     if args.json_output is None and args.markdown_output is None:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
@@ -2112,6 +2128,12 @@ def build_parser() -> argparse.ArgumentParser:
     sparse_mla_dump_report.add_argument("--json-output", type=Path)
     sparse_mla_dump_report.add_argument("--markdown-output", type=Path)
     sparse_mla_dump_report.set_defaults(func=_cmd_sparse_mla_dump_report)
+
+    sparse_mla_stats_report = subparsers.add_parser("sparse-mla-stats-report")
+    sparse_mla_stats_report.add_argument("--stats-path", type=Path, required=True)
+    sparse_mla_stats_report.add_argument("--json-output", type=Path)
+    sparse_mla_stats_report.add_argument("--markdown-output", type=Path)
+    sparse_mla_stats_report.set_defaults(func=_cmd_sparse_mla_stats_report)
 
     oracle = subparsers.add_parser("oracle-compare")
     oracle.add_argument("--base-url", default="http://127.0.0.1:8000")

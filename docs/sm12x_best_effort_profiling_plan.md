@@ -163,6 +163,16 @@ artifact to debug.
    or partial-state sweep without a total-work reduction is unlikely to improve
    either device, and it is especially unlikely to rescue GB10 long-C=2.
 
+   A new debug-only stats hook can write sparse MLA prefill JSONL rows when
+   `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH` is set. Summarize the resulting
+   file or directory with `sparse-mla-stats-report` before changing another
+   kernel. The first RTX smoke artifact,
+   `20260601_sparse_mla_stats_smoke/20260601100102`, shows why this matters:
+   even a small prefill had an overall sparse-MLA padding ratio of `0.585`;
+   C128 partial prefill was the largest waste shape with padding ratio
+   `0.866`, while C4 partial prefill was `0.118` and SWA-only was `0.010`.
+   Treat that as a work-reduction target, not yet as proof of an endpoint win.
+
 5. **Keep direct FP8 MQA streaming top-k as a secondary experiment.**
    The current decomposition shows top-k selection itself is small, so the only
    useful version is one that reduces FP8 MQA logits live state or register
