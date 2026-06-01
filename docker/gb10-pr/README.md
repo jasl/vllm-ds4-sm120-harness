@@ -96,3 +96,34 @@ MTP should be evaluated as a separate run:
 
 Keep prefix cache disabled unless the test case is specifically the
 prefix-cache lifecycle or reuse gate.
+
+## GB10 Memory Hygiene
+
+GB10 / DGX Spark uses coherent unified memory, so Docker runs can have less
+effective KV-cache headroom than a comparable bare-metal run. The GPU is not
+virtualized, but container layers, image load/export, overlayfs metadata,
+Python packages, FlashInfer/Triton caches, and Linux page cache can reduce the
+`MemAvailable` value that vLLM uses during KV profiling.
+
+For any long-context Docker validation:
+
+1. Build or load the image before the measurement window.
+2. Reclaim file cache on every node after large image or checkpoint activity:
+
+   ```bash
+   sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'
+   ```
+
+3. Avoid `--memory`, `--memory-swap`, and `--non-privileged` limits unless the
+   test is explicitly validating constrained-container behavior.
+4. Before treating a run as capacity evidence, record:
+   - host `MemAvailable`;
+   - `docker system df`;
+   - vLLM `Available KV cache memory`;
+   - vLLM `GPU KV cache size`;
+   - current-boot NVIDIA driver health.
+5. Run a Docker-specific `max_model_len` ceiling sweep before claiming the same
+   64K/128K/long-context support level as bare metal.
+
+Do not promote a Docker long-context number just because the same shape passed
+bare metal. Treat Docker and bare metal as separate capacity profiles on GB10.

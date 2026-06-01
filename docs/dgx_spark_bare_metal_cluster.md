@@ -140,6 +140,28 @@ If either command finds a match after a failed launch, reboot both nodes before
 retrying. `drop_caches` can reclaim file cache, but it does not prove that CUDA
 driver or unified-memory state recovered after an `NV_ERR_NO_MEMORY` storm.
 
+Docker adds another capacity variable on GB10. It does not virtualize away GPU
+memory, but image layers, `docker load`/export activity, overlayfs metadata,
+container Python packages, and FlashInfer/Triton cache state can all reduce the
+unified-memory headroom that vLLM sees during KV-cache profiling. After building
+or loading a large image, reclaim file cache on every node before starting the
+containerized server. For long-context Docker runs, avoid Docker memory limits
+unless that is the test objective, and record these values before comparing with
+bare metal:
+
+```bash
+awk '/MemAvailable/ { printf "MemAvailable=%.1f GiB\n", $2 / 1024 / 1024 }' /proc/meminfo
+docker system df
+grep -E 'Available KV cache memory|GPU KV cache size|Maximum concurrency' <serve-log>
+journalctl -b -k --no-pager | grep -Ei 'NVRM|Xid|fallen|lost from the bus|NV_ERR'
+```
+
+Treat Docker and bare metal as separate capacity profiles on GB10. A
+short-context Docker benchmark can be comparable to bare metal, but the maximum
+safe `max_model_len` must be established with a Docker-specific ceiling sweep
+after cache reclaim. Do not reuse a bare-metal 64K/128K claim for Docker unless
+the containerized run logs enough KV-cache headroom for that exact shape.
+
 For a reusable guarded startup, run the harness helper from the control machine
 after exporting the placeholders above. Use the no-Ray helper for the standard
 GB10 path:

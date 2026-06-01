@@ -3156,6 +3156,54 @@ cumulative/high-pressure shapes, so the next GB10 MTP work should be a bounded
 streaming or ToolCall-style pressure gate with runtime counters, not a broad
 performance claim.
 
+GB10 Docker capacity hygiene and short benchmark:
+
+Manual GB10 Docker validation on 2026-06-02 used the same vLLM commit as the
+bare-metal checkout (`c0be19606`) and the same short-context serve profile:
+TP=2, PP=1, EP enabled, FP8 KV, prefix cache disabled, no MTP,
+`FULL_AND_PIECEWISE`, `max_model_len=8192`, `max_num_seqs=4`,
+`max_num_batched_tokens=2048`, and `gpu_memory_utilization=0.70`.
+
+Correctness smoke:
+
+| Runtime | Sampling | Result |
+| --- | --- | --- |
+| Docker | issue-14 original request, default sampling, `max_tokens=50` | returned `2+2` equals `4` |
+| Docker | `temperature=0` | returned `4` |
+| Docker | `temperature=1.0`, three repeats | all returned `4` |
+| Bare metal | same five requests | all returned `4` |
+
+Short random benchmark, random ISL=1024 / OSL=128, 16 prompts:
+
+| Concurrency | Docker output tok/s | Bare-metal output tok/s | Docker / bare-metal |
+| ---: | ---: | ---: | ---: |
+| 1 | `20.14` | `21.41` | `0.94x` |
+| 2 | `33.63` | `32.80` | `1.03x` |
+| 4 | `39.32` | `46.03` | `0.85x` |
+
+Interpretation: the Docker image is functionally usable for short-context GB10
+evaluation and reproduced neither the issue-14 math correctness failure nor a
+runtime/driver error. It is not yet equivalent capacity evidence for
+long-context claims. A Docker startup attempt at `max_model_len=65536` failed
+because vLLM saw only `2.4 GiB` available KV cache memory while at least
+`3.54 GiB` was needed. Under the short-context Docker profile, vLLM later
+reported `6.15 GiB` available KV cache memory, while the matching bare-metal
+profile reported `8.21 GiB`. This looks like GB10 unified-memory/page-cache
+pressure after large Docker image activity, not GPU virtualization overhead.
+
+Operational rule for future Docker long-context runs:
+
+- build or load the Docker image outside the measurement window;
+- reclaim file cache on every node with `sync; echo 3 > /proc/sys/vm/drop_caches`
+  before starting vLLM;
+- avoid Docker memory/cgroup limits unless the test is explicitly about
+  constrained-container behavior;
+- record host `MemAvailable`, `docker system df`, vLLM
+  `Available KV cache memory`, vLLM `GPU KV cache size`, and current-boot
+  driver health;
+- run a Docker-specific `max_model_len` ceiling sweep before carrying any
+  bare-metal 64K/128K claim over to Docker.
+
 Cross-device sparse-MLA accumulate microbench:
 
 The harness now includes
