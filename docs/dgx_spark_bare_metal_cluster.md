@@ -156,13 +156,37 @@ scripts/dgx_spark_start_mp_serve.sh
 ```
 
 For 100K-class or larger long-prefill validation on the current two-node GB10
-cluster, keep `MAX_NUM_SEQS=1` unless the goal is explicitly to reproduce the
-long-C=2 sparse-MLA stall. A controlled C=2 client run with server
-`MAX_NUM_SEQS=1` completed both 100K-token requests with no failures and ITL
-p99 around `80 ms`; allowing two long prefills to run together can enter a
-high-GPU-utilization, no-progress or extremely unfair state. Use
-`MAX_NUM_SEQS=2` only for shorter-context concurrency gates or targeted
-debugging of that failure mode.
+cluster, `MAX_NUM_SEQS=1` remains the conservative availability fallback. After
+the vLLM very-long prefill admission guard, `MAX_NUM_SEQS=2` is also covered by
+the reduced long-C=2 gate below and should be rerun before changing scheduler or
+sparse-MLA behavior.
+
+```bash
+GB10_LONG_C2_VARIANTS=nomtp,mtp2 \
+GB10_LONG_C2_MAX_NUM_SEQS=2 \
+GB10_LONG_C2_MAX_MODEL_LEN=131072 \
+GB10_LONG_C2_MAX_NUM_BATCHED_TOKENS=4176 \
+scripts/run_gb10_long_c2_reduced_gate.sh
+```
+
+This wrapper starts the same no-Ray MP server through
+`scripts/dgx_spark_start_mp_serve.sh`, runs the `long_c2:2:2:4000:128`
+streaming-pressure matrix on the head node, stops the server, repeats for MTP=2,
+and writes a combined summary. It intentionally keeps prefix cache disabled,
+expert parallel enabled, and CUDA graph mode `FULL_AND_PIECEWISE`.
+
+Latest reduced-gate artifacts:
+
+- `20260601_gb10_longc2_guard_nomtp`: 4/4 requests completed, max TTFT
+  `237.836 s`, ITL p99 `0.604 s`, no runtime or driver error signal.
+- `20260601_gb10_longc2_guard_mtp2`: 4/4 requests completed, max TTFT
+  `234.728 s`, ITL p99 `2.220 s`, no runtime or driver error signal.
+
+These runs validate the 131K-class reduced shape only. They do not justify a
+256K+/512K/1M or four-card customer commitment; those need separate gates on the
+target topology. After a fresh OS install or NIC reconfiguration, re-discover
+the active RoCE interface and HCA with `ip -br addr` and `ibdev2netdev` instead
+of reusing old local values.
 
 The helper stops stale drop-cache loops, refuses to continue if vLLM is already
 running unless `ALLOW_EXISTING_VLLM=1`, reclaims file cache when passwordless

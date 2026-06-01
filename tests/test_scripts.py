@@ -1132,6 +1132,48 @@ def test_dgx_spark_mp_serve_helper_can_launch_nsys_sessions():
     assert 'none|head|worker|both)' in script
 
 
+def test_gb10_long_c2_reduced_gate_runs_nomtp_and_mtp2_variants():
+    script = (
+        ROOT / "scripts" / "run_gb10_long_c2_reduced_gate.sh"
+    ).read_text(encoding="utf-8")
+    docs = (
+        ROOT / "docs" / "dgx_spark_bare_metal_cluster.md"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        "HEAD_HOST",
+        "WORKER_HOST",
+        "HEAD_ROCE_IP",
+        "WORKER_ROCE_IP",
+        "ROCE_IFACE",
+        "NCCL_IB_HCA",
+        "VLLM_ROOT",
+        "VLLM_VENV",
+    ):
+        assert required in script
+
+    assert 'GB10_LONG_C2_VARIANTS="${GB10_LONG_C2_VARIANTS:-nomtp,mtp2}"' in script
+    assert 'MAX_MODEL_LEN="${GB10_LONG_C2_MAX_MODEL_LEN:-131072}"' in script
+    assert 'MAX_NUM_SEQS="${GB10_LONG_C2_MAX_NUM_SEQS:-2}"' in script
+    assert 'MAX_NUM_BATCHED_TOKENS="${GB10_LONG_C2_MAX_NUM_BATCHED_TOKENS:-4176}"' in script
+    assert 'SERVE_ENABLE_EXPERT_PARALLEL=1' in script
+    assert 'SERVE_PREFIX_CACHE_MODE=disabled' in script
+    assert 'FULL_AND_PIECEWISE' in script
+    assert '{"method":"mtp","num_speculative_tokens":2}' in script
+    assert "long_c2:2:2:4000:128" in script
+    assert '"${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh"' in script
+    assert '"${REMOTE_HARNESS_ROOT}/scripts/run_streaming_pressure_matrix.sh"' in script
+    assert "gb10_long_c2_reduced_gate_summary.json" in script
+    assert "gb10_long_c2_reduced_gate_summary.md" in script
+    assert "10.0.0." not in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+
+    assert "scripts/run_gb10_long_c2_reduced_gate.sh" in docs
+    assert "20260601_gb10_longc2_guard_nomtp" in docs
+    assert "20260601_gb10_longc2_guard_mtp2" in docs
+
+
 def test_sparse_mla_accumulate_microbench_targets_indexed_kernel_shapes():
     script = (
         ROOT / "scripts" / "run_sparse_mla_accumulate_microbench.py"
