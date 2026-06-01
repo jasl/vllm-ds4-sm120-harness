@@ -162,6 +162,10 @@ artifact to debug.
    per-program dependency depth, or reduce live state. Another candidate-size
    or partial-state sweep without a total-work reduction is unlikely to improve
    either device, and it is especially unlikely to rescue GB10 long-C=2.
+   The part-size sweep confirmed this: full-lens synthetic inputs can show tiny
+   partial-state wins, but realistic staggered C128 inputs were flat or slower.
+   Do not write another two-pass sparse-MLA kernel unless the design removes
+   work rather than merely splitting it.
 
    A new debug-only stats hook can write sparse MLA prefill JSONL rows when
    `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH` is set. Summarize the resulting
@@ -190,9 +194,11 @@ artifact to debug.
    `HEAD_BLOCK=4` probe regressed the target microbench, so do not retry simple
    head-block shrinkage. A per-request q-launch split for C128 multi-prefill
    chunks was also noise-level and slightly hurt `decode_then_124k`, so simple
-   request isolation inside the same layer forward is not enough. Treat the
-   partial path as a secondary target unless a later trace shows it causing the
-   user-visible slow-stream tail.
+   request isolation inside the same layer forward is not enough. Reusing the
+   existing partial-state primitive as a two-pass split also failed the
+   realistic staggered-length microbench on both RTX PRO 6000 and GB10. Treat
+   the partial path as a secondary target unless a later trace shows it causing
+   the user-visible slow-stream tail.
 
 5. **Keep direct FP8 MQA streaming top-k as a secondary experiment.**
    The current decomposition shows top-k selection itself is small, so the only
