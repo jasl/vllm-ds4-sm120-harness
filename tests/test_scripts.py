@@ -1513,6 +1513,30 @@ def test_sm12x_prefill_decode_profile_wrapper_runs_comprehensive_trace_shapes():
     assert "10.0.0." not in script
 
 
+def test_sm12x_c2_fairness_interference_protocol_reuses_fairness_serve_command():
+    script = (
+        ROOT / "scripts" / "run_sm12x_c2_fairness_interference_protocol.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'source "${SCRIPT_DIR}/run_context.sh"' in script
+    assert "long_context_latency_matrix,long_context_decode_concurrency,long_context_mixed_arrival" in script
+    assert 'SM12X_C2_LINE_COUNTS="${SM12X_C2_LINE_COUNTS:-1900,4000}"' in script
+    assert 'SM12X_C2_CONCURRENCY="${SM12X_C2_CONCURRENCY:-1,2}"' in script
+    assert "long_long_c2:4000:4000:fixed_delay:0:128:128" in script
+    assert "decode_then_124k:4000:4000:after_first_token:0:256:128" in script
+    assert "long_then_short:4000:192:fixed_delay:2:128:64" in script
+    assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
+    assert 'serve_command_file="${SM12X_C2_FAIRNESS_OUT_DIR}/${SM12X_C2_VARIANT}/serve_command.sh"' in script
+    assert "printf -v SERVE_COMMAND 'bash %q' \"${serve_command_file}\"" in script
+    assert '"${SCRIPT_DIR}/run_sm12x_prefill_decode_interference_profiles.sh"' in script
+    assert "c2_fairness_interference_protocol_summary.json" in script
+    assert "c2_fairness_interference_protocol_summary.md" in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+    assert "10.0.0." not in script
+
+
 def test_sm120_mqa_topk_microbench_records_reusable_shapes():
     script = (ROOT / "scripts" / "run_sm120_mqa_topk_microbench.py").read_text(
         encoding="utf-8"

@@ -62,7 +62,8 @@ artifact to debug.
 | --- | --- | --- | --- |
 | Health preflight | Confirm CUDA/NCCL/Triton/vLLM versions and graph mode before comparing numbers. | Confirm both nodes use the intended NCCL runtime and no current-boot driver OOM/Xid state exists. | collect-env, loaded NCCL library path when available, serve command, graph mode, driver-health scan. |
 | Baseline user matrix | Fix the performance floor before profiling. | Establish no-MTP 128K stability first; MTP remains exploratory until it survives the same shape. | 59K/124K C=1/C=2, decode-concurrency, mixed-arrival, random prefill, streaming pressure, story recall, GSM8K limit-200, KV lifecycle. |
-| Interference Nsys | Explain the difference between simultaneous long C=2, decode-then-long, decode-then-short, short-decode-then-long, and long-prefill-then-short. | Run only after stability gates pass; use shorter or no-MTP shapes if needed. | Per-request TTFT/decode/ITL plus top CUDA kernels and launch order. Use `scripts/run_sm12x_prefill_decode_interference_profiles.sh`. |
+| C=2 fairness + interference protocol | Keep the user-visible fairness metric and the kernel trace under the same serve profile. | Run after stability gates pass; on GB10 use no-MTP or conservative `max_num_seqs=1` controls when MTP long-C2 is unstable. | Per-request TTFT/decode/ITL, phase exit codes, top CUDA kernels, and launch-order trace. Use `scripts/run_sm12x_c2_fairness_interference_protocol.sh`; it reuses the fairness run's `serve_command.sh` for Nsys. |
+| Interference Nsys | Explain the difference between simultaneous long C=2, decode-then-long, decode-then-short, short-decode-then-long, and long-prefill-then-short when a fairness matrix already exists. | Run only after stability gates pass; use shorter or no-MTP shapes if needed. | Per-request TTFT/decode/ITL plus top CUDA kernels and launch order. Use `scripts/run_sm12x_prefill_decode_interference_profiles.sh` for trace-only reruns. |
 | Focused NCU | Decide whether a kernel change can plausibly help. | Optional and lower priority; GB10 NCU is for regressions, not for deriving SM120 launch parameters. | Duration, registers/thread, occupancy, eligible warps/scheduler, long scoreboard, DRAM throughput for sparse MLA accumulate and FP8 MQA logits. |
 | Microbench | Prove a kernel hypothesis before endpoint runs. | Check scratch-sensitive candidates for obvious GB10 risk. | Synthetic parity, mean/p95, scratch bytes, launch count. Use `scripts/run_sparse_mla_accumulate_microbench.py` and the MQA top-k microbench scripts. |
 | Deployment probe | Decide if single-instance best effort is enough. | More important for long contexts once there are enough nodes to isolate roles. | Tail ITL, TTFT overhead, KV-transfer overhead, connector errors, and driver health. Do not claim throughput gains from prefill/decode disaggregation. |
@@ -113,8 +114,12 @@ artifact to debug.
    much less latency headroom on SM121.
 
 3. **Run the interference profile before the next retained kernel change.**
-   Use the existing wrapper and compare against the latest Dev artifacts. The
-   default trace set now covers the combined fairness/interference matrix:
+   Use `scripts/run_sm12x_c2_fairness_interference_protocol.sh` and compare
+   against the latest Dev artifacts. This wrapper first runs
+   `long_context_latency_matrix`, `long_context_decode_concurrency`, and
+   `long_context_mixed_arrival`, then reuses the generated `serve_command.sh`
+   for the Nsys trace set. That keeps the user-visible C=2 fairness numbers and
+   the kernel timeline on the same serve profile. The default trace set covers
    simultaneous long+long C=2, long decode then long prefill, long decode then
    short prefill, short decode then long prefill, and long prefill then short
    request. The decision question is whether partial-state accumulate is still
