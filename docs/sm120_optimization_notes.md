@@ -19,9 +19,15 @@ SM121, start with `docs/sm12x_best_effort_profiling_plan.md`.
   it has been independently verified on the SM120 target and is guarded behind
   the correct architecture checks.
 - Primary product target: single-stream and small-concurrency interactive
-  latency. Treat concurrency 24 or 32 as the practical upper bound for this
-  workstream; larger concurrency is a regression check, not the first
-  optimization target.
+  latency. Keep the hardware profiles separate:
+  - Dual GB10 / SM121: recommended C=2, planned maximum C=4. Treat C>2 as a
+    reliability and fairness gate until long-C=2 pressure is solved cleanly.
+  - Dual RTX PRO 6000 / SM120: recommended C=4 for maximum-context and general
+    workloads, planned maximum C=24, with C=8/16 as the preferred
+    maximum-throughput operating band for shorter prompts.
+- Do not use the 128K SM120 `max_num_seqs=4` serve profile to claim C>4
+  throughput. Run C=8/16/24 under a separate short-context throughput profile
+  with enough `max_num_seqs` headroom.
 
 ## Current Bottleneck Shape
 
@@ -2311,17 +2317,20 @@ is a useful scope boundary:
   NVFP4/MTP promotion branch.
 
 The PR's most useful performance comparison shape is DS4 TP=2, FP8 KV,
-`FULL_AND_PIECEWISE`, random ISL=8000 / OSL=1000, C=1/2/4/8/16/32. Track it
-locally with the `bench_random_8000x1000` phase:
+`FULL_AND_PIECEWISE`, random ISL=8000 / OSL=1000, C=1/2/4/8/16/24. Track it
+locally with the short-context throughput profile or the
+`bench_random_8000x1000` phase:
 
 - `RUN_RANDOM_8K1K=1`
 - `RANDOM_8K1K_INPUT_LEN=8000`
 - `RANDOM_8K1K_OUTPUT_LEN=1000`
-- `RANDOM_8K1K_CONCURRENCY=1,2,4,8,16,32`
+- `RANDOM_8K1K_CONCURRENCY=1,2,4,8,16,24`
 
-This phase is now included in the SM120 local quality and user-feedback
-profiles. Treat it as a diagnostic apples-to-apples comparison against the
-FlashInfer sparse-MLA route, not as a promotion gate by itself.
+The 128K SM120 local-quality profile keeps this phase at C<=4 because that
+serve profile is intentionally capped at `max_num_seqs=4`. The user-feedback
+throughput profile and PR performance gate run the C=8/16/24 shape under
+`max_num_seqs=24`. Treat it as a diagnostic apples-to-apples comparison against
+the FlashInfer sparse-MLA route, not as a replacement for long-context gates.
 
 Protocol calibration, 2026-05-29:
 

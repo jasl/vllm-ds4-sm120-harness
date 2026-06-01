@@ -110,7 +110,9 @@ def test_sm120_pr_performance_regression_gate_is_hard_gate():
 
     assert 'PERF_BASELINE_JSON="${PERF_BASELINE_JSON:-}"' in script
     assert "PERF_BASELINE_JSON is required" in script
-    assert 'SM120_PR_PERF_CONCURRENCY="${SM120_PR_PERF_CONCURRENCY:-1,2,4}"' in script
+    assert 'SM120_PR_PERF_CONCURRENCY="${SM120_PR_PERF_CONCURRENCY:-1,2,4,8,16,24}"' in script
+    assert 'SM120_PR_PERF_MAX_MODEL_LEN="${SM120_PR_PERF_MAX_MODEL_LEN:-16384}"' in script
+    assert 'SM120_PR_PERF_MAX_NUM_SEQS="${SM120_PR_PERF_MAX_NUM_SEQS:-24}"' in script
     assert 'RANDOM_8K1K_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN:-8000}"' in script
     assert 'RANDOM_8K1K_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN:-1000}"' in script
     assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-bench_random_8000x1000}"' in script
@@ -454,8 +456,10 @@ def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
     assert "streaming_pressure_matrix" in script
     assert "bench_random_8000x1000" in script
     assert 'RUN_RANDOM_8K1K="${RUN_RANDOM_8K1K:-1}"' in script
+    assert 'RANDOM_8K1K_CONCURRENCY="${RANDOM_8K1K_CONCURRENCY:-1,2,4}"' in script
     assert "bench_random_256x256" in script
     assert 'RUN_RANDOM_256X256="${RUN_RANDOM_256X256:-1}"' in script
+    assert 'RANDOM_256X256_CONCURRENCY="${RANDOM_256X256_CONCURRENCY:-1,4}"' in script
     assert 'RUN_FRONTIER_CONTEXT_SWEEP="${RUN_FRONTIER_CONTEXT_SWEEP:-1}"' in script
     assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
 
@@ -631,6 +635,7 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
 
     assert "USER_FEEDBACK_MATRIX_LABEL" in script
     assert 'RUN_USER_FEEDBACK_ISSUE10="${RUN_USER_FEEDBACK_ISSUE10:-0}"' in script
+    assert 'RUN_USER_FEEDBACK_THROUGHPUT="${RUN_USER_FEEDBACK_THROUGHPUT:-1}"' in script
     assert 'RUN_USER_FEEDBACK_KV_LIFECYCLE="${RUN_USER_FEEDBACK_KV_LIFECYCLE:-1}"' in script
     assert 'USER_FEEDBACK_GPU_MEMORY_UTILIZATION="${USER_FEEDBACK_GPU_MEMORY_UTILIZATION:-0.975}"' in script
     assert 'USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS="${USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS:-4096}"' in script
@@ -651,7 +656,11 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
     assert 'RUN_RANDOM_8K1K="${RUN_RANDOM_8K1K:-1}"' in script
     assert 'RANDOM_8K1K_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN:-8000}"' in script
     assert 'RANDOM_8K1K_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN:-1000}"' in script
-    assert 'RANDOM_8K1K_CONCURRENCY="${RANDOM_8K1K_CONCURRENCY:-1,2,4,8,16,32}"' in script
+    assert 'RANDOM_8K1K_CONCURRENCY="${RANDOM_8K1K_CONCURRENCY:-1,2,4}"' in script
+    assert 'USER_FEEDBACK_THROUGHPUT_MAX_MODEL_LEN="${USER_FEEDBACK_THROUGHPUT_MAX_MODEL_LEN:-16384}"' in script
+    assert 'USER_FEEDBACK_THROUGHPUT_MAX_NUM_SEQS="${USER_FEEDBACK_THROUGHPUT_MAX_NUM_SEQS:-24}"' in script
+    assert 'USER_FEEDBACK_THROUGHPUT_CONCURRENCY="${USER_FEEDBACK_THROUGHPUT_CONCURRENCY:-1,2,4,8,16,24}"' in script
+    assert 'throughput=${USER_FEEDBACK_THROUGHPUT_OUT_DIR}' in script
     assert "USER_FEEDBACK_ISSUE10_OUT_DIR" in script
     assert "run_sm120_issue10_startup_gate.sh" in script
     assert "prefix_cache_stress" in script
@@ -738,7 +747,8 @@ def test_sm120_user_feedback_matrix_includes_external_random_256_256_observation
 
     assert "bench_random_256x256" in script
     assert 'RUN_RANDOM_256X256="${RUN_RANDOM_256X256:-1}"' in script
-    assert 'RANDOM_256X256_CONCURRENCY="${RANDOM_256X256_CONCURRENCY:-1,4,16}"' in script
+    assert 'RANDOM_256X256_CONCURRENCY="${RANDOM_256X256_CONCURRENCY:-1,4}"' in script
+    assert 'RANDOM_256X256_CONCURRENCY="${USER_FEEDBACK_THROUGHPUT_CONCURRENCY}"' in script
     assert 'RANDOM_256X256_NUM_PROMPTS="${RANDOM_256X256_NUM_PROMPTS:-80}"' in script
 
 

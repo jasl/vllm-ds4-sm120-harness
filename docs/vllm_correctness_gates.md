@@ -262,18 +262,20 @@ PERF_BASELINE_JSON=/path/to/accepted/bench_random_8000x1000/bench.json \
 scripts/run_sm120_pr_performance_regression_gate.sh
 ```
 
-This starts the 128K small-concurrency dual RTX PRO 6000 serve profile, runs
-random 8000/1000 at C=1/2/4, and then calls `bench-compare
+This starts the short-context dual RTX PRO 6000 throughput serve profile, runs
+random 8000/1000 at C=1/2/4/8/16/24, and then calls `bench-compare
 --fail-on-regression`. The default tolerance allows at most a 5% drop in output
 tok/s or TPOT speedup against the accepted reference. It also blocks MTP
 speculative acceptance regressions by default: candidate acceptance must remain
 at least `0.95x` of the reference. GSM8K remains the hard correctness gate;
 do not use an absolute speculative-acceptance floor for the random 8K/1K
 performance gate because accepted temp-1 references may legitimately sit below
-older short-bench acceptance bands. Keep C=8/16/32 in the full user-feedback
-matrix as observation items because the conservative
-default `--max-num-seqs 4` intentionally prioritizes 128K reliability over
-high-concurrency queueing. Treat a failure as a blocker for
+older short-bench acceptance bands. The 128K local-quality and primary
+user-feedback profiles still use the conservative `--max-num-seqs 4` default
+for maximum-context and general C<=4 validation. The user-feedback matrix runs
+a separate short-context throughput profile with `--max-num-seqs 24` for
+C=8/16/24 so those measurements are not hidden behind the 128K queueing cap.
+Treat a failure as a blocker for
 `codex/ds4-sm120-min-enable` until the regression is explained, fixed, or the
 reference is intentionally updated with a full user-feedback matrix.
 
@@ -330,12 +332,15 @@ reported four-card or 512K/1M shapes:
   [vLLM PR #43477](https://github.com/vllm-project/vllm/pull/43477): run
   `bench_random_8000x1000` with `RANDOM_8K1K_INPUT_LEN=8000`,
   `RANDOM_8K1K_OUTPUT_LEN=1000`, and
-  `RANDOM_8K1K_CONCURRENCY=1,2,4,8,16,32` for both no-MTP and MTP when runtime
-  budget allows. Use `TEMPERATURE=0.0` when comparing directly with PR 43477's
-  table; the harness default `TEMPERATURE=1.0` changes MTP acceptance enough to
-  make throughput numbers non-comparable. Treat this as an apples-to-apples
-  8K/1K performance diagnostic only; it does not replace GSM8K, prefix-cache,
-  59K/124K latency, mixed-arrival, or crash-stability gates.
+  `RANDOM_8K1K_CONCURRENCY=1,2,4,8,16,24` for both no-MTP and MTP when runtime
+  budget allows. On dual RTX PRO 6000, run C=8/16/24 under the short-context
+  throughput profile with `max_num_seqs=24`; the 128K profile is capped at
+  `max_num_seqs=4` by design. Use `TEMPERATURE=0.0` when comparing directly
+  with PR 43477's table; the harness default `TEMPERATURE=1.0` changes MTP
+  acceptance enough to make throughput numbers non-comparable. Treat this as an
+  apples-to-apples 8K/1K performance diagnostic only; it does not replace
+  GSM8K, prefix-cache, 59K/124K latency, mixed-arrival, or crash-stability
+  gates.
 - TP=2 GB10 startup/crash proxy for
   [jasl/vllm issue #10](https://github.com/jasl/vllm/issues/10): until the
   GB10 cluster is available, run `scripts/run_sm120_issue10_startup_gate.sh`

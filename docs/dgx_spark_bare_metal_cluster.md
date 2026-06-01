@@ -156,10 +156,13 @@ scripts/dgx_spark_start_mp_serve.sh
 ```
 
 For 100K-class or larger long-prefill validation on the current two-node GB10
-cluster, `MAX_NUM_SEQS=1` remains the conservative availability fallback. After
-the vLLM very-long prefill admission guard, `MAX_NUM_SEQS=2` is also covered by
-the reduced long-C=2 gate below and should be rerun before changing scheduler or
-sparse-MLA behavior.
+cluster, the product target is recommended C=2 and planned maximum C=4.
+`MAX_NUM_SEQS=1` remains the conservative availability fallback. After the vLLM
+very-long prefill admission guard, `MAX_NUM_SEQS=2` is also covered by the
+reduced long-C=2 gate below and should be rerun before changing scheduler or
+sparse-MLA behavior. C=4 on GB10 is a follow-up reliability gate, not a
+throughput claim, until long-C=2 pressure no longer shows the high-SM /
+no-progress failure mode.
 
 ```bash
 GB10_LONG_C2_VARIANTS=nomtp,mtp2 \
