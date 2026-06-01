@@ -81,7 +81,7 @@ artifact to debug.
 | C=2 fairness + interference protocol | Keep the user-visible fairness metric and the kernel trace under the same serve profile. | Run after stability gates pass; on GB10 use no-MTP or conservative `max_num_seqs=1` controls when MTP long-C2 is unstable. | Per-request TTFT/decode/ITL, phase exit codes, top CUDA kernels, and launch-order trace. Use `scripts/run_sm12x_c2_fairness_interference_protocol.sh`; it reuses the fairness run's `serve_command.sh` for Nsys. |
 | Interference Nsys | Explain the difference between simultaneous long C=2, decode-then-long, decode-then-short, short-decode-then-long, and long-prefill-then-short when a fairness matrix already exists. | Run only after stability gates pass; use shorter or no-MTP shapes if needed. | Per-request TTFT/decode/ITL plus top CUDA kernels and launch order. Use `scripts/run_sm12x_prefill_decode_interference_profiles.sh` for trace-only reruns. |
 | Focused NCU | Decide whether a kernel change can plausibly help. | Optional and lower priority; GB10 NCU is for regressions, not for deriving SM120 launch parameters. | Duration, registers/thread, occupancy, eligible warps/scheduler, long scoreboard, DRAM throughput for sparse MLA accumulate and FP8 MQA logits. |
-| Microbench | Prove a kernel hypothesis before endpoint runs. | Check scratch-sensitive candidates for obvious GB10 risk. | Synthetic parity, mean/p95, scratch bytes, launch count. Use `scripts/run_sparse_mla_accumulate_microbench.py` and the MQA top-k microbench scripts. |
+| Microbench | Prove a kernel hypothesis before endpoint runs. | Check scratch-sensitive candidates for obvious GB10 risk. | Synthetic parity, mean/p95, scratch bytes, launch count. Use `scripts/run_sm12x_sparse_mla_ncu_microbench.sh` for the fixed sparse-MLA chunk/partial path, plus the MQA top-k microbench scripts for secondary FP8 MQA work. |
 | Deployment probe | Decide if single-instance best effort is enough. | More important for long contexts once there are enough nodes to isolate roles. | Tail ITL, TTFT overhead, KV-transfer overhead, connector errors, and driver health. Do not claim throughput gains from prefill/decode disaggregation. |
 
 ## Experiment Order
@@ -190,6 +190,13 @@ artifact to debug.
    should therefore report two scores: (a) pure long+long C=2 fairness and
    TTFT, and (b) staggered mixed-arrival ITL p99/fairness. A change that only
    helps one while regressing the other is not a promotion candidate.
+
+   Before endpoint A/B, run
+   `scripts/run_sm12x_sparse_mla_ncu_microbench.sh` on SM120, and then on GB10
+   if the candidate changes scratch, launch count, or live state. The default
+   staggered-lens microbench is the promotion-relevant prefilter; full-lens
+   control is optional and should not override a staggered regression. Enable
+   `SM12X_SPARSE_MLA_RUN_NCU=1` only for focused counter collection.
 
 4. **Try algorithmic sparse MLA work only if it reduces live state or total
    work.**

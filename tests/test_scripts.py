@@ -131,6 +131,27 @@ def test_sm120_pr_performance_regression_gate_is_hard_gate():
     assert "--min-spec-acceptance-percent" in script
 
 
+def test_sm12x_sparse_mla_ncu_microbench_targets_chunk_and_partial_paths():
+    script = (ROOT / "scripts" / "run_sm12x_sparse_mla_ncu_microbench.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'PYTHON="${PYTHON:-python}"' in script
+    assert 'VLLM_ROOT="${VLLM_ROOT:-${REPO_ROOT}/vllm}"' in script
+    assert 'SM12X_SPARSE_MLA_LENS_MODE="${SM12X_SPARSE_MLA_LENS_MODE:-staggered}"' in script
+    assert 'SM12X_SPARSE_MLA_TOKENS="${SM12X_SPARSE_MLA_TOKENS:-256,1024,2048}"' in script
+    assert 'SM12X_SPARSE_MLA_CANDIDATES="${SM12X_SPARSE_MLA_CANDIDATES:-512,1024,1152}"' in script
+    assert "--modes chunk,partial" in script
+    assert "--emit-nvtx" in script
+    assert "SM12X_SPARSE_MLA_RUN_NCU" in script
+    assert "SM12X_SPARSE_MLA_NCU_KERNEL_CHUNK" in script
+    assert "_accumulate_indexed_attention_chunk_multihead_kernel" in script
+    assert "SM12X_SPARSE_MLA_NCU_KERNEL_PARTIAL" in script
+    assert "_accumulate_indexed_attention_partial_states_multihead_kernel" in script
+    assert "sm12x_sparse_mla_ncu_microbench_summary.json" in script
+    assert "sm12x_sparse_mla_ncu_microbench_summary.md" in script
+
+
 def test_random_prefill_sweep_wrapper_covers_short_prefill_regression_shapes():
     script = (ROOT / "scripts" / "run_random_prefill_sweep.sh").read_text(
         encoding="utf-8"
