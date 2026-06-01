@@ -3315,6 +3315,49 @@ Full user-feedback matrix after retaining the guard:
 | Prefix/KV lifecycle | disabled final idle KV `0.0%`; enabled final idle KV `5.894%` | disabled final idle KV `0.0%`; enabled final idle KV `5.894%` | pass |
 | Runtime health | no CUDA/NCCL/driver/engine error counters | no CUDA/NCCL/driver/engine error counters | pass |
 
+Fixed repeat after retaining the guard:
+`20260601_c2_fixed_protocol_repeat/20260601150253`.
+
+All phases exited `0` and runtime-health summaries were clean. The fixed repeat
+confirms that the scheduler guard solved the short-after-long decode starvation
+tail, but simultaneous long+long C=2 remains a stable blocker:
+
+| Shape | TTFT mean | Decode min/max | ITL p99 | Interpretation |
+| --- | ---: | ---: | ---: | --- |
+| 59K synthetic C=2 latency matrix | `23.421 s` | `0.124` | `0.824 s` | one slow stream repeats |
+| 124K synthetic C=2 latency matrix | `60.676 s` | `0.094` | `1.112 s` | one slow stream repeats |
+| 59K decode-concurrency C=2 | `23.869 s` | `0.114` | `0.412 s` | fairness still weak |
+| 124K decode-concurrency C=2 | `61.220 s` | `0.105` | `1.246 s` | fairness still weak |
+| Mixed `long_long_59k_c2` | primary `22.281 s`, secondary `26.455 s` | `0.133` | `0.857 s` | same long+long class |
+| Mixed `long_long_124k_c2` | primary `59.104 s`, secondary `63.952 s` | `0.108` | `1.112 s` | same long+long class |
+| Mixed `decode_then_59k` | primary `12.313 s`, secondary `13.207 s` | `0.284` | `0.086 s` | staggered decode protected |
+| Mixed `decode_then_124k` | primary `30.492 s`, secondary `31.292 s` | `0.416` | `0.092 s` | staggered decode protected |
+| Mixed `long_then_short` | secondary TTFT `3.327 s` | `0.314` | `0.088 s` | short-after-long tail remains fixed |
+
+Nsys from the same serve profile points at the multi-prefill sparse MLA chunk
+path as the primary kernel target. In `long_long_59k_c2`,
+`_accumulate_indexed_attention_chunk_multihead_kernel` was `37.1%` of captured
+CUDA time, ahead of Marlin MoE, FP8 MQA logits, and NCCL. In
+`long_long_124k_c2`, the same kernel rose to `44.7%`. The largest global decode
+kernel gaps were only `0.152 s` and `0.159 s`, much smaller than per-request ITL
+p99. This reinforces a request-level slow-stream fairness issue driven by
+multi-prefill sparse MLA work, not a full global decode stoppage.
+
+Focused NCU on the `256 x 1152` sparse-MLA microbench showed the baseline chunk
+kernel at `1.080 ms`, `118` registers/thread, `30.62%` achieved occupancy, and
+`2.81%` DRAM throughput; partial-state was `1.036 ms`, `116` registers/thread,
+`32.99%` achieved occupancy, and `3.75%` DRAM throughput. This is not a GDDR7
+bandwidth ceiling.
+
+Rejected follow-up from the fixed repeat:
+
+- Reducing indexed sparse MLA `HEAD_BLOCK` from `8` to `4` improved the apparent
+  register/occupancy profile but made the target microbench slower. Chunk moved
+  from `1.080 ms` to `1.246 ms`; partial-state moved from `1.036 ms` to
+  `1.145 ms`. Registers/thread dropped to `72` and `69`, and achieved occupancy
+  rose to roughly `52%` and `56%`, but real duration regressed. The code was
+  reverted; do not retry simple head-block shrinkage as a promotion candidate.
+
 Decision update: keep the pending-decode guard in Dev because it fixes a
 proven short-after-long scheduler starvation class without broad
 correctness/stability regressions. Do not count it as a C=2 long-long fairness

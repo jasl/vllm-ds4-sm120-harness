@@ -81,6 +81,19 @@ not solve simultaneous long+long C=2 fairness: 59K C=2 ITL p99 moved from
 `0.094`. Therefore keep C=2 fairness and prefill/decode interference in the
 same profiling protocol, but score them separately.
 
+The fixed repeat
+`20260601_c2_fixed_protocol_repeat/20260601150253` confirmed the same split
+under one protocol: `long_then_short` stayed fixed with secondary TTFT
+`3.327 s` and ITL p99 `0.088 s`, while long+long stayed weak (`59K` C=2 ITL
+p99 `0.824 s`, `124K` C=2 ITL p99 `1.112 s`). Nsys from the same serve profile
+put `_accumulate_indexed_attention_chunk_multihead_kernel` at `37.1%` of
+captured CUDA time for `long_long_59k_c2` and `44.7%` for
+`long_long_124k_c2`; focused NCU showed low DRAM throughput and high
+register/dependency pressure. A `HEAD_BLOCK=4` probe reduced registers and
+raised occupancy, but regressed real duration (`1.080 ms -> 1.246 ms` for the
+target chunk microbench), so simple live-state shrinkage without reducing work
+is rejected.
+
 ## Profiling Matrix
 
 Run the matrix in this order. Stop early only when the failure itself is the
