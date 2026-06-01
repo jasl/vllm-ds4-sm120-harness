@@ -3357,6 +3357,17 @@ Rejected follow-up from the fixed repeat:
   `1.145 ms`. Registers/thread dropped to `72` and `69`, and achieved occupancy
   rose to roughly `52%` and `56%`, but real duration regressed. The code was
   reverted; do not retry simple head-block shrinkage as a promotion candidate.
+- Extending the existing partial-state sparse MLA prefill path to multi-prefill
+  chunks did not improve the C=2 blocker. The quick probe removed both guards
+  that limited partial-state workspace and execution to single-prefill chunks:
+  `num_prefills == 1` in `_forward_prefill` and `kv.shape[0] == 1` in
+  `_forward_sparse_mla_prefill_triton`. Focused sparse-MLA partial-state tests,
+  `py_compile`, and `ruff` passed, but the repeat-1 endpoint probe
+  `20260601_c2_partial_state_multiprefill_probe/20260601163640` stayed in the
+  same failure class: 59K C=2 decode min/max `0.132`, ITL p99 `0.857 s`; 124K
+  C=2 decode min/max `0.131`, ITL p99 `1.102 s`. TTFT was noise-level rather
+  than better. The code was reverted; do not treat simple multi-prefill
+  partial-state enablement as a viable fairness fix.
 
 Decision update: keep the pending-decode guard in Dev because it fixes a
 proven short-after-long scheduler starvation class without broad
