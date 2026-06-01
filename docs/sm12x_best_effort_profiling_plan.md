@@ -69,6 +69,18 @@ The cross-device microbenches reinforce that ordering. On RTX PRO 6000 the
 MLA accumulate, but FP8 MQA is still only the second attention-side kernel in
 the mixed-arrival traces, so it should remain the secondary kernel experiment.
 
+The later pending-decode scheduler guard should now be treated as part of the
+SM120 Dev baseline, not as an open hypothesis. Full user-feedback artifact
+`20260601_pending_decode_guard_user_feedback_matrix/20260601123745` passed the
+primary, prefix-cache, and KV-lifecycle phases. It changed the proven
+`long_then_short` starvation tail from secondary ITL p99 `25.615 s` to
+`0.089 s`, and decode min/max from `0.025` to `0.298`, while GSM8K,
+streaming pressure, prefix-cache stress, and KV lifecycle stayed green. It did
+not solve simultaneous long+long C=2 fairness: 59K C=2 ITL p99 moved from
+`0.301 s` to `0.831 s`, and 124K C=2 decode min/max moved from `0.131` to
+`0.094`. Therefore keep C=2 fairness and prefill/decode interference in the
+same profiling protocol, but score them separately.
+
 ## Profiling Matrix
 
 Run the matrix in this order. Stop early only when the failure itself is the
@@ -89,9 +101,12 @@ artifact to debug.
 1. **Keep partial-state sparse MLA as the current Dev baseline.**
    It has passed the SM120 promotion matrix, no-MTP GB10 smoke,
    prefix-cache-enabled GB10 lifecycle, and a guarded GB10 MTP=2 128K-class
-   smoke. The first GB10 long C=2 pressure gate reproduced a high-SM,
-   no-token-progress stall in both MTP=2 and no-MTP profiles, so broad SM121
-   performance claims should wait for the reduced long-C=2 repro and fix.
+   smoke. Keep the pending-decode guard with it on Dev because the full SM120
+   user-feedback matrix proved the short-after-long starvation fix without
+   correctness or stability fallout. The first GB10 long C=2 pressure gate
+   reproduced a high-SM, no-token-progress stall in both MTP=2 and no-MTP
+   profiles, so broad SM121 performance claims should wait for the reduced
+   long-C=2 repro and fix.
 
 2. **Use the GB10 long C=2 Nsys trace to guide the next kernel change.**
    The pressure matrix now gives a concrete failure: the first two C=2 phases
@@ -203,7 +218,9 @@ artifact to debug.
    trace produced exactly that signal: the secondary request had `25.639 s`
    max ITL, while the global max FP8-MQA-logits start gap was only `0.167 s`.
    That confirms the short request is starved at the request/scheduler level
-   while decode kernels continue globally.
+   while decode kernels continue globally. The retained pending-decode guard is
+   the current Dev answer for this one starvation class; do not use it as
+   evidence that simultaneous long+long C=2 fairness is solved.
 
    Before endpoint A/B, run
    `scripts/run_sm12x_sparse_mla_ncu_microbench.sh` on SM120, and then on GB10
@@ -305,6 +322,29 @@ artifact to debug.
    DS4 TP=2 model already consumes both GPUs, so true prefill/decode isolation
    likely requires either a smaller model, more GPUs, or a separate cluster
    shape. The same caveat applies to a two-node GB10 TP=2 setup.
+
+## Current Best-Effort Recommendation
+
+- **RTX PRO 6000 / SM120:** use the current Dev branch with partial-state
+  sparse MLA plus the pending-decode guard as the single-instance baseline.
+  The supported optimization target remains edge-style C=1/C=2/C=4, FP8 KV,
+  expert parallel, MTP=2, prefix cache disabled by default, and
+  `FULL_AND_PIECEWISE` enabled. This profile is healthy for C=1 and fixes the
+  short-after-long decode starvation tail. Treat simultaneous 59K/124K C=2 as
+  the next performance blocker, not as a solved SLA.
+- **GB10 / SM121:** use the same workload names, but keep GB10 as a
+  stability/capacity target until long-C=2 sparse MLA behavior is fixed. The
+  conservative 100K-class profile is `max_num_seqs=1` for concurrent long
+  prefill pressure; it preserves availability and token cadence at the cost of
+  queueing one request. MTP=2 is allowed only after startup, short deterministic
+  generation, KV lifecycle, and bounded 128K-class smoke pass in the same boot.
+- **Next retained experiment:** target simultaneous long+long C=2 first.
+  Collect the C=2 fairness + interference protocol, then NCU the
+  multi-prefill sparse-MLA accumulate window. Keep the acceptance table split
+  into long-context TTFT, long+long C=2 fairness, staggered mixed-arrival ITL,
+  short C=1/C=2/C=4, GSM8K, prefix/KV lifecycle, and driver health. Reject any
+  candidate that improves `long_then_short` by hurting long+long C=2, or that
+  relies on a hidden user knob.
 
 ## Promotion Rules
 

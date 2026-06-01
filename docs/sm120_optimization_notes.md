@@ -3295,6 +3295,34 @@ Rejected follow-up from the same trace pass:
   `20260601_scheduler_trace_probe/20260601122545_long_long_c2_prompt_length_fix`.
   The code was reverted.
 
+Full user-feedback matrix after retaining the guard:
+`20260601_pending_decode_guard_user_feedback_matrix/20260601123745`.
+
+| Gate | Prior accepted matrix | Pending decode guard matrix | Interpretation |
+| --- | ---: | ---: | --- |
+| Matrix status | all primary, prefix-cache, and KV-lifecycle phases exited `0` | all primary, prefix-cache, and KV-lifecycle phases exited `0` | pass |
+| Mixed `long_then_short` secondary ITL p99 | `25.615 s` | `0.089 s` | request-starvation tail fixed |
+| Mixed `long_then_short` decode min/max | `0.025` | `0.298` | large fairness improvement |
+| Mixed `long_then_short` primary TTFT | `30.903 s` | `32.224 s` | small cold-prefill cost accepted to protect decode cadence |
+| 59K C=1 TTFT / decode | `11.713 s` / `139.345 tok/s` | `11.699 s` / `136.947 tok/s` | no material TTFT regression |
+| 59K C=2 decode min/max / ITL p99 | `0.113` / `0.301 s` | `0.116` / `0.831 s` | fairness still weak; p99 needs follow-up |
+| 124K C=1 TTFT / decode | `29.687 s` / `105.038 tok/s` | `29.767 s` / `105.982 tok/s` | unchanged |
+| 124K C=2 decode min/max / ITL p99 | `0.131` / `1.081 s` | `0.094` / `1.096 s` | not fixed; possible fairness regression |
+| 124K decode-concurrency C=2 min/max / ITL p99 | `0.143` / `1.099 s` | `0.142` / `1.102 s` | unchanged |
+| Streaming pressure | 36 requests, 0 failures, ITL p99 `0.971 s` | 36 requests, 0 failures, ITL p99 `0.935 s` | unchanged |
+| GSM8K limit-200 5-shot | flexible `0.955`, strict `0.940` | flexible `0.960`, strict `0.945` | pass |
+| Random prefill 1K/4K/16K/65K | `6159 / 6171 / 5736 / 4768 tok/s` | `6113 / 6171 / 5721 / 4718 tok/s` | neutral to slightly lower |
+| Prefix/KV lifecycle | disabled final idle KV `0.0%`; enabled final idle KV `5.894%` | disabled final idle KV `0.0%`; enabled final idle KV `5.894%` | pass |
+| Runtime health | no CUDA/NCCL/driver/engine error counters | no CUDA/NCCL/driver/engine error counters | pass |
+
+Decision update: keep the pending-decode guard in Dev because it fixes a
+proven short-after-long scheduler starvation class without broad
+correctness/stability regressions. Do not count it as a C=2 long-long fairness
+fix. Before PR promotion, either recheck the 59K C=2 p99 movement under a
+fixed repeat protocol or land a separate C=2 fairness improvement. The next
+kernel/deployment experiment should target simultaneous long+long C=2 sparse
+MLA behavior, not expand this scheduler guard.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
@@ -3337,8 +3365,9 @@ Rejected follow-up from the same trace pass:
 2. Treat C=2 long-prefill fairness as a promotion gate and diagnostic signal,
    not as a reason to add broad scheduler-only hacks. The pending-decode guard
    above is the narrow exception because scheduler trace proved a specific
-   later-running decode starvation root cause. It still needs the fixed
-   user-feedback matrix before PR promotion.
+   later-running decode starvation root cause, and its fixed user-feedback
+   matrix passed. PR promotion still depends on the separate C=2 long-long
+   fairness decision.
 3. The partial-state sparse-MLA accumulate candidate has been absorbed into
    the Dev branch only as `caea1cb55`. The SM120 full promotion matrix has
    passed. GB10 no-MTP startup, prefix-cache-disabled lifecycle, 128K-class
