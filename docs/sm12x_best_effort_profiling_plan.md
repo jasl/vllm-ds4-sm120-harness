@@ -91,9 +91,14 @@ artifact to debug.
    request plus one timed-out peer, which is useful evidence but not a
    retention-quality fix. The no-code `max_num_seqs=1` control completed both
    100K-class requests with ITL p99 around `80 ms`, at the expected cost of
-   queuing one request and max TTFT around `238 s`. Treat this as the current
-   GB10 conservative safety profile for 100K-class long-prefill concurrency
-   until sparse-MLA prefill is fixed.
+   queuing one request and max TTFT around `238 s`. The same safety profile
+   also completed with MTP=2 enabled: `gb10_mtp2_maxseq1_control` had zero
+   request failures, max TTFT `231.239 s`, ITL p99 `0.086 s`,
+   `max running = 1`, `max waiting = 1`, and no CUDA/NCCL/driver/engine error
+   signals. Treat `max_num_seqs=1` as the current GB10 conservative safety
+   profile for 100K-class long-prefill concurrency until sparse-MLA prefill is
+   fixed. This protects availability and token cadence; it does not solve long
+   C=2 throughput.
 
    Cross-device indexed sparse-MLA accumulate microbench artifact
    `sparse_mla_accumulate_microbench_20260601` confirms why GB10 needs that

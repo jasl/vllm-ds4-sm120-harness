@@ -374,6 +374,7 @@ Conservative control:
 | Experiment | Artifact | Result | Decision |
 | --- | --- | --- | --- |
 | Restore normal vLLM code and set `max_num_seqs=1` for the same two-client long-C=2 request shape | `gb10_maxseq1_control/2x_gb10_sm121/streaming_pressure_longc2` | Both requests completed: `failures=0`, max TTFT `238.383 s`, max elapsed `240.536 s`, ITL p95 `0.066 s`, ITL p99 `0.080 s`, with `max running = 1` and `max waiting = 1`. | accept as a GB10 best-effort safety profile for 100K-class long-prefill concurrency until sparse-MLA prefill can be fixed |
+| Same conservative control with MTP=2 enabled | `gb10_mtp2_maxseq1_control/streaming_pressure_longc2` | Both requests completed: `failures=0`, max TTFT `231.239 s`, max elapsed `232.700 s`, ITL p95 `0.082 s`, ITL p99 `0.086 s`, with `max running = 1`, `max waiting = 1`, zero preemptions, and zero CUDA/NCCL/driver/engine error signals. | accept as evidence that MTP=2 can run under the GB10 conservative safety profile, but this is an availability profile, not a throughput fix |
 
 Next debugging direction:
 
