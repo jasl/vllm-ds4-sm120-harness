@@ -32,6 +32,9 @@
 #   nsys_profile.nsys-rep
 #   nsys_kernel_summary.csv
 #   nsys_kernel_summary.md
+#   nsys_cuda_gpu_trace.csv
+#   nsys_timeline_summary.json
+#   nsys_timeline_summary.md
 #   mixed_arrival/long_context_mixed_arrival.json
 #   mixed_arrival/long_context_mixed_arrival.md
 #   mixed_arrival_client.stdout
@@ -216,6 +219,35 @@ fi
   exit 6
 }
 mv -f "${OUT_DIR}/nsys_kernel_summary_cuda_gpu_kern_sum.csv" "${OUT_DIR}/nsys_kernel_summary.csv" 2>/dev/null || true
+
+if "${NSYS_BIN}" stats --report cuda_gpu_trace --format csv \
+  --output "${OUT_DIR}/nsys_cuda_gpu_trace" \
+  "${nsys_rep}" >> "${nsys_log}" 2>&1; then
+  mv -f "${OUT_DIR}/nsys_cuda_gpu_trace_cuda_gpu_trace.csv" "${OUT_DIR}/nsys_cuda_gpu_trace.csv" 2>/dev/null || true
+else
+  echo "nsys cuda_gpu_trace export failed; continuing without timeline summary" >&2
+fi
+
+if [[ -f "${OUT_DIR}/nsys_cuda_gpu_trace.csv" ]]; then
+  OUT_DIR="${OUT_DIR}" "${PYTHON}" - <<'PYEOF'
+import os
+from pathlib import Path
+
+from ds4_harness.nsys_trace import (
+    build_nsys_cuda_trace_report,
+    write_nsys_cuda_trace_report_json,
+    write_nsys_cuda_trace_report_markdown,
+)
+
+out_dir = Path(os.environ["OUT_DIR"])
+report = build_nsys_cuda_trace_report(
+    out_dir / "nsys_cuda_gpu_trace.csv",
+    mixed_arrival_json=out_dir / "mixed_arrival" / "long_context_mixed_arrival.json",
+)
+write_nsys_cuda_trace_report_json(out_dir / "nsys_timeline_summary.json", report)
+write_nsys_cuda_trace_report_markdown(out_dir / "nsys_timeline_summary.md", report)
+PYEOF
+fi
 
 OUT_DIR="${OUT_DIR}" PROFILE_LABEL="${PROFILE_LABEL}" \
   "${PYTHON}" - <<'PYEOF' > "${OUT_DIR}/nsys_kernel_summary.md"

@@ -819,6 +819,21 @@ while staggered mixed-arrival shapes point at the partial-state path and
 scheduler/admission order. Driver health was clean after the run, so this is a
 performance/fairness trace rather than a crash reproduction.
 
+Harness update: future mixed-arrival Nsys profile runs export
+`cuda_gpu_trace` in addition to the kernel summary, then write
+`nsys_timeline_summary.json` and `.md`. The new timeline summary reports total
+CUDA time by class, the largest gaps between FP8 MQA logits kernels, and the
+dominant CUDA class inside each gap. It also compares the slowest request's
+ITL tail with the global FP8 MQA gap. If the request-level gap is much larger
+than the global decode-kernel gap, classify it as per-request starvation while
+global decode continues, not as a standalone decode-kernel stoppage.
+
+Backfilling the parser over the existing fixed-protocol `long_then_short`
+trace gave `25.639 s` secondary max ITL versus only `0.167 s` global max
+FP8-MQA-logits start gap. That supports the scheduler/admission diagnosis for
+`long_then_short`: the short request is not receiving decode turns, while the
+engine as a whole is still launching decode-related kernels.
+
 Rejected experiments from the same trace cycle:
 
 | Experiment | Artifact Label | Result | Decision |

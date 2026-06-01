@@ -219,8 +219,8 @@ lines.extend(["", "## Interference Cases", ""])
 if isinstance(nsys_summary, dict):
     lines.extend(
         [
-            "| Case | Exit | Requests | Decode Min/Max | ITL P99 | Top Kernel |",
-            "| --- | ---: | ---: | ---: | ---: | --- |",
+            "| Case | Exit | Requests | Decode Min/Max | ITL P99 | Max FP8 MQA Gap | Gap Class | Slow-request Class | Top Kernel |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
         ]
     )
     for case in nsys_summary.get("cases", []):
@@ -229,13 +229,30 @@ if isinstance(nsys_summary, dict):
         top_kernel = kernels[0].get("kernel", "") if kernels else ""
         if len(top_kernel) > 72:
             top_kernel = top_kernel[:69] + "..."
+        timeline = case.get("timeline") or {}
+        decode_gaps = timeline.get("decode_kernel_gaps") or {}
+        top_gaps = decode_gaps.get("top_gaps") or []
+        classes = (
+            top_gaps[0].get("duration_by_class")
+            if top_gaps and isinstance(top_gaps[0], dict)
+            else []
+        )
+        gap_class = (
+            classes[0].get("class")
+            if classes and isinstance(classes[0], dict)
+            else ""
+        )
+        interpretation = timeline.get("slow_request_gap_interpretation") or {}
         lines.append(
-            "| {case} | {exit_code} | {requests} | {ratio} | {itl_p99} | `{kernel}` |".format(
+            "| {case} | {exit_code} | {requests} | {ratio} | {itl_p99} | {decode_gap} | `{gap_class}` | `{classification}` | `{kernel}` |".format(
                 case=case.get("case"),
                 exit_code=case.get("exit_code"),
                 requests=case.get("request_count"),
                 ratio=summary.get("decode_tps_min_to_max_ratio"),
                 itl_p99=summary.get("p99_inter_chunk_seconds"),
+                decode_gap=decode_gaps.get("max_start_gap_seconds"),
+                gap_class=gap_class,
+                classification=interpretation.get("classification", ""),
                 kernel=top_kernel,
             )
         )

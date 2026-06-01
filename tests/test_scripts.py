@@ -1503,6 +1503,10 @@ def test_mixed_arrival_nsys_profile_launcher_captures_scheduler_window():
     assert "--cpuctxsw none" in script
     assert "stop_nsys_agent" in script
     assert "mixed_arrival/long_context_mixed_arrival.json" in script
+    assert "--report cuda_gpu_trace" in script
+    assert "nsys_cuda_gpu_trace.csv" in script
+    assert "nsys_timeline_summary.json" in script
+    assert "build_nsys_cuda_trace_report" in script
     assert "nsys_kernel_summary.md" in script
 
 
@@ -1530,6 +1534,9 @@ def test_sm12x_prefill_decode_profile_wrapper_runs_comprehensive_trace_shapes():
     assert 'PROFILE_PREWARM="${PROFILE_PREWARM}"' in script
     assert 'NSYS_CAPTURE_MODE="${NSYS_CAPTURE_MODE}"' in script
     assert "profile_cases.tsv" in script
+    assert "nsys_timeline_summary.json" in script
+    assert "Max FP8 MQA gap" in script
+    assert "Slow-request classification" in script
     assert "prefill_decode_interference_profiles_summary.json" in script
     assert "prefill_decode_interference_profiles_summary.md" in script
     assert "/home/" not in script
@@ -1553,6 +1560,8 @@ def test_sm12x_c2_fairness_interference_protocol_reuses_fairness_serve_command()
     assert 'serve_command_file="${SM12X_C2_FAIRNESS_OUT_DIR}/${SM12X_C2_VARIANT}/serve_command.sh"' in script
     assert "printf -v SERVE_COMMAND 'bash %q' \"${serve_command_file}\"" in script
     assert '"${SCRIPT_DIR}/run_sm12x_prefill_decode_interference_profiles.sh"' in script
+    assert "Max FP8 MQA Gap" in script
+    assert "Slow-request Class" in script
     assert "c2_fairness_interference_protocol_summary.json" in script
     assert "c2_fairness_interference_protocol_summary.md" in script
     assert "FULL_AND_PIECEWISE" in script

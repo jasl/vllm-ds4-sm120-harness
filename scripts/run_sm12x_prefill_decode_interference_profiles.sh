@@ -158,6 +158,23 @@ def _top_kernels(path: Path) -> list[dict[str, object]]:
     return rows
 
 
+def _timeline_summary(path: Path) -> dict:
+    return _read_json(path)
+
+
+def _dominant_decode_gap_class(timeline: dict) -> str:
+    gaps = timeline.get("decode_kernel_gaps")
+    if not isinstance(gaps, dict):
+        return ""
+    top_gaps = gaps.get("top_gaps")
+    if not isinstance(top_gaps, list) or not top_gaps:
+        return ""
+    classes = top_gaps[0].get("duration_by_class")
+    if not isinstance(classes, list) or not classes:
+        return ""
+    return str(classes[0].get("class") or "")
+
+
 out_dir = Path(os.environ["OUT_DIR"])
 label = os.environ["PREFILL_DECODE_PROFILE_LABEL"]
 cases = []
@@ -171,6 +188,7 @@ if case_file.exists():
         mixed = _read_json(case_dir / "mixed_arrival" / "long_context_mixed_arrival.json")
         summary = mixed.get("summary", [])
         requests = mixed.get("requests", mixed.get("rows", []))
+        timeline = _timeline_summary(case_dir / "nsys_timeline_summary.json")
         cases.append(
             {
                 "case": slug,
@@ -183,6 +201,7 @@ if case_file.exists():
                 "summary": summary,
                 "request_count": len(requests),
                 "top_kernels": _top_kernels(case_dir / "nsys_kernel_summary.csv"),
+                "timeline": timeline,
             }
         )
 
@@ -216,6 +235,29 @@ for case in cases:
             ratio=row.get("decode_tps_min_to_max_ratio"),
             itl_p99=row.get("p99_inter_chunk_seconds"),
             top=top,
+        )
+    )
+lines.extend(
+    [
+        "",
+        "## Decode Kernel Gap Timeline",
+        "",
+        "| Case | Max FP8 MQA gap | Dominant gap class | Max CUDA idle gap | Slow-request classification |",
+        "| --- | ---: | --- | ---: | --- |",
+    ]
+)
+for case in cases:
+    timeline = case.get("timeline") or {}
+    decode_gaps = timeline.get("decode_kernel_gaps") or {}
+    idle_gaps = timeline.get("idle_gaps") or {}
+    interpretation = timeline.get("slow_request_gap_interpretation") or {}
+    lines.append(
+        "| {case} | {decode_gap} | `{dominant}` | {idle_gap} | `{classification}` |".format(
+            case=case["case"],
+            decode_gap=decode_gaps.get("max_start_gap_seconds"),
+            dominant=_dominant_decode_gap_class(timeline),
+            idle_gap=idle_gaps.get("max_idle_gap_seconds"),
+            classification=interpretation.get("classification", ""),
         )
     )
 lines.append("")

@@ -191,6 +191,20 @@ artifact to debug.
    TTFT, and (b) staggered mixed-arrival ITL p99/fairness. A change that only
    helps one while regressing the other is not a promotion candidate.
 
+   The mixed-arrival Nsys wrapper now also exports `cuda_gpu_trace` and writes
+   `nsys_timeline_summary.json` / `.md`. Use the top-kernel table to decide
+   which family dominates the whole trace, then use the timeline summary to
+   inspect global FP8-MQA-logits gaps, CUDA idle gaps, and the dominant class
+   inside those windows. If a request has a huge ITL tail while global FP8-MQA
+   gaps stay small, treat that as per-request scheduling starvation rather
+   than a full decode-kernel stoppage.
+
+   Backfilling the timeline parser over the fixed-protocol `long_then_short`
+   trace produced exactly that signal: the secondary request had `25.639 s`
+   max ITL, while the global max FP8-MQA-logits start gap was only `0.167 s`.
+   That confirms the short request is starved at the request/scheduler level
+   while decode kernels continue globally.
+
    Before endpoint A/B, run
    `scripts/run_sm12x_sparse_mla_ncu_microbench.sh` on SM120, and then on GB10
    if the candidate changes scratch, launch count, or live state. The default
