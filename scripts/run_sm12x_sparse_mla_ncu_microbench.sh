@@ -106,6 +106,12 @@ run_ncu_case() {
       --seed "${SM12X_SPARSE_MLA_SEED}" \
       --device "${SM12X_SPARSE_MLA_DEVICE}" \
       --emit-nvtx
+
+  if [[ -f "${case_dir}/profile.ncu-rep" ]]; then
+    "${NCU_BIN}" --import "${case_dir}/profile.ncu-rep" \
+      --page details \
+      --csv > "${case_dir}/ncu_details.csv"
+  fi
 }
 
 write_summary() {
@@ -115,6 +121,7 @@ write_summary() {
   "${PYTHON}" - <<'PYEOF'
 import json
 import os
+import csv
 from pathlib import Path
 
 
@@ -144,6 +151,46 @@ def _rows(payload: dict, label: str) -> list[dict]:
     return rows
 
 
+def _selected_ncu_metrics(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    rows = list(csv.DictReader(path.read_text(encoding="utf-8").splitlines()))
+    ids = sorted(
+        {
+            int(row["ID"])
+            for row in rows
+            if row.get("ID", "").isdigit()
+        }
+    )
+    if not ids:
+        return {}
+    target_id = str(ids[-1])
+    selected = {"profile_id": ids[-1]}
+    metric_names = {
+        "Duration": "duration_ms",
+        "Compute (SM) Throughput": "sm_throughput_pct",
+        "DRAM Throughput": "dram_throughput_pct",
+        "Eligible Warps Per Scheduler": "eligible_warps_per_scheduler",
+        "Active Warps Per Scheduler": "active_warps_per_scheduler",
+        "No Eligible": "no_eligible_pct",
+        "Issue Slots Busy": "issue_slots_busy_pct",
+        "Registers Per Thread": "registers_per_thread",
+        "Theoretical Occupancy": "theoretical_occupancy_pct",
+        "Achieved Occupancy": "achieved_occupancy_pct",
+        "L2 Hit Rate": "l2_hit_rate_pct",
+        "Waves Per SM": "waves_per_sm",
+    }
+    for row in rows:
+        if row.get("ID") != target_id:
+            continue
+        name = row.get("Metric Name", "")
+        key = metric_names.get(name)
+        if key is None:
+            continue
+        selected[key] = row.get("Metric Value")
+    return selected
+
+
 out_dir = Path(os.environ["OUT_DIR"])
 label = os.environ["SM12X_SPARSE_MLA_LABEL"]
 run_ncu = os.environ["SM12X_SPARSE_MLA_RUN_NCU"]
@@ -162,6 +209,7 @@ for case_name in ("chunk", "partial"):
             "ran": case_dir.exists(),
             "ncu_log": str(case_dir / "ncu.log") if case_dir.exists() else None,
             "profile": str(case_dir / "profile.ncu-rep") if case_dir.exists() else None,
+            "selected_metrics": _selected_ncu_metrics(case_dir / "ncu_details.csv"),
         }
     )
 
@@ -196,6 +244,26 @@ lines.append("| --- | --- | --- | --- |")
 for case in ncu_cases:
     lines.append(
         "| {case} | {ran} | `{ncu_log}` | `{profile}` |".format(**case)
+    )
+lines.append("")
+lines.append("## Selected NCU metrics")
+lines.append("")
+lines.append(
+    "| Case | Duration ms | SM % | DRAM % | Eligible warps/sched | Registers/thread | Achieved occupancy |"
+)
+lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+for case in ncu_cases:
+    metrics = case.get("selected_metrics") or {}
+    lines.append(
+        "| {case} | {duration} | {sm} | {dram} | {eligible} | {regs} | {occ} |".format(
+            case=case["case"],
+            duration=metrics.get("duration_ms", ""),
+            sm=metrics.get("sm_throughput_pct", ""),
+            dram=metrics.get("dram_throughput_pct", ""),
+            eligible=metrics.get("eligible_warps_per_scheduler", ""),
+            regs=metrics.get("registers_per_thread", ""),
+            occ=metrics.get("achieved_occupancy_pct", ""),
+        )
     )
 lines.append("")
 (out_dir / "sm12x_sparse_mla_ncu_microbench_summary.md").write_text(

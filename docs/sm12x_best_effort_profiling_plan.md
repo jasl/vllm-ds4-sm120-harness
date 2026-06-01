@@ -198,6 +198,29 @@ artifact to debug.
    control is optional and should not override a staggered regression. Enable
    `SM12X_SPARSE_MLA_RUN_NCU=1` only for focused counter collection.
 
+   The first formal run with that wrapper reinforces the same constraint.
+   Artifact labels: RTX PRO 6000
+   `20260601_sparse_mla_formal_timing/20260601114303`, GB10
+   `20260601_sparse_mla_formal_timing/20260601114428`, and focused RTX NCU
+   `20260601_sparse_mla_focused_ncu/20260601114516`.
+
+   | Shape | RTX chunk | GB10 chunk | GB10/RTX | RTX partial/chunk | GB10 partial/chunk |
+   | --- | ---: | ---: | ---: | ---: | ---: |
+   | `256 x 1152` | `1.076 ms` | `4.660 ms` | `4.33x` | `0.956` | `0.994` |
+   | `1024 x 1152` | `5.048 ms` | `21.918 ms` | `4.34x` | `0.982` | `1.021` |
+   | `2048 x 1152` | `10.059 ms` | `43.632 ms` | `4.34x` | `0.995` | `1.023` |
+
+   Focused RTX NCU on `256 x 1152` showed chunk at `1.17 ms`, SM throughput
+   `60.10%`, DRAM throughput `2.82%`, eligible warps/scheduler `1.04`, and
+   `118` registers/thread; partial-state was `1.12 ms`, SM throughput
+   `62.89%`, DRAM throughput `3.77%`, eligible warps/scheduler `1.14`, and
+   `116` registers/thread. Partial-state is slightly healthier per isolated
+   launch, but the large-shape GB10 timing and endpoint traces show that
+   switching paths is not enough. The next candidate must remove candidate
+   visits, reduce live state, or alter admission/scheduling for the
+   `long_then_short` tail; another part-size or launch-only sweep is not a
+   promotion candidate.
+
 4. **Try algorithmic sparse MLA work only if it reduces live state or total
    work.**
    More local chunk/part/warp sweeps are exhausted. A retained candidate needs

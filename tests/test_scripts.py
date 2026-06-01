@@ -148,6 +148,9 @@ def test_sm12x_sparse_mla_ncu_microbench_targets_chunk_and_partial_paths():
     assert "_accumulate_indexed_attention_chunk_multihead_kernel" in script
     assert "SM12X_SPARSE_MLA_NCU_KERNEL_PARTIAL" in script
     assert "_accumulate_indexed_attention_partial_states_multihead_kernel" in script
+    assert "ncu_details.csv" in script
+    assert "selected_metrics" in script
+    assert "Eligible Warps Per Scheduler" in script
     assert "sm12x_sparse_mla_ncu_microbench_summary.json" in script
     assert "sm12x_sparse_mla_ncu_microbench_summary.md" in script
 

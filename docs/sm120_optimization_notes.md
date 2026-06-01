@@ -873,6 +873,41 @@ part sizes. Treat this as evidence against another two-pass or part-size-only
 kernel unless the design also reduces effective candidate visits, dependency
 depth, or live state.
 
+The reusable wrapper
+`scripts/run_sm12x_sparse_mla_ncu_microbench.sh` then ran the formal staggered
+chunk-vs-partial microbench on both RTX PRO 6000 and GB10. Artifact labels:
+RTX `20260601_sparse_mla_formal_timing/20260601114303`, GB10
+`20260601_sparse_mla_formal_timing/20260601114428`, and focused RTX NCU
+`20260601_sparse_mla_focused_ncu/20260601114516`.
+
+| Tokens | Candidates | RTX Chunk | RTX Partial | GB10 Chunk | GB10 Partial | GB10/RTX Chunk |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `256` | `512` | `0.505 ms` | `0.498 ms` | `2.164 ms` | `2.010 ms` | `4.29x` |
+| `256` | `1024` | `0.964 ms` | `0.966 ms` | `4.095 ms` | `4.214 ms` | `4.25x` |
+| `256` | `1152` | `1.076 ms` | `1.028 ms` | `4.660 ms` | `4.634 ms` | `4.33x` |
+| `1024` | `512` | `2.402 ms` | `2.377 ms` | `10.951 ms` | `10.399 ms` | `4.56x` |
+| `1024` | `1024` | `4.741 ms` | `4.591 ms` | `20.860 ms` | `20.363 ms` | `4.40x` |
+| `1024` | `1152` | `5.048 ms` | `4.959 ms` | `21.918 ms` | `22.375 ms` | `4.34x` |
+| `2048` | `512` | `4.817 ms` | `4.574 ms` | `21.588 ms` | `20.441 ms` | `4.48x` |
+| `2048` | `1024` | `9.460 ms` | `9.098 ms` | `41.505 ms` | `40.838 ms` | `4.39x` |
+| `2048` | `1152` | `10.059 ms` | `10.006 ms` | `43.632 ms` | `44.620 ms` | `4.34x` |
+
+Focused RTX NCU on the `256 x 1152` shape:
+
+| Kernel Path | Duration | SM Throughput | DRAM Throughput | Eligible Warps / Scheduler | Registers / Thread | Achieved Occupancy |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| chunk | `1.17 ms` | `60.10%` | `2.82%` | `1.04` | `118` | `30.62%` |
+| partial-state | `1.12 ms` | `62.89%` | `3.77%` | `1.14` | `116` | `32.98%` |
+
+Interpretation: partial-state is marginally better for some isolated SM120
+staggered shapes, but the target large GB10 shape (`2048 x 1152`) regressed
+from `43.632 ms` chunk to `44.620 ms` partial. This matches the endpoint
+evidence: converting more work to the partial-state path is not a general
+solution for C=2 fairness or GB10 no-progress stalls. The useful next kernel
+direction remains reducing total candidate visits, live state, or dependency
+depth; the useful scheduler direction remains preventing a short decoder from
+waiting behind a leading long prefill in `long_then_short`.
+
 Direct FP8 MQA top-k microbench evidence was added as a reusable pre-endpoint
 gate for the streaming-top-k experiment. The current implementation returns the
 same top-k set across repeated calls and matches the full-logits torch
