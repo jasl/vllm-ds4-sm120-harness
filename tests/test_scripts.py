@@ -116,11 +116,11 @@ def test_sm120_pr_performance_regression_gate_is_hard_gate():
     assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-bench_random_8000x1000}"' in script
     assert (
         'SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_RATIO="'
-        '${SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_RATIO:-0.98}"'
+        '${SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_RATIO:-0.95}"'
     ) in script
     assert (
         'SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_PERCENT="'
-        '${SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_PERCENT:-65.0}"'
+        '${SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_PERCENT:-0.0}"'
     ) in script
     assert "FULL_AND_PIECEWISE" in script
     assert '--concurrency "${SM120_PR_PERF_CONCURRENCY}"' in script

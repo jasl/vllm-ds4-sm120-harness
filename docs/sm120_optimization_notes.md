@@ -3368,14 +3368,66 @@ Rejected follow-up from the fixed repeat:
   C=2 decode min/max `0.131`, ITL p99 `1.102 s`. TTFT was noise-level rather
   than better. The code was reverted; do not treat simple multi-prefill
   partial-state enablement as a viable fairness fix.
+- A final chunked-prefill tail cap probe was invalidated before being used for
+  a decision: the endpoint run was later found to be serving from a different
+  editable checkout than the patched source. The code and TDD-only test were
+  reverted. Do not use artifact `20260601_c2_final_tail_cap_probe/20260601165550`
+  as evidence for or against final-tail-only caps; rerun it against the actual
+  serving source first if this idea is revisited.
 
-Decision update: keep the pending-decode guard in Dev because it fixes a
-proven short-after-long scheduler starvation class without broad
-correctness/stability regressions. Do not count it as a C=2 long-long fairness
-fix. Before PR promotion, either recheck the 59K C=2 p99 movement under a
-fixed repeat protocol or land a separate C=2 fairness improvement. The next
-kernel/deployment experiment should target simultaneous long+long C=2 sparse
-MLA behavior, not expand this scheduler guard.
+Successful follow-up: very-long prefill admission guard.
+
+The `max_num_seqs=1` isolation control proved that the core C=2 pathology was
+simultaneous very-long prefill admission: serializing long prefills made 59K
+and 124K C=2 ITL p99 return to about `0.02-0.03 s`, but it also queued all
+concurrent long requests and is not an acceptable throughput policy by itself.
+The retained scheduler fix is narrower:
+
+- if a very-long prefill is already active, defer another waiting very-long
+  prefill to the skipped queue for this scheduler step;
+- keep admitting short requests behind the active long prefill;
+- do not treat a deferred very-long prefill as waiting pressure that would
+  chunk-cap the active very-long prefill by itself.
+
+This avoids the multi-long-prefill sparse-MLA interference window without
+adding a user-facing knob and without disabling `FULL_AND_PIECEWISE`.
+
+Fixed repeat artifact:
+`20260601_c2_defer_long_prefill_fixed_repeat/20260601175617`.
+
+| Shape | TTFT mean | Decode mean | Decode min/max | ITL p99 |
+| --- | ---: | ---: | ---: | ---: |
+| 59K synthetic C=1 latency matrix | `11.788 s` | `142.772 tok/s` | `0.954` | `0.022 s` |
+| 59K synthetic C=2 latency matrix | `18.642 s` | `81.442 tok/s` | `0.239` | `0.085 s` |
+| 124K synthetic C=1 latency matrix | `30.160 s` | `106.853 tok/s` | `0.982` | `0.029 s` |
+| 124K synthetic C=2 latency matrix | `45.972 s` | `68.554 tok/s` | `0.306` | `0.092 s` |
+| 124K decode-concurrency C=2 | `45.898 s` | `68.501 tok/s` | `0.309` | `0.092 s` |
+| Mixed `long_long_c2` | n/a | `67.797 tok/s` | `0.297` | `0.092 s` |
+| Mixed `decode_then_124k` | n/a | `73.627 tok/s` | `0.404` | `0.092 s` |
+| Mixed `long_then_short` | n/a | `69.069 tok/s` | `0.300` | `0.089 s` |
+
+Follow-up no-regression gates:
+
+| Gate | Artifact | Result |
+| --- | --- | --- |
+| Scheduler unit tests | remote vLLM source checkout | `108 passed`; `ruff` passed |
+| 8K/1K PR performance gate | `20260601_c2_defer_long_prefill_pr_perf_gate/20260601182449` | C=1/2/4 output throughput `111.06 / 169.81 / 240.93 tok/s` versus accepted `112.44 / 167.86 / 239.99`; TPOT within tolerance; speculative acceptance ratio-only gate passed |
+| GSM8K 5-shot limit-200 | `20260601_c2_defer_long_prefill_gsm8k_limit200_tp2/20260601185504` | flexible `0.960`, strict `0.950`; above `0.94 / 0.925` floors |
+| Key user-feedback matrix | `20260601_c2_defer_long_prefill_key_user_matrix/20260601190004` | primary, prefix-cache, and prefix-cache-enabled KV lifecycle phases all exited `0` |
+| Key 124K decode-concurrency C=2 | same matrix | TTFT `45.630 s`, decode `68.824 tok/s`, min/max `0.280`, ITL p99 `0.132 s` |
+| Key mixed `long_long_c2` | same matrix | decode `68.609 tok/s`, min/max `0.309`, ITL p99 `0.092 s` |
+| Streaming pressure | same matrix | 36 requests, 0 failures, max TTFT `52.624 s`, ITL p99 `0.717 s` |
+| Prefix-cache stress | same matrix | filler `100/400/800/1600/3200`, all 5-trial stress phases 0 failures |
+| KV lifecycle | same matrix | prefix disabled idle KV max `0.0%`; prefix enabled final idle KV `5.894%`, within the bounded-cache threshold |
+| Runtime health | all follow-up artifacts | no CUDA/NCCL/driver/engine/runtime error signal; GPUs returned to idle |
+
+Decision update: keep both scheduler guards in Dev. The pending-decode guard
+fixes short-after-long decode starvation; the very-long prefill admission guard
+fixes the 59K/124K long+long C=2 ITL tail on dual RTX PRO 6000 while preserving
+short-context performance and GSM8K. The remaining caveat is scope: this is a
+128K-class, two-card SM120 result. GB10 long C=2 high-SM/no-progress and
+256K+/4-card behavior still need their own reduced gates before any customer
+commitment beyond the local 128K envelope.
 
 ## Experiment Discipline
 

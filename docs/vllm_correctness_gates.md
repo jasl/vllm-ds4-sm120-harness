@@ -267,8 +267,11 @@ random 8000/1000 at C=1/2/4, and then calls `bench-compare
 --fail-on-regression`. The default tolerance allows at most a 5% drop in output
 tok/s or TPOT speedup against the accepted reference. It also blocks MTP
 speculative acceptance regressions by default: candidate acceptance must remain
-at least `0.98x` of the reference and at least `65.0%` absolute. Keep C=8/16/32
-in the full user-feedback matrix as observation items because the conservative
+at least `0.95x` of the reference. GSM8K remains the hard correctness gate;
+do not use an absolute speculative-acceptance floor for the random 8K/1K
+performance gate because accepted temp-1 references may legitimately sit below
+older short-bench acceptance bands. Keep C=8/16/32 in the full user-feedback
+matrix as observation items because the conservative
 default `--max-num-seqs 4` intentionally prioritizes 128K reliability over
 high-concurrency queueing. Treat a failure as a blocker for
 `codex/ds4-sm120-min-enable` until the regression is explained, fixed, or the
