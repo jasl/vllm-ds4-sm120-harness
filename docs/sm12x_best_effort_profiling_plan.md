@@ -29,6 +29,10 @@ experiments but separate in interpretation:
 1. **Long-context prefill / TTFT.** 59K and 124K C=1/C=2 remain the promotion
    floor. Partial-state sparse MLA helped end-to-end enough for Dev absorption,
    but the standalone microbench shows it is not a universal kernel-speed win.
+   The cross-device indexed-accumulate microbench now also shows that GB10 is
+   far more fragile for this path: for the same synthetic sparse-MLA accumulate
+   work, SM121 delivers roughly 20-35% of the SM120 candidate-visit rate across
+   small and large token/candidate shapes.
 2. **C=2 fairness.** The user-visible failure mode is a slow request while its
    paired request remains healthy. Track per-request decode tok/s min/max and
    ITL p95/p99, not just mean throughput.
@@ -54,7 +58,7 @@ artifact to debug.
 | Baseline user matrix | Fix the performance floor before profiling. | Establish no-MTP 128K stability first; MTP remains exploratory until it survives the same shape. | 59K/124K C=1/C=2, decode-concurrency, mixed-arrival, random prefill, streaming pressure, story recall, GSM8K limit-200, KV lifecycle. |
 | Three-case Nsys | Explain the difference between `decode_then_59k`, `decode_then_124k`, and `long_then_short`. | Run only after stability gates pass; use shorter or no-MTP shapes if needed. | Per-request TTFT/decode/ITL plus top CUDA kernels and launch order. Use `scripts/run_sm12x_prefill_decode_interference_profiles.sh`. |
 | Focused NCU | Decide whether a kernel change can plausibly help. | Optional and lower priority; GB10 NCU is for regressions, not for deriving SM120 launch parameters. | Duration, registers/thread, occupancy, eligible warps/scheduler, long scoreboard, DRAM throughput for sparse MLA accumulate and FP8 MQA logits. |
-| Microbench | Prove a kernel hypothesis before endpoint runs. | Check scratch-sensitive candidates for obvious GB10 risk. | Synthetic parity, mean/p95, scratch bytes, launch count. Use the sparse MLA accumulate and MQA top-k microbench scripts. |
+| Microbench | Prove a kernel hypothesis before endpoint runs. | Check scratch-sensitive candidates for obvious GB10 risk. | Synthetic parity, mean/p95, scratch bytes, launch count. Use `scripts/run_sparse_mla_accumulate_microbench.py` and the MQA top-k microbench scripts. |
 | Deployment probe | Decide if single-instance best effort is enough. | More important for long contexts once there are enough nodes to isolate roles. | Tail ITL, TTFT overhead, KV-transfer overhead, connector errors, and driver health. Do not claim throughput gains from prefill/decode disaggregation. |
 
 ## Experiment Order
@@ -85,6 +89,18 @@ artifact to debug.
    GB10 conservative safety profile for 100K-class long-prefill concurrency
    until sparse-MLA prefill is fixed.
 
+   Cross-device indexed sparse-MLA accumulate microbench artifact
+   `sparse_mla_accumulate_microbench_20260601` confirms why GB10 needs that
+   conservative profile. At small endpoint-like shapes, SM120 completed
+   256-token / 256-candidate accumulate in `0.497 ms` while GB10 took
+   `2.159 ms` (`4.35x` slower). At large 2048-token / 1152-candidate shape,
+   SM120 took `16.393 ms` while GB10 took `71.925 ms` (`4.39x` slower).
+   Partial-state mode did not change the device ratio: 2048-token /
+   1152-candidate partial-state was `16.052 ms` on SM120 and `71.838 ms` on
+   GB10 (`4.48x` slower). Treat this as evidence that GB10 long-C=2 issues are
+   not just endpoint scheduling noise; the sparse-MLA prefill kernel itself has
+   much less latency headroom on SM121.
+
 3. **Run the three-case interference profile before the next retained kernel
    change.** Use the existing wrapper and compare against the latest Dev
    artifacts. The decision question is whether partial-state accumulate is
@@ -96,6 +112,11 @@ artifact to debug.
    More local chunk/part/warp sweeps are exhausted. A retained candidate needs
    endpoint improvement on 59K/124K C=1/C=2 plus mixed-arrival, and it must not
    increase GB10 instability through scratch pressure.
+
+   The next useful kernel experiment should reduce candidate visits, reduce
+   per-program dependency depth, or reduce live state. Another candidate-size
+   or partial-state sweep without a total-work reduction is unlikely to improve
+   either device, and it is especially unlikely to rescue GB10 long-C=2.
 
 5. **Keep direct FP8 MQA streaming top-k as a secondary experiment.**
    The current decomposition shows top-k selection itself is small, so the only

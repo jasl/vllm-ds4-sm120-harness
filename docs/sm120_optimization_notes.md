@@ -2957,6 +2957,41 @@ cumulative/high-pressure shapes, so the next GB10 MTP work should be a bounded
 streaming or ToolCall-style pressure gate with runtime counters, not a broad
 performance claim.
 
+Cross-device sparse-MLA accumulate microbench:
+
+The harness now includes
+`scripts/run_sparse_mla_accumulate_microbench.py`, a standalone CUDA microbench
+for `accumulate_indexed_sparse_mla_attention_chunk` and the partial-state
+variant. It imports the target vLLM checkout directly and emits JSON, CSV, and
+Markdown artifacts with mean/p95 latency plus candidate visits per second.
+
+Artifact label: `sparse_mla_accumulate_microbench_20260601`.
+
+| Shape | RTX PRO 6000 SM120 Mean | GB10 SM121 Mean | GB10 / SM120 |
+| --- | ---: | ---: | ---: |
+| chunk, 64 tokens, 128 candidates | `0.102 ms` | `0.293 ms` | `2.88x` slower |
+| chunk, 128 tokens, 256 candidates | `0.310 ms` | `1.105 ms` | `3.57x` slower |
+| chunk, 256 tokens, 256 candidates | `0.497 ms` | `2.159 ms` | `4.35x` slower |
+| chunk, 1024 tokens, 1152 candidates | `8.171 ms` | `36.066 ms` | `4.41x` slower |
+| chunk, 2048 tokens, 1152 candidates | `16.393 ms` | `71.925 ms` | `4.39x` slower |
+| partial, 2048 tokens, 1152 candidates | `16.052 ms` | `71.838 ms` | `4.48x` slower |
+
+Throughput by candidate visits shows the same split: large-shape SM120 runs
+cluster around `9.1e9` visits/s while GB10 runs around `2.1e9` visits/s; small
+64-256 token shapes are lower on both devices, but GB10 remains materially
+behind. Partial-state accumulate has roughly the same isolated throughput as
+chunk mode at the large candidate shape, so the Dev partial-state win should
+continue to be understood as an endpoint scheduling/trace improvement rather
+than a standalone kernel throughput win.
+
+Decision: use this microbench as the first filter for future sparse-MLA
+experiments. A retained kernel candidate must either reduce total candidate
+work, reduce live state/register pressure, or materially shorten the endpoint
+mixed-arrival tail. Another chunk-size-only or partial-state-size-only sweep is
+not enough. For GB10, keep `max_num_seqs=1` as the conservative safety profile
+for 100K-class long-prefill concurrency until a kernel or deployment-isolation
+change proves better under the same long-C=2 gate.
+
 ### Hardware-Informed Profiling Split
 
 Do not assume RTX PRO 6000 SM120 and GB10 SM121 failures have the same root

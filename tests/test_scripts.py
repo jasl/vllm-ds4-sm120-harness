@@ -1108,6 +1108,33 @@ def test_dgx_spark_mp_serve_helper_can_launch_nsys_sessions():
     assert 'none|head|worker|both)' in script
 
 
+def test_sparse_mla_accumulate_microbench_targets_indexed_kernel_shapes():
+    script = (
+        ROOT / "scripts" / "run_sparse_mla_accumulate_microbench.py"
+    ).read_text(encoding="utf-8")
+
+    assert "accumulate_indexed_sparse_mla_attention_chunk" in script
+    assert "--tokens" in script
+    assert "--candidates" in script
+    assert "--heads" in script
+    assert "--head-dim" in script
+    assert "--emit-nvtx" in script
+    assert "sparse_mla_accumulate_microbench.json" in script
+    assert "sparse_mla_accumulate_microbench.csv" in script
+    assert "sparse_mla_accumulate_microbench.md" in script
+    assert "candidate_visits_per_s" in script
+
+
+def test_sparse_mla_microbench_accepts_bare_cuda_device():
+    script = (
+        ROOT / "scripts" / "run_sparse_mla_accumulate_microbench.py"
+    ).read_text(encoding="utf-8")
+
+    assert "def cuda_device_index(device: str) -> int:" in script
+    assert 'if device == "cuda":' in script
+    assert "torch.cuda.set_device(cuda_device_index(args.device))" in script
+
+
 def test_vllm_correctness_gate_docs_use_public_gsm8k_slice():
     docs = (ROOT / "docs" / "vllm_correctness_gates.md").read_text(
         encoding="utf-8"
