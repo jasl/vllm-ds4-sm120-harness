@@ -2925,13 +2925,16 @@ Therefore the next vLLM experiments should be algorithmic and narrow:
    a tail-ITL control tradeoff, not as a raw throughput win; it adds KV transfer
    and TTFT overhead and is likely more important on GB10 than on RTX PRO 6000.
 
-Current best-effort direction: do **not** promote another scheduler-only fix.
-After the direct top-k decomposition, prioritize the two-pass sparse-MLA
-accumulate design first because that kernel is about half of captured CUDA
-kernel time in the mixed-arrival traces. Keep the direct FP8 MQA streaming
-top-k prototype as a secondary experiment and require it to prove lower
-register/live-state pressure in the logits computation itself; reducing the
-`top_k_per_row_prefill` selection stage alone has too little headroom.
+Current best-effort direction at that point was to avoid another
+scheduler-only fix. The later scheduler-trace pass below found a narrower
+request-ordering root cause for `long_then_short`, so keep that guard in the
+active branch only if the full user-feedback matrix confirms no broader
+regression. After that, prioritize the two-pass sparse-MLA accumulate design
+because that kernel is about half of captured CUDA kernel time in the
+mixed-arrival traces. Keep the direct FP8 MQA streaming top-k prototype as a
+secondary experiment and require it to prove lower register/live-state
+pressure in the logits computation itself; reducing the `top_k_per_row_prefill`
+selection stage alone has too little headroom.
 
 ### Sparse-MLA Partial-State Accumulate Prototype, 2026-06-01
 
@@ -3233,6 +3236,65 @@ Profiling deliverables before a best-effort recommendation:
 5. A final decision note that separates three outcomes: keep in Dev only,
    promote to PR, or reject and preserve the branch as a backup experiment.
 
+## Scheduler Trace: Pending Decode Guard, 2026-06-01
+
+The first scheduler JSONL trace was added as a default-off diagnostic with
+`VLLM_SCHEDULER_TRACE_PATH`. It records scheduling step metadata only:
+request id, phase, prompt token count, computed-token count before schedule,
+scheduled tokens, waiting/running counts, and preempted ids. It does not record
+prompt text.
+
+The trace explained the remaining `long_then_short` tail. In artifact
+`20260601_scheduler_trace_probe/20260601121143_long_then_short`, the secondary
+short request completed prefill by scheduler step 46 and was already
+decode-ready, but steps 47 through 70 scheduled only the leading 124K-class
+prefill. The secondary request did not receive its first decode token until
+step 71. The per-request symptom was a `25.353 s` p99/max inter-chunk gap,
+decode min/max ratio `0.0267`, and secondary decode `2.417 tok/s`, while the
+global FP8 MQA decode-kernel gap was only `0.166 s`. This confirms a
+request-level scheduler starvation shape, not a full global decode-kernel
+stoppage.
+
+The retained code change is narrow: when scheduling a prefill request, later
+running requests that have already completed prefill are counted as decode
+pressure, even if they have not yet been scheduled in the current step. This
+reuses the existing active-decode mixed-prefill cap and adds no public tuning
+knob.
+
+Focused `long_then_short` A/B, same SM120 serve profile, one measured request
+pair:
+
+| Metric | Before | Pending Decode Guard |
+| --- | ---: | ---: |
+| Primary TTFT | `30.602 s` | `33.728 s` |
+| Secondary TTFT | `3.249 s` | `3.247 s` |
+| Secondary decode | `2.417 tok/s` | `16.038 tok/s` |
+| Decode min/max ratio | `0.0267` | `0.1721` |
+| Overall ITL p99/max | `25.353 s` | `0.460 s` |
+| Secondary starvation steps before first decode | `24` | `0` |
+
+Artifact labels:
+`20260601_scheduler_trace_probe/20260601121143_long_then_short` and
+`20260601_scheduler_trace_probe/20260601121717_long_then_short_pending_decode_fix`.
+
+Focused `long_long_c2` did not materially improve from this guard by itself.
+It stayed in the same failure class: decode min/max ratio moved from `0.1386`
+to `0.1044`, and ITL p99 stayed around `1.2 s`. This means the guard solves
+the short-after-long starvation root cause but not the broader simultaneous
+long-prefill C=2 fairness problem. That remaining shape still belongs to the
+sparse-MLA kernel/deployment-isolation track.
+
+Rejected follow-up from the same trace pass:
+
+- Prompt-length-based late-prefill cap: keeping the smaller active-decode cap
+  for all late chunks of a 124K-class prefill reduced `long_long_c2` overall
+  ITL p99 from about `1.2 s` to `0.484 s`, but it made fairness worse by
+  shifting the slow path to the other request: decode min/max ratio fell to
+  `0.0675`, primary decode dropped to `6.838 tok/s`, and secondary TTFT rose
+  to `69.757 s`. Artifact label:
+  `20260601_scheduler_trace_probe/20260601122545_long_long_c2_prompt_length_fix`.
+  The code was reverted.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
@@ -3273,8 +3335,10 @@ Profiling deliverables before a best-effort recommendation:
    user-feedback matrices. This remains a reliability gate, not a performance
    optimization.
 2. Treat C=2 long-prefill fairness as a promotion gate and diagnostic signal,
-   not as a reason to add more scheduler-only hacks. The later-short-decode
-   scheduler experiments above were rejected.
+   not as a reason to add broad scheduler-only hacks. The pending-decode guard
+   above is the narrow exception because scheduler trace proved a specific
+   later-running decode starvation root cause. It still needs the fixed
+   user-feedback matrix before PR promotion.
 3. The partial-state sparse-MLA accumulate candidate has been absorbed into
    the Dev branch only as `caea1cb55`. The SM120 full promotion matrix has
    passed. GB10 no-MTP startup, prefix-cache-disabled lifecycle, 128K-class
