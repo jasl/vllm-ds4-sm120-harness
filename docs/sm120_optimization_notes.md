@@ -785,6 +785,40 @@ accumulate path and FP8 MQA logits path. The combine-topk kernel is visible in
 the trace, but it is not currently large enough to be the first optimization
 target for these mixed-arrival shapes.
 
+The fixed C=2 fairness + interference protocol was then run under one generated
+serve profile, so the fairness matrix and Nsys traces no longer depend on
+manually keeping serve arguments in sync. Artifact label:
+`20260601_c2_fairness_interference_protocol/20260601105746`.
+
+Fairness phase summary:
+
+| Shape | C | TTFT Mean | Decode Mean | Decode Min/Max | ITL P99 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 59K synthetic | 1 | `11.697 s` | `143.827 tok/s` | `0.965` | `0.023 s` |
+| 59K synthetic | 2 | `23.660 s` | `64.932 tok/s` | `0.127` | `0.823 s` |
+| 124K synthetic | 1 | `29.678 s` | `106.355 tok/s` | `0.980` | `0.029 s` |
+| 124K synthetic | 2 | `60.874 s` | `54.573 tok/s` | `0.128` | `1.102 s` |
+
+Interference profile summary:
+
+| Case | Primary / Secondary TTFT | Primary / Secondary Decode | Decode Min/Max | ITL P99 | Top Kernel Signal |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `long_long_c2` | `63.887 s` / `58.728 s` | `91.005` / `12.610 tok/s` | `0.139` | `1.222 s` | `_accumulate_indexed_attention_chunk_multihead_kernel` `44.5%`, `_fp8_mqa_logits_kernel` `13.0%` |
+| `decode_then_59k` | `12.248 s` / `13.699 s` | `32.171` / `130.263 tok/s` | `0.247` | `0.205 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `40.5%`, `_fp8_mqa_logits_kernel` `8.8%` |
+| `decode_then_124k` | `29.823 s` / `31.359 s` | `37.463` / `96.819 tok/s` | `0.387` | `0.205 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `43.7%`, `_fp8_mqa_logits_kernel` `12.8%` |
+| `long_decode_then_short` | `29.833 s` / `1.241 s` | `37.300` / `87.399 tok/s` | `0.427` | `0.701 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `44.0%`, `_fp8_mqa_logits_kernel` `12.5%` |
+| `short_decode_then_124k` | `1.125 s` / `31.542 s` | `34.678` / `96.693 tok/s` | `0.359` | `0.435 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `43.3%`, `_fp8_mqa_logits_kernel` `12.3%` |
+| `long_then_short` | `30.925 s` / `3.285 s` | `87.546` / `2.432 tok/s` | `0.028` | `25.639 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `41.3%`, `_fp8_mqa_logits_kernel` `12.7%` |
+
+Interpretation update: C=2 fairness and prefill/decode interference should be
+optimized together but evaluated separately. The user-visible gate is
+per-request C=2 decode fairness and ITL tail; the profiling mechanism is the
+sparse-MLA prefill/accumulate path that dominates both simultaneous and
+staggered traces. `long_long_c2` still points at the multi-prefill chunk path,
+while staggered mixed-arrival shapes point at the partial-state path and
+scheduler/admission order. Driver health was clean after the run, so this is a
+performance/fairness trace rather than a crash reproduction.
+
 Rejected experiments from the same trace cycle:
 
 | Experiment | Artifact Label | Result | Decision |

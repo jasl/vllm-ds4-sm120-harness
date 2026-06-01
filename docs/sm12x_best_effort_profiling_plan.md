@@ -47,6 +47,22 @@ attention-side cost and FP8 MQA logits as the second attention-side cost, with
 low DRAM throughput and stronger signals from dependency stalls, eligible
 warps, and register pressure.
 
+The latest fixed-protocol RTX PRO 6000 run,
+`20260601_c2_fairness_interference_protocol/20260601105746`, strengthens that
+interpretation because the C=2 fairness matrix and Nsys cases used the same
+generated serve command. C=1 remained healthy (`59K` decode mean
+`143.827 tok/s`, `124K` decode mean `106.355 tok/s`), while C=2 remained the
+visible failure mode (`59K` decode min/max `0.127`, `124K` decode min/max
+`0.128`). The same run showed the two interference subproblems: simultaneous
+`long_long_c2` is dominated by
+`_accumulate_indexed_attention_chunk_multihead_kernel`, while staggered
+mixed-arrival cases are dominated by
+`_accumulate_indexed_attention_partial_states_multihead_kernel`. The worst
+tail remains `long_then_short`, where the short request reaches TTFT quickly
+but then sees a `25.639 s` ITL p99 after first token. Treat C=2 fairness as the
+acceptance metric and prefill/decode interference as the mechanism to profile;
+do not collapse them into one number.
+
 The cross-device microbenches reinforce that ordering. On RTX PRO 6000 the
 131K FP8 MQA direct top-k shape is `2.721 ms`; on GB10 the same shape is
 `12.221 ms` (`4.49x` slower). That is the same broad device split as sparse
@@ -156,6 +172,24 @@ artifact to debug.
    more about launch count and total candidate work than an obviously worse
    per-launch kernel. Keep the next experiment focused on reducing total
    sparse-MLA work or dependency depth.
+
+   Latest fixed-protocol RTX PRO 6000 artifact
+   `20260601_c2_fairness_interference_protocol/20260601105746` confirms that
+   this remains the right split under the normal fairness serve profile:
+
+   | Case | Decode Min/Max | ITL P99 | Top Kernel |
+   | --- | ---: | ---: | --- |
+   | `long_long_c2` | `0.139` | `1.222 s` | `_accumulate_indexed_attention_chunk_multihead_kernel` `44.5%` |
+   | `decode_then_59k` | `0.247` | `0.205 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `40.5%` |
+   | `decode_then_124k` | `0.387` | `0.205 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `43.7%` |
+   | `long_decode_then_short` | `0.427` | `0.701 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `44.0%` |
+   | `short_decode_then_124k` | `0.359` | `0.435 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `43.3%` |
+   | `long_then_short` | `0.028` | `25.639 s` | `_accumulate_indexed_attention_partial_states_multihead_kernel` `41.3%` |
+
+   Driver health stayed clean for this run. The next retained experiment
+   should therefore report two scores: (a) pure long+long C=2 fairness and
+   TTFT, and (b) staggered mixed-arrival ITL p99/fairness. A change that only
+   helps one while regressing the other is not a promotion candidate.
 
 4. **Try algorithmic sparse MLA work only if it reduces live state or total
    work.**
