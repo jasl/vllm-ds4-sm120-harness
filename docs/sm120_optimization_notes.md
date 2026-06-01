@@ -2992,6 +2992,27 @@ not enough. For GB10, keep `max_num_seqs=1` as the conservative safety profile
 for 100K-class long-prefill concurrency until a kernel or deployment-isolation
 change proves better under the same long-C=2 gate.
 
+Cross-device FP8 MQA top-k microbench:
+
+The existing `scripts/run_sm120_mqa_topk_microbench.py` was run with the same
+shape on RTX PRO 6000 and GB10. It exercises the public
+`fp8_fp4_mqa_topk_indices` dispatch with deterministic FP8-Q / FP8-K tensors
+and checks repeat top-k set stability.
+
+Artifact label: `mqa_topk_cross_device_20260601`.
+
+| Shape | RTX PRO 6000 SM120 Mean | GB10 SM121 Mean | GB10 / SM120 | Repeat Set |
+| --- | ---: | ---: | ---: | --- |
+| q `256x64x128`, KV `32768x128`, top-k `2048` | `0.838 ms` | `3.415 ms` | `4.08x` slower | pass on both |
+| q `256x64x128`, KV `131072x128`, top-k `2048` | `2.721 ms` | `12.221 ms` | `4.49x` slower | pass on both |
+
+Interpretation: FP8 MQA logits/top-k also has much less latency headroom on
+GB10, but it remains the second attention-side kernel in endpoint traces
+behind sparse-MLA accumulate. Keep direct-MQA live-state reduction as a
+secondary kernel experiment. Do not promote a top-k-selection-only optimization:
+the prior decomposition showed the selection stage is small while logits
+materialization dominates.
+
 ### Hardware-Informed Profiling Split
 
 Do not assume RTX PRO 6000 SM120 and GB10 SM121 failures have the same root

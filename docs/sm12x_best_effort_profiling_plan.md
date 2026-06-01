@@ -47,6 +47,12 @@ attention-side cost and FP8 MQA logits as the second attention-side cost, with
 low DRAM throughput and stronger signals from dependency stalls, eligible
 warps, and register pressure.
 
+The cross-device microbenches reinforce that ordering. On RTX PRO 6000 the
+131K FP8 MQA direct top-k shape is `2.721 ms`; on GB10 the same shape is
+`12.221 ms` (`4.49x` slower). That is the same broad device split as sparse
+MLA accumulate, but FP8 MQA is still only the second attention-side kernel in
+the mixed-arrival traces, so it should remain the secondary kernel experiment.
+
 ## Profiling Matrix
 
 Run the matrix in this order. Stop early only when the failure itself is the
@@ -121,7 +127,12 @@ artifact to debug.
 5. **Keep direct FP8 MQA streaming top-k as a secondary experiment.**
    The current decomposition shows top-k selection itself is small, so the only
    useful version is one that reduces FP8 MQA logits live state or register
-   pressure. A top-k-only speedup is not enough.
+   pressure. A top-k-only speedup is not enough. Cross-device artifact
+   `mqa_topk_cross_device_20260601` shows the 131K shape at `2.721 ms` on
+   SM120 and `12.221 ms` on GB10, so GB10 would benefit from lower live state
+   too, but the endpoint priority still stays behind sparse MLA accumulate
+   because FP8 MQA logits is roughly one quarter of the sparse-MLA captured
+   attention-side time in the current traces.
 
 6. **Treat scheduler-only fixes as high risk.**
    The successful scheduler experiments improved one tail shape but regressed
