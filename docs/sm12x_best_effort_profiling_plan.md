@@ -188,8 +188,11 @@ artifact to debug.
    kernel experiment should target the multi-prefill C128 chunk path first,
    especially its launch shape, live state, and request coupling. A C128-only
    `HEAD_BLOCK=4` probe regressed the target microbench, so do not retry simple
-   head-block shrinkage. Treat the partial path as a secondary target unless a
-   later trace shows it causing the user-visible slow-stream tail.
+   head-block shrinkage. A per-request q-launch split for C128 multi-prefill
+   chunks was also noise-level and slightly hurt `decode_then_124k`, so simple
+   request isolation inside the same layer forward is not enough. Treat the
+   partial path as a secondary target unless a later trace shows it causing the
+   user-visible slow-stream tail.
 
 5. **Keep direct FP8 MQA streaming top-k as a secondary experiment.**
    The current decomposition shows top-k selection itself is small, so the only
