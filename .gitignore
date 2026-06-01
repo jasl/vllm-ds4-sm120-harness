@@ -19,7 +19,11 @@ build/
 .claude/
 
 # vLLM repo
-vllm
+/vllm
+
+# Spark arena
+/recipe-registry
+/spark-vllm-docker
 
 # Local environment and secrets
 .env
