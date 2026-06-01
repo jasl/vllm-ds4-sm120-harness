@@ -51,6 +51,34 @@ not at a simple GDDR7 bandwidth ceiling:
 
 ## Successful Optimization Notes
 
+### Runtime-M TF32 MHC Prenorm GEMM
+
+User feedback on the PR reported a DP=2 + EP + MTP=2 + prefix-cache-enabled
+256K serve on dual RTX PRO 6000 eventually dying inside
+`_tf32_hc_prenorm_gemm_kernel` during Triton binary loading with a CUDA
+device-side assert. The exact crash did not reproduce on the current head, but
+the risky precondition did: the same 256K DP=2/EP serve reached `499,309` KV
+tokens per DP engine and the first request JIT-compiled
+`_tf32_hc_prenorm_gemm_kernel` during inference.
+
+The retained fix removes the prefill-token dimension `M` from the Triton
+constexpr set for the SM12x TF32 HyperConnection prenorm GEMM. `K`, `N`,
+strides, split count, and block sizes remain compile-time constants. This keeps
+the kernel shape stable across requests with the same split bucket instead of
+building a new binary for each distinct prefill token count.
+
+Validation:
+
+| Check | Result |
+| --- | --- |
+| RED regression | Static test failed before the change because `M` was in the kernel constexpr set |
+| Unit/static | `test_sm120_deepgemm_fallbacks.py -k "tf32_hc_prenorm or block_m"` passed; ruff passed |
+| GPU smoke | Direct `tf32_hc_prenorm_gemm_triton` outputs matched torch for `M=1/17/257/300` |
+| DP=2/EP 256K probe | startup and 257/300-token prefill sweep passed; only the first request logged `_tf32_hc_prenorm_gemm_kernel` JIT, the same-split second request did not |
+| Runtime health | no EngineDead, CUDA error, device-side assert, Xid, UVM, or lost-GPU signal |
+
+Artifact label: `dp2_ep_mhc_256k_m_runtime`.
+
 ### Hybrid Prefix-Cache Tail Blocks
 
 User-reported prefix-cache stress showed a mid-filler hit-rate cliff around
