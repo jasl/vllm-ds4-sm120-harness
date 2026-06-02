@@ -4914,6 +4914,50 @@ including long-context decode/fairness, mixed arrival, prefix/KV lifecycle,
 story recall, GB10 reduced long-C2, and GSM8K limit-200 under the final
 promotion protocol.
 
+Promotion matrix update, 2026-06-03:
+
+- Artifact:
+  `artifacts/ds4-sm120-preview-dev/2x_rtx_pro_6000_sm120/20260603_d512_promotion_rtx/20260603041557`.
+- Profile: indexed D512 split enabled by env var, `FULL_AND_PIECEWISE`,
+  MTP=2, expert parallel enabled, FP8 KV, `max_num_batched_tokens=4096`,
+  `max_num_seqs=4`, and primary long-context runs with prefix cache disabled.
+- Overall result: RTX promotion matrix exited `0`. Runtime summaries reported
+  no CUDA, NCCL, driver, or engine errors; GPUs returned to idle after the run.
+- Long-context matrix:
+  - 59K C=1 mean TTFT `8.303 s`, decode `139.316 tok/s`, ITL p99 `0.021 s`.
+  - 59K C=2 mean TTFT `13.242 s`, decode `84.901 tok/s`, min/max decode
+    ratio `0.239`, ITL p99 `0.085 s`.
+  - 124K C=1 mean TTFT `19.850 s`, decode `105.964 tok/s`, ITL p99 `0.029 s`.
+  - 124K C=2 mean TTFT `30.790 s`, decode `66.821 tok/s`, min/max decode
+    ratio `0.296`, ITL p99 `0.092 s`.
+- Mixed-arrival and decode-concurrency checks stayed healthy. The 124K C=2
+  decode-concurrency run had mean TTFT `30.726 s`, decode `68.527 tok/s`,
+  min/max decode ratio `0.310`, and ITL p99 `0.093 s`.
+- Story recall semantic gate passed: all 16 assignments matched, prompt
+  `30502` tokens, TTFT `4.361 s`, decode `168.729 tok/s`, ITL p99 `0.018 s`.
+- Streaming pressure completed 36/36 requests with no failures. Overall p95
+  ITL was `0.087 s`, p99 `0.817 s`, and max `0.838 s`; the tail came from the
+  short issue-7-like burst, while long C=2/C=4 stayed below `0.088 s` max ITL.
+- Random prefill input throughput for 1K/4K/16K/65K C=1 was
+  `6113.43` / `6136.33` / `7170.24` / `6625.65 tok/s`.
+- Prefix-cache stress and KV lifecycle checks passed. Prefix-disabled idle KV
+  returned to `0.0%`; prefix-enabled idle KV remained bounded at `5.894%`.
+- GSM8K limit-200 passed with flexible exact match `0.950` and strict exact
+  match `0.925`. The strict score is exactly at the fixed lower bound, so there
+  is no correctness slack for further promotion changes.
+- Short/throughput gates stayed functional:
+  - HF MT bench C=1/2/4 total token throughput:
+    `184.82` / `317.25` / `458.97 tok/s`.
+  - 8000x1000 C=1/2/4 output throughput:
+    `111.63` / `168.40` / `239.09 tok/s`.
+  - 256x256 C=1/C=4 output throughput: `135.53` / `339.38 tok/s`.
+
+Decision: keep indexed D512 split in Dev as an env-gated prototype. Do not make
+it default and do not promote it to the PR branch yet, because GB10 reduced
+long-C2 and Reddit-style GB10 frontier comparison were not completed. The GB10
+run was blocked by dual-node worker SSH/DNS availability, not by a vLLM
+runtime failure.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
