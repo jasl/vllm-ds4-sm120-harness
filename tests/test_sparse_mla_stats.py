@@ -38,6 +38,48 @@ def _stats_row(**overrides):
             "max": 1152,
             "sum": 196608,
         },
+        "stage_timings_ms": {
+            "gather_compressed_kv": 1.5,
+            "gather_swa_kv": 2.5,
+            "combine_indices": 3.0,
+            "sparse_accumulate": 14.0,
+        },
+        "candidate_overlap": {
+            "sample_rows": 4,
+            "groups": {
+                "2": {
+                    "groups": 2,
+                    "valid_candidates": 20,
+                    "unique_candidates": 12,
+                    "unique_to_valid_ratio": 0.6,
+                },
+                "4": {
+                    "groups": 1,
+                    "valid_candidates": 20,
+                    "unique_candidates": 7,
+                    "unique_to_valid_ratio": 0.35,
+                },
+            },
+        },
+        "candidate_region_overlap": {
+            "sample_rows": 4,
+            "compressed": {
+                "2": {
+                    "groups": 2,
+                    "valid_candidates": 8,
+                    "unique_candidates": 4,
+                    "unique_to_valid_ratio": 0.5,
+                },
+            },
+            "swa": {
+                "2": {
+                    "groups": 2,
+                    "valid_candidates": 12,
+                    "unique_candidates": 8,
+                    "unique_to_valid_ratio": 0.666667,
+                },
+            },
+        },
     }
     row.update(overrides)
     return row
@@ -68,6 +110,12 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
                     "max": 640,
                     "sum": 40960,
                 },
+                stage_timings_ms={
+                    "gather_compressed_kv": 0.5,
+                    "gather_swa_kv": 1.5,
+                    "combine_indices": 2.0,
+                    "sparse_accumulate": 8.0,
+                },
             ),
         ],
     )
@@ -93,8 +141,36 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert summary["combined_lens_count"] == 384
     assert summary["combined_lens_mean"] == 618.666667
     assert summary["combined_lens_max"] == 1152
+    timings = report["stage_timings_ms"]
+    assert timings["total"] == 33.0
+    assert timings["stages"]["gather_compressed_kv"]["total"] == 2.0
+    assert timings["stages"]["gather_compressed_kv"]["ratio"] == 0.060606
+    assert timings["stages"]["gather_swa_kv"]["total"] == 4.0
+    assert timings["stages"]["combine_indices"]["total"] == 5.0
+    assert timings["stages"]["sparse_accumulate"]["total"] == 22.0
+    assert timings["dominant_stage"] == "sparse_accumulate"
+    overlap = report["candidate_overlap"]
+    assert overlap["sample_rows"] == 8
+    assert overlap["groups"]["2"]["groups"] == 4
+    assert overlap["groups"]["2"]["valid_candidates"] == 40
+    assert overlap["groups"]["2"]["unique_candidates"] == 24
+    assert overlap["groups"]["2"]["unique_to_valid_ratio"] == 0.6
+    assert overlap["regions"]["compressed"]["2"]["valid_candidates"] == 16
+    assert overlap["regions"]["compressed"]["2"]["unique_to_valid_ratio"] == 0.5
+    assert overlap["regions"]["swa"]["2"]["valid_candidates"] == 24
+    assert overlap["regions"]["swa"]["2"]["unique_to_valid_ratio"] == 0.666667
     assert report["groups"][0]["layer_type"] == "mla_prefill_chunk"
     assert report["groups"][0]["padding_ratio"] == 0.333333
+    assert report["groups"][0]["stage_timings_ms"]["total"] == 21.0
+    assert report["groups"][0]["stage_timings_ms"]["dominant_stage"] == (
+        "sparse_accumulate"
+    )
+    assert report["groups"][0]["candidate_overlap"]["groups"]["4"][
+        "unique_to_valid_ratio"
+    ] == 0.35
+    assert report["groups"][0]["candidate_overlap"]["regions"]["compressed"]["2"][
+        "unique_to_valid_ratio"
+    ] == 0.5
 
 
 def test_sparse_mla_stats_report_skips_invalid_lines_and_unknown_kinds(tmp_path):
@@ -132,6 +208,9 @@ def test_sparse_mla_stats_markdown_does_not_leak_absolute_paths(tmp_path):
     text = markdown_path.read_text(encoding="utf-8")
     assert "# Sparse MLA Prefill Stats Report" in text
     assert "stats.jsonl" in text
+    assert "## Candidate Overlap" in text
+    assert "| all | 2 |" in text
+    assert "| compressed | 2 |" in text
     assert "/home/private" not in text
     assert "model.layers.3.self_attn" in text
 

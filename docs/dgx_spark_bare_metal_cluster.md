@@ -66,6 +66,49 @@ the binding and NCCL runtime from the same current release family when possible.
 Record the installed NCCL package version and `torch.cuda.nccl.version()` in the
 run artifact or local handoff note before running the MTP/TP=2 gates.
 
+`b12x` is an optional SM120/SM121 kernel package for research builds. Do not add
+it to vLLM's hard requirements or the default public GB10 profile until the
+corresponding vLLM code path is validated. When testing it, install it into the
+already-created vLLM venv without dependency resolution so it cannot pull a
+different Torch, CUDA, CUTLASS DSL, or NCCL stack:
+
+```bash
+cd ~/tmp/ds4-sm120-harness/vllm
+.venv/bin/python -m pip install --no-deps b12x==0.15.2
+.venv/bin/python - <<'PY'
+import importlib.util
+
+for name in (
+    "b12x",
+    "b12x.integration.tp_moe",
+    "b12x.integration.mla",
+    "b12x.integration.nsa_indexer",
+    "b12x.distributed",
+):
+    spec = importlib.util.find_spec(name)
+    print(f"{name}: {bool(spec)}")
+PY
+```
+
+This is analogous to the NCCL override above: document the exact package
+version and verify imports on every GB10 node before running experiments. A
+successful import does not mean b12x is active; serve logs must still show the
+selected MoE, attention, indexer, and all-reduce backends.
+
+For one-off kernel/configuration experiments, `scripts/dgx_spark_start_mp_serve.sh`
+can forward explicitly named environment variables to the remote vLLM processes
+through `SERVE_REMOTE_ENV_VARS`. This is intentionally an allowlist: invalid
+variable names or requested variables that are not set fail before launch.
+
+```bash
+VLLM_USE_BREAKABLE_CUDAGRAPH=0 \
+SERVE_REMOTE_ENV_VARS=VLLM_USE_BREAKABLE_CUDAGRAPH \
+scripts/dgx_spark_start_mp_serve.sh
+```
+
+Keep experimental variables out of public default profiles until the run logs
+show the intended backend path and the standard GB10/SM120 gates pass.
+
 Start Ray through the vLLM Python executable, not through a standalone Ray venv.
 Ray workers inherit the Python executable and environment used by `ray start`;
 if that executable cannot import `torch`, the remote actor can fail with

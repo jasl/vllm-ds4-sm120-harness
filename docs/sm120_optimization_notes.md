@@ -3231,6 +3231,25 @@ chunk mode at the large candidate shape, so the Dev partial-state win should
 continue to be understood as an endpoint scheduling/trace improvement rather
 than a standalone kernel throughput win.
 
+GB10 candidate-linearity follow-up, artifact labels
+`sparse_mla_accumulate_candidate_linearity_20260602` and
+`sparse_mla_accumulate_staggered_20260602`, confirms the total-work hypothesis
+on the current public dependency stack:
+
+| Shape | Full-Lens Mean | Staggered-Lens Mean | Observation |
+| --- | ---: | ---: | --- |
+| chunk, 512 tokens, 256 candidates | `4.368 ms` | `2.898 ms` | lower effective candidates directly reduce latency |
+| chunk, 1024 tokens, 512 candidates | `16.521 ms` | `10.687 ms` | same direction at mid shape |
+| chunk, 2048 tokens, 1152 candidates | `71.743 ms` | `43.106 ms` | about `40%` faster when valid lengths are smaller |
+
+Full-lens GB10 throughput stabilizes around `2.0e9` candidate visits/s for
+large shapes, while staggered valid lengths raise effective visits/s because
+the kernel exits the candidate loop earlier per token. This does not prove an
+endpoint optimization by itself, but it makes the next target concrete:
+reduce real combined candidate lengths or replace the main sparse-MLA attention
+backend. Repeated chunk/part/head-block retuning is lower confidence unless it
+also reduces effective candidate visits or live state.
+
 Decision: use this microbench as the first filter for future sparse-MLA
 experiments. A retained kernel candidate must either reduce total candidate
 work, reduce live state/register pressure, or materially shorten the endpoint
@@ -3513,6 +3532,1387 @@ short-context performance and GSM8K. The remaining caveat is scope: this is a
 128K-class, two-card SM120 result. GB10 long C=2 high-SM/no-progress and
 256K+/4-card behavior still need their own reduced gates before any customer
 commitment beyond the local 128K envelope.
+
+### b12x Optional Dependency Investigation
+
+The public GB10 report based on the `local-inference-lab/vllm`
+`dev/unholy-fusion` branch showed much flatter C=1 prefill throughput than the
+current Dev branch. Its visible recipe used two-node GB10, TP=2, MTP=2, prefix
+cache enabled, `max_num_batched_tokens=8192`, and FlashInfer autotune. The fork
+also contains explicit b12x hooks for DS4-specific paths: native MXFP4 MoE,
+sparse MLA attention/indexing, mHC, and PCIe all-reduce.
+
+Local GB10 smoke after upgrading FlashInfer to `0.6.12` did not close that gap.
+Both current runs still selected `MARLIN` for MXFP4 MoE and `PYNCCL` for
+all-reduce:
+
+| Profile | 4K | 16K | 32K | 64K | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Reddit-style config smoke, `max_num_batched_tokens=8192` | `529.2` | `1040.25` | `1518.79` | `1497.11` | startup recovered after driver-level OOM warnings; not a clean default |
+| Conservative GB10 smoke, `max_num_batched_tokens=4176` | `623.91` | `1106.65` | `1640.04` | `1588.56` | clean driver log after start |
+
+Interpretation: the gap is unlikely to be solved by `8192` chunking or the
+FlashInfer wheel bump alone. The higher-confidence path is to test b12x as an
+optional research dependency and then decide whether any vLLM integration is
+maintainable. `b12x==0.15.2` installed with `--no-deps` into the GB10 vLLM venv
+and imports `b12x.integration.tp_moe`, `b12x.integration.mla`,
+`b12x.integration.nsa_indexer`, and `b12x.distributed` without changing
+Torch `2.11.0+cu130`, FlashInfer `0.6.12`, CUTLASS DSL `4.5.2`, or the forced
+NCCL `2.30.4` package. This only proves optional dependency availability; it
+does not activate a b12x runtime path.
+
+Validated optional install/probe protocol, using the target vLLM venv:
+
+```bash
+python -m pip install --no-deps \
+  --extra-index-url https://flashinfer.ai/whl/cu130 \
+  flashinfer-python==0.6.12 \
+  flashinfer-cubin==0.6.12 \
+  flashinfer-jit-cache==0.6.12+cu130
+python -m pip install --no-deps b12x==0.15.2
+flashinfer show-config
+python - <<'PY'
+import importlib
+import flashinfer.mla as mla
+
+for module in [
+    "b12x",
+    "b12x.integration.mla",
+    "b12x.integration.nsa_indexer",
+    "b12x.integration.tp_moe",
+]:
+    importlib.import_module(module)
+
+print("BatchSparseMLAPagedAttentionWrapper",
+      hasattr(mla, "BatchSparseMLAPagedAttentionWrapper"))
+print("trtllm_batch_decode_sparse_mla_dsv4",
+      hasattr(mla, "trtllm_batch_decode_sparse_mla_dsv4"))
+PY
+```
+
+Use `--no-deps` for the research install to avoid accidentally replacing the
+validated Torch/CUDA stack. The version of `flashinfer-jit-cache` must match the
+FlashInfer package version exactly. Do not use this as a production dependency
+claim until the probe shows the required DS4 sparse-MLA API and an SM120/SM121
+q-len>1 smoke passes.
+
+The currently installed optional stack exposes official FlashInfer b12x probes:
+`has_flashinfer_b12x_moe=True` and `has_flashinfer_b12x_gemm=True`. Those are
+not enough for DeepSeek V4 Flash because the upstream b12x MoE path is an
+NVFP4 backend, while this model's expert weights are native MXFP4. The installed
+`b12x` package exposes `b12x.integration.tp_moe`, `b12x.integration.mla`,
+`b12x.integration.nsa_indexer`, and `b12x.distributed`; the forked
+`unholy-fusion` sparse-indexer path also imports
+`b12x.integration.compressed_indexer`, which is not present in this tested
+`b12x==0.15.2` install. As of the 2026-06-02 GB10 pip index probe,
+`flashinfer-python==0.6.12`, `flashinfer-cubin==0.6.12`, and `b12x==0.15.2`
+are the latest public stable packages, so the current dependency gap is not
+resolved by a normal stable wheel upgrade.
+
+After the optional `b12x` install, a config-only GB10 A/B tested whether opting
+out of the current DeepSeek V4 breakable-cudagraph path could explain the C=1
+prefill gap. Both variants used TP=2, EP enabled, MTP=2, FP8 KV, prefix cache
+enabled, `max_model_len=131072`, `max_num_batched_tokens=4176`, and
+`FULL_AND_PIECEWISE`. The boot had a pre-existing NVRM OOM record, so this is a
+screening run rather than a clean baseline, but no new NVRM/driver error was
+logged during the run.
+
+| Variant | 4K | 16K | 32K | 64K | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Default breakable cudagraph | `2037.81` | `1406.65` | `1958.34` | `1738.47` | selected `MARLIN` MXFP4 MoE and `PYNCCL`; b12x not active |
+| `VLLM_USE_BREAKABLE_CUDAGRAPH=0` | `2055.71` | `1392.61` | `1939.80` | `1718.41` | still `MARLIN`/`PYNCCL`; logs warn that torch.compile is on for an unsupported model |
+
+This rejects the "breakable cudagraph is the prefill bottleneck" hypothesis for
+now. Disabling it did not improve throughput, reduced effective KV headroom, and
+uses a path the DeepSeek V4 logs mark as unsupported. The retained direction is
+therefore to keep breakable cudagraph as-is and investigate runtime backend
+differences: native MXFP4 MoE, sparse MLA/indexer, and possibly PCIe all-reduce.
+The random-prefill sweep above is useful only as a quick config screen because
+prefix cache and benchmark prompt generation can distort cold-prefill
+monotonicity; candidate vLLM code changes still need the fixed frontier,
+long-C2, SM120 regression, and correctness gates.
+
+Two follow-up backend probes narrowed the native MXFP4 MoE gap:
+
+| Probe | Result | Interpretation |
+| --- | --- | --- |
+| `VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8_CUTLASS=1` via explicit remote env forwarding | started and ran 4K/16K, but logs still selected `MARLIN` MXFP4 MoE; 4K `2071.3`, 16K `1409.07` input tok/s | deprecated env is not honored by the current DeepSeek V4 MXFP4 selector; not a useful tuning knob |
+| `--moe-backend flashinfer_cutlass --quantization-config {"moe":{"activation":"mxfp8"}}` | selector chose `FLASHINFER_CUTLASS_MXFP4_MXFP8`, then startup failed in `convert_weight_to_mxfp4_moe_kernel_format()` with `Unsupported mxfp4_backend ... Expected TRTLLM, Triton, AITER, or XPU backend` | upstream has a selectable FlashInfer CUTLASS MXFP4/MXFP8 backend, but the DeepSeek V4 weight-preparation path is incomplete |
+
+Retained FlashInfer CUTLASS MXFP4/MXFP8 opt-in fix, 2026-06-02:
+
+- The official `flashinfer_cutlass` backend was selectable for DeepSeek V4
+  MXFP4 weights, but two model-preparation pieces were incomplete for the
+  W4A8 path: the expert class forced GPT-OSS SwiGLU constants when the model
+  quant config did not provide them, and
+  `convert_weight_to_mxfp4_moe_kernel_format()` did not handle
+  `FLASHINFER_CUTLASS_MXFP4_MXFP8`.
+- The retained fix keeps the path opt-in. It uses only model-provided
+  `gemm1_alpha`, `gemm1_beta`, and `gemm1_clamp_limit`; leaves them `None`
+  when absent; and converts DeepSeek V4's loaded `[gate, up]` MXFP4 expert
+  layout to the `[up, gate]` layout consumed by FlashInfer CUTLASS while
+  applying `block_scale_interleave()` to MXFP8 block scales.
+- Focused regression coverage:
+  `tests/kernels/moe/test_flashinfer_cutlass_mxfp4_config.py` verifies the
+  SwiGLU parameter behavior and the CUTLASS MXFP8 kernel-format conversion.
+  The RED failure matched the runtime startup error; after the fix the focused
+  pytest and ruff checks passed.
+- Real SM120 smoke with TP=2, EP enabled, MTP=2, FP8 KV, prefix cache disabled,
+  `--moe-backend flashinfer_cutlass`,
+  `--quantization-config {"moe":{"activation":"mxfp8"}}`, and
+  `FULL_AND_PIECEWISE` passed. Logs selected
+  `FLASHINFER_CUTLASS_MXFP4_MXFP8`, captured mixed prefill/decode PIECEWISE
+  graphs and decode FULL graphs, and a `2+2` request returned `4`.
+
+Small same-protocol random-prefill A/B, TP=2, EP enabled, MTP=2, FP8 KV,
+prefix cache disabled, `max_model_len=32768`, `max_num_batched_tokens=4096`,
+C=1, OSL=1, 4 prompts:
+
+| Backend | 4K Input Tok/s | 4K Mean TTFT | 16K Input Tok/s | 16K Mean TTFT |
+| --- | ---: | ---: | ---: | ---: |
+| Default `MARLIN` MXFP4 MoE | `6350.39` | `645.96 ms` | `5968.67` | `2743.76 ms` |
+| FlashInfer CUTLASS MXFP4/MXFP8 | `6770.25` | `603.61 ms` | `6319.77` | `2591.38 ms` |
+
+Interpretation: this is a measured positive direction, not a complete
+promotion. The opt-in CUTLASS W4A8 path improved this small prefill screen by
+about `5.9-6.6%` input throughput and reduced mean TTFT by about `5.5-6.6%`.
+It must still pass the broader SM120 matrix, GSM8K limit-200, short-context
+throughput, prefix-cache/KV lifecycle, GB10 startup/stability, and 59K/124K
+C=1/C=2 fairness gates before it becomes a recommended production profile.
+
+The `local-inference-lab/vllm` `dev/unholy-fusion` branch does not appear to
+solve this by completing the official FlashInfer CUTLASS MXFP4 conversion.
+Instead, it adds a separate `B12X` DeepSeek V4 native MXFP4 W4A16 MoE backend
+that dynamically imports `b12x.integration.tp_moe`, uses caller-owned scratch,
+keeps hidden states unquantized, prepares b12x-owned FP4 MoE weights after
+loading, and releases source weights/scales to control VRAM. That branch also
+has independent b12x hooks for mHC, sparse indexing, FP8 GEMM, WO projection,
+and PCIe all-reduce. Therefore the Reddit prefill gap is likely a stacked
+backend-path difference, with native MXFP4 MoE as the first testable component
+on the current optional dependency set and sparse-indexer work blocked until the
+needed b12x compressed-indexer API is available or mapped to the installed
+`nsa_indexer` API.
+
+Rejected native-MXFP4 B12X MoE port attempt, 2026-06-02:
+
+- A minimal explicit `--moe-backend b12x` prototype was wired on the dev branch
+  only. It did not enter auto-selection and did not change the default SM120 or
+  GB10 path.
+- First startup attempt selected `Using 'B12X' Mxfp4 MoE backend`, then failed
+  because the fork code expects `prepare_b12x_fp4_moe_weights`, while released
+  `b12x==0.15.2` exposes `prepare_b12x_w4a16_packed_weights` and the newer
+  `TPMoEWorkspacePool`/arena API instead of the old scratch-plan API.
+- A compatibility shim for the released API got past the import mismatch, but
+  startup then failed in `b12x` W4A16 weight preparation:
+  `unswizzle_block_scale(...): shape '[16, 64, 32, 4, 4]' is invalid for input
+  of size 262144`.
+- Interpretation: the released W4A16 preparation path expects a different
+  block-scale layout/semantic width than the DeepSeek V4 native MXFP4 UE8M0
+  scales currently loaded by vLLM. This is not a safe small vLLM-side
+  integration yet. The unholy-fusion result likely depends on an unreleased or
+  different b12x API/layout contract, or on additional scale-conversion code
+  not present in the released package.
+- Code status: prototype code was removed. Keep only the optional dependency
+  install/import probe and this rejected note until a released b12x API can
+  consume DS4 MXFP4/UE8M0 scales directly or a separately verified conversion
+  is available.
+
+Experimental released-b12x compressed sparse-MLA adapter, 2026-06-02:
+
+- A dev-only adapter was tested outside the PR branch with
+  `b12x==0.15.2`, FlashInfer `0.6.12`, TP=2, EP enabled, FP8 KV, prefix cache
+  enabled, and `FULL_AND_PIECEWISE`. It maps DeepSeek V4 SWA and indexed
+  compressed KV pages into released `b12x.integration.mla` APIs rather than the
+  older `compressed_scratch` API used by the third-party fork.
+- Initial startup failed under CUDA graph capture because released b12x writes
+  split metadata and `sm_scale` from host scalars unless those fields are
+  preplanned on the workspace. Preplanning `kv_chunk_size_ptr`,
+  `num_chunks_ptr`, and `sm_scale_tensor` allowed the tiny startup smoke to
+  complete without disabling FULL or PIECEWISE CUDA graphs.
+- Correctness smoke with `thinking=false` answered `2+2` as `4` on both the
+  temporary b12x path and the current Dev control.
+- Small 2K random prompt-file-free benchmark, `max_model_len=4096`,
+  `max_num_batched_tokens=1024`, `max_num_seqs=2`, temperature 0:
+
+| Variant | C | TTFT mean | TTFT p99 | TPOT mean | Total tok/s | Notes |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Current Dev control | 1 | `1888.56 ms` | `2333.74 ms` | `40.44 ms` | `661.91` | same server profile |
+| Released-b12x adapter, warmed | 1 | `430.03 ms` | `628.35 ms` | `42.60 ms` | `1188.08` | clear C=1 prefill/TTFT win |
+| Current Dev control | 2 | `669.37 ms` | `723.22 ms` | `47.33 ms` | `1946.88` | same server profile |
+| Released-b12x adapter, first C=2 run | 2 | `15068.20 ms` | `57315.13 ms` | `280.69 ms` | `174.78` | one-time JIT/startup debt; not acceptable as a default |
+| Released-b12x adapter, warmed | 2 | `577.43 ms` | `591.01 ms` | `48.58 ms` | `1996.49` | small steady-state win |
+
+- A C=4 control observation was also run but the server was started with
+  `max_num_seqs=2`, so it is not a valid GB10 C=4 gate and should not be used
+  for decisions.
+- Valid C=4 follow-up with the same 2K/32 shape, `max_num_seqs=4`, MTP=2,
+  prefix cache enabled, EP enabled, FP8 KV, and `FULL_AND_PIECEWISE` changed the
+  interpretation. The current Dev control, after explicit C=1/C=2/C=4 warmup,
+  was already much faster than the earlier cold-ish control:
+
+| Variant | C | TTFT mean | TTFT p99 | TPOT mean | P99 ITL | Total tok/s | MTP accept |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Current Dev control, warmed, `max_num_seqs=4` | 1 | `455.57 ms` | `480.23 ms` | `29.68 ms` | `68.29 ms` | `1511.66` | `61.74%` |
+| Current Dev control, warmed, `max_num_seqs=4` | 2 | `667.18 ms` | `906.73 ms` | `42.40 ms` | `417.98 ms` | `2047.43` | `58.05%` |
+| Current Dev control, warmed, `max_num_seqs=4` | 4 | `1058.24 ms` | `1143.07 ms` | `51.67 ms` | `426.59 ms` | `2975.64` | `66.82%` |
+
+- A same-day current-Dev fixed-prompt GB10 frontier control was then run with
+  the production-like Reddit-style chunk budget (`max_num_batched_tokens=8192`)
+  but without any b12x experiment code. It used TP=2, EP enabled, FP8 KV,
+  prefix cache enabled, MTP=2, `max_num_seqs=4`, `max_model_len=131072`, and
+  `FULL_AND_PIECEWISE`. The run artifact is
+  `artifacts/local_gb10_b12x_gap/current_dev_frontier_8192/20260602093420`.
+  Both bundled prompt files completed all four frontiers with zero failures.
+  The service still selected `MARLIN` for native MXFP4 MoE and `PYNCCL` for
+  collectives, so this is a clean current-Dev control, not a b12x result.
+
+| Prompt | Target frontier | Prompt tokens | TTFT | Input tok/s | Decode tok/s | ITL P99 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| story recall | `4096` | `1893` | `2.04 s` | `926.40` | `32.43` | `0.077 s` |
+| story recall | `16384` | `7633` | `5.46 s` | `1397.07` | `43.97` | `0.132 s` |
+| story recall | `32768` | `15222` | `7.26 s` | `2096.99` | `39.87` | `0.070 s` |
+| story recall | `65536` | `30478` | `15.17 s` | `2008.99` | `48.50` | `0.075 s` |
+| security audit | `4096` | `1794` | `2.00 s` | `897.42` | `31.76` | `0.075 s` |
+| security audit | `16384` | `7762` | `5.75 s` | `1349.41` | `42.54` | `0.340 s` |
+| security audit | `32768` | `16591` | `8.77 s` | `1892.16` | `39.05` | `0.391 s` |
+| security audit | `65536` | `36649` | `20.38 s` | `1798.35` | `44.25` | `0.077 s` |
+
+- Interpretation update: the very large earlier `C=1` gap was partly a
+  protocol artifact from cold-ish/random prompt measurement and `max_num_seqs`
+  mismatch. Properly warmed current Dev is materially better. There is still a
+  credible third-party backend gap, but the useful target is no longer "make
+  current Dev behave at all"; it is specifically to replace or improve selected
+  backend paths while preserving the warmed current-Dev floor.
+
+Rejected released-b12x NSA top-k-only experiment, 2026-06-02:
+
+- Hypothesis: the GB10 prefill gap might come primarily from the sparse indexer
+  top-k stage. A temporary dev-only patch routed SM12x FP8 MQA prefill top-k to
+  released `b12x.integration.nsa_indexer.sparse_nsa_index_extend_tiled_topk`
+  when explicitly enabled. The code was kept in a temporary worktree only and
+  was removed after the experiment.
+- API microbench result: the released b12x NSA top-k API matched the local
+  top-k set semantics for supported top-k widths (`512`/`2048`) and was faster
+  than the local path after JIT on larger synthetic shapes. First-shape JIT was
+  about 15 seconds, so any production use would need explicit warmup coverage.
+- Real fixed-frontier result did not transfer. On the GB10 two-node fixed
+  frontier profile (`max_num_batched_tokens=8192`, TP=2, EP enabled, FP8 KV,
+  prefix cache enabled, MTP=2, `max_num_seqs=4`, `max_model_len=131072`,
+  `FULL_AND_PIECEWISE`), the b12x NSA top-k path regressed 6 of 8 prompt
+  frontiers versus the current-Dev control:
+
+| Prompt | Target frontier | Current Dev TTFT | b12x NSA top-k TTFT | Ratio | Current input tok/s | b12x input tok/s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| story recall | `4096` | `2.04 s` | `15.57 s` | `7.62x` | `926.40` | `121.60` |
+| story recall | `16384` | `5.46 s` | `15.49 s` | `2.84x` | `1397.07` | `492.62` |
+| story recall | `32768` | `7.26 s` | `15.36 s` | `2.12x` | `2096.99` | `991.25` |
+| story recall | `65536` | `15.17 s` | `13.98 s` | `0.92x` | `2008.99` | `2180.55` |
+| security audit | `4096` | `2.00 s` | `1.70 s` | `0.85x` | `897.42` | `1052.77` |
+| security audit | `16384` | `5.75 s` | `15.93 s` | `2.77x` | `1349.41` | `487.19` |
+| security audit | `32768` | `8.77 s` | `15.50 s` | `1.77x` | `1892.16` | `1070.11` |
+| security audit | `65536` | `20.38 s` | `33.07 s` | `1.62x` | `1798.35` | `1108.09` |
+
+- Artifact references: current-Dev control
+  `artifacts/local_gb10_b12x_gap/current_dev_frontier_8192/20260602093420`;
+  rejected b12x NSA incremental run
+  `artifacts/local_gb10_b12x_gap/b12x_nsa_frontier_incremental_8192/20260602095957`.
+  The first full harness run with this patch also exposed a measurement-layer
+  streaming read hang after the server had no running/waiting requests; its
+  partial artifact is
+  `artifacts/local_gb10_b12x_gap/b12x_nsa_frontier_8192/20260602095347` and
+  should not be used as a performance result.
+- Interpretation: the released NSA top-k primitive is not enough to reproduce
+  the third-party GB10 prefill behavior. The useful difference in the
+  third-party branch is at the sparse MLA main attention/extend backend level:
+  it adds an opt-in `B12X_MLA_SPARSE` backend using
+  `b12x.integration.mla.sparse_mla_extend_forward` /
+  `sparse_mla_decode_forward`, while current Dev still uses the local
+  Triton sparse MLA accumulate path. This matches the isolated microbench where
+  GB10 was about `4.4x` slower than RTX PRO 6000 on local sparse MLA accumulate.
+  Future work should therefore target a correct persistent-workspace b12x
+  sparse-MLA attention integration, not another top-k-only replacement.
+
+Root-cause refinement after reading the `local-inference-lab/vllm`
+`dev/unholy-fusion` DeepSeek V4 path:
+
+- The fork has two related but different sparse-MLA paths. The generic
+  `B12X_MLA_SPARSE` backend targets V32-family / GLM-NSA-style unified sparse
+  MLA KV cache layouts. It is not a direct DeepSeek V4 Flash drop-in because
+  DeepSeek V4 Flash uses the DS4 SWA + compressed dual-cache contract.
+- The fork's DeepSeek V4 Flash-specific path is
+  `DeepseekV4SM120SparseImpl`, selected for SM120 when FlashInfer exposes
+  `flashinfer.sparse_mla_sm120` and
+  `BatchSparseMLAPagedAttentionWrapper`. That path keeps DS4's SWA plus
+  compressed-indexer inputs and calls the FlashInfer wrapper directly for both
+  prefill and decode.
+- The fork contains a FlashInfer source-build helper, but it requires the user
+  to provide `FLASHINFER_GIT_REF`; the checkout examined here does not publish
+  the exact FlashInfer branch/tag/commit that contains
+  `BatchSparseMLAPagedAttentionWrapper`.
+- The current official FlashInfer 0.6.12 public docs expose
+  `flashinfer.mla.BatchMLAPagedAttentionWrapper`, but not
+  `BatchSparseMLAPagedAttentionWrapper` or `flashinfer.sparse_mla_sm120`.
+  GB10 venv import probes on the stable `0.6.12` package and an isolated
+  `0.6.12.dev20260531` nightly target likewise did not find those symbols. So
+  the Reddit/unholy-fusion prefill advantage is probably not available from the
+  released or currently probed nightly FlashInfer wheel stack alone; it likely
+  depends on a fork or still-unmerged sparse-MLA SM120 wrapper.
+- Practical implication: do not port the generic `B12X_MLA_SPARSE` backend
+  into this branch as the DS4 fix, and do not keep top-k-only experiments. The
+  next useful experiment is a separate dev-only port of the DS4
+  `DeepseekV4SM120SparseImpl` wrapper path, but only after the installed
+  FlashInfer package actually exposes the required sparse-MLA SM120 API.
+- Installation implication: use `flashinfer show-config` plus an explicit Python
+  import probe as the validation step. If we need to chase a not-yet-released
+  wrapper, test FlashInfer nightly or source builds in an isolated research venv
+  first; do not replace the current validated runtime package set in place.
+- Follow-up release-API probe, 2026-06-02: FlashInfer `0.6.12` exposes
+  `flashinfer.mla.trtllm_batch_decode_sparse_mla_dsv4` but still does not
+  expose `BatchSparseMLAPagedAttentionWrapper` or `flashinfer.sparse_mla_sm120`.
+  The public function accepts varlen `cum_seq_lens_q` and therefore looked like
+  a possible prefill/extend bridge, but synthetic q-len>1 smoke tests on both
+  SM121 GB10 and SM120 RTX PRO 6000 failed inside
+  `trtllm_paged_attention_decode_sparse_mla_dsv4` with
+  `Unsupported architecture`. Treat the release function as currently unusable
+  for this DS4 SM12x path. The RTX venv was upgraded to
+  `flashinfer-python==0.6.12`, `flashinfer-cubin==0.6.12`, and
+  `flashinfer-jit-cache==0.6.12+cu130` with `--no-deps` to run this probe;
+  `flashinfer show-config` confirmed CUDA `13.3`, arch `(12, '0f')`, and all
+  registered modules compiled before the smoke failed.
+- GB10 official-dependency probe, 2026-06-02: the target venv has
+  `b12x==0.15.2`, `flashinfer-python==0.6.12`,
+  `flashinfer-cubin==0.6.12`, and `flashinfer-jit-cache==0.6.12+cu130`.
+  `flashinfer show-config` reports CUDA `13.0`, arch `(12, '1a')`, and
+  `648` registered modules, but the CuTe DSL FMHA cubin arch list is still
+  `sm_100a`, `sm_103a`, and `sm_110a`. Import probes still find
+  `b12x.integration.mla` but not `b12x.integration.compressed_indexer`,
+  `flashinfer.sparse_mla_sm120`,
+  `flashinfer.BatchSparseMLAPagedAttentionWrapper`, or
+  `flashinfer.sparse_mla_sm120_decode_dsv4_autotune`. Therefore the public
+  b12x install is useful as an optional research dependency, but installing it
+  does not activate the Reddit/unholy-fusion DeepSeek V4 sparse-MLA wrapper
+  path.
+
+Clean RTX sparse-MLA frontier stats, 2026-06-02:
+
+- Artifact label:
+  `20260602_sparse_mla_frontier_stats_rtx_no_prewarm`. Profile: dual RTX PRO
+  6000, TP=2, EP enabled, MTP=2, FP8 KV, prefix cache disabled,
+  `max_model_len=131072`, `max_num_batched_tokens=4096`, `max_num_seqs=4`,
+  `FULL_AND_PIECEWISE`, frontier prompts `4096,16384,32768,65536`,
+  `max_tokens=16`, and phase prewarm disabled so stats contain only measured
+  frontier requests.
+- Frontier sweep passed with zero failures. Input throughput on this RTX profile
+  was `5.0-6.0K tok/s` for 4K-64K prompt frontiers after first-shape JIT.
+- Sparse-MLA prefill stats wrote `2816` JSONL rows, evenly split across ranks.
+  Total candidate slots were `8.70B`; effective candidate visits were `4.14B`;
+  rectangular padding was `52.45%`.
+- Layer split:
+
+  | Layer type | Compress | Rows | Candidate slots | Effective visits | Padding ratio | Lens max |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `mla_prefill_chunk` | `1` | `192` | `90.64M` | `90.25M` | `0.004` | `128` |
+  | `mla_prefill_partial` | `128` | `1280` | `5.44B` | `1.05B` | `0.806` | `414` |
+  | `mla_prefill_partial` | `4` | `1344` | `3.17B` | `2.99B` | `0.056` | `640` |
+
+- Request-level reconstruction from the chunk stats shows that every long
+  prompt is dominated by repeated `4096` query chunks plus a remainder. Once
+  past the tiny 4K prompts, effective candidate visits stabilize around
+  `35K-36K` per prompt token:
+
+  | Prompt shape | Prompt tokens | Query chunks | Effective visits | Effective visits/token | TTFT |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | story 16K | `7633` | `1x4096 + 3537` | `266.05M` | `34.86K` | `1.301 s` |
+  | security 16K | `7762` | `1x4096 + 3666` | `270.59M` | `34.86K` | `1.288 s` |
+  | story 32K | `15222` | `3x4096 + 2934` | `539.91M` | `35.47K` | `2.576 s` |
+  | security 32K | `16591` | `4x4096 + 207` | `582.80M` | `35.13K` | `2.941 s` |
+  | story 64K | `30478` | `7x4096 + 1806` | `1.08B` | `35.50K` | `5.509 s` |
+  | security 64K | `36649` | `8x4096 + 3881` | `1.32B` | `35.99K` | `6.816 s` |
+
+- Interpretation: the current path is not mainly suffering from a bigger chunk
+  size knob; the 4096 query chunk is already the main unit of work. The
+  prefill gap to the Reddit/unholy-fusion GB10 report is most plausibly in the
+  sparse-MLA attention backend contract itself: current Dev gathers/dequantizes
+  KV, combines SWA and compressed top-k indices, and runs local Triton
+  accumulate kernels over each 4096 chunk; the fork's DeepSeek V4 path calls a
+  FlashInfer `BatchSparseMLAPagedAttentionWrapper` directly with SWA indices
+  and extra compressed KV/index inputs. Until that wrapper/API exists in a
+  public package or a separately validated source build, installing b12x alone
+  cannot deliver the same path.
+
+- The same valid C=4 startup with the released-b12x adapter did not reach
+  `/health`. It crossed CUDA graph memory profiling only after a 60-second
+  shared-memory broadcast wait, then stuck in DeepSeek V4 sparse-MLA warmup for
+  MTP uniform decode request counts `[1, 2, 4]`, producing repeated
+  `No available shared memory broadcast block found in 60 seconds` messages.
+  The service was terminated and no benchmark was recorded.
+- Root-cause note: released `b12x==0.15.2` exposes
+  `compressed_mla_decode_forward` for DS4-like SWA + indexed compressed KV
+  decode, but does not expose an equivalent compressed extend/prefill API. Its
+  `sparse_mla_extend_forward` contract is for a single unified sparse-MLA KV
+  cache. The temporary adapter therefore routed prefill through the compressed
+  decode front door with an `"extend"` workspace mode. Combined with creating a
+  fresh `B12XAttentionWorkspace` on every forward call, this makes the C=4
+  sparse-MLA warmup failure a structural integration problem, not a parameter
+  tuning issue.
+- Interpretation: the third-party GB10 prefill advantage is plausible and the
+  attention side is a real contributor. The released b12x compressed sparse-MLA
+  path may reduce small-C latency once warmed in a narrow `max_num_seqs=2`
+  profile, but the previously large C=1 delta was also partly a measurement
+  artifact: a properly warmed current-Dev control at `max_num_seqs=4` already
+  reaches a similar 2K/32 C=1 TTFT. The current adapter is not mergeable:
+  workspace lifetime is per-call, CUDA graph metadata preplanning is
+  hand-stitched, first-use JIT debt is large, the valid C=4 startup/warmup path
+  hangs, the prefill API contract is not correct for DS4's dual-cache sparse MLA,
+  and no long-context gate has passed.
+- Code status: keep this only in the temporary experiment worktree. Before any
+  dev-branch absorption, rewrite it around persistent per-layer workspace
+  objects, explicit warmup for all served shapes, an internal log/metric proving
+  the b12x path is active, and the normal SM120/GB10 regression gates. Do not
+  add a user-facing switch or PR code path from this prototype.
+
+Rejected persistent-workspace follow-up, 2026-06-02:
+
+- A second temporary adapter cached `B12XAttentionWorkspace` objects per layer
+  and preplanned split metadata and the `sm_scale` tensor instead of allocating
+  a fresh workspace and CUDA-graph-sensitive control tensors on every forward.
+  This was meant to test whether the C=4 failure above was only workspace
+  lifetime overhead.
+- The follow-up improved the startup symptom: the GB10 service reached
+  `/health`, completed FULL and PIECEWISE CUDA graph capture, and survived the
+  sparse-MLA warmup that previously blocked startup.
+- It still failed the real request gate. A valid `max_num_seqs=4` smoke with
+  MTP=2, prefix cache enabled, EP enabled, FP8 KV, and `FULL_AND_PIECEWISE`
+  completed C=1 only slowly, then C=4 made no token progress and ended with
+  `RPC call to sample_tokens timed out` / `EngineCore encountered an issue`.
+  The C=1 prewarm produced TTFT mean `4281.18 ms`, TTFT p99 `11193.43 ms`,
+  output throughput `3.31 tok/s`, and MTP acceptance `41.18%`, which is far
+  below the warmed current-Dev control.
+- Artifact label: `b12x_cached_workspace_smoke_20260602102944`.
+- Interpretation: persistent workspace ownership is necessary for any future
+  b12x attention route, but it is not sufficient. The released compressed-MLA
+  front door still does not provide a correct DS4 compressed extend/prefill
+  contract, and the adapter can destabilize mixed prefill/decode C=4. This path
+  is rejected and must not be absorbed into Dev or PR code.
+
+Rejected official-b12x compressed sparse-MLA endpoint recheck, 2026-06-02:
+
+- A narrower RTX PRO 6000 follow-up retried the released
+  `b12x.integration.mla.compressed_mla_decode_forward` route without the GB10
+  persistent-workspace prototype. The adapter dynamically imported
+  `b12x==0.15.2`, kept the normal fallback path, generated per-chunk SWA
+  physical slot ids from existing vLLM metadata, and wrote stats proving when
+  the b12x path was active.
+- The first run with a conservative width threshold did not exercise b12x at
+  all. Stats showed only the current `mla_prefill_chunk` /
+  `mla_prefill_partial` paths, because real DS4 prefill widths on this profile
+  are `640` for C4A and `1152` for C128A, below the synthetic widths used in
+  the earlier microbench.
+- Removing the width threshold made the released b12x path active for all
+  compressed layers. It was a clear endpoint regression: the small
+  4K/16K frontier gate stayed correct at the HTTP level but TTFT/input
+  throughput moved from the current-dev band around `1.29-1.33 s` and
+  `5.5-6.0K tok/s` to `15.02-15.25 s` and about `500 tok/s` for the first
+  7.6K-token prompts, and from `5.56-6.80 s` and `5.4-5.5K tok/s` to
+  `18.28-19.25 s` and `1.7-1.9K tok/s` for the 30K-36K-token prompts.
+- Artifact labels:
+  `20260602_b12x_skip_probe_r1` for the thresholded non-active run and
+  `20260602_b12x_rows_probe_r1` for the active regression run.
+- Decision: reject and remove all released-b12x compressed sparse-MLA endpoint
+  code from Dev. The root-cause conclusion is stronger now: the Reddit /
+  unholy-fusion prefill advantage is not available through the public
+  `b12x==0.15.2` compressed decode API. We need either a correct public
+  FlashInfer SM120 sparse-MLA wrapper for DS4 extend/prefill, or a new
+  maintainable kernel path that changes the DS4 attention contract directly.
+
+Rejected C128 direct global-slot sparse-MLA prefill experiment, 2026-06-02:
+
+- A follow-up tried to bypass the gathered BF16 combined-KV workspace for C128A
+  prefill only. It materialized global compressed top-k slots and SWA physical
+  slot ids, then used the existing FP8 global-slot sparse-MLA accumulate
+  primitive for compressed and SWA states before merging them with the existing
+  two-state finish kernel. C4A and SWA-only layers stayed on the current path.
+- Startup probes `20260602_c128_global_slots_probe_r1` and
+  `20260602_c128_global_slots_probe_r2` caught Triton constexpr/scalar issues
+  in the temporary SWA slot-materialization kernel. After fixing the Python-int
+  scalar boundary, `20260602_c128_global_slots_probe_r3` passed startup and the
+  4K/16K frontier smoke.
+- Stats confirmed the experiment was active: C128 rows were recorded as
+  `mla_prefill_c128_global_slots` with combined width `1152`, while C4A and
+  SWA-only rows stayed on `mla_prefill_partial` / `mla_prefill_chunk`.
+- Endpoint result was a clear small regression against the same-host
+  current-Dev control `20260602_b12x_reverted_probe_r1`:
+
+  | Prompt | Frontier | Control TTFT | Candidate TTFT | Control input tok/s | Candidate input tok/s |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | `ds4_security_audit` | 4K | `1.2849 s` | `1.3573 s` | `6040.94` | `5718.64` |
+  | `ds4_security_audit` | 16K | `6.7982 s` | `7.2450 s` | `5391.00` | `5058.54` |
+  | `ds4_story_recall` | 4K | `1.3220 s` | `1.3965 s` | `5773.81` | `5465.78` |
+  | `ds4_story_recall` | 16K | `5.5357 s` | `5.8922 s` | `5505.73` | `5172.58` |
+
+- Decision: reject and remove the code. The result narrows the root cause:
+  simply avoiding gathered KV and splitting C128A into compressed/SWA
+  global-slot accumulates is not enough. The extra slot materialization and
+  additional accumulate/finish work outweigh the reduced padding visits. Future
+  kernel work still needs to reduce candidate visits, live state, or dependency
+  depth directly rather than just changing the addressing mode.
+
+Rejected prefill-SWA precompute as a standalone current-path optimization,
+2026-06-02:
+
+- The `local-inference-lab/vllm` SM120 path precomputes
+  `prefill_swa_indices` / `prefill_swa_lens` in metadata and feeds those
+  physical slot ids to `BatchSparseMLAPagedAttentionWrapper`. That is useful for
+  the fork's wrapper contract, but it is not directly the same as current Dev's
+  gathered-KV `combine_topk_swa_indices` contract.
+- A current-Dev microbench on the same RTX PRO 6000 stack measured
+  `combine_topk_swa_indices` at only about `0.0136-0.0206 ms` for realistic
+  C4A/C128A chunk shapes from 1K to 8K query tokens. This is too small to
+  explain the endpoint prefill gap.
+- A current sparse-MLA accumulate recheck,
+  `20260602_sparse_mla_current_recheck`, remained dominated by candidate-work
+  scaling instead: chunk `2048 x 1152` was `9.900 ms`, partial `2048 x 1152`
+  was `9.913 ms`, and both paths stayed around `1.5e10` candidate visits/s.
+- Decision: do not add metadata-level prefill SWA fields just to optimize the
+  current gathered-KV path. They may become useful only if paired with a true
+  wrapper/direct-paged sparse-MLA backend. The next kernel work should focus on
+  the sparse-MLA attention backend itself, not on the cheap combine step.
+
+Rejected public-b12x unified sparse-MLA extend as the missing prefill backend,
+2026-06-02:
+
+- A synthetic RTX PRO 6000 recheck measured the released
+  `b12x.integration.mla.sparse_mla_extend_forward` front door directly. The
+  shape used the public unified sparse-MLA contract (`q` head dim `576`,
+  `64` local heads, `topk=1152`, `kv_rows=131072`, BF16 Q, uint8 packed KV).
+  This is not the DS4 dual-cache contract, but it answers whether the public
+  b12x unified extend kernel has an obvious raw speed advantage over the
+  current vLLM sparse-MLA accumulate primitive.
+
+  | Tokens | Public b12x unified extend | Current vLLM chunk accumulate |
+  | ---: | ---: | ---: |
+  | `256 x 1152` | `2.122 ms` | `1.074 ms` |
+  | `1024 x 1152` | `10.124 ms` | `4.973 ms` |
+  | `2048 x 1152` | `20.529 ms` | `9.900 ms` |
+
+- Artifact labels:
+  `20260602_b12x_unified_sparse_mla_synthetic_recheck` and
+  `20260602_sparse_mla_current_recheck`.
+- Decision: reject public `sparse_mla_extend_forward` as the missing DS4
+  prefill win. The Reddit/unholy-fusion advantage is therefore unlikely to be
+  available by simply routing DS4 into released b12x's unified extend API. It
+  more likely depends on the fork-only FlashInfer SM120 DS4 wrapper path,
+  additional compressed-indexer integration, or a different unreleased b12x
+  contract.
+
+Rejected empty-tail sparse-MLA loop skip, 2026-06-02:
+
+- Hypothesis: current Triton sparse-MLA prefill loops to the full
+  `combined_indices.shape[-1]` for every query chunk, even when a chunk's
+  maximum valid `combined_lens` is below later candidate offsets. A helper
+  computed the per-query-chunk max candidate length from existing CPU metadata
+  and skipped empty tail candidate chunks without adding GPU-to-CPU sync.
+- Isolated accumulate microbench was positive and numerically exact. On GB10,
+  `59k_like` improved `45.030 ms -> 38.866 ms` (`1.159x`) and `32k_like`
+  improved `34.738 ms -> 25.097 ms` (`1.384x`), while `124k_like` was neutral.
+  On RTX PRO 6000, `59k_like` improved `9.301 ms -> 8.511 ms` (`1.093x`) and
+  `32k_like` improved `6.979 ms -> 5.614 ms` (`1.243x`), while `124k_like`
+  was neutral.
+- Endpoint A/B did not validate the hypothesis. Same-host RTX PRO 6000, TP=2,
+  MTP=2, EP enabled, FP8 KV, prefix cache disabled, `FULL_AND_PIECEWISE`,
+  `max_num_batched_tokens=4096`, `max_num_seqs=4`, C=1 cold:
+
+  | Prompt | Control TTFT | Candidate TTFT | Control decode | Candidate decode |
+  | --- | ---: | ---: | ---: | ---: |
+  | 59K synthetic | `11.726 s` | `11.693 s` | `139.355 tok/s` | `138.717 tok/s` |
+  | 124K synthetic | `28.844 s` | `28.916 s` | `106.137 tok/s` | `107.954 tok/s` |
+
+  Artifact labels: `empty_chunk_skip_control_20260602111032` and
+  `empty_chunk_skip_candidate_20260602111323`.
+- Decision: reject and remove the code. The optimization is real inside the
+  accumulate microbench, but the endpoint saving is below run noise because
+  the main TTFT path is dominated by broader sparse-MLA/indexer/MoE/JIT work.
+  Future sparse-MLA work must replace or substantially restructure the main
+  attention backend; shaving empty loop tails is not enough.
+
+Next steps:
+
+- keep b12x out of vLLM hard requirements and public default profiles;
+- document the optional `--no-deps` install and import probe for GB10 research;
+- add only dev-branch experiments that dynamically import b12x and fall back
+  cleanly when it is absent;
+- expand the opt-in FlashInfer CUTLASS MXFP4/MXFP8 path through the same SM120
+  and GB10 gates before making it a recommended serve profile;
+- if porting is needed, do not start by promoting the released-b12x sparse-MLA
+  adapter. First wait for, or implement separately, a released b12x compressed
+  extend/prefill contract for DS4-style dual-cache sparse MLA; otherwise only
+  test decode-only integration with persistent workspace ownership and explicit
+  internal path logging. Native MXFP4 B12X MoE remains blocked on the released
+  package's scale-layout contract; sparse indexer and PCIe all-reduce remain
+  later isolated experiments;
+- do not spend more time on release FlashInfer `0.6.12`
+  `trtllm_batch_decode_sparse_mla_dsv4` as a DS4 prefill bridge unless a newer
+  wheel or source build first passes an SM120/SM121 q-len>1 smoke;
+- require the fixed GB10 C=1 frontier, GB10 long-C2 reduced gate, SM120
+  performance regression gate, and GSM8K before keeping code.
+
+Sparse-MLA grouped-candidate reuse probe, 2026-06-02:
+
+- Motivation: the released `b12x==0.15.2` and FlashInfer `0.6.12` packages do
+  not expose the fork-only DeepSeek V4 `BatchSparseMLAPagedAttentionWrapper`
+  prefill contract, so the next root-cause question is whether the missing win
+  is structural rather than an install issue.
+- A new opt-in sparse-MLA stats sample records candidate overlap only when
+  `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_OVERLAP_ROWS` is positive. The default is
+  zero, so normal benchmarks and serving do not take the GPU-to-CPU sampling
+  sync.
+- Probe labels: `20260602_sparse_mla_overlap_probe_r1` and
+  `20260602_sparse_mla_overlap_probe_r2`. Both used RTX PRO 6000 x2, TP=2,
+  EP enabled, MTP=2, FP8 KV, prefix cache disabled, `FULL_AND_PIECEWISE`, and
+  the frontier context sweep with prewarm disabled. The frontier latency from
+  these probes is diagnostic only because overlap sampling intentionally
+  synchronizes and copies sampled indices to CPU.
+- The real candidate overlap is high. Aggregated `unique / valid` candidate
+  ratios from the second probe:
+
+  | Layer type | Compress | Combined width | Group 8 | Group 16 | Group 32 |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | `mla_prefill_chunk` | `1` | `128` | `0.1318` | `0.0698` | `0.0388` |
+  | `mla_prefill_partial` | `4` | `640` | `0.2550` | `0.1582` | `0.0963` |
+  | `mla_prefill_partial` | `128` | `1152` | `0.1288` | `0.0666` | `0.0355` |
+
+- A synthetic upper-bound microbench compared current per-token sparse MLA
+  accumulate with a grouped candidate-union path that precomputes the union and
+  mask, then uses tensor-core matmul plus masked softmax/value accumulation.
+  This is not a production implementation, but it tests whether grouped-query
+  reuse is even worth pursuing.
+
+  | Shape | Current | Grouped-union upper bound | Result |
+  | --- | ---: | ---: | ---: |
+  | C128A `1024 x 1152`, group 8, ratio `0.129` | `8.917 ms` | `12.980 ms` | slower |
+  | C128A `1024 x 1152`, group 16, ratio `0.070` | `8.461 ms` | `6.310 ms` | `1.34x` faster |
+  | C128A `1024 x 1152`, group 32, ratio `0.040` | `8.415 ms` | `3.916 ms` | `2.15x` faster |
+  | C4A `1024 x 640`, group 8, ratio `0.253` | `5.173 ms` | `12.503 ms` | slower |
+  | C4A `1024 x 640`, group 16, ratio `0.150` | `4.872 ms` | `5.717 ms` | slower |
+  | C4A `1024 x 640`, group 32, ratio `0.090` | `4.747 ms` | `4.417 ms` | `1.08x` faster |
+
+- Interpretation: the Reddit/unholy-fusion prefill advantage is plausibly tied
+  to a query-grouped sparse-MLA backend that reuses candidate KV across many
+  adjacent query rows and can use wider matmul-style work. A naive token-block
+  variant of the current online accumulate kernel is not promising because it
+  multiplies live `running_acc` state; group 8 is also too small. The next
+  maintainable native experiment should be C128A-first and group at least 16,
+  ideally 32 query rows, with a two-stage or tiled design that reduces candidate
+  visits/live state rather than just adding launches.
+- Decision: keep the overlap stats hook as opt-in diagnostic evidence, but do
+  not promote a b12x release adapter. Next code experiment should target a
+  C128A grouped-query sparse-MLA prototype and must still pass the fixed SM120
+  performance regression gate, GSM8K, GB10 C=1 frontier, and GB10 long-C2
+  reduced gate before PR promotion.
+
+C128A grouped-compressed two-state microbench, 2026-06-02:
+
+- Follow-up question: the combined overlap above could have been explained by
+  SWA alone. A split-region stats probe, label
+  `20260602_sparse_mla_region_overlap_probe_r1`, classified gathered indices by
+  workspace region (`local < N` as compressed, `local >= N` as SWA). It used the
+  same RTX PRO 6000 profile and a 32K frontier. The measured frontier latency
+  is diagnostic only because candidate sampling copies GPU data to CPU.
+- Result: C128A compressed top-k itself is almost perfectly shared across
+  adjacent rows. Aggregated `unique / valid` ratios:
+
+  | Layer type | Region | Group 8 | Group 16 | Group 32 |
+  | --- | --- | ---: | ---: | ---: |
+  | C128A compressed | compressed | `0.1251` | `0.0626` | `0.0313` |
+  | C128A SWA | SWA | `0.1318` | `0.0698` | `0.0388` |
+  | C4A compressed | compressed | `0.3033` | `0.1949` | `0.1215` |
+  | C4A SWA | SWA | `0.1318` | `0.0698` | `0.0388` |
+
+- Interpretation: for C128A, the compressed top-k list is effectively shared
+  across a 32-token query group. This makes a C128-specific two-state design
+  plausible without a general GPU union builder: compute compressed attention
+  over a shared per-group compressed candidate set, compute SWA separately, then
+  merge the two attention states with the existing sink-aware merge/finish
+  primitive.
+- A synthetic two-state upper-bound microbench tested exactly that direction:
+  current combined sparse accumulate versus grouped compressed tensor-core
+  matmul plus existing SWA accumulate plus existing two-state finish. The
+  microbench is not a production implementation because it uses PyTorch
+  operations and per-group temporary tensors for the compressed state; it is a
+  go/no-go signal before writing a native kernel.
+
+  RTX PRO 6000 SM120, group 32, SWA 128:
+
+  | Tokens | Compressed candidates | Current | Grouped two-state | Speedup |
+  | ---: | ---: | ---: | ---: | ---: |
+  | `256` | `128` | `0.532 ms` | `0.847 ms` | `0.63x` |
+  | `256` | `256` | `0.763 ms` | `0.845 ms` | `0.90x` |
+  | `256` | `384` | `0.992 ms` | `0.844 ms` | `1.18x` |
+  | `256` | `512` | `1.227 ms` | `0.846 ms` | `1.45x` |
+  | `256` | `1024` | `2.156 ms` | `0.849 ms` | `2.54x` |
+  | `1024` | `512` | `4.851 ms` | `3.334 ms` | `1.46x` |
+  | `2048` | `1024` | `18.302 ms` | `6.097 ms` | `3.00x` |
+
+  GB10 SM121, group 32, SWA 128:
+
+  | Tokens | Compressed candidates | Current | Grouped two-state | Speedup |
+  | ---: | ---: | ---: | ---: | ---: |
+  | `256` | `256` | `3.450 ms` | `2.830 ms` | `1.22x` |
+  | `256` | `512` | `5.481 ms` | `3.392 ms` | `1.62x` |
+  | `256` | `1024` | `9.834 ms` | `4.320 ms` | `2.28x` |
+  | `512` | `512` | `12.038 ms` | `6.676 ms` | `1.80x` |
+  | `1024` | `512` | `24.349 ms` | `13.246 ms` | `1.84x` |
+  | `1024` | `1024` | `43.028 ms` | `17.425 ms` | `2.47x` |
+
+- Threshold decision:
+  - On RTX PRO 6000, do not use grouped C128A for short contexts where the
+    compressed candidate count is below about `384`; it would regress the
+    4K/16K frontier and short-context gates.
+  - On GB10, even `256` compressed candidates is positive in this synthetic
+    shape, which fits the observed GB10 prefill gap and the much lower
+    candidate-visit throughput of the current kernel.
+  - The next code experiment should be a native C128A grouped-compressed state
+    kernel, not the PyTorch-loop prototype. Endpoint promotion should be gated
+    by a threshold derived from compressed candidate count, with short-context
+    regression gates proving the path stays off where it is not beneficial.
+
+Rejected first native grouped-compressed finish prototype, 2026-06-02:
+
+- A temporary Triton microbench implemented a grouped C128 compressed score
+  kernel and a simple grouped finish/value kernel. The score kernel was
+  promising: on RTX PRO 6000, `256 x 512` compressed candidates took only
+  `0.059 ms`, and `256 x 1024` took `0.109 ms`.
+- The simple finish/value kernel was the wrong design. It computed
+  max/denom/value per token/head/D-block and repeated the softmax scan for each
+  D block, so it was much slower than current compressed accumulate:
+
+  | Shape | Current compressed | Grouped score | Simple grouped finish | Total | Speedup |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | `256 x 512` | `0.975 ms` | `0.059 ms` | `3.150 ms` | `3.202 ms` | `0.305x` |
+  | `256 x 1024` | `1.901 ms` | `0.109 ms` | `6.319 ms` | `6.416 ms` | `0.296x` |
+
+- A follow-up single-kernel value-dot finish attempted
+  `weights[32, C] @ kv[C, Dblock]`, but Triton on SM120 failed during
+  `TritonGPUOptimizeThreadLocality` with
+  `Assertion loopResult.hasOneUse()`. This is a compiler-shape problem in the
+  prototype, not an endpoint result.
+- Decision: reject and remove the temporary script/code. The grouped direction
+  remains valid because the score stage and PyTorch upper-bound are positive,
+  but the next native experiment must split the design more carefully:
+  1. grouped score kernel;
+  2. separate max/denom kernel;
+  3. separate value-dot kernel that reads max and writes `acc`, avoiding a
+     combined loop carrying both denom and accumulator state.
+
+Grouped C128 compressed prefill endpoint prototype, 2026-06-02:
+
+- A split native prototype was then tested:
+  1. grouped BF16 score materialization over shared C128 compressed candidates;
+  2. per-token max/denom from materialized scores;
+  3. grouped value dot;
+  4. a variable-offset SWA tail accumulate, because `combined_indices` stores
+     SWA immediately after each row's actual compressed top-k length rather
+     than at a fixed padded offset.
+- Focused RTX PRO 6000 microbench results:
+
+  | Shape | Current indexed chunk | Grouped compressed+SWA | Speedup |
+  | --- | ---: | ---: | ---: |
+  | `256 tokens, 128 compressed + 128 SWA` | `0.184 ms` | `0.132 ms` | `1.39x` |
+  | `256 tokens, 256 compressed + 128 SWA` | `0.265 ms` | `0.139 ms` | `1.91x` |
+  | `256 tokens, 512 compressed + 128 SWA` | `0.425 ms` | `0.167 ms` | `2.55x` |
+  | `256 tokens, 1024 compressed + 128 SWA` | `0.745 ms` | `0.213 ms` | `3.49x` |
+
+- The real C=1 prefill path uses partial states, so a second microbench compared
+  the grouped helper against partial-state+merge on the same combined layout:
+
+  | Shape | Current partial-state+merge | Grouped compressed+SWA | Speedup |
+  | --- | ---: | ---: | ---: |
+  | `256 tokens, 256 compressed + 128 SWA` | `0.277 ms` | `0.145 ms` | `1.91x` |
+  | `256 tokens, 512 compressed + 128 SWA` | `0.392 ms` | `0.163 ms` | `2.40x` |
+  | `256 tokens, 1024 compressed + 128 SWA` | `0.673 ms` | `0.204 ms` | `3.29x` |
+
+- Request-level A/B on dual RTX PRO 6000, MTP=2, TP=2, EP enabled, FP8 KV,
+  prefix cache disabled, FULL_AND_PIECEWISE:
+
+  | Gate | Control TTFT | Candidate TTFT | Ratio | Decode impact |
+  | --- | ---: | ---: | ---: | --- |
+  | `synthetic_1900_lines`, `58,980` prompt tokens | `11.714 s` | `11.275 s` | `0.963` | flat, `139.06 -> 139.17 tok/s` |
+  | `synthetic_4000_lines`, `124,080` prompt tokens | `28.960 s` | `25.081 s` | `0.866` | flat, `105.96 -> 105.98 tok/s` |
+
+- A fuller dual RTX PRO 6000 fixed C=2 fairness/interference protocol then
+  compared control and request-level threshold `384` candidate under the same
+  MTP=2, TP=2, EP enabled, FP8 KV, prefix-cache disabled,
+  `max_num_batched_tokens=4096`, `max_num_seqs=4`, FULL_AND_PIECEWISE serve
+  profile. Artifact labels:
+  `20260602_grouped_c128_control_c2_fairness` and
+  `20260602_grouped_c128_candidate_total384_c2_fairness`.
+
+  | Gate | Metric | Control | Candidate | Ratio |
+  | --- | --- | ---: | ---: | ---: |
+  | `58,980` prompt tokens, C=1 | TTFT mean | `11.637 s` | `11.314 s` | `0.972` |
+  | `58,980` prompt tokens, C=2 | TTFT mean | `18.317 s` | `17.826 s` | `0.973` |
+  | `124,080` prompt tokens, C=1 | TTFT mean | `29.573 s` | `25.947 s` | `0.877` |
+  | `124,080` prompt tokens, C=2 | TTFT mean | `46.476 s` | `39.848 s` | `0.857` |
+  | `124,080` decode-concurrency C=2 | TTFT mean | `45.528 s` | `39.804 s` | `0.874` |
+  | `124,080` decode-concurrency C=2 | decode mean | `64.92 tok/s` | `68.60 tok/s` | `1.057` |
+
+  C=2 fairness did not materially improve and also did not regress:
+  `58,980` C=2 decode min/max stayed `0.242 -> 0.238`, `124,080` C=2
+  stayed `0.295 -> 0.308`, and ITL p99 stayed around `0.084-0.092 s`.
+  Mixed-arrival showed the intended long-prefill TTFT win without a runtime
+  error signal:
+
+  | Mixed case | Primary TTFT | Secondary TTFT | Decode min/max | Failures |
+  | --- | ---: | ---: | ---: | ---: |
+  | `decode_then_124k` | `29.966 -> 26.318 s` | `30.877 -> 27.117 s` | `0.404 -> 0.402` | `0 -> 0` |
+  | `long_long_c2` | `30.227 -> 26.545 s` | `61.172 -> 53.853 s` | `0.305 -> 0.302` | `0 -> 0` |
+  | `long_then_short` | `32.219 -> 28.265 s` | `3.315 -> 3.297 s` | `0.246 -> 0.302` | `1 -> 0` |
+  | `short_decode_then_124k` | `1.073 -> 1.033 s` | `30.433 -> 26.620 s` | `0.580 -> 0.684` | `0 -> 0` |
+
+  Runtime summaries reported zero CUDA, NCCL, driver, and engine errors for
+  all control and candidate phases. The control mixed-arrival exit code was
+  `1` because one `long_then_short` response missed required semantic terms;
+  the candidate mixed-arrival exit code was `0`.
+
+- A short/mid frontier no-regression run used the same protocol with prompt
+  lengths from `7,762` to `36,649` tokens. The request-level threshold was set
+  to `384` compressed candidates, i.e. roughly `49K` actual tokens before the
+  grouped path allocates its score workspace. All rows stayed within about
+  `0.5%` TTFT/input-throughput noise versus control.
+- Correctness: a focused CUDA parity test compared the grouped helper with the
+  existing indexed accumulate on a real `compressed + variable SWA tail` layout
+  and passed on RTX and GB10 during the experiment. That test was removed with
+  the rejected prototype, so this is historical evidence only, not a live gate.
+- GB10 focused microbench after the endpoint helper landed still showed the
+  same direction for the compressed subproblem at `256` tokens:
+
+  | Compressed candidates | Current | Grouped | Speedup |
+  | ---: | ---: | ---: | ---: |
+  | `256` | `0.654 ms` | `0.238 ms` | `2.75x` |
+  | `512` | `1.288 ms` | `0.518 ms` | `2.49x` |
+  | `1024` | `2.552 ms` | `1.116 ms` | `2.29x` |
+
+- Current status: rejected and removed from the code path. GB10 focused
+  microbench and CUDA parity were positive, but later mixed-arrival gates showed
+  this path can inflate short-request ITL p99 when a long prefill overlaps an
+  active decode request. Do not reintroduce grouped C128A without a new design
+  that is gated by mixed-arrival p95/p99 and per-request decode fairness, not
+  just pure-prefill TTFT.
+
+Grouped C128 follow-up against b12x/Reddit-style prefill reports, 2026-06-02:
+
+- Released dependency check on GB10 showed that the installable stack is
+  internally consistent:
+  `flashinfer-python==0.6.12`, `flashinfer-cubin==0.6.12`,
+  `flashinfer-jit-cache==0.6.12+cu130`, `b12x==0.15.2`, and
+  `nvidia-nccl-cu13==2.30.4`. `flashinfer show-config` reported SM121a
+  cubins, and `b12x.integration.{mla,nsa_indexer,tp_moe}` imported.
+- The released APIs did not expose the same direct sparse-prefill route used by
+  the external fork. Treat b12x as a valid optional dependency to document, but
+  do not assume installing it alone changes this vLLM path.
+- A no-score-workspace "online full-D" grouped kernel was prototyped in a
+  temporary microbench script. The script was removed with the rejected grouped
+  prototype. For `head_dim=128`, it confirmed the algorithmic idea:
+
+  | Shape | Current indexed | 3-stage grouped | Online full-D |
+  | --- | ---: | ---: | ---: |
+  | `256 tokens, 128 compressed` | `0.098 ms` | `0.054 ms` | `0.019 ms` |
+  | `256 tokens, 256 compressed` | `0.181 ms` | `0.062 ms` | `0.027 ms` |
+  | `256 tokens, 512 compressed` | `0.343 ms` | `0.079 ms` | `0.040 ms` |
+  | `256 tokens, 1024 compressed` | `0.666 ms` | `0.118 ms` | `0.068 ms` |
+
+- That result does **not** transfer directly to DeepSeek V4 production prefill:
+  the actual semantic MLA head dimension entering this path is `512`, not the
+  initial `128` microbench assumption. Forcing online full-D at `head_dim=512`
+  failed at launch metadata creation with Triton shared-memory pressure:
+  required `106496` bytes versus hardware limit `101376` bytes. Keeping that
+  branch in vLLM would be misleading dead code, so it was removed from the
+  production path and retained only as a microbench/rejected experiment.
+- The corrected `head_dim=512` cost split still validates the current 3-stage
+  grouped direction:
+
+  | Shape | Current indexed | 3-stage grouped | Speedup | Score | Stats | Value |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `64 tokens, 128 compressed` | `0.092 ms` | `0.052 ms` | `1.78x` | `0.017 ms` | `0.013 ms` | `0.022 ms` |
+  | `64 tokens, 256 compressed` | `0.164 ms` | `0.057 ms` | `2.87x` | `0.021 ms` | `0.012 ms` | `0.025 ms` |
+  | `64 tokens, 512 compressed` | `0.309 ms` | `0.078 ms` | `3.97x` | `0.029 ms` | `0.012 ms` | `0.037 ms` |
+  | `64 tokens, 1024 compressed` | `0.599 ms` | `0.112 ms` | `5.33x` | `0.045 ms` | `0.012 ms` | `0.056 ms` |
+
+- Endpoint sanity after restoring the 512-D safe path, before the later
+  mixed-arrival rejection:
+  `20260602_grouped_c128_online_safe_fallback_c2_fairness` had
+  `long_context_latency_matrix=0` and `long_context_decode_concurrency=0`,
+  with zero CUDA/NCCL/driver/engine errors. Its latency/decode metrics were
+  effectively identical to the earlier 3-stage candidate. Later fixed-protocol
+  mixed-arrival A/B showed the grouped endpoint path is not production-safe:
+  pure prefill improved, but active short-decode overlap regressed p99. Keep the
+  artifact labels as rejected-experiment evidence only.
+- If grouped-query sparse MLA is revisited, the next design must target true
+  `head_dim=512` production structure and explicitly reduce candidate visits,
+  live state, or dependency depth without increasing short-decode ITL p99.
+  Simple tile sweeps, direct full-D fusion, and hidden request-length flags are
+  no longer high-confidence paths.
+
+Pure-prefill gap attribution recheck, 2026-06-02:
+
+- A new development wrapper,
+  `scripts/run_sm12x_prefill_gap_attribution.sh`, runs the existing random
+  prefill sweep with sparse-MLA JSONL stats enabled and writes one combined
+  summary. The default shape is now `58957,124000` input tokens, C=`1,2,3,4`,
+  OSL=`1`, and `4` prompts. The earlier `8`-prompt attempt completed, but it
+  over-weighted queueing for C=3/C=4 and was therefore less useful for pure
+  attribution.
+- Fixed-protocol A/B, dual RTX PRO 6000, TP=2, MTP=2, EP enabled, FP8 KV,
+  prefix cache disabled, `max_num_batched_tokens=4096`, `max_num_seqs=4`,
+  FULL_AND_PIECEWISE:
+
+  | Shape | C | Control TTFT | Grouped TTFT | TTFT delta | Control input tok/s | Grouped input tok/s | Input delta |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `58,957` random input tokens | 1 | `19.431 s` | `19.228 s` | `-1.0%` | `3034.33` | `3066.29` | `+1.1%` |
+  | `58,957` random input tokens | 2 | `34.176 s` | `33.664 s` | `-1.5%` | `3017.25` | `3063.50` | `+1.5%` |
+  | `58,957` random input tokens | 3 | `44.331 s` | `43.785 s` | `-1.2%` | `2993.12` | `3031.99` | `+1.3%` |
+  | `58,957` random input tokens | 4 | `49.277 s` | `48.890 s` | `-0.8%` | `2992.74` | `3026.93` | `+1.1%` |
+  | `124,000` random input tokens | 1 | `48.690 s` | `45.283 s` | `-7.0%` | `2546.72` | `2738.36` | `+7.5%` |
+  | `124,000` random input tokens | 2 | `85.832 s` | `79.789 s` | `-7.0%` | `2528.03` | `2719.75` | `+7.6%` |
+  | `124,000` random input tokens | 3 | `111.064 s` | `103.190 s` | `-7.1%` | `2515.72` | `2708.01` | `+7.6%` |
+  | `124,000` random input tokens | 4 | `123.038 s` | `113.977 s` | `-7.4%` | `2520.45` | `2720.94` | `+8.0%` |
+
+- Sparse-MLA stats were identical between control and candidate, as expected:
+  the grouped path reduces how the same C128A candidates are accumulated; it
+  does not reduce candidate generation or combined-lens work. For `58,957`
+  tokens the run recorded `69.55B` candidate slots, `39.22B` effective visits,
+  padding ratio `0.436`. For `124,000` tokens it recorded `146.28B` slots,
+  `103.05B` effective visits, padding ratio `0.296`.
+- Runtime scans showed zero CUDA/NCCL error counts for both input lengths, and
+  post-run `nvidia-smi` showed both GPUs idle with only `2 MiB` allocated.
+- Decision, superseded by the mixed-arrival validation below: the grouped
+  C128A prototype was useful as an attribution experiment, but it is not a
+  retainable endpoint path. It showed enough pure-prefill signal to justify the
+  investigation, but later mixed-arrival gates showed short-decode p99
+  regressions when long prefill arrived. The code path was removed; future
+  C128A work must change the accumulate contract without increasing
+  prefill/decode interference.
+
+Stage-timed pure-prefill attribution, 2026-06-02:
+
+- Artifact:
+  `artifacts/main/2x_rtx_pro_6000_sm120/20260602_prefill_gap_stage_control4`.
+  This run used the same fixed TP=2/MTP=2/EP/FP8-KV/FULL_AND_PIECEWISE profile
+  as the clean control above, with sparse-MLA CUDA event timing enabled. Treat
+  its TTFT/input tok/s numbers as instrumented attribution data, not as a
+  normal performance baseline, because each layer/chunk records and synchronizes
+  CUDA events.
+- Endpoint rows stayed consistent with the clean control shape:
+
+  | Shape | C | Input tok/s | Mean TTFT |
+  | --- | ---: | ---: | ---: |
+  | `58,957` random input tokens | 1 | `3041.76` | `19.382 s` |
+  | `58,957` random input tokens | 2 | `3018.79` | `34.157 s` |
+  | `58,957` random input tokens | 3 | `2989.71` | `44.389 s` |
+  | `58,957` random input tokens | 4 | `2990.46` | `49.325 s` |
+  | `124,000` random input tokens | 1 | `2546.85` | `48.688 s` |
+  | `124,000` random input tokens | 2 | `2526.36` | `85.872 s` |
+  | `124,000` random input tokens | 3 | `2510.25` | `111.234 s` |
+  | `124,000` random input tokens | 4 | `2518.92` | `123.049 s` |
+
+- Stage timing is decisive. At `58,957` tokens, summed layer/chunk timing was
+  `175.95 s`, with `sparse_accumulate` at `175.25 s` (`99.60%`). At
+  `124,000` tokens it was `455.21 s`, with `sparse_accumulate` at `453.52 s`
+  (`99.63%`). `combine_indices`, compressed-KV gather, and SWA gather were each
+  below `0.3%` of summed time in both shapes.
+- Group breakdown points to both C128A and C4A accumulate, but for different
+  reasons. At `124,000`, C128A partial prefill took `234.15 s` with padding
+  ratio `0.469` and lens max `1096`; C4 partial prefill took `212.54 s` with
+  padding ratio `0.0067` and lens max `640`. C128A has much more padding and
+  reuse opportunity, while C4A is nearly all useful work and needs a lower-live
+  state D=512 value path rather than padding removal.
+- C128A compressed candidate overlap is extremely high in the sampled rows:
+  aggregated over rank 0, group32 unique/valid was about `0.0313` for both
+  `58,957` and `124,000` token shapes. This is the strongest reason to keep
+  pursuing group-aware C128A accumulate. However, the current grouped prototype
+  only converts that overlap into `~7-8%` endpoint gain at 124K, so the next
+  version must avoid the current score-workspace and multi-launch overheads or
+  use a backend that can exploit the reuse more directly.
+- Decision update: Milestone 2 should focus on D=512 sparse-MLA accumulate:
+  score/value reuse, group-aware candidate handling, lower live state, or a
+  released backend that changes the accumulate contract. Indexer/combine/gather
+  are no longer first-order targets for the 59K/124K pure-prefill gap.
+  The next attribution improvement should add sampling controls for layer/type
+  timing; full-layer CUDA-event timing is useful once, but too heavy for routine
+  matrix runs.
+
+Indexed D512 split sparse-MLA prefill prototype, 2026-06-02:
+
+- A C4A-style D=512 split prototype was added on the Dev branch only:
+  1. materialize indexed per-token scores;
+  2. compute per-token max/denom from the score workspace;
+  3. run a separate value-dot kernel that writes the unnormalized accumulator.
+  The helper is covered by a CUDA parity test against the existing indexed
+  accumulate path. This is still an experimental endpoint path, gated by
+  `VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL`, and defaults off.
+- The first version allowed short prompts and failed the correctness principle:
+  GSM8K 5-shot limit-50 dropped to flexible `0.88` / strict `0.78` while the
+  same-protocol control was flexible `0.96` / strict `0.96`. The likely cause
+  is numerical drift from replacing the current online fp32 softmax accumulate
+  order with a matrixized score/value path. The short-prompt behavior was
+  rejected.
+- The retained prototype adds a conservative long-prefill selector: C4A only,
+  D=512 only, one prefill request, combined top-k in `(512, 1024]`, and
+  prefill sequence length at least `8192` tokens. This keeps GSM8K-style short
+  prompts on the original online path while still exercising 16K/59K/124K long
+  prefill.
+- Same-protocol pure-prefill A/B on dual RTX PRO 6000, TP=2, MTP=2, EP enabled,
+  FP8 KV, prefix cache disabled, `max_num_batched_tokens=4096`,
+  `max_num_seqs=4`, FULL_AND_PIECEWISE, temperature 0:
+
+  | Shape | C | Control TTFT | C128+C4 split TTFT | TTFT ratio | Control input tok/s | C128+C4 split input tok/s | Input ratio |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `58,957` tokens | 1 | `11.971 s` | `9.275 s` | `0.775` | `4925.40` | `6356.55` | `1.291` |
+  | `58,957` tokens | 2 | `18.006 s` | `13.999 s` | `0.777` | `4933.64` | `6353.12` | `1.288` |
+  | `58,957` tokens | 4 | `30.135 s` | `23.431 s` | `0.778` | `4917.18` | `6341.17` | `1.290` |
+  | `124,000` tokens | 1 | `29.145 s` | `20.689 s` | `0.710` | `4254.59` | `5993.23` | `1.409` |
+  | `124,000` tokens | 2 | `44.209 s` | `31.190 s` | `0.706` | `4216.97` | `5987.45` | `1.420` |
+  | `124,000` tokens | 4 | `73.523 s` | `51.704 s` | `0.703` | `4209.45` | `5985.28` | `1.422` |
+
+- C128-only comparison at `124,000` C=1 was `29.145 s -> 25.617 s`
+  (`0.879`), while C128+C4 split was `20.689 s` (`0.710`). This attributes the
+  larger endpoint win to adding the C4A D=512 split path on top of grouped
+  C128A, not to C128A alone.
+- Short-context no-regression after the `8192`-token selector:
+
+  | Shape | C | Control TTFT | Candidate TTFT | TTFT ratio | Control input tok/s | Candidate input tok/s | Input ratio |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `4,096` tokens | 1 | `0.665 s` | `0.662 s` | `0.996` | `6159.40` | `6182.64` | `1.004` |
+  | `4,096` tokens | 2 | `1.134 s` | `1.142 s` | `1.007` | `6325.87` | `6277.39` | `0.992` |
+  | `4,096` tokens | 4 | `1.638 s` | `1.642 s` | `1.003` | `6301.54` | `6277.39` | `0.996` |
+  | `16,384` tokens | 1 | `2.844 s` | `2.357 s` | `0.829` | `5758.88` | `6949.73` | `1.207` |
+  | `16,384` tokens | 2 | `5.231 s` | `4.781 s` | `0.914` | `5679.03` | `6301.54` | `1.110` |
+  | `16,384` tokens | 4 | `7.987 s` | `7.859 s` | `0.984` | `5535.14` | `5779.19` | `1.044` |
+
+- Correctness after the selector recovered: GSM8K 5-shot limit-200 with the
+  candidate envs enabled scored flexible `0.965` / strict `0.955`, and a
+  corrected gate against `exact_match_flexible=0.94` passed. Runtime scans for
+  the listed prefill and GSM8K runs reported zero CUDA launch, NCCL, driver, or
+  engine errors, and GPUs returned to idle after each run.
+- Decision update, 2026-06-03: keep only the indexed D512 split prototype in
+  Dev. The C128 grouped path was removed after mixed-arrival validation showed
+  short-decode p99 regressions. With the same full C=1..4 pure-prefill
+  protocol, indexed-only improved TTFT by about `10-11%` at both `58,957` and
+  `124,000` input tokens. The C128+C4 combo improved pure prefill more
+  (`~13%` at 59K and `~18%` at 124K), but it regressed mixed-arrival tail
+  latency: `short_decode_then_124k` p99 stayed around `0.21 s` versus control
+  `0.086 s`, and an active-decode guard only fixed the separate
+  `long_then_short` spike. Required next gates for the retained indexed-only
+  path are long-context decode-concurrency/fairness, mixed-arrival,
+  story-recall semantic, prefix/KV lifecycle, GB10 reduced long-C2, and GSM8K
+  limit-200 under the final promotion protocol.
+
+Post-cleanup stage-timed attribution, 2026-06-03:
+
+- Artifacts:
+  `20260603_prefill_gap_stage_control_post_cleanup/20260603000928` and
+  `20260603_prefill_gap_stage_indexed_d512_post_cleanup/20260603003142`.
+  Both runs used dual RTX PRO 6000, TP=2, MTP=2, EP enabled, FP8 KV,
+  prefix cache disabled, `max_num_batched_tokens=4096`, `max_num_seqs=4`,
+  FULL_AND_PIECEWISE, OSL=`1`, C=`1,2,3,4`, and sparse-MLA CUDA event timing.
+  Treat endpoint latency from these runs as attribution data because event
+  synchronization adds overhead; use no-stage gates for customer-facing
+  performance numbers.
+
+  | Shape | C | Control TTFT | Indexed D512 TTFT | TTFT ratio | Control input tok/s | Indexed input tok/s | Input ratio |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `58,957` tokens | 1 | `19.531 s` | `17.414 s` | `0.892` | `3018.41` | `3385.41` | `1.122` |
+  | `58,957` tokens | 2 | `34.371 s` | `30.595 s` | `0.890` | `3001.50` | `3371.86` | `1.123` |
+  | `58,957` tokens | 3 | `44.559 s` | `39.646 s` | `0.890` | `2981.01` | `3347.93` | `1.123` |
+  | `58,957` tokens | 4 | `49.415 s` | `43.948 s` | `0.889` | `2983.65` | `3356.98` | `1.125` |
+  | `124,000` tokens | 1 | `48.868 s` | `43.983 s` | `0.900` | `2537.47` | `2819.30` | `1.111` |
+  | `124,000` tokens | 2 | `86.115 s` | `77.561 s` | `0.901` | `2519.30` | `2798.15` | `1.111` |
+  | `124,000` tokens | 3 | `111.540 s` | `100.423 s` | `0.900` | `2505.30` | `2782.61` | `1.111` |
+  | `124,000` tokens | 4 | `123.505 s` | `111.267 s` | `0.901` | `2511.65` | `2787.14` | `1.110` |
+
+- Stage timing confirms the root cause and the limit of the retained path:
+
+  | Shape | Control stage total | Indexed stage total | Stage ratio | Control C128A | Indexed C128A | Control C4A | Indexed C4A split + fallback |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `58,957` tokens | `175.966 s` | `107.888 s` | `0.613` | `72.276 s` | `72.295 s` | `99.650 s` | `31.554 s` |
+  | `124,000` tokens | `455.084 s` | `304.360 s` | `0.669` | `234.024 s` | `233.805 s` | `212.536 s` | `62.046 s` |
+
+- Interpretation:
+  - `sparse_accumulate` remains the dominant stage in both runs:
+    `99.6%` control and `99.3-99.4%` indexed.
+  - The retained indexed D512 path successfully attacks the C4A-style D=512
+    accumulate work: at `124K`, that component dropped from about `212.5 s`
+    to `62.0 s` including fallback rows.
+  - C128A did not improve at all: `234.0 s -> 233.8 s` at `124K`.
+    After the C4A improvement, C128A is the dominant remaining sparse-MLA
+    cost, roughly `77%` of the indexed run's stage total at `124K`.
+  - Updated sparse-MLA stats now aggregate candidate overlap from raw rows.
+    C128A has strong group reuse in the measured endpoint shape: at `124K`,
+    compressed candidates had group32 unique/valid `0.0313` and group16
+    `0.0625`; SWA candidates had group32 `0.0388` and group16 `0.0698`.
+    The same ratios held at `58,957` tokens. This gives a concrete upper-bound
+    signal for group-aware C128A accumulate: repeated candidate visits are the
+    right target, not indexer/combine/gather.
+  - Therefore the retained indexed path explains about a `10-11%` endpoint
+    TTFT/input-throughput improvement, but it does not satisfy the near-term
+    `20-30%` 124K TTFT target or the C=4 `1.5x` aggregate-throughput target.
+    The next Milestone 2 design should target C128A sparse accumulate
+    candidate reuse / score-value reuse / lower live state. More D512 indexed
+    tile sweep is now lower confidence unless it also reduces the C128A cost or
+    the launch/merge overhead visible in endpoint TTFT.
+
+C128A grouped-query D=512 microbench restart and rejection, 2026-06-03:
+
+- A temporary development-only script recreated candidate C128A long-prefill
+  shapes without touching the vLLM endpoint path. It compared the production
+  indexed partial-state+merge helper on a synthetic `compressed + SWA` layout
+  against a grouped compressed candidate path plus production SWA partial-state
+  and production merge. The script was removed after the endpoint-shaped
+  follow-up below rejected this route as a production candidate.
+- Focused smoke first caught a script bug: the grouped value kernel initially
+  wrote a normalized output but then fed it to the attention-state merge. After
+  changing it to write the unnormalized accumulator, the small-shape parity
+  max-diff dropped to about `7e-4`.
+- The first real D=512 attempt with group `32`, head block `2`, and block-C
+  `64` failed at Triton launch metadata creation: required shared memory was
+  `131072` bytes versus the SM120 hardware limit `101376`. This rules out the
+  most aggressive `group32 x headblock2 x D512 x C64` score tile as a direct
+  production shape.
+- Viable D=512 shapes still have strong signal. Dual RTX PRO 6000, GPU 0,
+  synthetic C128A grouped compressed candidates plus `128` SWA candidates:
+
+  | Shape | Current partial+merge | Grouped total | Speedup | Score | Stats | Value | SWA | Merge | Max diff |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `256 tokens`, group32/headblock1, `384+128` | `1.028 ms` | `0.452 ms` | `2.27x` | `0.077` | `0.017` | `0.089` | `0.283` | `0.052` | `0.000585` |
+  | `256 tokens`, group32/headblock1, `512+128` | `1.272 ms` | `0.500 ms` | `2.55x` | `0.095` | `0.017` | `0.110` | `0.279` | `0.054` | `0.000565` |
+  | `256 tokens`, group32/headblock1, `1024+128` | `2.207 ms` | `0.654 ms` | `3.38x` | `0.166` | `0.018` | `0.189` | `0.281` | `0.052` | `0.000429` |
+  | `256 tokens`, group16/headblock2, `384+128` | `1.025 ms` | `0.465 ms` | `2.20x` | `0.075` | `0.018` | `0.103` | `0.283` | `0.052` | `0.000628` |
+  | `256 tokens`, group16/headblock2, `512+128` | `1.267 ms` | `0.515 ms` | `2.46x` | `0.090` | `0.017` | `0.128` | `0.283` | `0.054` | `0.000520` |
+  | `256 tokens`, group16/headblock2, `1024+128` | `2.206 ms` | `0.689 ms` | `3.20x` | `0.157` | `0.018` | `0.231` | `0.283` | `0.052` | `0.000423` |
+  | `1024 tokens`, group32/headblock1, `512+128` | `5.079 ms` | `2.414 ms` | `2.10x` | `0.332` | `0.077` | `0.713` | `1.076` | `0.265` | `0.000649` |
+  | `1024 tokens`, group32/headblock1, `1024+128` | `8.719 ms` | `3.535 ms` | `2.47x` | `0.618` | `0.183` | `1.440` | `1.084` | `0.265` | `0.000420` |
+
+- Artifacts:
+  `20260603_c128a_grouped_microbench_d512_hb1`,
+  `20260603_c128a_grouped_microbench_d512_g16hb2`, and
+  `20260603_c128a_grouped_microbench_d512_1024tok`.
+- Interpretation:
+  - The current path still repeatedly visits shared C128A compressed
+    candidates; grouped score/value reuse converts the measured group overlap
+    into a `2.1x-3.4x` isolated C128A microbench win even at true
+    `head_dim=512`.
+  - Group32/headblock1 is slightly better than group16/headblock2, so
+    preserving the 32-row reuse appears more valuable than processing two
+    heads per program in this prototype.
+  - The grouped path is not automatically production-safe. The retained
+    production design must avoid the old endpoint prototype's mixed-arrival
+    p99 regression, must not allocate or launch this path for short prompts,
+    and must pass `short_decode_then_124k` ITL p95/p99 plus C=2 fairness before
+    promotion.
+  - The next production candidate should start from a thresholded C128A-only
+    grouped compressed helper with conservative score workspace allocation,
+    group32/headblock1 or an equivalent shared-memory-safe tile, production SWA
+    fallback, and explicit no-regress gates. Re-running only tile sweeps or
+    full-D fused kernels is lower confidence because the former misses the
+    repeated-candidate root cause and the latter already hit SM120 shared-memory
+    limits.
+- Endpoint-shaped follow-up rejected the route:
+  - A first endpoint smoke with the grouped selector enabled produced only
+    noise-level TTFT difference at `58,957` tokens, C=1:
+    `9.837 s -> 9.795 s`. Added activation stats showed why:
+    `grouped_c128_chunks=0`, so the path had not actually run.
+  - Root cause: real DS4 C128A endpoint rows use `combined_topk=1152` but only
+    about `128` compressed candidates plus a large SWA tail. The earlier
+    microbench's strongest `384/512/1024 compressed + 128 SWA` shapes were
+    idealized and do not match the production C128A distribution.
+  - Real-shape microbench, `128 compressed + 1024 SWA`, group32/headblock1,
+    `head_dim=512`, showed only `1.052x` at `1024` tokens and `1.056x` at
+    `4096` tokens. The grouped path was dominated by SWA tail time:
+    `3.901 ms / 4.133 ms` at `1024` tokens and
+    `15.751 ms / 16.845 ms` at `4096` tokens.
+  - Artifacts:
+    `20260603_grouped_c128_endpoint_stats_59k_candidate`,
+    `20260603_c128a_grouped_microbench_real_topk128`, and
+    `20260603_c128a_grouped_microbench_real_topk128_4096`.
+  - Decision: reject and remove the grouped C128A endpoint code, env switch,
+    CUDA helper, helper tests, and temporary microbench script. Future C128A
+    work should not target the compressed prefix alone; it must reduce SWA-tail
+    work, candidate visits, live state, or prefill/decode interference under
+    the real `128 compressed + large SWA` shape.
+  - Post-removal smoke `20260603_post_grouped_reject_59k_smoke` remained
+    healthy at `58,957` tokens C=1: TTFT `9.830 s`, input throughput
+    `5997.66 tok/s`, zero runtime error signal, and both GPUs returned to idle
+    memory.
+
+Pure-prefill stage-timing attribution, 2026-06-03:
+
+- Artifact labels:
+  `20260603_prefill_gap_stage_timing_current`,
+  `20260603_prefill_gap_stage_timing_124k_c1`, and
+  `20260603_prefill_gap_stage_timing_124k_c4`.
+- Protocol: dual RTX PRO 6000, TP=2, MTP=2, EP enabled, FP8 KV, prefix cache
+  disabled, `max_num_batched_tokens=4096`, `max_num_seqs=4`,
+  FULL_AND_PIECEWISE, indexed-D512 split prefill enabled, random prefill,
+  output length `1`, temperature `0`. Sparse-MLA stage timing was enabled;
+  overlap row sampling was disabled to avoid CPU sampling overhead.
+- The full `58,957` / `124,000` C=`1,2,3,4` run completed with zero runtime
+  error signal and GPUs returning to idle memory. Endpoint rows:
+
+  | Input | C | Input tok/s | Mean TTFT | P99 TTFT |
+  | ---: | ---: | ---: | ---: | ---: |
+  | `58,957` | 1 | `5968.82` | `9.877 s` | `9.904 s` |
+  | `58,957` | 2 | `5962.78` | `17.312 s` | `19.844 s` |
+  | `58,957` | 3 | `5883.93` | `22.589 s` | `30.097 s` |
+  | `58,957` | 4 | `5872.21` | `25.105 s` | `39.850 s` |
+  | `124,000` | 1 | `4918.20` | `25.211 s` | `25.404 s` |
+  | `124,000` | 2 | `4904.58` | `44.244 s` | `50.671 s` |
+  | `124,000` | 3 | `4867.52` | `57.419 s` | `76.549 s` |
+  | `124,000` | 4 | `4885.26` | `63.495 s` | `100.765 s` |
+
+- Stage timing says the gap is inside sparse accumulate, not gather/combine:
+
+  | Input | Total stage ms | Sparse accumulate | Combine | Gather compressed | Gather SWA |
+  | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `58,957`, C=`1..4` aggregate | `108168.15` | `99.35%` | `0.38%` | `0.14%` | `0.13%` |
+  | `124,000`, C=`1..4` aggregate | `306889.48` | `99.45%` | `0.32%` | `0.13%` | `0.09%` |
+  | `124,000`, C=1 only | `76317.96` | `99.45%` | `0.33%` | `0.13%` | `0.09%` |
+  | `124,000`, C=4 only | `76434.32` | `99.45%` | `0.33%` | `0.13%` | `0.09%` |
+
+- At `124K`, `compress_ratio=128` remains the main cost center:
+
+  | Run | Group | Stage ms | Sparse accumulate ms | Effective visits | Padding ratio | Lens mean/max |
+  | --- | --- | ---: | ---: | ---: | ---: | ---: |
+  | C=`1..4` aggregate | C128 partial | `235194.05` | `234306.31` | `48.55B` | `0.469` | `611.82 / 1096` |
+  | C=`1..4` aggregate | C4 chunk | `57029.10` | `56277.56` | `51.57B` | `0.000` | `640 / 640` |
+  | C=1 only | C128 partial | `58584.89` | `58363.47` | `12.14B` | `0.469` | `611.82 / 1096` |
+  | C=1 only | C4 chunk | `14085.53` | `13898.28` | `12.89B` | `0.000` | `640 / 640` |
+  | C=4 only | C128 partial | `58647.53` | `58426.18` | `12.14B` | `0.469` | `611.82 / 1096` |
+  | C=4 only | C4 chunk | `14133.34` | `13945.94` | `12.89B` | `0.000` | `640 / 640` |
+
+- Interpretation:
+  - C=1 and C=4 separated runs have nearly identical total sparse stage time
+    for the same four prompts. C=4 therefore does not currently gain aggregate
+    prefill throughput; it mostly queues the same work and inflates TTFT p99.
+  - With `max_num_batched_tokens=4096`, long-prefill chunks are effectively
+    serialized at one 4096-token chunk worth of work. This explains why C=4
+    aggregate throughput stays around `4.9K input tok/s` instead of moving
+    toward the `1.5x` target.
+  - The next high-confidence experiment is not another C128 compressed-prefix
+    grouping attempt. It is a controlled prefill batching/chunk-capacity
+    experiment: sweep `max_num_batched_tokens` and/or a scheduler-side
+    long-prefill batching rule for pure prefill C=1/2/4, while separately
+    gating mixed-arrival ITL p99 and C=2 fairness. A larger batch-token cap may
+    improve C=4 aggregate throughput, but it must not regress 124K C=1/C=2
+    latency or active decode cadence.
+  - Kernel work is still needed for the final 20-30% TTFT target, but the
+    measured per-concurrency data says Milestone 2 should be framed around the
+    real C128 partial/SWA-tail sparse accumulate shape plus scheduler
+    chunk-batching, not around hidden user switches or high-compressed-topk
+    grouped C128A.
+
+124K max-num-batched-tokens prefill sweep, 2026-06-03:
+
+- Artifact labels:
+  `20260603_prefill_gap_stage_timing_current` for the `4096` reference,
+  `20260603_prefill_mbt8192_124k_c124`, and
+  `20260603_prefill_mbt16384_124k_c124`.
+- Protocol matched the pure-prefill run above, except stage timing was disabled
+  for the sweep candidates. Input length `124,000`, C=`1,2,4`, `4` prompts,
+  output length `1`, indexed-D512 split prefill enabled.
+
+  | max_num_batched_tokens | C | Input tok/s | Mean TTFT | P99 TTFT | Status |
+  | ---: | ---: | ---: | ---: | ---: | --- |
+  | `4096` | 1 | `4918.20` | `25.211 s` | `25.404 s` | pass |
+  | `4096` | 2 | `4904.58` | `44.244 s` | `50.671 s` | pass |
+  | `4096` | 4 | `4885.26` | `63.495 s` | `100.765 s` | pass |
+  | `8192` | 1 | `4963.97` | `24.980 s` | `26.246 s` | pass |
+  | `8192` | 2 | `5026.35` | `43.198 s` | `49.461 s` | pass |
+  | `8192` | 4 | `5019.23` | `61.827 s` | `98.078 s` | pass |
+  | `16384` | 1 | n/a | n/a | n/a | fail: CUDA OOM before first successful request |
+
+- Interpretation:
+  - `8192` is only a small win: about `+0.9%` C=1 throughput,
+    `+2.4%` C=2 throughput, and `+2.7%` C=4 throughput versus `4096`.
+    TTFT moves similarly (`~0.2-1.7 s` lower), far short of the 20-30% and
+    C=4 `1.5x` targets.
+  - `16384` is not usable under the current 128K serve profile. The first C=1
+    request hit CUDA OOM while trying to allocate another `1024 MiB`; runtime
+    summaries reported no CUDA/driver reset error, but the API server became
+    unresponsive. After process exit, one GPU stayed at `100%` SM utilization
+    with no visible process and required `nvidia-smi --gpu-reset` to return to
+    idle. Do not use this setting as a production recommendation.
+  - Simple chunk-cap growth is therefore not the missing 3x prefill path. It
+    reduces chunk/launch count a little at `8192`, but the remaining cost still
+    sits in sparse accumulate. The next experiment should either reduce real
+    C128/SWA-tail sparse accumulate work or introduce an explicit scheduler
+    policy that can batch long-prefill chunks without increasing workspace
+    memory enough to hit the `16384` OOM cliff.
+
+## C128A D512 Split Prefill Prototype, 2026-06-03
+
+Goal: test whether the Reddit/FlashInfer-style prefill gap is closer to a
+matrixized D=512 score/value path than to scheduler tuning or C128 active-row
+compaction.
+
+Rejected direction: C128 active-row compaction alone is not enough.
+
+| Artifact | Shape | Result | Decision |
+| --- | --- | --- | --- |
+| `codex_c128_active_upper_bound/20260603024344` | endpoint-like C128 lens, candidates `1152`, tokens `1024` | production partial `4.437 ms`, precompacted active rows `4.584 ms` | reject |
+| `codex_c128_active_upper_bound/20260603024344` | endpoint-like C128 lens, candidates `1152`, tokens `4096` | production partial `18.293 ms`, precompacted active rows `18.057 ms` | reject |
+| `codex_c128_chunk_partial_control/20260603024422` | endpoint-like C128 lens, candidates `1152`, tokens `4096` | chunk `18.226 ms`, partial `18.424 ms`, active-row upper-bound `18.219 ms` | reject launch/state-only tuning |
+
+Promising direction: extend the existing indexed D512 split prefill path to the
+C128A combined width. The existing split kernels already handled variable
+`lens`, but the selector and assertion limited the path to C4 and
+`combined_topk <= 1024`, so C128A `1152` never used it.
+
+| Artifact | Shape | Current partial+merge | D512 split | Relative |
+| --- | --- | ---: | ---: | ---: |
+| `codex_d512_split_c128_control/20260603024459` | tokens `1024`, candidates `640` | `4.877 ms` | `2.091 ms` | `2.33x` faster |
+| `codex_d512_split_c128_control/20260603024459` | tokens `1024`, candidates `1152` | `9.014 ms` | `3.511 ms` | `2.57x` faster |
+| `codex_d512_split_c128_4096_control/20260603024513` | tokens `4096`, candidates `640` | `19.851 ms` | `9.606 ms` | `2.07x` faster |
+| `codex_d512_split_c128_4096_control/20260603024513` | tokens `4096`, candidates `1152` | `36.625 ms` | `16.817 ms` | `2.18x` faster |
+
+Endpoint A/B, same code and same protocol, only
+`VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL` changed:
+
+| Shape | Split off | Split on | Relative |
+| --- | ---: | ---: | ---: |
+| 59K C=1 mean TTFT | `12.162 s` | `8.614 s` | `-29.2%` |
+| 59K C=2 mean TTFT | `21.366 s` | `15.121 s` | `-29.2%` |
+| 59K C=4 mean TTFT | `30.560 s` | `21.962 s` | `-28.1%` |
+| 124K C=1 mean TTFT | `30.071 s` | `20.086 s` | `-33.2%` |
+| 124K C=2 mean TTFT | `52.978 s` | `35.494 s` | `-33.0%` |
+| 124K C=4 mean TTFT | `75.092 s` | `49.610 s` | `-33.9%` |
+| 124K C=4 p99 TTFT | `118.993 s` | `79.009 s` | `-33.6%` |
+| 124K sparse stage total, C=1/2 run | `229.010 s` | `73.154 s` | `-68.1%` |
+
+Artifacts:
+`20260603_c128_d512_split_endpoint_smoke/20260603024829`,
+`20260603_c128_d512_split_off_endpoint_control/20260603025602`,
+`20260603_c128_d512_split_on_c4_endpoint/20260603030513`, and
+`20260603_c128_d512_split_off_c4_endpoint_control/20260603030955`.
+
+Focused no-regression checks:
+
+| Gate | Split off/control | Split on | Result |
+| --- | ---: | ---: | --- |
+| 256x256 C=1 output tok/s | `135.65` | `136.03` | no regression |
+| 256x256 C=4 output tok/s | `338.09` | `336.01` | within noise |
+| GSM8K limit-200 5-shot | n/a | flexible `0.955`, strict `0.935` | passes fixed floor |
+| Runtime health | no CUDA/NCCL/driver/server error signals | no CUDA/NCCL/driver/server error signals | pass |
+
+The first combined GSM8K+short run showed lower short C=4 throughput
+(`316.56 tok/s`) after GSM8K ran first, but a same-protocol short-only rerun
+with split enabled recovered to `336.01 tok/s`, matching the split-off control.
+Treat the combined run as order/state noise, not a selector regression.
+
+Current status: keep this as an env-gated Dev prototype. Do not promote or make
+it default until it passes the broader local-quality/user-feedback matrix,
+including long-context decode/fairness, mixed arrival, prefix/KV lifecycle,
+story recall, GB10 reduced long-C2, and GSM8K limit-200 under the final
+promotion protocol.
 
 ## Experiment Discipline
 

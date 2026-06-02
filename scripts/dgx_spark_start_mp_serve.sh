@@ -60,6 +60,7 @@ SERVE_SPECULATIVE_CONFIG="${SERVE_SPECULATIVE_CONFIG:-}"
 SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS="${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS:-}"
 SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-auto}"
 SERVE_EXTRA_ARGS="${SERVE_EXTRA_ARGS:-}"
+SERVE_REMOTE_ENV_VARS="${SERVE_REMOTE_ENV_VARS:-}"
 SERVE_NSYS_MODE="${SERVE_NSYS_MODE:-none}"
 NSYS_BIN_REMOTE="${NSYS_BIN_REMOTE:-nsys}"
 NSYS_TRACE="${NSYS_TRACE:-cuda,nvtx}"
@@ -84,6 +85,25 @@ remote_env_optional() {
   if [[ -n "${!var:-}" ]]; then
     printf '%s=%s ' "${var}" "$(shell_quote "${!var}")"
   fi
+}
+
+remote_env_allowlist() {
+  local raw="${SERVE_REMOTE_ENV_VARS:-}"
+  local normalized="${raw//,/ }"
+  local var
+
+  for var in ${normalized}; do
+    [[ -n "${var}" ]] || continue
+    if [[ ! "${var}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      printf 'invalid SERVE_REMOTE_ENV_VARS entry: %s\n' "${var}" >&2
+      return 2
+    fi
+    if ! declare -p "${var}" >/dev/null 2>&1; then
+      printf 'SERVE_REMOTE_ENV_VARS requested unset variable: %s\n' "${var}" >&2
+      return 2
+    fi
+    printf '%s=%s ' "${var}" "$(shell_quote "${!var}")"
+  done
 }
 
 remote_env_prefix() {
@@ -128,6 +148,7 @@ remote_env_prefix() {
   remote_env_optional TORCH_CUDA_ARCH_LIST
   remote_env_optional CCACHE_NOHASHDIR
   remote_env_optional VLLM_USE_FLASHINFER_SAMPLER
+  remote_env_allowlist
   remote_env_optional VLLM_TRITON_MLA_SPARSE
   remote_env_optional VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE
   remote_env_optional VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE

@@ -219,6 +219,18 @@ artifact to debug.
    TTFT, and (b) staggered mixed-arrival ITL p99/fairness. A change that only
    helps one while regressing the other is not a promotion candidate.
 
+   The first measured backend improvement from the third-party prefill
+   comparison is the official FlashInfer CUTLASS MXFP4/MXFP8 MoE path, not
+   b12x. Current Dev has an opt-in fix that lets DeepSeek V4 start with
+   `--moe-backend flashinfer_cutlass` and
+   `--quantization-config {"moe":{"activation":"mxfp8"}}` while keeping
+   `FULL_AND_PIECEWISE` graph capture. A small same-protocol SM120 prefill
+   screen improved 4K/16K C=1 input throughput by about `5.9-6.6%` and reduced
+   TTFT by about `5.5-6.6%`. Treat this as the next promotion candidate to
+   expand through the SM120 and GB10 matrices. Keep released-b12x sparse-MLA
+   work isolated until a correct DS4 compressed extend/prefill contract exists
+   in a public package.
+
    The mixed-arrival Nsys wrapper now also exports `cuda_gpu_trace` and writes
    `nsys_timeline_summary.json` / `.md`. Use the top-kernel table to decide
    which family dominates the whole trace, then use the timeline summary to
@@ -265,6 +277,22 @@ artifact to debug.
    `long_then_short` tail; another part-size or launch-only sweep is not a
    promotion candidate.
 
+   A 2026-06-02 GB10 candidate-linearity follow-up reinforced the same rule on
+   the current public FlashInfer/b12x stack. Full-lens chunk mode scaled almost
+   linearly with candidate visits and large shapes stabilized near `2.0e9`
+   visits/s. Staggered valid lengths lowered elapsed time directly; the
+   `2048 x 1152` shape moved from `71.743 ms` full-lens to `43.106 ms`
+   staggered. Treat this as evidence that the next kernel/backend experiment
+   needs to reduce effective candidate work or replace the main sparse-MLA
+   attention backend, not just split the same work differently.
+
+   A direct empty-tail loop skip was tested after that microbench evidence. It
+   reduced isolated accumulate time for 32K/59K-like staggered shapes, but the
+   fixed RTX PRO 6000 C=1 endpoint A/B was noise-level only (`59K` TTFT
+   `11.726 s -> 11.693 s`, `124K` `28.844 s -> 28.916 s`). This is now
+   rejected. Small loop pruning is insufficient unless it changes the larger
+   sparse-MLA backend cost.
+
 4. **Try algorithmic sparse MLA work only if it reduces live state or total
    work.**
    More local chunk/part/warp sweeps are exhausted. A retained candidate needs
@@ -279,6 +307,14 @@ artifact to debug.
    partial-state wins, but realistic staggered C128 inputs were flat or slower.
    Do not write another two-pass sparse-MLA kernel unless the design removes
    work rather than merely splitting it.
+
+   The current public FlashInfer `0.6.12` package is also not a drop-in answer.
+   It exposes `flashinfer.mla.trtllm_batch_decode_sparse_mla_dsv4`, but not the
+   `BatchSparseMLAPagedAttentionWrapper` / `flashinfer.sparse_mla_sm120`
+   symbols used by the third-party DS4 path. Synthetic q-len>1 smokes on both
+   SM120 and SM121 fail at runtime with `Unsupported architecture`. Keep
+   FlashInfer-source or newer-wheel research isolated until the required DS4
+   sparse-MLA wrapper/API passes an explicit SM12x smoke.
 
    A new debug-only stats hook can write sparse MLA prefill JSONL rows when
    `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH` is set. Summarize the resulting
@@ -312,6 +348,59 @@ artifact to debug.
    realistic staggered-length microbench on both RTX PRO 6000 and GB10. Treat
    the partial path as a secondary target unless a later trace shows it causing
    the user-visible slow-stream tail.
+
+   The 2026-06-02 clean frontier stats run,
+   `20260602_sparse_mla_frontier_stats_rtx_no_prewarm`, makes the request-level
+   pattern clearer. With TP=2, EP enabled, MTP=2, FP8 KV, prefix cache disabled,
+   `max_num_batched_tokens=4096`, and `FULL_AND_PIECEWISE`, the measured 4K,
+   16K, 32K, and 64K frontier requests completed successfully. The stats report
+   recorded `8.70B` candidate slots and `4.14B` effective candidate visits.
+   C128 partial prefill dominated rectangular pressure (`5.44B` slots,
+   `1.05B` effective visits, padding ratio `0.806`), while C4 partial prefill
+   dominated useful work (`3.17B` slots, `2.99B` effective visits, padding
+   ratio `0.056`). Reconstructing requests from the 4096-token query chunks
+   shows stable effective work of about `35K-36K` candidate visits per prompt
+   token from 16K through 64K. Treat this as evidence that the current prefill
+   path is bounded by the sparse-MLA backend contract, not by another simple
+   chunk-size sweep.
+
+   The optional `b12x==0.15.2` GB10 install is also not enough by itself.
+   Current public FlashInfer `0.6.12` plus `flashinfer-jit-cache==0.6.12+cu130`
+   imports on SM121 and `flashinfer show-config` succeeds, but the package still
+   lacks `flashinfer.sparse_mla_sm120`,
+   `BatchSparseMLAPagedAttentionWrapper`, and
+   `sparse_mla_sm120_decode_dsv4_autotune`; released b12x imports
+   `b12x.integration.mla` but not the fork's older
+   `b12x.integration.compressed_indexer` API. Do not plan a Dev/PR sparse-MLA
+   port around the Reddit/unholy-fusion wrapper until the required public
+   FlashInfer API passes an explicit SM120/SM121 q-len>1 smoke.
+
+   The retained Milestone-1 entrypoint is now
+   `scripts/run_sm12x_prefill_gap_attribution.sh`. It keeps the serve profile
+   fixed, runs random pure-prefill C=`1,2,3,4` at `58,957` and `124,000` input
+   tokens, and enables `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH` so endpoint
+   TTFT/input tok/s and sparse-MLA candidate work land in the same artifact.
+   Use `4` prompts by default; the earlier `8`-prompt shape completed but
+   mostly measured queueing for C=3/C=4. The first clean A/B showed grouped
+   C128A improved 124K pure-prefill TTFT by about `7%` and input throughput by
+   about `8%`, while 59K moved only about `1%`. That is a positive retained
+   signal, but not enough for the `20-30%` near-term target. Continue by
+   reducing candidate generation/combine duplication, score workspace traffic,
+   or launch/merge dependency depth; do not spend another pass on simple
+   tile-size retuning of the grouped accumulate helper.
+
+   The stage-timed control artifact
+   `20260602_prefill_gap_stage_control4` further narrows the root cause. With
+   CUDA event timing enabled, both 59K and 124K fixed-protocol runs show
+   `sparse_accumulate` at about `99.6%` of summed layer/chunk time; combine and
+   gather are each below `0.3%`. This means the next kernel experiment should
+   target the D=512 sparse-MLA accumulate contract directly: fewer duplicate
+   candidate visits, less score workspace IO, lower value-dot live state, or a
+   released backend that provides a fundamentally better grouped sparse MLA
+   accumulate. Do not spend Milestone 2 on indexer/combine/gather unless a
+   later trace contradicts this attribution. The full-layer CUDA-event mode is
+   too heavy for routine gates, so add layer/type sampling before making it a
+   recurring matrix step.
 
 5. **Keep direct FP8 MQA streaming top-k as a secondary experiment.**
    The current decomposition shows top-k selection itself is small, so the only

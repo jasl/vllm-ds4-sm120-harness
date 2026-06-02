@@ -40,11 +40,13 @@ def parse_int_csv(value: str) -> list[int]:
 
 def parse_modes(value: str) -> list[str]:
     modes = [item.strip() for item in value.split(",") if item.strip()]
-    valid = {"chunk", "partial"}
+    valid = {"chunk", "partial", "partial_active"}
     invalid = sorted(set(modes) - valid)
     if invalid:
         raise argparse.ArgumentTypeError(
-            f"invalid mode(s): {', '.join(invalid)}; expected chunk or partial"
+            "invalid mode(s): {}; expected chunk, partial, or partial_active".format(
+                ", ".join(invalid)
+            )
         )
     if not modes:
         raise argparse.ArgumentTypeError("expected at least one mode")
@@ -122,9 +124,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--lens-mode",
-        choices=("full", "staggered"),
+        choices=("full", "staggered", "endpoint-c128"),
         default="full",
-        help="Use full candidates or staggered per-token valid lengths.",
+        help=(
+            "Use full candidates, generic staggered lengths, or the real-shape "
+            "C128A endpoint distribution seen in 124K stats."
+        ),
     )
     parser.add_argument("--candidate-offset", type=int, default=0)
     parser.add_argument("--warmups", type=int, default=3)
@@ -176,12 +181,26 @@ def make_inputs(
             device=device,
             dtype=torch.int32,
         )
-    else:
+    elif lens_mode == "staggered":
         span = torch.arange(tokens, device=device, dtype=torch.int32) % candidates
         lens = candidate_offset + torch.maximum(
             torch.full_like(span, max(candidates // 2, 1)),
             span,
         )
+    else:
+        min_valid = min(candidates, 128)
+        # Matches the measured C128A 124K endpoint shape: combined_topk=1152,
+        # lens mean ~=612, max ~=1096, padding ~=0.469.
+        max_valid = max(
+            min_valid,
+            min(candidates, int(round(candidates * 1096 / 1152))),
+        )
+        span = torch.arange(tokens, device=device, dtype=torch.int32)
+        if max_valid > min_valid:
+            span = (span * 37) % (max_valid - min_valid + 1)
+        else:
+            span = torch.zeros_like(span)
+        lens = candidate_offset + min_valid + span
 
     return {
         "q": q,
@@ -220,6 +239,24 @@ def run_case(
         lens_mode=lens_mode,
         candidate_offset=candidate_offset,
         device=device,
+    )
+    lens = inputs["lens"]
+    effective_candidates = torch.clamp(
+        lens - candidate_offset,
+        min=0,
+        max=candidates,
+    )
+    effective_candidate_visits = int(effective_candidates.sum().item()) * heads
+    num_parts_for_stats = (candidates + part_size - 1) // part_size
+    active_part_rows = 0
+    for part_idx in range(num_parts_for_stats):
+        part_start = part_idx * part_size
+        active_part_rows += int(
+            (lens > candidate_offset + part_start).sum().item()
+        )
+    nominal_part_rows = tokens * num_parts_for_stats
+    active_part_row_fraction = (
+        active_part_rows / nominal_part_rows if nominal_part_rows else 0.0
     )
 
     if mode == "chunk":
@@ -271,6 +308,71 @@ def run_case(
                 acc=acc,
             )
 
+    elif mode == "partial_active":
+        part_specs = []
+        for part_idx in range(num_parts_for_stats):
+            part_start = part_idx * part_size
+            part_end = min(part_start + part_size, candidates)
+            active_tokens = torch.nonzero(
+                lens > candidate_offset + part_start,
+                as_tuple=False,
+            ).flatten()
+            if active_tokens.numel() == 0:
+                continue
+            q_part = inputs["q"].index_select(0, active_tokens).contiguous()
+            indices_part = (
+                inputs["indices"]
+                .index_select(0, active_tokens)[:, part_start:part_end]
+                .contiguous()
+            )
+            lens_part = lens.index_select(0, active_tokens).contiguous()
+            active_count = int(active_tokens.numel())
+            part_max = torch.empty(
+                (1, active_count, heads),
+                device=device,
+                dtype=torch.float32,
+            )
+            part_denom = torch.empty_like(part_max)
+            part_acc = torch.empty(
+                (1, active_count, heads, head_dim),
+                device=device,
+                dtype=torch.float32,
+            )
+            part_specs.append(
+                (
+                    q_part,
+                    indices_part,
+                    lens_part,
+                    candidate_offset + part_start,
+                    part_max,
+                    part_denom,
+                    part_acc,
+                )
+            )
+
+        def launch() -> None:
+            for (
+                q_part,
+                indices_part,
+                lens_part,
+                part_candidate_offset,
+                part_max,
+                part_denom,
+                part_acc,
+            ) in part_specs:
+                kernels.accumulate_indexed_sparse_mla_attention_partial_states(
+                    q=q_part,
+                    kv_flat=inputs["kv_flat"],
+                    indices=indices_part,
+                    lens=lens_part,
+                    candidate_offset=part_candidate_offset,
+                    scale=scale,
+                    part_size=part_size,
+                    max_score=part_max,
+                    denom=part_denom,
+                    acc=part_acc,
+                )
+
     else:
         raise AssertionError(f"unsupported mode: {mode}")
 
@@ -298,6 +400,7 @@ def run_case(
 
     mean_ms = statistics.fmean(elapsed_ms)
     visits = float(tokens * heads * candidates)
+    effective_visits = float(effective_candidate_visits)
     return {
         "mode": mode,
         "tokens": tokens,
@@ -317,6 +420,11 @@ def run_case(
         "token_candidates": tokens * candidates,
         "candidate_visits": int(visits),
         "candidate_visits_per_s": visits / (mean_ms / 1000.0),
+        "effective_candidate_visits": effective_candidate_visits,
+        "effective_candidate_visits_per_s": effective_visits / (mean_ms / 1000.0),
+        "active_part_rows": active_part_rows,
+        "nominal_part_rows": nominal_part_rows,
+        "active_part_row_fraction": active_part_row_fraction,
         "elapsed_ms": elapsed_ms,
     }
 
@@ -343,6 +451,8 @@ def write_outputs(out_dir: Path, payload: dict[str, Any]) -> None:
         "min_ms",
         "max_ms",
         "candidate_visits_per_s",
+        "effective_candidate_visits_per_s",
+        "active_part_row_fraction",
     ]
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -358,13 +468,18 @@ def write_outputs(out_dir: Path, payload: dict[str, Any]) -> None:
         f"- vLLM root: `{payload['vllm_root']}`",
         f"- Started at: `{payload['started_at']}`",
         "",
-        "| Mode | Tokens | Candidates | Mean ms | P95 ms | Candidate visits/s |",
-        "| --- | ---: | ---: | ---: | ---: | ---: |",
+        (
+            "| Mode | Tokens | Candidates | Mean ms | P95 ms | "
+            "Candidate visits/s | Effective visits/s | Active part rows |"
+        ),
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in payload["results"]:
         lines.append(
             "| {mode} | {tokens} | {candidates} | {mean_ms:.3f} | "
-            "{p95_ms:.3f} | {candidate_visits_per_s:.3e} |".format(**row)
+            "{p95_ms:.3f} | {candidate_visits_per_s:.3e} | "
+            "{effective_candidate_visits_per_s:.3e} | "
+            "{active_part_row_fraction:.3f} |".format(**row)
         )
     lines.append("")
     md_path.write_text("\n".join(lines), encoding="utf-8")

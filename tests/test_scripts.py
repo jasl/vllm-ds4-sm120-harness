@@ -177,6 +177,48 @@ def test_random_prefill_sweep_wrapper_covers_short_prefill_regression_shapes():
     assert 'PYTHONPATH="$(harness_pythonpath)"' in bench_script
 
 
+def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
+    script = (ROOT / "scripts" / "run_sm12x_prefill_gap_attribution.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'SM12X_PREFILL_GAP_INPUT_LENS="${SM12X_PREFILL_GAP_INPUT_LENS:-58957,124000}"' in script
+    assert 'SM12X_PREFILL_GAP_CONCURRENCY="${SM12X_PREFILL_GAP_CONCURRENCY:-1,2,3,4}"' in script
+    assert 'SM12X_PREFILL_GAP_OUTPUT_LEN="${SM12X_PREFILL_GAP_OUTPUT_LEN:-1}"' in script
+    assert 'SM12X_PREFILL_GAP_NUM_PROMPTS="${SM12X_PREFILL_GAP_NUM_PROMPTS:-4}"' in script
+    assert 'SM12X_PREFILL_GAP_STAGE_TIMING="${SM12X_PREFILL_GAP_STAGE_TIMING:-0}"' in script
+    assert 'SERVE_REMOTE_ENV_VARS="${SERVE_REMOTE_ENV_VARS:+${SERVE_REMOTE_ENV_VARS},}VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH,VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_OVERLAP_ROWS,VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING,VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL"' in script
+    assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH="${stats_dir}"' in script
+    assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING="${SM12X_PREFILL_GAP_STAGE_TIMING}"' in script
+    assert 'RANDOM_PREFILL_INPUT_LENS="${input_len}"' in script
+    assert 'RANDOM_PREFILL_CONCURRENCY="${SM12X_PREFILL_GAP_CONCURRENCY}"' in script
+    assert 'RANDOM_PREFILL_NUM_PROMPTS="${SM12X_PREFILL_GAP_NUM_PROMPTS}"' in script
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL" in script
+    assert "sparse-mla-stats-report" in script
+    assert "prefill_gap_attribution_summary.json" in script
+    assert "prefill_gap_attribution_summary.md" in script
+    assert '"stage_timings_ms": sparse_summary.get("stage_timings_ms", {})' in script
+    assert '"candidate_overlap": sparse_summary.get("candidate_overlap", {})' in script
+    assert "Stage total ms" in script
+    assert "Dominant stage" in script
+    assert "--enable-expert-parallel" in script
+    assert "FULL_AND_PIECEWISE" in script
+
+
+def test_indexed_d512_split_microbench_targets_c4_style_partial_path():
+    script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Prototype an indexed D=512 split sparse-MLA accumulate path" in script
+    assert "accumulate_indexed_sparse_mla_attention_partial_states" in script
+    assert "_indexed_score_kernel" in script
+    assert "_indexed_value_kernel" in script
+    assert "--index-pattern" in script
+    assert "per-token" in script
+    assert "partial_speedup" in script
+
+
 def test_prefix_cache_probe_wrapper_records_kv_runtime_artifacts():
     script = (ROOT / "scripts" / "run_prefix_cache_probe.sh").read_text(
         encoding="utf-8"
@@ -376,6 +418,10 @@ def test_b200_baseline_command_file_records_sparse_mla_tuning_env():
 
     assert "VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE" in script
     assert "VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE" in script
+    assert "VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH" in script
+    assert "VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_OVERLAP_ROWS" in script
+    assert "VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING" in script
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL" in script
     assert 'printf \'export %s=%q\\n\' "${optional_env}" "${!optional_env}"' in script
 
 
@@ -1098,6 +1144,9 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "SERVE_SPECULATIVE_CONFIG" in script
     assert "--speculative_config" in script
     assert "SERVE_EXTRA_ARGS" in script
+    assert "SERVE_REMOTE_ENV_VARS" in script
+    assert "remote_env_allowlist" in script
+    assert "invalid SERVE_REMOTE_ENV_VARS entry" in script
     assert "VLLM_USE_FLASHINFER_SAMPLER" in script
     assert "VLLM_TRITON_MLA_SPARSE" in script
     assert "VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE" in script
@@ -1190,6 +1239,8 @@ def test_sparse_mla_accumulate_microbench_targets_indexed_kernel_shapes():
     ).read_text(encoding="utf-8")
 
     assert "accumulate_indexed_sparse_mla_attention_chunk" in script
+    assert "partial_active" in script
+    assert "endpoint-c128" in script
     assert "--tokens" in script
     assert "--candidates" in script
     assert "--heads" in script

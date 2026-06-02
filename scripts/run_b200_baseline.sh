@@ -697,6 +697,10 @@ write_command_file() {
       VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE \
       VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE \
       VLLM_TRITON_MLA_SPARSE_MATMUL_DECODE \
+      VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH \
+      VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_OVERLAP_ROWS \
+      VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING \
+      VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL \
       CUDA_LAUNCH_BLOCKING; do
       if [[ -n "${!optional_env:-}" ]]; then
         printf 'export %s=%q\n' "${optional_env}" "${!optional_env}"

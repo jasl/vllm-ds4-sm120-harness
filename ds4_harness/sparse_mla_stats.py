@@ -26,6 +26,15 @@ def _int_value(value: Any) -> int | None:
         return None
 
 
+def _float_value(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _str_key(value: Any) -> str | None:
     if value is None:
         return None
@@ -143,6 +152,126 @@ def _summarize_candidate_work(rows: list[Json]) -> Json:
     }
 
 
+def _summarize_stage_timings(rows: list[Json]) -> Json:
+    stage_totals: Counter[str] = Counter()
+    for row in rows:
+        timings = row.get("stage_timings_ms")
+        if not isinstance(timings, dict):
+            continue
+        for name, value in timings.items():
+            stage_name = _str_key(name)
+            stage_value = _float_value(value)
+            if stage_name is None or stage_value is None:
+                continue
+            stage_totals[stage_name] += stage_value
+
+    total = float(sum(stage_totals.values()))
+    stages: Json = {}
+    for name, value in sorted(stage_totals.items()):
+        stages[name] = {
+            "total": _round_float(float(value)),
+            "ratio": _round_float(float(value) / total) if total else None,
+        }
+    dominant_stage = None
+    if stage_totals:
+        dominant_stage = max(stage_totals.items(), key=lambda item: item[1])[0]
+    return {
+        "total": _round_float(total) if stage_totals else None,
+        "dominant_stage": dominant_stage,
+        "stages": stages,
+    }
+
+
+def _summarize_overlap_group_values(group_values: list[Json]) -> Json:
+    groups = 0
+    valid_candidates = 0
+    unique_candidates = 0
+    for values in group_values:
+        if not isinstance(values, dict):
+            continue
+        groups += _int_value(values.get("groups")) or 0
+        valid_candidates += _int_value(values.get("valid_candidates")) or 0
+        unique_candidates += _int_value(values.get("unique_candidates")) or 0
+    return {
+        "groups": groups,
+        "valid_candidates": valid_candidates,
+        "unique_candidates": unique_candidates,
+        "unique_to_valid_ratio": _round_float(
+            unique_candidates / valid_candidates
+        )
+        if valid_candidates
+        else None,
+    }
+
+
+def _summarize_overlap_groups(rows: list[Json], field: str) -> Json:
+    grouped: dict[str, list[Json]] = {}
+    for row in rows:
+        overlap = row.get(field)
+        if not isinstance(overlap, dict):
+            continue
+        groups = overlap.get("groups")
+        if not isinstance(groups, dict):
+            continue
+        for group_size, values in groups.items():
+            group_key = _str_key(group_size)
+            if group_key is None or not isinstance(values, dict):
+                continue
+            grouped.setdefault(group_key, []).append(values)
+    return {
+        group_size: _summarize_overlap_group_values(values)
+        for group_size, values in sorted(grouped.items(), key=lambda item: int(item[0]))
+    }
+
+
+def _summarize_overlap_region_groups(rows: list[Json]) -> Json:
+    regions: dict[str, dict[str, list[Json]]] = {}
+    for row in rows:
+        overlap = row.get("candidate_region_overlap")
+        if not isinstance(overlap, dict):
+            continue
+        for region_name, region_groups in overlap.items():
+            if region_name == "sample_rows" or not isinstance(region_groups, dict):
+                continue
+            region_key = _str_key(region_name)
+            if region_key is None:
+                continue
+            for group_size, values in region_groups.items():
+                group_key = _str_key(group_size)
+                if group_key is None or not isinstance(values, dict):
+                    continue
+                regions.setdefault(region_key, {}).setdefault(group_key, []).append(
+                    values
+                )
+    return {
+        region: {
+            group_size: _summarize_overlap_group_values(values)
+            for group_size, values in sorted(
+                group_values.items(), key=lambda item: int(item[0])
+            )
+        }
+        for region, group_values in sorted(regions.items())
+    }
+
+
+def _summarize_candidate_overlap(rows: list[Json]) -> Json:
+    sample_rows = 0
+    for row in rows:
+        overlap = row.get("candidate_overlap")
+        if isinstance(overlap, dict):
+            sample_rows += _int_value(overlap.get("sample_rows")) or 0
+    if sample_rows == 0:
+        for row in rows:
+            overlap = row.get("candidate_region_overlap")
+            if isinstance(overlap, dict):
+                sample_rows += _int_value(overlap.get("sample_rows")) or 0
+    return {
+        "sample_rows": sample_rows,
+        "groups": _summarize_overlap_groups(rows, "candidate_overlap"),
+        "regions": _summarize_overlap_region_groups(rows),
+    }
+
+
 def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
     grouped: dict[tuple[str, str], list[Json]] = {}
     for row in rows:
@@ -153,6 +282,8 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
     groups: list[Json] = []
     for (layer_type, compress_ratio), group_rows in sorted(grouped.items()):
         work = _summarize_candidate_work(group_rows)
+        timings = _summarize_stage_timings(group_rows)
+        overlap = _summarize_candidate_overlap(group_rows)
         groups.append(
             {
                 "layer_type": layer_type,
@@ -164,6 +295,8 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
                 "padding_ratio": work["padding_ratio"],
                 "combined_lens_mean": work["combined_lens_mean"],
                 "combined_lens_max": work["combined_lens_max"],
+                "stage_timings_ms": timings,
+                "candidate_overlap": overlap,
                 "layer_prefixes": sorted(
                     {
                         _safe_prefix(row.get("layer_prefix"))
@@ -213,6 +346,8 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
         "counts_by_layer_type": dict(sorted(layer_type_counts.items())),
         "counts_by_compress_ratio": dict(sorted(ratio_counts.items())),
         "candidate_work": _summarize_candidate_work(rows),
+        "stage_timings_ms": _summarize_stage_timings(rows),
+        "candidate_overlap": _summarize_candidate_overlap(rows),
         "groups": _group_sparse_mla_stats(rows),
     }
 
@@ -242,8 +377,51 @@ def _format_prefixes(prefixes: Any) -> str:
     return ", ".join(f"`{prefix}`" for prefix in prefixes[:4])
 
 
+def _format_stage_breakdown(timings: Any) -> str:
+    if not isinstance(timings, dict):
+        return "n/a"
+    stages = timings.get("stages")
+    if not isinstance(stages, dict) or not stages:
+        return "n/a"
+    parts = []
+    for name, values in stages.items():
+        if not isinstance(values, dict):
+            continue
+        total = _format_number(values.get("total"))
+        ratio = values.get("ratio")
+        if isinstance(ratio, float):
+            parts.append(f"`{name}`={total}ms/{ratio:.2%}")
+        else:
+            parts.append(f"`{name}`={total}ms")
+    return ", ".join(parts) if parts else "n/a"
+
+
+def _candidate_overlap_rows(overlap: Any) -> list[tuple[str, str, Json]]:
+    if not isinstance(overlap, dict):
+        return []
+    rows: list[tuple[str, str, Json]] = []
+    groups = overlap.get("groups")
+    if isinstance(groups, dict):
+        for group_size, values in sorted(groups.items(), key=lambda item: int(item[0])):
+            if isinstance(values, dict):
+                rows.append(("all", str(group_size), values))
+    regions = overlap.get("regions")
+    if isinstance(regions, dict):
+        for region, region_groups in sorted(regions.items()):
+            if not isinstance(region_groups, dict):
+                continue
+            for group_size, values in sorted(
+                region_groups.items(), key=lambda item: int(item[0])
+            ):
+                if isinstance(values, dict):
+                    rows.append((str(region), str(group_size), values))
+    return rows
+
+
 def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
     work = report.get("candidate_work", {})
+    timings = report.get("stage_timings_ms", {})
+    overlap = report.get("candidate_overlap", {})
     lines = [
         "# Sparse MLA Prefill Stats Report",
         "",
@@ -279,18 +457,56 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
             f"`{_format_number(work.get('combined_lens_mean'))}` / "
             f"`{_format_number(work.get('combined_lens_max'))}`"
         ),
+        (
+            "- Stage timing total/dominant: "
+            f"`{_format_number(timings.get('total'))}` ms / "
+            f"`{_format_number(timings.get('dominant_stage'))}`"
+        ),
+        f"- Stage timing breakdown: {_format_stage_breakdown(timings)}",
         "",
         "Only artifact file names and sanitized layer prefixes are reported.",
         "",
-        "## Groups",
+        "## Candidate Overlap",
+        "",
+        f"- Sample rows: `{_format_number(overlap.get('sample_rows'))}`",
         "",
         (
-            "| Layer type | Compress | Rows | Candidate slots | Effective visits | "
-            "Padding ratio | Lens mean | Lens max | Prefixes |"
+            "| Region | Group size | Groups | Valid candidates | Unique candidates | "
+            "Unique/valid |"
         ),
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
     ]
+    overlap_rows = _candidate_overlap_rows(overlap)
+    for region, group_size, values in overlap_rows:
+        lines.append(
+            "| "
+            f"{region} | "
+            f"{group_size} | "
+            f"`{_format_number(values.get('groups'))}` | "
+            f"`{_format_number(values.get('valid_candidates'))}` | "
+            f"`{_format_number(values.get('unique_candidates'))}` | "
+            f"`{_format_number(values.get('unique_to_valid_ratio'))}` |"
+        )
+    if not overlap_rows:
+        lines.append("| n/a | n/a | n/a | n/a | n/a | n/a |")
+    lines.extend(
+        [
+            "",
+            "## Groups",
+            "",
+            (
+                "| Layer type | Compress | Rows | Candidate slots | Effective visits | "
+                "Padding ratio | Lens mean | Lens max | Stage total ms | "
+                "Dominant stage | Prefixes |"
+            ),
+            (
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+                "--- | --- |"
+            ),
+        ]
+    )
     for group in report.get("groups", []):
+        group_timings = group.get("stage_timings_ms", {})
         lines.append(
             "| "
             f"`{group.get('layer_type', '')}` | "
@@ -301,10 +517,14 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
             f"`{_format_number(group.get('padding_ratio'))}` | "
             f"`{_format_number(group.get('combined_lens_mean'))}` | "
             f"`{_format_number(group.get('combined_lens_max'))}` | "
+            f"`{_format_number(group_timings.get('total'))}` | "
+            f"`{_format_number(group_timings.get('dominant_stage'))}` | "
             f"{_format_prefixes(group.get('layer_prefixes'))} |"
         )
     if not report.get("groups"):
-        lines.append("| n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
+        lines.append(
+            "| n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |"
+        )
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
