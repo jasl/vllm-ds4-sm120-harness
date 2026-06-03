@@ -111,6 +111,14 @@ def test_bench_script_defaults_to_representative_hf_dataset():
     assert '${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}' in script
 
 
+def test_b200_baseline_exports_harness_pythonpath_for_target_vllm_python():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
+
+    assert 'VLLM_ROOT="${VLLM_ROOT:-${B200_VLLM_REPO}}"' in script
+    assert 'PYTHONPATH="$(harness_pythonpath)"' in script
+    assert 'export VLLM_ROOT PYTHONPATH' in script
+
+
 def test_sm120_pr_performance_regression_gate_is_hard_gate():
     script = (ROOT / "scripts" / "run_sm120_pr_performance_regression_gate.sh").read_text(
         encoding="utf-8"
