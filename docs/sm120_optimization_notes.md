@@ -5320,6 +5320,40 @@ branch makes indexed D512 the default, rerun this full promotion matrix plus
 the GB10 reduced long-C2 gate under the exact default path rather than only
 through the opt-in environment variable.
 
+2026-06-04 indexed-D512 core C=2 Nsys follow-up:
+
+- Artifact label:
+  `20260604_d512_c2_core_nsys/202606040ef0b49`.
+- Profile: dual RTX PRO 6000, indexed D512 enabled, MTP=2, FP8 KV, prefix cache
+  disabled, `FULL_AND_PIECEWISE`, `max_num_batched_tokens=4096`,
+  `max_num_seqs=4`, Nsys `bench_window` capture. The profiling client used
+  `ttft-only` evaluation so trace capture is not blocked by single-response
+  semantic variation; promotion matrices still use semantic checks.
+- Harness follow-up: the profiling wrappers now set the harness `PYTHONPATH`
+  when using a target vLLM venv, matching the earlier baseline-runner fix.
+
+| Case | Primary TTFT | Secondary TTFT | Decode Min/Max | ITL p99 | Max FP8 MQA Gap | Slow-request Classification | Top Kernel |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| `long_long_c2` | `19.888 s` | `40.320 s` | `0.994` | `0.0318 s` | `0.784 s` | `no_large_slow_request_tail` | `_fp8_mqa_logits_kernel` |
+| `decode_then_124k` | `19.943 s` | `20.689 s` | `0.998` | `0.0323 s` | `0.792 s` | `no_large_slow_request_tail` | `_fp8_mqa_logits_kernel` |
+
+Interpretation update:
+
+- The current indexed-D512 path does not show the old C=2 decode-fairness
+  pathology in these core traces. Decode throughput is balanced and the
+  request-level ITL tail is small.
+- The remaining C=2 problem is mostly serialized long-prefill TTFT:
+  `long_long_c2` still makes the second 124K request wait until roughly
+  `40 s`, even though decode fairness is healthy.
+- Kernel time is still dominated by `_fp8_mqa_logits_kernel`, Marlin MoE, and
+  NCCL all-reduce. The largest decode-kernel gaps contain many small CUDA
+  launches plus some sparse-MLA chunk work; simply splitting launches further
+  is unlikely to be the right next experiment.
+- Next experiments for C=2 should reduce real prefill work or live state:
+  fewer sparse-MLA candidate visits, lower score/value workspace traffic, or a
+  maintainable FlashInfer/b12x path. Scheduler chunk sweeps and launch-only
+  refactors are lower priority unless a new trace shows a different pathology.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
