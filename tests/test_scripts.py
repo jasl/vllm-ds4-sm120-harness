@@ -1750,6 +1750,32 @@ def test_sm12x_c2_fairness_interference_protocol_reuses_fairness_serve_command()
     assert "10.0.0." not in script
 
 
+def test_sm12x_prefill_decode_promotion_gate_covers_fairness_without_nsys():
+    script = (
+        ROOT / "scripts" / "run_sm12x_prefill_decode_promotion_gate.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'source "${SCRIPT_DIR}/run_context.sh"' in script
+    assert "long_context_latency_matrix,long_context_decode_concurrency,long_context_mixed_arrival,streaming_pressure_matrix" in script
+    assert 'SM12X_PREFILL_DECODE_LINE_COUNTS="${SM12X_PREFILL_DECODE_LINE_COUNTS:-1900,4000}"' in script
+    assert 'SM12X_PREFILL_DECODE_CONCURRENCY="${SM12X_PREFILL_DECODE_CONCURRENCY:-1,2}"' in script
+    assert "long_long_c2:4000:4000:fixed_delay:0:128:128" in script
+    assert "decode_then_59k:1900:1900:after_first_token:0:256:128" in script
+    assert "decode_then_124k:4000:4000:after_first_token:0:256:128" in script
+    assert "long_then_short:4000:192:fixed_delay:2:128:64" in script
+    assert "short_c4:4:3:1200:128" in script
+    assert "long_c2:2:2:4000:128" in script
+    assert "long_c4:4:2:2400:128" in script
+    assert "RUN_STREAMING_PRESSURE_MATRIX=1" in script
+    assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
+    assert "prefill_decode_promotion_gate_summary.json" in script
+    assert "prefill_decode_promotion_gate_summary.md" in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+    assert "10.0.0." not in script
+
+
 def test_sm120_mqa_topk_microbench_records_reusable_shapes():
     script = (ROOT / "scripts" / "run_sm120_mqa_topk_microbench.py").read_text(
         encoding="utf-8"
@@ -2172,6 +2198,7 @@ def test_scripts_have_valid_bash_syntax():
         "run_random_prefill_sweep.sh",
         "run_sm120_local_quality_gates.sh",
         "run_sm120_external_reported_gates.sh",
+        "run_sm12x_prefill_decode_promotion_gate.sh",
         "run_prefix_cache_probe.sh",
         "run_long_context_decode_concurrency.sh",
         "run_long_context_mixed_arrival.sh",

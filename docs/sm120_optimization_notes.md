@@ -488,6 +488,32 @@ GSM8K flexible correctness, prefix-cache stability, or server responsiveness.
 The 256K+ / TP=4 path remains an external gate rather than a claim from this
 matrix.
 
+Prefill/decode promotion gate:
+
+Use `scripts/run_sm12x_prefill_decode_promotion_gate.sh` before promoting a
+new prefill, sparse-MLA, or scheduler experiment. It is the lightweight
+non-Nsys version of the fixed C=2 fairness/interference protocol and runs the
+existing `run_b200_baseline.sh` phases:
+
+- `long_context_latency_matrix` for 59K/124K C=1/C=2 cold TTFT and per-request
+  decode/ITL signals.
+- `long_context_decode_concurrency` for the 124K C=1/C=2 decode fairness
+  shape.
+- `long_context_mixed_arrival` with `long_long_c2`, `decode_then_59k`,
+  `decode_then_124k`, `long_decode_then_short`, `short_decode_then_124k`, and
+  `long_then_short`.
+- `streaming_pressure_matrix` with short C=4, issue-7-like 5K C=4, long C=2,
+  and long C=4 continuous-pressure cases.
+
+The gate intentionally keeps `FULL_AND_PIECEWISE`, expert parallel, FP8 KV,
+prefix cache disabled, 131K max model length, `max_num_batched_tokens=4096`,
+and `max_num_seqs=4` as the default SM120 profile. It writes
+`prefill_decode_promotion_gate_summary.md/json` and should be compared against
+the current baseline for TTFT, decode min/max, and ITL p95/p99 before any
+optimization is promoted. It is not a replacement for the full user-feedback
+matrix, GSM8K, prefix/KV lifecycle, or the GB10 companion gate
+`scripts/run_gb10_long_c2_reduced_gate.sh`.
+
 ### DS4-Inspired Active Decode 1/16 Very-Long Prefill Cap
 
 After adding the DS4-style frontier and semantic gates, the first retained
