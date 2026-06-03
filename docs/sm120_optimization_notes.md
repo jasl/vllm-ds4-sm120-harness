@@ -5241,9 +5241,33 @@ Interpretation update:
   healthy on dual RTX PRO 6000.
 - Do not default-enable it yet. Promotion still needs the same broader matrix:
   short-context throughput, random prefill, mixed arrival, streaming pressure,
-  prefix/KV lifecycle, GSM8K limit-200, and the GB10 reduced long-C2 gate.
-  The earlier GB10 evidence showed D512 could improve TTFT while worsening ITL
-  tail, so GB10 must be rerun before changing the default.
+  prefix/KV lifecycle, and GSM8K limit-200. The GB10 reduced long-C2 gate also
+  needs to pass under the current rebase before changing the default.
+
+GB10 reduced long-C2 current-rebase D512 check:
+
+- Default artifact:
+  `20260604_gb10_rebase_default_longc2/20260604045222`.
+- Indexed-D512 artifact:
+  `20260604_gb10_rebase_d512_longc2/20260604050504`.
+- Profile: two-node GB10 / SM121, MTP=2, FP8 KV, prefix cache disabled,
+  `FULL_AND_PIECEWISE`, `max_num_batched_tokens=4176`, `max_num_seqs=2`,
+  reduced `long_c2:2:2:4000:128` streaming-pressure gate.
+
+| Gate | Default | Indexed D512 | Interpretation |
+| --- | ---: | ---: | --- |
+| Requests / failures | `4 / 0` | `4 / 0` | both availability gates passed |
+| Max TTFT | `220.821 s` | `166.342 s` | D512 improves by `24.7%` |
+| Max elapsed | `221.973 s` | `167.243 s` | same wall-clock improvement as TTFT |
+| ITL p95 / p99 | `0.088 s` / `0.091 s` | `0.088 s` / `0.091 s` | no ITL tail regression in this reduced gate |
+| Max KV usage | `33.48%` | `34.01%` | small expected movement |
+| Preemptions | `0` | `0` | no scheduler preemption regression |
+
+Interpretation update: the earlier GB10 concern should be treated as stale for
+the current rebase. Indexed D512 now improves both RTX 59K/124K C=1/C=2 and
+the GB10 reduced long-C2 availability gate without visible ITL regression. It
+still needs a full promotion matrix before default enablement because it is a
+long-prefill kernel-path change, not only a local scheduling policy.
 
 ## Experiment Discipline
 
