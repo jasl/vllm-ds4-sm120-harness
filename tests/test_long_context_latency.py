@@ -519,6 +519,43 @@ def test_mixed_arrival_fixed_delay_uses_injected_sleep_and_short_secondary():
     assert summary["secondary_max_ttft_seconds"] == 1.0
 
 
+def test_mixed_arrival_ttft_only_allows_semantic_miss_for_trace():
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        metadata = kwargs["probe_metadata"]
+        callback = metadata.get("on_first_token")
+        if callback is not None:
+            callback()
+        return {
+            "assistant_text": "not the required sentinel terms",
+            "response": {
+                "usage": {
+                    "prompt_tokens": 124000
+                    if metadata["request_role"] == "primary"
+                    else 5000,
+                    "completion_tokens": 32,
+                }
+            },
+            "ttft_seconds": 30.0 if metadata["request_role"] == "primary" else 1.0,
+            "elapsed_seconds": 35.0 if metadata["request_role"] == "primary" else 3.0,
+            "inter_chunk_seconds": [0.03, 0.04],
+        }
+
+    row = run_long_context_mixed_arrival_matrix(
+        base_url="http://server",
+        model="model",
+        variant="unit",
+        case_specs=["long_then_short:4000:192:fixed_delay:2:128:64"],
+        stream_func=fake_stream,
+        sleep_func=lambda seconds: None,
+        evaluation_mode="ttft-only",
+    )
+
+    assert row["ok"] is True
+    assert {request["evaluation_mode"] for request in row["requests"]} == {
+        "ttft-only"
+    }
+
+
 def test_long_context_mixed_arrival_markdown_includes_roles(tmp_path):
     row = {
         "case": "mixed_arrival",

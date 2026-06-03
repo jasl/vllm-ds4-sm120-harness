@@ -1054,6 +1054,7 @@ def run_long_context_mixed_arrival_matrix(
     temperature: float = 0.0,
     top_p: float = 1.0,
     thinking_mode: str = "non-thinking",
+    evaluation_mode: str = DEFAULT_EVALUATION_MODE,
     timeout: float = 3600.0,
     headers: dict[str, str] | None = None,
     extra_body: Json | None = None,
@@ -1062,6 +1063,10 @@ def run_long_context_mixed_arrival_matrix(
 ) -> Json:
     if repeat_count < 1:
         raise ValueError("repeat_count must be >= 1")
+    if evaluation_mode not in EVALUATION_MODES:
+        raise ValueError(
+            "evaluation_mode must be one of " + ", ".join(EVALUATION_MODES)
+        )
     specs = parse_mixed_arrival_case_specs(case_specs)
     for spec in specs:
         if spec.primary_line_count < 128 or spec.secondary_line_count < 128:
@@ -1135,6 +1140,7 @@ def run_long_context_mixed_arrival_matrix(
                     temperature=temperature,
                     top_p=top_p,
                     thinking_mode=thinking_mode,
+                    evaluation_mode=evaluation_mode,
                     timeout=timeout,
                     headers=headers,
                     extra_body=extra_body,

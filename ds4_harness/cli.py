@@ -1078,10 +1078,10 @@ def _cmd_long_context_latency_matrix(args: argparse.Namespace) -> int:
             temperature=args.temperature,
             top_p=args.top_p,
             thinking_mode=args.thinking_mode,
+            evaluation_mode=args.evaluation_mode,
             timeout=args.timeout,
             headers=headers,
             extra_body=extra_body,
-            evaluation_mode=args.evaluation_mode,
         )
     except (KeyError, ValueError, RuntimeError, json.JSONDecodeError, OSError) as exc:
         print(str(exc), file=sys.stderr)
@@ -2385,6 +2385,15 @@ def build_parser() -> argparse.ArgumentParser:
     mixed_arrival.add_argument("--temperature", type=float, default=0.0)
     mixed_arrival.add_argument("--top-p", type=float, default=1.0)
     mixed_arrival.add_argument("--thinking-mode", default="non-thinking")
+    mixed_arrival.add_argument(
+        "--evaluation-mode",
+        choices=LONG_CONTEXT_LATENCY_EVALUATION_MODES,
+        default=DEFAULT_LONG_CONTEXT_LATENCY_EVALUATION_MODE,
+        help=(
+            "`semantic` requires the expected answer terms; `ttft-only` only "
+            "requires timing data and is intended for profiling traces."
+        ),
+    )
     mixed_arrival.add_argument("--timeout", type=float, default=3600.0)
     mixed_arrival.add_argument("--api-key-env")
     mixed_arrival.add_argument("--extra-body-json")

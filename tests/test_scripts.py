@@ -1677,12 +1677,15 @@ def test_mixed_arrival_nsys_profile_launcher_captures_scheduler_window():
     ).read_text(encoding="utf-8")
 
     assert 'PYTHON="${PYTHON:-python}"' in script
+    assert 'PYTHONPATH="$(harness_pythonpath)"' in script
     assert 'SERVE_COMMAND="${SERVE_COMMAND:?set SERVE_COMMAND}"' in script
     assert 'PROFILE_MIXED_ARRIVAL_CASE_SPECS=' in script
+    assert 'PROFILE_EVALUATION_MODE="${PROFILE_EVALUATION_MODE:-ttft-only}"' in script
     assert "decode_then_124k" in script
     assert "long-context-mixed-arrival" not in script
     assert '"${SCRIPT_DIR}/run_long_context_mixed_arrival.sh"' in script
     assert 'LONG_CONTEXT_MIXED_ARRIVAL_CASE_SPECS="${PROFILE_MIXED_ARRIVAL_CASE_SPECS}"' in script
+    assert 'LONG_CONTEXT_MIXED_ARRIVAL_EVALUATION_MODE="${PROFILE_EVALUATION_MODE}"' in script
     assert '"${NSYS_BIN}" launch' in script
     assert '"${NSYS_BIN}" start \\' in script
     assert '--session="${NSYS_SESSION_NAME}" \\' in script
@@ -1715,13 +1718,16 @@ def test_sm12x_prefill_decode_profile_wrapper_runs_comprehensive_trace_shapes():
     assert "long_then_short:4000:192:fixed_delay:2:128:64" in script
     assert '"${SCRIPT_DIR}/run_mixed_arrival_nsys_profile_launch.sh"' in script
     assert 'VLLM_VENV="$(cd "$(dirname "${PYTHON}")/.." && pwd)"' in script
+    assert 'PYTHONPATH="$(harness_pythonpath)"' in script
     assert 'PYTHON="${PYTHON}"' in script
+    assert 'PYTHONPATH="${PYTHONPATH}"' in script
     assert 'VLLM_VENV="${VLLM_VENV}"' in script
     assert 'NSYS_BIN="${NSYS_BIN}"' in script
     assert 'SERVE_COMMAND="${SERVE_COMMAND}"' in script
     assert 'PROFILE_MIXED_ARRIVAL_CASE_SPECS="${case_spec}"' in script
     assert 'PROFILE_REPEAT_COUNT="${PROFILE_REPEAT_COUNT}"' in script
     assert 'PROFILE_PREWARM="${PROFILE_PREWARM}"' in script
+    assert 'PROFILE_EVALUATION_MODE="${PROFILE_EVALUATION_MODE}"' in script
     assert 'NSYS_CAPTURE_MODE="${NSYS_CAPTURE_MODE}"' in script
     assert "profile_cases.tsv" in script
     assert "nsys_timeline_summary.json" in script
