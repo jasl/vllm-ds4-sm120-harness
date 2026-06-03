@@ -5100,6 +5100,54 @@ GB10 reduced long-C2 trace follow-up:
   below RTX PRO 6000 for this sparse-MLA path. Do not claim GB10 C=2
   long-context throughput parity or 256K+ behavior from this gate.
 
+Successful promotion update: defer very-long prefill while decode is active.
+
+- Change: when a running decode exists and a prefill still has more than the
+  very-long threshold remaining, the scheduler no longer schedules a small
+  `/16` prefill slice in the same step. It defers that prefill for the step and
+  lets decode proceed. Mid-long prefills keep the existing `/4` cap, so the
+  policy targets only 128K-class interference.
+- Rationale: the scheduler traces above showed that even the old 256-token
+  overlap slice was enough to lift ITL tails. The retained fix removes that
+  overlap rather than adding another public tuning knob or disabling
+  `FULL_AND_PIECEWISE`.
+- RTX exact long-long C=2 probe:
+  `20260603_decode_isolation_default_long_long_c2_probe_exact/20260603215100`.
+  Both 124K requests completed with zero failures. Decode mean was
+  `101.621 tok/s`, decode min/max `0.963`, ITL p99 `0.035 s`, and scheduler
+  trace overlap steps were `0`. The tradeoff is serialized long-prefill TTFT:
+  primary TTFT `29.086 s`, secondary TTFT `58.741 s`.
+- GB10 reduced long-C2 probe:
+  `20260603_decode_isolation_default_gb10_mtp2_reduced_long_c2/20260603215415`.
+  All 4 requests completed with no runtime or driver error signal. Max TTFT was
+  `222.868 s`, p95 ITL `0.089 s`, p99 ITL `0.089 s`, preemptions `0`, and
+  trace overlap steps were `0`. This is an availability/cadence profile, not a
+  GB10 long-context throughput claim.
+- Full RTX user-feedback matrix:
+  `20260603_decode_isolation_default_user_feedback_matrix/20260603220741`.
+  All primary, throughput, prefix-cache, and prefix-enabled KV lifecycle phases
+  exited `0`. Key values:
+
+  | Gate | Result |
+  | --- | --- |
+  | 59K C=1 / C=2 latency | TTFT `11.649 s` / `18.041 s`; decode min/max `0.989` / `0.956`; ITL p99 `0.021 s` / `0.022 s` |
+  | 124K C=1 / C=2 latency | TTFT `29.653 s` / `45.620 s`; decode min/max `0.989` / `0.934`; ITL p99 `0.035 s` / `0.031 s` |
+  | 124K decode-concurrency C=2 | decode `104.056 tok/s`, min `101.924 tok/s`, min/max `0.960`, ITL p99 `0.031 s` |
+  | Mixed `decode_then_124k` / `decode_then_59k` | decode min/max `0.959` / `0.956`; secondary ITL p99 `0.035 s` / `0.022 s` |
+  | Streaming pressure | 36 requests, 0 failures, 0 slow cases, max TTFT `51.132 s`, ITL p99 `0.726 s` |
+  | Short MT bench throughput profile | C=1/2/4/8/16/24 output tok/s `172.10 / 270.07 / 403.03 / 571.15 / 781.62 / 933.66` |
+  | Random 8K/1K throughput profile | C=1/2/4/8/16/24 output tok/s `126.92 / 187.50 / 257.31 / 323.26 / 384.97 / 406.34` |
+  | Random 256/256 throughput profile | C=1/2/4/8/16/24 output tok/s `147.12 / 233.33 / 355.04 / 506.79 / 723.25 / 808.45` |
+  | GSM8K limit-200 | flexible `0.950`, strict `0.930`; above `0.94 / 0.925` floors |
+  | Prefix-cache stress | filler `100/400/800/1600/3200`, all 5-trial phases passed with 0 failures |
+  | KV lifecycle | prefix-disabled idle KV `0.0%`; prefix-enabled final idle KV `5.843%`, within bounded-cache threshold |
+
+- Decision: promote the default decode-pressure deferral. It is the first
+  scheduler-only change in this pass that fixes the 59K/124K C=2 fairness tail
+  without hurting short-context throughput, GSM8K, prefix-cache stability, or
+  KV lifecycle. Keep the scope narrow: this does not improve raw single-stream
+  prefill speed and does not justify 256K+/four-card customer commitments.
+
 RTX indexed-D512 same-protocol trace follow-up:
 
 - Artifact:
@@ -5164,22 +5212,20 @@ RTX indexed-D512 same-protocol trace follow-up:
 1. Keep KV lifecycle and prefix-cache recoverability in the development and
    user-feedback matrices. This remains a reliability gate, not a performance
    optimization.
-2. Treat C=2 long-prefill fairness as a promotion gate and diagnostic signal,
-   not as a reason to add broad scheduler-only hacks. The pending-decode guard
-   above is the narrow exception because scheduler trace proved a specific
-   later-running decode starvation root cause, and its fixed user-feedback
-   matrix passed. PR promotion still depends on the separate C=2 long-long
-   fairness decision.
+2. Keep C=2 long-prefill fairness as a promotion gate and diagnostic signal.
+   The retained scheduler policy now defers very-long prefill under active
+   decode pressure and passed RTX plus reduced GB10 gates. Future scheduler
+   work should require a new trace-proven pathology; otherwise continue with
+   kernel/work reduction or deployment-level isolation.
 3. The partial-state sparse-MLA accumulate candidate has been absorbed into
    the Dev branch only as `caea1cb55`. The SM120 full promotion matrix has
    passed. GB10 no-MTP startup, prefix-cache-disabled lifecycle, 128K-class
    long-context smoke, prefix-cache-enabled lifecycle, MTP=2 startup, short
    deterministic generation, and guarded 128K-class MTP smoke have passed.
-4. Run GB10 MTP bounded pressure next, for example a short streaming or
-   ToolCall-style gate that watches `sample_tokens`, shared-memory broadcast,
-   spec-decode counters, and KV usage over repeated requests. If GB10 regresses
-   or crashes, leave the code out of PR and preserve the branch as the backup
-   experiment.
+4. Keep GB10 reduced long-C2, startup, prefix/KV lifecycle, and bounded
+   pressure gates on the same workload names as RTX. Treat the current GB10
+   result as cadence/availability evidence only. Raw long-prefill throughput,
+   256K+ context, and four-card behavior still need native external gates.
 5. Keep the direct FP8 MQA streaming top-k prototype as a secondary candidate.
    Its microbench must beat the full logits path itself, not just replace the
    already-small top-k selection stage.
@@ -5187,6 +5233,7 @@ RTX indexed-D512 same-protocol trace follow-up:
    mixed-arrival, random prefill, story-recall, and GSM8K gates before keeping
    code. If it is negative or ambiguous, revert and record only the rejected
    note.
-7. After single-instance kernel options are exhausted, evaluate deployment-level
-   prefill/decode isolation as the best-effort answer for longer GB10 / 4-card
-   contexts, explicitly trading TTFT/KV-transfer overhead for ITL tail control.
+7. Track the TP=4 C=256 1K/1K workspace-sizing report separately with
+   `scripts/run_sm120_workspace_high_concurrency_gate.sh`. It is not part of
+   the local C<=24 recommendation envelope, but a locked-workspace assertion is
+   a real correctness/stability failure for external high-concurrency users.
