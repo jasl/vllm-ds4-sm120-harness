@@ -5199,6 +5199,52 @@ RTX indexed-D512 same-protocol trace follow-up:
   remaining C128A sparse accumulate work or a deployment-level isolation
   fallback, not D512 alone.
 
+2026-06-04 rebase C=2 fairness and indexed-D512 A/B:
+
+- Harness fix: `run_b200_baseline.sh` now exports the harness `PYTHONPATH`
+  when using a target vLLM venv. Without this, wrappers such as the C=2
+  fairness protocol could start vLLM successfully but keep polling health with
+  `ModuleNotFoundError: ds4_harness`, causing a false startup hang.
+- Default current-Dev artifact:
+  `20260604_c2_fairness_rebase_default_rtx_retry/20260604041018`.
+- Indexed-D512 artifact:
+  `20260604_c2_fairness_rebase_d512_rtx/20260604043315`.
+- Both runs used dual RTX PRO 6000, MTP=2, FP8 KV, prefix cache disabled,
+  `FULL_AND_PIECEWISE`, `max_num_batched_tokens=4096`, `max_num_seqs=4`,
+  repeat count 3, and no Nsys capture.
+
+Key A/B results:
+
+| Gate | Default | Indexed D512 | Interpretation |
+| --- | ---: | ---: | --- |
+| 59K C=1 TTFT mean | `11.683 s` | `8.325 s` | D512 improves by `28.7%` |
+| 59K C=2 TTFT mean / max | `18.057 s` / `24.384 s` | `13.019 s` / `17.664 s` | D512 improves C=2 latency without ITL regression |
+| 124K C=1 TTFT mean | `29.623 s` | `19.949 s` | D512 improves by `32.7%` |
+| 124K C=2 TTFT mean / max | `45.326 s` / `60.651 s` | `30.491 s` / `40.911 s` | D512 improves serialized long-prefill latency by about `33%` |
+| 124K decode-concurrency C=2 decode min/max | `0.989` | `0.999` | no decode fairness regression in this protocol |
+| 124K decode-concurrency C=2 ITL p99 | `0.031 s` | `0.031 s` | unchanged within noise |
+| Mixed `long_long_c2` secondary TTFT | `60.776 s` | `34.006 s` | D512 reduces the second long prefill wall-clock cost |
+| Mixed `long_long_c2` decode min/max / ITL p99 | `0.954` / `0.031 s` | `0.974` / `0.031 s` | no slow-decode-stream regression in this protocol |
+
+Runtime error counters were clean in both A/B runs: CUDA, NCCL, driver, and
+engine error counts were all `0`, prefix-cache hits were `0`, and preemptions
+were `0`.
+
+Interpretation update:
+
+- The current default path no longer reproduces the older severe C=2
+  slow-decode-stream symptom on this fixed protocol. The remaining C=2 pain is
+  mostly serialized long-prefill TTFT: the second 124K request still waits for
+  substantial first-prefill work.
+- Indexed D512 is now a stronger candidate than the earlier trace suggested:
+  it materially improves 59K/124K TTFT while keeping decode min/max and ITL p99
+  healthy on dual RTX PRO 6000.
+- Do not default-enable it yet. Promotion still needs the same broader matrix:
+  short-context throughput, random prefill, mixed arrival, streaming pressure,
+  prefix/KV lifecycle, GSM8K limit-200, and the GB10 reduced long-C2 gate.
+  The earlier GB10 evidence showed D512 could improve TTFT while worsening ITL
+  tail, so GB10 must be rerun before changing the default.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
