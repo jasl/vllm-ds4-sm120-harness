@@ -327,7 +327,8 @@ reported four-card or 512K/1M shapes:
   1280-request shape with FP8 KV, block size 256, prefix cache enabled,
   `max-model-len=140000`,
   `max-num-batched-tokens=4096`, `max-num-seqs=256`, async scheduling, expert
-  parallel, chat benchmark endpoint `/v1/chat/completions`, and
+  parallel, chat benchmark endpoint `/v1/chat/completions`, request model name
+  matching the served-model-name alias, and
   `VLLM_DEBUG_WORKSPACE=1`. The original report failed with a
   locked workspace assertion in
   `_forward_sparse_mla_compressed_decode_triton` after warmup left the

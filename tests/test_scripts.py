@@ -92,12 +92,14 @@ def test_bench_script_defaults_to_representative_hf_dataset():
     assert 'CONCURRENCY="${CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'DATASET_NAME="${DATASET_NAME:-hf}"' in script
     assert 'DATASET_PATH="${DATASET_PATH:-philschmid/mt-bench}"' in script
+    assert 'BENCH_MODEL="${BENCH_MODEL:-${MODEL}}"' in script
     assert 'TOKENIZER_MODE="${TOKENIZER_MODE:-deepseek_v4}"' in script
     assert 'BENCH_TIMEOUT="${BENCH_TIMEOUT:-1800}"' in script
     assert 'IGNORE_EOS="${IGNORE_EOS:-0}"' in script
     assert 'BENCH_BACKEND="${BENCH_BACKEND:-}"' in script
     assert 'BENCH_ENDPOINT="${BENCH_ENDPOINT:-}"' in script
     assert '--dataset-name "${DATASET_NAME}"' in script
+    assert '--model "${BENCH_MODEL}"' in script
     assert '--dataset-path "${DATASET_PATH}"' in script
     assert '--tokenizer-mode "${TOKENIZER_MODE}"' in script
     assert '--timeout "${BENCH_TIMEOUT}"' in script
@@ -800,6 +802,7 @@ def test_b200_baseline_exposes_workspace_high_concurrency_phase():
     assert 'RANDOM_1K1K_C256_CONCURRENCY="${RANDOM_1K1K_C256_CONCURRENCY:-256}"' in script
     assert 'RANDOM_1K1K_C256_NUM_PROMPTS="${RANDOM_1K1K_C256_NUM_PROMPTS:-1280}"' in script
     assert '"${variant_dir}/bench_random_1024x1024_c256"' in script
+    assert 'BENCH_MODEL="${BENCH_MODEL:-${MODEL}}"' in script
     assert 'BENCH_BACKEND="${BENCH_BACKEND:-openai-chat}"' in script
     assert 'BENCH_ENDPOINT="${BENCH_ENDPOINT:-/v1/chat/completions}"' in script
     assert "DATASET_NAME=random TOKENIZER_MODE=deepseek_v4" in script
@@ -821,6 +824,7 @@ def test_workspace_high_concurrency_gate_wires_reported_shape():
     assert 'B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"' in script
     assert 'RANDOM_1K1K_C256_CONCURRENCY="${RANDOM_1K1K_C256_CONCURRENCY:-256}"' in script
     assert 'RANDOM_1K1K_C256_NUM_PROMPTS="${RANDOM_1K1K_C256_NUM_PROMPTS:-1280}"' in script
+    assert 'BENCH_MODEL="${BENCH_MODEL:-${SM120_WORKSPACE_SERVED_MODEL_NAME}}"' in script
     assert 'BENCH_BACKEND="${BENCH_BACKEND:-openai-chat}"' in script
     assert 'BENCH_ENDPOINT="${BENCH_ENDPOINT:-/v1/chat/completions}"' in script
     assert "--attention-backend FLASHMLA_SPARSE" in script
