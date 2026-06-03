@@ -5269,6 +5269,57 @@ the GB10 reduced long-C2 availability gate without visible ITL regression. It
 still needs a full promotion matrix before default enablement because it is a
 long-prefill kernel-path change, not only a local scheduling policy.
 
+2026-06-04 full RTX promotion matrix with indexed D512:
+
+- Artifact label:
+  `20260604_d512_promotion_matrix_rtx/20260604051933`.
+- Profile: dual RTX PRO 6000, MTP=2, FP8 KV, prefix cache disabled for the
+  primary/throughput runs, prefix cache enabled for the prefix/KV lifecycle
+  gates, `FULL_AND_PIECEWISE`, `max_num_batched_tokens=4096`,
+  `max_num_seqs=4` for the 128K-class primary matrix, and a separate
+  short-context throughput profile up to C=24.
+- Overall result: the full matrix exited `0`. All primary, throughput,
+  prefix-cache stress, and prefix-enabled KV lifecycle phases passed. Runtime
+  monitoring reported no serve error signals, CUDA errors, NCCL errors, driver
+  errors, engine errors, preemptions, or server-unresponsive samples.
+
+Promotion-relevant comparison against the previous current-Dev default matrix
+`20260603_decode_isolation_default_user_feedback_matrix/20260603220741`:
+
+| Gate | Default | Indexed D512 | Interpretation |
+| --- | ---: | ---: | --- |
+| 59K C=1 TTFT mean | `11.649 s` | `8.235 s` | D512 improves by `29.3%` |
+| 59K C=2 TTFT mean / max | `18.041 s` / `24.340 s` | `12.813 s` / `17.330 s` | D512 improves C=2 long-prefill latency |
+| 124K C=1 TTFT mean | `29.653 s` | `19.653 s` | D512 improves by `33.7%` |
+| 124K C=2 TTFT mean / max | `45.620 s` / `61.218 s` | `30.230 s` / `40.580 s` | D512 improves serialized C=2 prefill latency by about `34%` |
+| 124K decode-concurrency C=2 decode min/max | `0.960` | `0.978` | no decode fairness regression |
+| 124K decode-concurrency C=2 ITL p99 | `0.031 s` | `0.031 s` | unchanged |
+| Mixed `decode_then_124k` secondary TTFT | `30.746 s` | `20.553 s` | active-decode plus long-prefill interference remains bounded and faster |
+| Streaming pressure max TTFT | `51.132 s` | `36.751 s` | lower worst TTFT in the stress mix |
+| GSM8K 5-shot limit-200 flexible / strict | `0.950` / `0.930` | `0.965` / `0.945` | correctness gate remains above floor |
+| Prefix-cache stress filler 100..3200 | all passed | all passed | no prefix-cache regression |
+| Prefix-enabled KV lifecycle final idle KV | `5.843%` | `5.843%` | same bounded reclaimable cache behavior |
+
+Throughput and short-context regression checks:
+
+| Gate | Default | Indexed D512 | Interpretation |
+| --- | ---: | ---: | --- |
+| Short bench C=1/2/4 output tok/s | `154.28 / 243.48 / 359.18` | `153.84 / 241.64 / 357.98` | effectively unchanged in the 128K primary profile |
+| Short throughput C=1/2/4/8/16/24 output tok/s | `172.10 / 270.07 / 403.03 / 571.15 / 781.62 / 933.66` | `172.15 / 269.24 / 407.01 / 563.65 / 791.98 / 961.41` | no short-context throughput regression; C=24 improved |
+| Random 8K/1K C=1/2/4 output tok/s | `111.04 / 169.60 / 239.82` | `111.90 / 169.90 / 239.13` | unchanged in the 128K primary profile |
+| Random 8K/1K throughput C=1/2/4/8/16/24 output tok/s | `126.92 / 187.50 / 257.31 / 323.26 / 384.97 / 406.34` | `125.73 / 186.89 / 257.60 / 322.65 / 378.83 / 396.18` | small high-C dip; keep as observation, not a blocker |
+| Random 256/256 throughput C=1/2/4/8/16/24 output tok/s | `147.12 / 233.33 / 355.04 / 506.79 / 723.25 / 808.45` | `148.08 / 232.06 / 354.34 / 508.56 / 709.86 / 830.55` | mixed noise; C=24 improved |
+| Random prefill 16K / 64K input tok/s | `5733.68 / 4754.58` | `7225.58 / 6666.94` | D512 materially improves long prefill work |
+
+Decision update: indexed D512 has now passed the full RTX promotion matrix and
+the current GB10 reduced long-C2 gate. It is no longer blocked by RTX
+correctness, prefix-cache, KV lifecycle, or short-context throughput evidence.
+Keep the high-C 8K/1K throughput dip as an observation item, and do not use
+this dual-card evidence to claim 256K+ or four-card behavior. If the vLLM
+branch makes indexed D512 the default, rerun this full promotion matrix plus
+the GB10 reduced long-C2 gate under the exact default path rather than only
+through the opt-in environment variable.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
