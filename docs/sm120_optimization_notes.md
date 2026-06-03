@@ -4989,6 +4989,28 @@ GB10 warmup coverage for the inference-time JIT kernels observed in both
 control and D512 runs, especially C128A top-k metadata, FP8 MQA logits,
 SWA-combine, and MTP shared-head/spec-decode metadata.
 
+Rejected follow-up from the same JIT-coverage pass:
+
+- Hypothesis: the second sparse-MLA single-prefill warmup covered longer
+  `seq_lens` but still used first-chunk token positions, so offsetting dummy
+  positions by one chunk might precompile later chunked-prefill metadata
+  specializations.
+- Candidate: add a `profile_position_offset` argument to `_dummy_run()` and
+  use it only for the second DeepSeek V4 sparse-MLA warmup chunk.
+- Validation: focused unit tests and ruff passed on the RTX PRO 6000 host, then
+  the reduced 59K/124K C=2 fairness gate was rerun under artifact
+  `20260603_warmup_position_offset_rtx_c2_probe/20260603173744`.
+- Result: the runtime gate completed without CUDA/NCCL/driver errors, but the
+  serve log still reported 15 inference-time JIT warnings, including
+  `_build_c128a_topk_metadata_kernel`, `_compute_prefill_metadata_kernel`,
+  `_fp8_mqa_logits_kernel`, `_fp8_paged_mqa_logits_rowwise_kernel`,
+  `_combine_topk_swa_indices_kernel`,
+  `_accumulate_indexed_attention_chunk_multihead_kernel`, and
+  `_accumulate_indexed_attention_partial_states_multihead_kernel`.
+- Decision: reject and revert. This was not the root cause of first-request
+  JIT debt or C=2 fairness; do not leave the extra `_dummy_run()` parameter or
+  the temporary test in the active branch.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
