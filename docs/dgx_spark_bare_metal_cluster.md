@@ -93,6 +93,21 @@ the binding and NCCL runtime from the same current release family when possible.
 Record the installed NCCL package version and `torch.cuda.nccl.version()` in the
 run artifact or local handoff note before running the MTP/TP=2 gates.
 
+FlashInfer JIT cache is an optional environment-side override, not a vLLM branch
+patch. Keep it aligned with the installed `flashinfer-python` and
+`flashinfer-cubin` base version, and install it without dependency resolution so
+it cannot pull a different Torch/CUDA stack:
+
+```bash
+cd ~/tmp/ds4-sm120-harness
+PYTHON=~/tmp/vllm/.venv/bin/python \
+  scripts/install_flashinfer_jit_cache.sh
+```
+
+For CUDA 13 this resolves a base version such as `0.6.12` to the CUDA-specific
+wheel version `0.6.12+cu130` from the FlashInfer wheel directory, then verifies
+the installed packages and runs `flashinfer show-config` when available.
+
 `b12x` is an optional SM120/SM121 kernel package for research builds. Do not add
 it to vLLM's hard requirements or the default public GB10 profile until the
 corresponding vLLM code path is validated. When testing it, install it into the

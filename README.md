@@ -1030,6 +1030,17 @@ the harness self-checks. At minimum, confirm `python -m pip check` is clean and
 that `pytest`, `ruff`, `lm-eval[api]`, and the Hugging Face `datasets` package
 are available in the vLLM venv. If FlashInfer is installed, keep `flashinfer-python`,
 `flashinfer-cubin`, and `flashinfer-jit-cache` on matching versions.
+Install the optional FlashInfer JIT cache outside the vLLM branch, like the
+NCCL runtime override:
+
+```bash
+PYTHON=/path/to/vllm/.venv/bin/python \
+  scripts/install_flashinfer_jit_cache.sh
+```
+
+The helper infers the installed `flashinfer-python`/`flashinfer-cubin` base
+version, installs the CUDA-specific `flashinfer-jit-cache` wheel with
+`--no-deps`, and runs `flashinfer show-config` when the CLI is available.
 
 ```bash
 python -m ds4_harness.cli oracle-compare \
