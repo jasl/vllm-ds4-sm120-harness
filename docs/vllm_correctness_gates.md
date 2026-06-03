@@ -328,7 +328,8 @@ reported four-card or 512K/1M shapes:
   `max-model-len=140000`,
   `max-num-batched-tokens=4096`, `max-num-seqs=256`, async scheduling, expert
   parallel, chat benchmark endpoint `/v1/chat/completions`, request model name
-  matching the served-model-name alias, and
+  matching the served-model-name alias while keeping the tokenizer pointed at
+  the real model repository, and
   `VLLM_DEBUG_WORKSPACE=1`. The original report failed with a
   locked workspace assertion in
   `_forward_sparse_mla_compressed_decode_triton` after warmup left the

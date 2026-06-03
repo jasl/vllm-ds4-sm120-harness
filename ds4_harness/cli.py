@@ -1529,6 +1529,8 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
             "--max-concurrency",
             str(concurrency),
         ]
+        if args.tokenizer:
+            command.extend(["--tokenizer", args.tokenizer])
         if args.backend:
             command.extend(["--backend", args.backend])
         if args.endpoint:
@@ -2528,6 +2530,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench = subparsers.add_parser("bench-matrix")
     bench.add_argument("--vllm-bin", default="vllm")
     bench.add_argument("--model", default=DEFAULT_MODEL)
+    bench.add_argument("--tokenizer")
     bench.add_argument("--tokenizer-mode", default="deepseek_v4")
     bench.add_argument("--host", default="localhost")
     bench.add_argument("--port", type=int, default=8000)
