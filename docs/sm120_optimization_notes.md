@@ -5011,6 +5011,28 @@ Rejected follow-up from the same JIT-coverage pass:
   JIT debt or C=2 fairness; do not leave the extra `_dummy_run()` parameter or
   the temporary test in the active branch.
 
+Rejected scheduler follow-up from the same C=2 fairness pass:
+
+- Hypothesis: the existing `/16` very-long prefill cap under decode pressure
+  still left too much prefill/decode interference, so an extreme `/32` cap for
+  prefills with more than 16 scheduler steps remaining might improve decode
+  cadence in long+long C=2.
+- Candidate: change only the extreme decode-pressure branch from
+  `max_num_batched_tokens / 16` to `/32`; keep mid-long prefills at `/16`.
+- RTX artifact `20260603_extreme_prefill_div32_rtx_latency_repeat2/20260603175749`:
+  124K C=2 decode min/max improved from same-protocol control `0.293` to
+  `0.328`, but p99 ITL worsened from `0.092 s` to `0.111 s`. The separate
+  decode-concurrency probe improved min/max `0.310` to `0.351` and p99 ITL
+  `0.093 s` to `0.086 s`, which is too small and inconsistent for promotion.
+- GB10 MTP=2 artifact
+  `20260603_extreme_prefill_div32_gb10_mtp2_probe/20260603180503`: all 4
+  requests completed with no driver/runtime errors, but max TTFT regressed
+  versus control from `227.601 s` to `231.532 s`, and p99 ITL regressed from
+  `0.488 s` to `1.073 s`.
+- Decision: reject and revert. The data confirms that simply shrinking the
+  scheduler chunk further trades TTFT and first-token cadence without solving
+  the structural long+long C=2 fairness problem.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
