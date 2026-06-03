@@ -95,10 +95,14 @@ def test_bench_script_defaults_to_representative_hf_dataset():
     assert 'TOKENIZER_MODE="${TOKENIZER_MODE:-deepseek_v4}"' in script
     assert 'BENCH_TIMEOUT="${BENCH_TIMEOUT:-1800}"' in script
     assert 'IGNORE_EOS="${IGNORE_EOS:-0}"' in script
+    assert 'BENCH_BACKEND="${BENCH_BACKEND:-}"' in script
+    assert 'BENCH_ENDPOINT="${BENCH_ENDPOINT:-}"' in script
     assert '--dataset-name "${DATASET_NAME}"' in script
     assert '--dataset-path "${DATASET_PATH}"' in script
     assert '--tokenizer-mode "${TOKENIZER_MODE}"' in script
     assert '--timeout "${BENCH_TIMEOUT}"' in script
+    assert 'EXTRA_ARGS+=(--backend "${BENCH_BACKEND}")' in script
+    assert 'EXTRA_ARGS+=(--endpoint "${BENCH_ENDPOINT}")' in script
     assert 'EXTRA_ARGS+=(--ignore-eos)' in script
     assert '${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}' in script
 
@@ -796,6 +800,8 @@ def test_b200_baseline_exposes_workspace_high_concurrency_phase():
     assert 'RANDOM_1K1K_C256_CONCURRENCY="${RANDOM_1K1K_C256_CONCURRENCY:-256}"' in script
     assert 'RANDOM_1K1K_C256_NUM_PROMPTS="${RANDOM_1K1K_C256_NUM_PROMPTS:-1280}"' in script
     assert '"${variant_dir}/bench_random_1024x1024_c256"' in script
+    assert 'BENCH_BACKEND="${BENCH_BACKEND:-openai-chat}"' in script
+    assert 'BENCH_ENDPOINT="${BENCH_ENDPOINT:-/v1/chat/completions}"' in script
     assert "DATASET_NAME=random TOKENIZER_MODE=deepseek_v4" in script
     assert 'RANDOM_INPUT_LEN="${RANDOM_1K1K_C256_INPUT_LEN}"' in script
     assert 'RANDOM_OUTPUT_LEN="${RANDOM_1K1K_C256_OUTPUT_LEN}"' in script
@@ -815,6 +821,8 @@ def test_workspace_high_concurrency_gate_wires_reported_shape():
     assert 'B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"' in script
     assert 'RANDOM_1K1K_C256_CONCURRENCY="${RANDOM_1K1K_C256_CONCURRENCY:-256}"' in script
     assert 'RANDOM_1K1K_C256_NUM_PROMPTS="${RANDOM_1K1K_C256_NUM_PROMPTS:-1280}"' in script
+    assert 'BENCH_BACKEND="${BENCH_BACKEND:-openai-chat}"' in script
+    assert 'BENCH_ENDPOINT="${BENCH_ENDPOINT:-/v1/chat/completions}"' in script
     assert "--attention-backend FLASHMLA_SPARSE" in script
     assert "--max-num-seqs ${SM120_WORKSPACE_MAX_NUM_SEQS}" in script
     assert "--max-num-batched-tokens ${SM120_WORKSPACE_MAX_NUM_BATCHED_TOKENS}" in script

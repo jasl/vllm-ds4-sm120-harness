@@ -1529,6 +1529,10 @@ def _cmd_bench_matrix(args: argparse.Namespace) -> int:
             "--max-concurrency",
             str(concurrency),
         ]
+        if args.backend:
+            command.extend(["--backend", args.backend])
+        if args.endpoint:
+            command.extend(["--endpoint", args.endpoint])
         if args.base_url:
             command.extend(["--base-url", args.base_url])
         else:
@@ -2528,6 +2532,8 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--host", default="localhost")
     bench.add_argument("--port", type=int, default=8000)
     bench.add_argument("--base-url")
+    bench.add_argument("--backend")
+    bench.add_argument("--endpoint")
     bench.add_argument("--concurrency", default="1,2,4,8,16,24")
     bench.add_argument("--dataset-name", default=DEFAULT_BENCH_DATASET)
     bench.add_argument("--dataset-path", default=DEFAULT_BENCH_DATASET_PATH)

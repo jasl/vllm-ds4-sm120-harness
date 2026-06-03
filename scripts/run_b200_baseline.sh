@@ -1683,6 +1683,8 @@ for variant in ${variant_list}; do
       env OUT_DIR="${variant_dir}/bench_random_1024x1024_c256" \
         BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
         SERVE_LOG="${serve_log}" CONCURRENCY="${RANDOM_1K1K_C256_CONCURRENCY}" \
+        BENCH_BACKEND="${BENCH_BACKEND:-openai-chat}" \
+        BENCH_ENDPOINT="${BENCH_ENDPOINT:-/v1/chat/completions}" \
         DATASET_NAME=random TOKENIZER_MODE=deepseek_v4 \
         RANDOM_INPUT_LEN="${RANDOM_1K1K_C256_INPUT_LEN}" \
         RANDOM_OUTPUT_LEN="${RANDOM_1K1K_C256_OUTPUT_LEN}" \

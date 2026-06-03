@@ -519,6 +519,42 @@ def test_bench_matrix_passes_base_url_to_vllm_bench(monkeypatch):
     assert "--port" not in command
 
 
+def test_bench_matrix_can_pass_chat_backend_and_endpoint(monkeypatch):
+    captured = []
+
+    def fake_run(command, timeout=None):
+        captured.append(command)
+        return {
+            "returncode": 0,
+            "metrics": {"successful_requests": 1},
+            "stdout": "",
+            "command": command,
+        }
+
+    monkeypatch.setattr(cli, "run_bench_command", fake_run)
+
+    rc = cli.main(
+        [
+            "bench-matrix",
+            "--backend",
+            "openai-chat",
+            "--endpoint",
+            "/v1/chat/completions",
+            "--concurrency",
+            "1",
+            "--num-prompts",
+            "1",
+        ]
+    )
+
+    assert rc == 0
+    command = captured[0]
+    assert "--backend" in command
+    assert command[command.index("--backend") + 1] == "openai-chat"
+    assert "--endpoint" in command
+    assert command[command.index("--endpoint") + 1] == "/v1/chat/completions"
+
+
 def test_bench_matrix_keeps_random_dataset_length_controls(monkeypatch):
     captured = []
 
