@@ -786,6 +786,42 @@ def test_b200_baseline_exposes_canada_quant_reported_256_256_phase():
     assert 'RANDOM_OUTPUT_LEN="${RANDOM_256X256_OUTPUT_LEN}"' in script
 
 
+def test_b200_baseline_exposes_workspace_high_concurrency_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
+
+    assert "bench_random_1024x1024_c256" in script
+    assert "RUN_RANDOM_1K1K_C256" in script
+    assert 'RANDOM_1K1K_C256_INPUT_LEN="${RANDOM_1K1K_C256_INPUT_LEN:-1024}"' in script
+    assert 'RANDOM_1K1K_C256_OUTPUT_LEN="${RANDOM_1K1K_C256_OUTPUT_LEN:-1024}"' in script
+    assert 'RANDOM_1K1K_C256_CONCURRENCY="${RANDOM_1K1K_C256_CONCURRENCY:-256}"' in script
+    assert 'RANDOM_1K1K_C256_NUM_PROMPTS="${RANDOM_1K1K_C256_NUM_PROMPTS:-1280}"' in script
+    assert '"${variant_dir}/bench_random_1024x1024_c256"' in script
+    assert "DATASET_NAME=random TOKENIZER_MODE=deepseek_v4" in script
+    assert 'RANDOM_INPUT_LEN="${RANDOM_1K1K_C256_INPUT_LEN}"' in script
+    assert 'RANDOM_OUTPUT_LEN="${RANDOM_1K1K_C256_OUTPUT_LEN}"' in script
+    assert "VLLM_DEBUG_WORKSPACE" in script
+
+
+def test_workspace_high_concurrency_gate_wires_reported_shape():
+    script = (
+        ROOT / "scripts" / "run_sm120_workspace_high_concurrency_gate.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "bench_random_1024x1024_c256" in script
+    assert 'B200_TENSOR_PARALLEL_SIZE="${B200_TENSOR_PARALLEL_SIZE:-4}"' in script
+    assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-140000}"' in script
+    assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-enabled}"' in script
+    assert 'B200_BLOCK_SIZE="${B200_BLOCK_SIZE:-256}"' in script
+    assert 'B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"' in script
+    assert 'RANDOM_1K1K_C256_CONCURRENCY="${RANDOM_1K1K_C256_CONCURRENCY:-256}"' in script
+    assert 'RANDOM_1K1K_C256_NUM_PROMPTS="${RANDOM_1K1K_C256_NUM_PROMPTS:-1280}"' in script
+    assert "--attention-backend FLASHMLA_SPARSE" in script
+    assert "--max-num-seqs ${SM120_WORKSPACE_MAX_NUM_SEQS}" in script
+    assert "--max-num-batched-tokens ${SM120_WORKSPACE_MAX_NUM_BATCHED_TOKENS}" in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert 'VLLM_DEBUG_WORKSPACE="${VLLM_DEBUG_WORKSPACE:-1}"' in script
+
+
 def test_sm120_user_feedback_matrix_includes_external_random_256_256_observation():
     script = (ROOT / "scripts" / "run_sm120_user_feedback_matrix.sh").read_text(
         encoding="utf-8"
@@ -823,7 +859,12 @@ def test_vllm_correctness_gate_docs_split_dev_and_user_reported_feedback_gates()
     assert "github.com/jasl/vllm/issues/8" in docs
     assert "github.com/jasl/vllm/issues/10" in docs
     assert "github.com/jasl/vllm/issues/12" in docs
+    assert "github.com/jasl/vllm/issues/15" in docs
+    assert "test_deepseek_v4_moe_metadata.py" in docs
     assert "run_sm120_issue12_w4a16_marlin_gate.sh" in docs
+    assert "run_sm120_workspace_high_concurrency_gate.sh" in docs
+    assert "bench_random_1024x1024_c256" in docs
+    assert "_forward_sparse_mla_compressed_decode_triton" in docs
     assert "forums.developer.nvidia.com" in docs
     assert "run_sm120_issue10_startup_gate.sh" in docs
     assert "run_sm120_ds4_absorption_stress.sh" in docs

@@ -260,6 +260,12 @@ RANDOM_256X256_OUTPUT_LEN="${RANDOM_256X256_OUTPUT_LEN:-256}"
 RANDOM_256X256_CONCURRENCY="${RANDOM_256X256_CONCURRENCY:-1,4,16}"
 RANDOM_256X256_NUM_PROMPTS="${RANDOM_256X256_NUM_PROMPTS:-80}"
 RANDOM_256X256_BENCH_TIMEOUT="${RANDOM_256X256_BENCH_TIMEOUT:-1800}"
+RUN_RANDOM_1K1K_C256="${RUN_RANDOM_1K1K_C256:-0}"
+RANDOM_1K1K_C256_INPUT_LEN="${RANDOM_1K1K_C256_INPUT_LEN:-1024}"
+RANDOM_1K1K_C256_OUTPUT_LEN="${RANDOM_1K1K_C256_OUTPUT_LEN:-1024}"
+RANDOM_1K1K_C256_CONCURRENCY="${RANDOM_1K1K_C256_CONCURRENCY:-256}"
+RANDOM_1K1K_C256_NUM_PROMPTS="${RANDOM_1K1K_C256_NUM_PROMPTS:-1280}"
+RANDOM_1K1K_C256_BENCH_TIMEOUT="${RANDOM_1K1K_C256_BENCH_TIMEOUT:-7200}"
 RANDOM_LONG_CONCURRENCY="${RANDOM_LONG_CONCURRENCY:-1,2}"
 RANDOM_LONG_NUM_PROMPTS="${RANDOM_LONG_NUM_PROMPTS:-8}"
 RANDOM_LONG_INPUT_LEN="${RANDOM_LONG_INPUT_LEN:-8192}"
@@ -428,6 +434,7 @@ VALID_BASELINE_PHASES=(
   bench_random_prefill_sweep
   bench_random_8000x1000
   bench_random_256x256
+  bench_random_1024x1024_c256
   bench_random_8192x512
   oracle_export
   decode_profile
@@ -456,6 +463,7 @@ phase_run_flag() {
     bench_random_prefill_sweep) printf '%s\n' RUN_RANDOM_PREFILL_SWEEP ;;
     bench_random_8000x1000) printf '%s\n' RUN_RANDOM_8K1K ;;
     bench_random_256x256) printf '%s\n' RUN_RANDOM_256X256 ;;
+    bench_random_1024x1024_c256) printf '%s\n' RUN_RANDOM_1K1K_C256 ;;
     bench_random_8192x512) printf '%s\n' RUN_RANDOM_LONG ;;
     oracle_export) printf '%s\n' RUN_ORACLE_EXPORT ;;
     decode_profile) printf '%s\n' RUN_DECODE_PROFILE ;;
@@ -491,7 +499,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,kv_lifecycle_probe,streaming_pressure_soak,streaming_pressure_matrix,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_256x256,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,kv_lifecycle_probe,streaming_pressure_soak,streaming_pressure_matrix,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_256x256,bench_random_1024x1024_c256,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
     run_flag="$(phase_run_flag "${item}")"
@@ -701,6 +709,7 @@ write_command_file() {
       VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_OVERLAP_ROWS \
       VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING \
       VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL \
+      VLLM_DEBUG_WORKSPACE \
       CUDA_LAUNCH_BLOCKING; do
       if [[ -n "${!optional_env:-}" ]]; then
         printf 'export %s=%q\n' "${optional_env}" "${!optional_env}"
@@ -958,6 +967,10 @@ write_summary() {
       "${RUN_RANDOM_256X256}" "${RANDOM_256X256_CONCURRENCY}" \
       "${RANDOM_256X256_INPUT_LEN}" "${RANDOM_256X256_OUTPUT_LEN}" \
       "${RANDOM_256X256_NUM_PROMPTS}"
+    printf -- '- random_1024x1024_c256: `%s`, concurrency `%s`, shape `%s/%s`, prompts `%s`\n' \
+      "${RUN_RANDOM_1K1K_C256}" "${RANDOM_1K1K_C256_CONCURRENCY}" \
+      "${RANDOM_1K1K_C256_INPUT_LEN}" "${RANDOM_1K1K_C256_OUTPUT_LEN}" \
+      "${RANDOM_1K1K_C256_NUM_PROMPTS}"
     printf -- '- random_long: `%s`, concurrency `%s`, shape `%s/%s`, prompts `%s`\n' \
       "${RUN_RANDOM_LONG}" "${RANDOM_LONG_CONCURRENCY}" "${RANDOM_LONG_INPUT_LEN}" \
       "${RANDOM_LONG_OUTPUT_LEN}" "${RANDOM_LONG_NUM_PROMPTS}"
@@ -1656,6 +1669,25 @@ for variant in ${variant_list}; do
         RANDOM_OUTPUT_LEN="${RANDOM_256X256_OUTPUT_LEN}" \
         NUM_PROMPTS="${RANDOM_256X256_NUM_PROMPTS}" TEMPERATURE="${TEMPERATURE}" \
         BENCH_TIMEOUT="${RANDOM_256X256_BENCH_TIMEOUT}" IGNORE_EOS=1 \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_PROBE_TIMEOUT="${SERVER_FAILURE_PROBE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_bench_matrix.sh"
+  fi
+
+  if phase_enabled "bench_random_1024x1024_c256" && { [[ "${RUN_RANDOM_1K1K_C256}" == "1" ]] || [[ "${RUN_RANDOM_1K1K_C256}" == "true" ]]; }; then
+    run_phase "${variant}" "bench_random_1024x1024_c256" "${variant_dir}/bench_random_1024x1024_c256" \
+      env OUT_DIR="${variant_dir}/bench_random_1024x1024_c256" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
+        SERVE_LOG="${serve_log}" CONCURRENCY="${RANDOM_1K1K_C256_CONCURRENCY}" \
+        DATASET_NAME=random TOKENIZER_MODE=deepseek_v4 \
+        RANDOM_INPUT_LEN="${RANDOM_1K1K_C256_INPUT_LEN}" \
+        RANDOM_OUTPUT_LEN="${RANDOM_1K1K_C256_OUTPUT_LEN}" \
+        NUM_PROMPTS="${RANDOM_1K1K_C256_NUM_PROMPTS}" TEMPERATURE="${TEMPERATURE}" \
+        BENCH_TIMEOUT="${RANDOM_1K1K_C256_BENCH_TIMEOUT}" IGNORE_EOS=1 \
         SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
         SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
         SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \

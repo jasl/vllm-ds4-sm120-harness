@@ -67,6 +67,13 @@ Add or run focused vLLM tests when the touched code can affect these paths:
   prompt token ids, and logprobs-sensitive deterministic cases.
 - TopK softplus/sqrt routing: run the CUDA-alike MoE routing test on SM120 and
   SM121 instead of only CUDA-specific platforms.
+- DeepSeek V4 MoE metadata extraction: keep
+  `tests/model_executor/test_deepseek_v4_moe_metadata.py` in the vLLM-side
+  focused test set. It covers the fused-MoE path from
+  [jasl/vllm issue #15](https://github.com/jasl/vllm/issues/15), where
+  `DeepseekV4MixtureOfExperts.extract_moe_parameters()` used to read
+  `n_logical_experts` and related fields that only MegaMoE initialized. This
+  is a model-load gate, not a throughput gate.
 - MTP scheduler health: run no-MTP and MTP as separate server lifecycles and
   keep a guarded C>1 benchmark or eval shape to detect server hangs, shared
   memory broadcast stalls, or zero generation throughput.
@@ -314,6 +321,20 @@ reported four-card or 512K/1M shapes:
   `long_context_mixed_arrival` with the external profile defaults, then inspect
   per-request decode throughput and ITL p95/p99 before claiming that 512K/1M
   multi-session workloads are healthy.
+- TP=4 MTP=2 workspace high-concurrency stress from a 2026-06-03 email report:
+  use `scripts/run_sm120_workspace_high_concurrency_gate.sh` to replay the
+  `bench_random_1024x1024_c256` phase: random 1K-input / 1K-output, C=256,
+  1280-request shape with FP8 KV, block size 256, prefix cache enabled,
+  `max-model-len=140000`,
+  `max-num-batched-tokens=4096`, `max-num-seqs=256`, async scheduling, expert
+  parallel, and `VLLM_DEBUG_WORKSPACE=1`. The original report failed with a
+  locked workspace assertion in
+  `_forward_sparse_mla_compressed_decode_triton` after warmup left the
+  workspace at 384 MiB and the live shape required about 389 MiB. Treat this as
+  a workspace-sizing/warmup coverage gate, not a local dual-card quality gate.
+  The wrapper defaults to `FULL_AND_PIECEWISE`; set
+  `SM120_WORKSPACE_CUDAGRAPH_MODE=FULL_DECODE_ONLY` only when intentionally
+  replaying the reporter's non-recommended graph mode.
 - TP=2 MTP=1 prefix-cache crash/stability confirmation: when reproducing the
   exact user AM5/PHB shape from
   [issuecomment-4497389943](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4497389943),
