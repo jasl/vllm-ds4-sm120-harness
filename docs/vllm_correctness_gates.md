@@ -335,6 +335,13 @@ reported four-card or 512K/1M shapes:
   The wrapper defaults to `FULL_AND_PIECEWISE`; set
   `SM120_WORKSPACE_CUDAGRAPH_MODE=FULL_DECODE_ONLY` only when intentionally
   replaying the reporter's non-recommended graph mode.
+- TP=2 MTP=2 fused-MoE model-load smoke from
+  [jasl/vLLM issue #15](https://github.com/jasl/vllm/issues/15): use
+  `scripts/run_sm120_issue15_fused_moe_startup_gate.sh` after MoE metadata,
+  MegaMoE/FusedMoE selection, or `DeepseekV4MixtureOfExperts` changes. This
+  wrapper intentionally omits EP so the default fused-MoE path is exercised; it
+  uses `external_command=true` and a small context length because it is a
+  startup gate, not a throughput benchmark.
 - TP=2 MTP=1 prefix-cache crash/stability confirmation: when reproducing the
   exact user AM5/PHB shape from
   [issuecomment-4497389943](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4497389943),

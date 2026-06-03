@@ -834,6 +834,20 @@ def test_sm120_user_feedback_matrix_includes_external_random_256_256_observation
     assert 'RANDOM_256X256_NUM_PROMPTS="${RANDOM_256X256_NUM_PROMPTS:-80}"' in script
 
 
+def test_sm120_issue15_fused_moe_startup_gate_keeps_reported_shape():
+    script = (
+        ROOT / "scripts" / "run_sm120_issue15_fused_moe_startup_gate.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "B200_BASELINE_PHASES=external_command" in script
+    assert "EXTERNAL_COMMAND_LABEL=issue15_fused_moe_model_load_smoke" in script
+    assert 'ISSUE15_VARIANTS="${ISSUE15_VARIANTS:-mtp}"' in script
+    assert 'ISSUE15_TENSOR_PARALLEL_SIZE="${ISSUE15_TENSOR_PARALLEL_SIZE:-2}"' in script
+    assert "--enable-chunked-prefill" in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert "--enable-expert-parallel" not in script
+
+
 def test_sm120_user_feedback_matrix_captures_child_and_summary_stdio():
     script = (ROOT / "scripts" / "run_sm120_user_feedback_matrix.sh").read_text(
         encoding="utf-8"
