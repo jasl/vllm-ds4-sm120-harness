@@ -110,6 +110,7 @@ GB10_LONG_C2_MAX_TTFT_SECONDS="${GB10_LONG_C2_MAX_TTFT_SECONDS:-360}"
 GB10_LONG_C2_MAX_ELAPSED_SECONDS="${GB10_LONG_C2_MAX_ELAPSED_SECONDS:-900}"
 GB10_LONG_C2_FAIL_ON_SLOW="${GB10_LONG_C2_FAIL_ON_SLOW:-0}"
 GB10_LONG_C2_SERVER_STARTUP_TIMEOUT="${GB10_LONG_C2_SERVER_STARTUP_TIMEOUT:-30}"
+GB10_LONG_C2_SCHEDULER_TRACE="${GB10_LONG_C2_SCHEDULER_TRACE:-0}"
 
 MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash}"
 API_PORT="${API_PORT:-8000}"
@@ -140,6 +141,15 @@ for variant in "${variants[@]}"; do
   remote_serve_dir="${remote_variant_root}/serve"
   remote_matrix_dir="${remote_variant_root}/streaming_pressure_longc2"
   speculative_config="$(variant_speculative_config "${variant}")" || exit 2
+  scheduler_trace_path="${remote_serve_dir}/scheduler_trace.jsonl"
+  serve_remote_env_vars="${SERVE_REMOTE_ENV_VARS:-}"
+  if [[ "${GB10_LONG_C2_SCHEDULER_TRACE}" == "1" || "${GB10_LONG_C2_SCHEDULER_TRACE}" == "true" ]]; then
+    if [[ -n "${serve_remote_env_vars}" ]]; then
+      serve_remote_env_vars="${serve_remote_env_vars},VLLM_SCHEDULER_TRACE_PATH"
+    else
+      serve_remote_env_vars="VLLM_SCHEDULER_TRACE_PATH"
+    fi
+  fi
 
   mkdir -p "${variant_dir}"
   printf '%s\n' "${remote_variant_root}" > "${variant_dir}/remote_variant_root.txt"
@@ -175,6 +185,8 @@ for variant in "${variants[@]}"; do
     SERVE_PREFIX_CACHE_MODE=disabled \
     SERVE_SPECULATIVE_CONFIG="${speculative_config}" \
     SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG}" \
+    VLLM_SCHEDULER_TRACE_PATH="${scheduler_trace_path}" \
+    SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}" \
     SSH_OPTS="${SSH_OPTS:-}" \
     "${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh" \
       > "${variant_dir}/serve_start.stdout.log" \
@@ -202,6 +214,15 @@ for variant in "${variants[@]}"; do
       server_unresponsive.json; do
     fetch_remote_file "${remote_matrix_dir}/${name}" "${variant_dir}/${name}"
   done
+  if [[ "${GB10_LONG_C2_SCHEDULER_TRACE}" == "1" || "${GB10_LONG_C2_SCHEDULER_TRACE}" == "true" ]]; then
+    fetch_remote_file "${scheduler_trace_path}" "${variant_dir}/scheduler_trace.jsonl"
+    if [[ -s "${variant_dir}/scheduler_trace.jsonl" ]]; then
+      "${LOCAL_PYTHON:-python3}" "${SCRIPT_DIR}/analyze_scheduler_trace.py" \
+        "${variant_dir}/scheduler_trace.jsonl" \
+        --json-output "${variant_dir}/scheduler_trace_summary.json" \
+        --markdown-output "${variant_dir}/scheduler_trace_summary.md"
+    fi
+  fi
 
   stop_remote_vllm "${WORKER_HOST}"
   stop_remote_vllm "${HEAD_HOST}"

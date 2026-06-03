@@ -5070,6 +5070,36 @@ Current scheduler-trace evidence, 2026-06-03:
   Keep GB10 reduced long-C2 on the same trace/analyzer naming so RTX and GB10
   evidence can be compared directly.
 
+GB10 reduced long-C2 trace follow-up:
+
+- Artifact:
+  `20260603_scheduler_trace_gb10_mtp2_reduced_long_c2/20260603183845`.
+- Profile: two-node GB10 / SM121, current Dev vLLM `016e398c5`, MTP=2,
+  `FULL_AND_PIECEWISE`, prefix cache disabled, `max_num_batched_tokens=4176`,
+  `max_num_seqs=2`, reduced `long_c2:2:2:4000:128` streaming-pressure gate.
+- Harness result: serve startup exit `0`, workload exit `0`, all 4 requests
+  completed, no runtime/driver error signal. Max prompt length was `100127`
+  tokens, max TTFT `224.184 s`, max elapsed `225.098 s`, average ITL
+  `0.260 s`, p95 ITL `0.464 s`, and p99 ITL `0.476 s`.
+- Per-request behavior: the requests with isolated decode tails had ITL p99
+  around `0.089 s`, while the requests decoding during the other long prefill
+  had ITL p99 around `0.468-0.476 s`.
+- Scheduler trace summary:
+  - events `162`, trace span `447.417 s`;
+  - decode/prefill overlap lasted `33` steps;
+  - every overlap step scheduled one decode request for `3` tokens plus the
+    other request's prefill for `261` tokens, totaling `8613` overlap prefill
+    tokens;
+  - full single-prefill chunks were still about `4176` tokens and dominated the
+    long TTFT windows.
+- Interpretation: the current GB10 reduced profile is an availability/safety
+  gate, not a throughput solution. It completed cleanly and did not reproduce a
+  crash, but it confirms the same structural overlap problem seen on RTX: even
+  a roughly 256-token long-prefill slice is expensive enough to inflate decode
+  tails. GB10 adds a larger TTFT cost because its long-prefill throughput is far
+  below RTX PRO 6000 for this sparse-MLA path. Do not claim GB10 C=2
+  long-context throughput parity or 256K+ behavior from this gate.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.

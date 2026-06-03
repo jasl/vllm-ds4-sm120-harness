@@ -1258,6 +1258,11 @@ def test_gb10_long_c2_reduced_gate_runs_nomtp_and_mtp2_variants():
     assert 'MAX_NUM_BATCHED_TOKENS="${GB10_LONG_C2_MAX_NUM_BATCHED_TOKENS:-4176}"' in script
     assert 'SERVE_ENABLE_EXPERT_PARALLEL=1' in script
     assert 'SERVE_PREFIX_CACHE_MODE=disabled' in script
+    assert 'GB10_LONG_C2_SCHEDULER_TRACE="${GB10_LONG_C2_SCHEDULER_TRACE:-0}"' in script
+    assert 'VLLM_SCHEDULER_TRACE_PATH="${scheduler_trace_path}"' in script
+    assert 'SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}"' in script
+    assert 'scheduler_trace_summary.json' in script
+    assert '"${SCRIPT_DIR}/analyze_scheduler_trace.py"' in script
     assert 'FULL_AND_PIECEWISE' in script
     assert '{"method":"mtp","num_speculative_tokens":2}' in script
     assert "long_c2:2:2:4000:128" in script
