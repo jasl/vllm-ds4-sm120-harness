@@ -4952,11 +4952,42 @@ Promotion matrix update, 2026-06-03:
     `111.63` / `168.40` / `239.09 tok/s`.
   - 256x256 C=1/C=4 output throughput: `135.53` / `339.38 tok/s`.
 
+GB10 reduced long-C2 A/B update, 2026-06-03:
+
+- Environment: fresh two-node GB10 venv rebuilt from current Dev after rebase to
+  upstream `a4ac746405f4ddbef553098507210c072b5ba39e`, FlashInfer
+  `0.6.12`, `flashinfer-jit-cache==0.6.12+cu130`, NCCL `2.30.4`, explicit
+  `TORCH_CUDA_ARCH_LIST=12.1a`, `FULL_AND_PIECEWISE`, expert parallel enabled,
+  prefix cache disabled, `max_num_seqs=2`, and
+  `max_num_batched_tokens=4176`.
+- Sanity checks before the gate: both nodes imported `vllm._C`, `_moe_C`, and
+  `_C_stable_libtorch`; `gptq_marlin_repack` registered a CUDA backend; the
+  current upstream still did not build `vllm._flashmla_C` or
+  `vllm._deep_gemm_C` for this SM121 environment.
+- Artifact with indexed D512 enabled:
+  `artifacts/main/2x_gb10_sm121/20260603_d512_promotion_gb10_rebuild_arch121a_moe_fix/20260603065220`.
+- Same-branch control artifact with indexed D512 disabled:
+  `artifacts/main/2x_gb10_sm121/20260603_control_gb10_rebuild_arch121a_moe_fix/20260603071531`.
+
+| Variant | Control max TTFT | D512 max TTFT | TTFT ratio | Control ITL p99 | D512 ITL p99 | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| no-MTP | `228.019 s` | `196.721 s` | `0.863x` | `0.454 s` | `0.655 s` | TTFT better, ITL tail worse |
+| MTP=2 | `227.601 s` | `176.730 s` | `0.776x` | `0.488 s` | `1.145 s` | TTFT better, ITL tail worse |
+
+Both D512 and control runs completed `4/4` requests for both variants with
+serve exit `0`, matrix exit `0`, zero failures, zero preemptions, and no
+CUDA/NCCL/driver/runtime error signals. Both variants captured
+`FULL_AND_PIECEWISE` CUDA graphs. The GB10 D512 run is therefore a real
+stability pass for the reduced long-C2 gate, not a startup-only smoke.
+
 Decision: keep indexed D512 split in Dev as an env-gated prototype. Do not make
-it default and do not promote it to the PR branch yet, because GB10 reduced
-long-C2 and Reddit-style GB10 frontier comparison were not completed. The GB10
-run was blocked by dual-node worker SSH/DNS availability, not by a vLLM
-runtime failure.
+it default and do not promote it to the PR branch yet. The prefill win is
+substantial, including on GB10, but the ITL tail regression means the next
+promotion step must either reduce the decode-tail impact or prove it is bounded
+across the broader user-feedback/prefix/KV/frontier/GSM8K matrix. Also extend
+GB10 warmup coverage for the inference-time JIT kernels observed in both
+control and D512 runs, especially C128A top-k metadata, FP8 MQA logits,
+SWA-combine, and MTP shared-head/spec-decode metadata.
 
 ## Experiment Discipline
 

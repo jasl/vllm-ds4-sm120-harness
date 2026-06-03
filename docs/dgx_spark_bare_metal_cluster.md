@@ -51,6 +51,33 @@ FlashInfer runtime helper JITs call `nvcc` during startup; if the profile points
 at a missing versioned toolkit such as `/usr/local/cuda-13.2`, startup can fail
 while building the sampling helper even though vLLM and torch import normally.
 
+Non-interactive SSH commands do not necessarily load the user's shell profile.
+When building editable vLLM on GB10, pass the CUDA toolkit and SM121 architecture
+environment explicitly instead of relying on `~/.zshrc`:
+
+```bash
+env \
+  PATH="/usr/local/cuda/bin:$PATH" \
+  CUDA_HOME="/usr/local/cuda" \
+  TRITON_PTXAS_PATH="/usr/local/cuda/bin/ptxas" \
+  MPI_HOME="/usr/lib/aarch64-linux-gnu/openmpi" \
+  NVCC_GENCODE="-gencode=arch=compute_121,code=sm_121" \
+  CUDA_ARCH_LIST="121a" \
+  TORCH_CUDA_ARCH_LIST="12.1a" \
+  OMP_NUM_THREADS=1 \
+  CCACHE_DIR="$HOME/.cache/ccache" \
+  CCACHE_NOHASHDIR=true \
+  /home/jasl/.local/bin/uv pip install --python .venv/bin/python \
+    --verbose --no-build-isolation -e .
+```
+
+After the configure step, check the build log before trusting the venv. A healthy
+GB10 build should not show `compute_20`; it should report the SM121a input and
+compile the SM120-family vLLM CUDA objects such as Marlin, `scaled_mm_sm120`,
+`moe_data`, NVFP4, and CUTLASS MLA. `DeepGEMM` and `FlashMLA` may still report
+unsupported architecture on current upstream sources; treat that as a separate
+backend availability limit, not as the arch-detection failure.
+
 For Ubuntu/Debian DGX Spark nodes using CUDA 13.2, install from the NVIDIA CUDA
 repository for the node architecture, then pin the matching NCCL package on both
 nodes:
