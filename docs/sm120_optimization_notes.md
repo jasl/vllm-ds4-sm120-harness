@@ -5237,3 +5237,38 @@ RTX indexed-D512 same-protocol trace follow-up:
    `scripts/run_sm120_workspace_high_concurrency_gate.sh`. It is not part of
    the local C<=24 recommendation envelope, but a locked-workspace assertion is
    a real correctness/stability failure for external high-concurrency users.
+
+## 2026-06-04 Workspace High-Concurrency Gate
+
+The external TP=4/C=256/1K+1K/prefix-cache/async/MTP=2/FP8-KV report was
+reproduced on the dual RTX PRO 6000 proxy after fixing the harness to call the
+chat benchmark endpoint with the served-model-name alias and the real tokenizer
+repo. The RTX proxy run
+`20260604_workspace_proxy_tp2_c256_1k1k_chat_tokenizer/20260604021035` hit the
+same failure mode: workspace locked at 384.00 MiB, then
+`flashmla.py:829:_forward_sparse_mla_compressed_decode_triton` requested
+386.84 to 390.83 MiB.
+
+The retained vLLM fix is `5b80b54a2 sm12x: warm high-concurrency MTP decode
+workspace`: raise the bounded DeepSeek V4 MTP uniform-decode warmup cap from 32
+to 256 requests, while still clamping by `max_num_seqs` and
+`max_num_batched_tokens / uniform_decode_query_len`. This keeps the normal
+C<=32 path unchanged and does not relax workspace locking.
+
+Validation:
+
+- Focused vLLM unit gate:
+  `.venv/bin/python -m pytest tests/model_executor/test_deepseek_v4_kernel_warmup.py -q`
+  passed on RTX (`2 passed`).
+- Focused ruff:
+  `.venv/bin/python -m ruff check vllm/model_executor/warmup/kernel_warmup.py tests/model_executor/test_deepseek_v4_kernel_warmup.py`
+  passed on RTX.
+- Completion proxy:
+  `20260604_workspace_proxy_tp2_c256_1k64_warm256_complete/20260604022033`
+  passed with 256/256 successful requests, runtime error signals 0, CUDA/NCCL/
+  driver/engine errors 0. Warmup resized workspace to 510.47 MiB before lock;
+  no locked-workspace assertion occurred.
+
+The full 1K-output proxy was also started with the fix and reached 256 chat
+requests plus target JIT coverage with zero workspace assertions before it was
+stopped to avoid spending a long run generating 256 x 1024 output tokens.
