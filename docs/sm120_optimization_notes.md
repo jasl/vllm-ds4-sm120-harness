@@ -5033,6 +5033,43 @@ Rejected scheduler follow-up from the same C=2 fairness pass:
   scheduler chunk further trades TTFT and first-token cadence without solving
   the structural long+long C=2 fairness problem.
 
+Current scheduler-trace evidence, 2026-06-03:
+
+- Artifact:
+  `20260603_scheduler_trace_long_long_c2/20260603182918`.
+- Profile: dual RTX PRO 6000, current Dev vLLM `016e398c5`, MTP=2,
+  `FULL_AND_PIECEWISE`, prefix cache disabled, `max_num_batched_tokens=4096`,
+  `max_num_seqs=4`, focused `long_long_c2` mixed-arrival only.
+- Harness result: phase exit `0`, both 124K-token requests completed and passed
+  semantic checks. Primary request TTFT was `28.844 s`, decode
+  `29.320 tok/s`, and ITL p99 `0.149 s`; secondary request TTFT was
+  `58.753 s`, decode `95.409 tok/s`, and ITL p99 `0.031 s`.
+- Scheduler trace summary from
+  `scripts/analyze_scheduler_trace.py`:
+  - events `109`, trace span `59.192 s`;
+  - request 1 scheduled `124077` prefill tokens and `60` decode tokens;
+  - request 2 scheduled `124077` prefill tokens and `81` decode tokens;
+  - decode/prefill overlap lasted `20` steps;
+  - every overlap step scheduled request 1 decode `3` tokens plus request 2
+    prefill `256` tokens, totaling `5120` overlap prefill tokens;
+  - after request 1 completed, request 2 resumed full `4096`-token prefill
+    chunks, then decoded in isolated decode steps.
+- Interpretation: the existing active-decode guard is doing what it was
+  designed to do: it caps the other long prefill to `256` tokens while a decode
+  is pending. The remaining C=2 fairness gap is therefore not caused by a
+  4096-token prefill chunk starving decode. The structural cost is that each
+  256-token long-prefill step still launches enough sparse MLA prefill,
+  Marlin/MoE, and collective work to lift the overlapping decode cadence from
+  about `0.028 s` ITL to about `0.089 s` steady-state ITL, with a `0.149 s`
+  first-tail sample.
+- Next direction: stop doing simple `/N` scheduler cap sweeps unless a new
+  trace proves a different scheduling pathology. The useful next work is
+  kernel/work reduction for the long-prefill step, or a narrower isolation
+  policy that prevents long-prefill work from sharing the same engine step with
+  latency-sensitive decode when the deployment can afford the TTFT tradeoff.
+  Keep GB10 reduced long-C2 on the same trace/analyzer naming so RTX and GB10
+  evidence can be compared directly.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
