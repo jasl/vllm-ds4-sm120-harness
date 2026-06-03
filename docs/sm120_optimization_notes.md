@@ -5100,6 +5100,31 @@ GB10 reduced long-C2 trace follow-up:
   below RTX PRO 6000 for this sparse-MLA path. Do not claim GB10 C=2
   long-context throughput parity or 256K+ behavior from this gate.
 
+RTX indexed-D512 same-protocol trace follow-up:
+
+- Artifact:
+  `20260603_d512_scheduler_trace_long_long_c2/20260603185758`.
+- Profile: same dual RTX PRO 6000 `long_long_c2` trace protocol as the control
+  above, current Dev vLLM `016e398c5`, MTP=2, `FULL_AND_PIECEWISE`, prefix
+  cache disabled, `max_num_batched_tokens=4096`, `max_num_seqs=4`, with only
+  `VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL=1` added. The run explicitly
+  loaded the venv NCCL `2.30.4` library.
+- Result versus same-protocol control:
+
+  | Variant | Primary TTFT | Secondary TTFT | Decode mean | Decode min/max | Overall ITL p99 | Primary ITL p99 | Secondary ITL p99 | Overlap |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+  | control | `28.844 s` | `58.753 s` | `62.364 tok/s` | `0.307` | `0.149 s` | `0.149 s` | `0.031 s` | `20 x 256-token prefill` |
+  | indexed D512 | `19.001 s` | `38.967 s` | `62.480 tok/s` | `0.309` | `0.134 s` | `0.134 s` | `0.039 s` | `20 x 256-token prefill` |
+
+- Interpretation: indexed D512 is a real long-prefill latency optimization on
+  RTX, but it is not a C=2 fairness fix. The scheduler shape is unchanged and
+  the decode min/max ratio is essentially identical. The slight primary-tail
+  improvement is useful but not enough to justify default enablement,
+  especially because the earlier GB10 A/B improved TTFT while worsening ITL
+  p99. Keep it env-gated in Dev; the next fairness work must target the
+  remaining C128A sparse accumulate work or a deployment-level isolation
+  fallback, not D512 alone.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
