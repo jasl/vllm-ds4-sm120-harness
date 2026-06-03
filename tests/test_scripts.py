@@ -201,6 +201,7 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert 'RANDOM_PREFILL_INPUT_LENS="${input_len}"' in script
     assert 'RANDOM_PREFILL_CONCURRENCY="${SM12X_PREFILL_GAP_CONCURRENCY}"' in script
     assert 'RANDOM_PREFILL_NUM_PROMPTS="${SM12X_PREFILL_GAP_NUM_PROMPTS}"' in script
+    assert 'PYTHONPATH="$(harness_pythonpath)"' in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL" in script
     assert "sparse-mla-stats-report" in script
     assert "prefill_gap_attribution_summary.json" in script
