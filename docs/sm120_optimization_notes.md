@@ -5733,3 +5733,59 @@ Decision: D512 can be the Dev default path under the current narrow selector.
 Before PR-branch promotion, rerun the full RTX promotion matrix and GB10
 reduced long-C2 gate from a clean committed default-path branch, with the D512
 env override unset throughout.
+
+Default-path full promotion matrix, 2026-06-04:
+
+- Artifact:
+  `20260604_d512_default_path_full_promotion_rtx/20260604110058`.
+- Profile: RTX PRO 6000 dual-card SM120, MTP=2, expert parallel enabled, FP8
+  KV, prefix cache disabled for the primary long-context phases,
+  `FULL_AND_PIECEWISE`, and no
+  `VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL` environment override.
+- Matrix result: summary `ok=true`. All primary, throughput, prefix-cache, and
+  prefix-enabled KV lifecycle phases exited `0`. Runtime monitoring reported
+  CUDA/NCCL/driver/engine error signals `0` for the instrumented phases and no
+  server-unresponsive signal.
+
+Primary long-context result:
+
+| Shape | TTFT mean | TTFT max | Decode tok/s | Decode min/max | ITL p99 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 59K C=1 | `8.241 s` | `8.265 s` | `139.266` | `0.912` | `0.022 s` |
+| 59K C=2 | `12.857 s` | `17.421 s` | `139.992` | `0.959` | `0.022 s` |
+| 124K C=1 | `19.786 s` | `19.868 s` | `106.114` | `0.988` | `0.029 s` |
+| 124K C=2 | `30.653 s` | `41.147 s` | `104.988` | `0.948` | `0.031 s` |
+
+Prefill/decode interference and lifecycle gates:
+
+| Gate | Result |
+| --- | --- |
+| Decode-concurrency 124K C=2 | decode min/max `0.999`, ITL p99 `0.031 s`, failures `0` |
+| Mixed `decode_then_124k` | decode min/max `0.942`, secondary ITL p99 `0.029 s`, failures `0` |
+| Mixed `decode_then_59k` | decode min/max `0.983`, secondary ITL p99 `0.022 s`, failures `0` |
+| Mixed `long_then_short` | secondary TTFT `3.368 s`, secondary ITL p99 `0.017 s`, failures `0` |
+| Streaming pressure | 36/36 requests, failures `0`, max TTFT `37.069 s`, ITL p99 `0.729 s` |
+| Prefix disabled KV lifecycle | final idle KV `0.0%`, threshold `2.0%`, failures `0` |
+| Prefix enabled KV lifecycle | final idle KV `5.843%`, threshold `90.0%`, failures `0` |
+| Prefix-cache stress | filler `100/400/800/1600/3200` all ok, failures `0` |
+
+Correctness and throughput:
+
+| Gate | Result |
+| --- | --- |
+| GSM8K limit-200 | flexible EM `0.950`, strict EM `0.935` |
+| Short MT-Bench C=1/2/4 primary | `156.10 / 241.54 / 359.51 tok/s` |
+| Short MT-Bench C=8/16/24 throughput | `572.81 / 815.61 / 953.14 tok/s` |
+| Random 8K/1K C=1/2/4 primary | `111.78 / 168.63 / 239.41 tok/s` |
+| Random 8K/1K C=8/16/24 throughput | `319.80 / 383.22 / 402.67 tok/s` |
+| Random 256/256 C=1/2/4 throughput | `148.95 / 234.80 / 351.82 tok/s` |
+| Random 256/256 C=8/16/24 throughput | `507.75 / 716.45 / 829.90 tok/s` |
+
+Interpretation: the default D512 path passes the current full promotion matrix
+and the prefill/decode interference concern is now covered by harness gates
+rather than an open tuning thread. High-concurrency 8K/1K improves total output
+throughput through C=24, but p99 latency rises sharply at C=8+; keep C=24 as a
+maximum-throughput tracking shape, not a low-latency recommendation. The next
+active optimization problem should return to the remaining C=2 long-context
+fairness/raw-prefill kernel work, with the promotion matrix retained as the
+no-regression guard.
