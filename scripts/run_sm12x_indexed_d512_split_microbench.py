@@ -71,6 +71,8 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         f"- head_dim: `{payload['head_dim']}`",
         f"- head_block: `{payload['head_block']}`",
         f"- block_c / block_d: `{payload['block_c']} / {payload['block_d']}`",
+        f"- score_dtype: `{payload['score_dtype']}`",
+        f"- score_workspace_mib: `{payload['score_workspace_mib']:.2f}`",
         f"- index_pattern: `{payload['index_pattern']}`",
         f"- warmup / iterations: `{payload['warmup']} / {payload['iterations']}`",
         "",
@@ -145,6 +147,12 @@ def main() -> int:
     parser.add_argument("--block-d", type=int, default=64)
     parser.add_argument("--part-size", type=int, default=512)
     parser.add_argument("--compressed-candidates", type=int, default=128)
+    parser.add_argument(
+        "--score-dtype",
+        choices=("float32", "bfloat16"),
+        default="float32",
+        help="dtype used for the materialized score workspace",
+    )
     parser.add_argument("--scale", type=float, default=0.04419417382415922)
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iterations", type=int, default=20)
@@ -369,6 +377,10 @@ def main() -> int:
 
     torch.cuda.set_device(args.gpu_id)
     device = torch.device(f"cuda:{args.gpu_id}")
+    score_dtype = {
+        "float32": torch.float32,
+        "bfloat16": torch.bfloat16,
+    }[args.score_dtype]
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
@@ -449,7 +461,7 @@ def main() -> int:
             args.num_heads,
             num_candidates,
             device=device,
-            dtype=torch.float32,
+            dtype=score_dtype,
         )
         split_max = torch.empty(args.num_tokens, args.num_heads, device=device, dtype=torch.float32)
         split_denom = torch.empty_like(split_max)
@@ -720,6 +732,14 @@ def main() -> int:
         "head_block": args.head_block,
         "block_c": args.block_c,
         "block_d": args.block_d,
+        "score_dtype": args.score_dtype,
+        "score_workspace_mib": (
+            args.num_tokens
+            * args.num_heads
+            * max(args.candidate_lens)
+            * torch.empty((), dtype=score_dtype).element_size()
+            / (1024 * 1024)
+        ),
         "part_size": args.part_size,
         "index_pattern": args.index_pattern,
         "warmup": args.warmup,

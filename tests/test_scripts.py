@@ -1423,6 +1423,17 @@ def test_sparse_mla_microbench_accepts_bare_cuda_device():
     assert "torch.cuda.set_device(cuda_device_index(args.device))" in script
 
 
+def test_indexed_d512_split_microbench_can_probe_score_workspace_dtype():
+    script = (
+        ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py"
+    ).read_text(encoding="utf-8")
+
+    assert "--score-dtype" in script
+    assert 'choices=("float32", "bfloat16")' in script
+    assert "score_dtype" in script
+    assert "score_workspace_mib" in script
+
+
 def test_vllm_correctness_gate_docs_use_public_gsm8k_slice():
     docs = (ROOT / "docs" / "vllm_correctness_gates.md").read_text(
         encoding="utf-8"
