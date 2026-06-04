@@ -27,15 +27,13 @@ The current SM120 traces separate three problems that should stay linked in
 experiments but separate in interpretation:
 
 1. **Long-context prefill / TTFT.** 59K and 124K C=1/C=2 remain the promotion
-   floor. Partial-state sparse MLA helped end-to-end enough for Dev absorption,
-   but the standalone microbench shows it is not a universal kernel-speed win.
-   The cross-device indexed-accumulate microbench now also shows that GB10 is
-   far more fragile for this path: for the same synthetic sparse-MLA accumulate
-   work, SM121 delivers roughly 20-35% of the SM120 candidate-visit rate across
-   small and large token/candidate shapes.
-2. **C=2 fairness.** The user-visible failure mode is a slow request while its
-   paired request remains healthy. Track per-request decode tok/s min/max and
-   ITL p95/p99, not just mean throughput.
+   floor. The indexed D512 split path is now the Dev default and has already
+   moved RTX 59K/124K TTFT by roughly 30% versus the old path. The remaining
+   raw-prefill gap is still sparse-MLA accumulate work, especially the real
+   `128 compressed + large SWA tail` C128A shape and C4A D512 work.
+2. **C=2 fairness.** Keep per-request decode tok/s min/max and ITL p95/p99 as
+   promotion gates, not as the current active blocker on the latest Dev head.
+   The latest fixed repeat on RTX has healthy long+long C=2 decode fairness.
 3. **Prefill/decode interference.** `decode_then_long` shows real interference
    while the existing request is already decoding. `long_then_short` is a
    different shape: the short request reaches first token quickly and then can
@@ -47,21 +45,20 @@ attention-side cost and FP8 MQA logits as the second attention-side cost, with
 low DRAM throughput and stronger signals from dependency stalls, eligible
 warps, and register pressure.
 
-The latest fixed-protocol RTX PRO 6000 run,
-`20260601_c2_fairness_interference_protocol/20260601105746`, strengthens that
-interpretation because the C=2 fairness matrix and Nsys cases used the same
-generated serve command. C=1 remained healthy (`59K` decode mean
-`143.827 tok/s`, `124K` decode mean `106.355 tok/s`), while C=2 remained the
-visible failure mode (`59K` decode min/max `0.127`, `124K` decode min/max
-`0.128`). The same run showed the two interference subproblems: simultaneous
-`long_long_c2` is dominated by
-`_accumulate_indexed_attention_chunk_multihead_kernel`, while staggered
-mixed-arrival cases are dominated by
-`_accumulate_indexed_attention_partial_states_multihead_kernel`. The worst
-tail remains `long_then_short`, where the short request reaches TTFT quickly
-but then sees a `25.639 s` ITL p99 after first token. Treat C=2 fairness as the
-acceptance metric and prefill/decode interference as the mechanism to profile;
-do not collapse them into one number.
+The latest fixed-protocol RTX PRO 6000 repeat,
+`20260604_c2_fairness_repeat3_eac9/20260604143419`, was run after aligning the
+actual editable vLLM runtime to the same Dev head. All phases exited `0`.
+59K C=2 decode min/max was `0.954` with ITL p99 `0.023 s`; 124K C=2
+decode min/max was `0.982` with ITL p99 `0.030 s`; mixed `long_long_c2`
+decode min/max was `0.931`. Treat C=2 fairness as a no-regression gate and run
+Nsys only if the fixed protocol regresses again.
+
+The active raw-prefill evidence is now the default D512 stage attribution:
+`20260604_d512_default_stage_timing_rtx/20260604132616` shows 59K/124K
+C=1/C=2 input-token throughput around `6.1K-6.9K tok/s` and sparse accumulate
+near `99%` of the summed layer/chunk stage time. C=2 input throughput is
+almost identical to C=1 while TTFT serializes, so the remaining work is kernel
+efficiency rather than decode-cadence collapse.
 
 The cross-device microbenches reinforce that ordering. On RTX PRO 6000 the
 131K FP8 MQA direct top-k shape is `2.721 ms`; on GB10 the same shape is
@@ -69,30 +66,14 @@ The cross-device microbenches reinforce that ordering. On RTX PRO 6000 the
 MLA accumulate, but FP8 MQA is still only the second attention-side kernel in
 the mixed-arrival traces, so it should remain the secondary kernel experiment.
 
-The later pending-decode scheduler guard should now be treated as part of the
-SM120 Dev baseline, not as an open hypothesis. Full user-feedback artifact
-`20260601_pending_decode_guard_user_feedback_matrix/20260601123745` passed the
-primary, prefix-cache, and KV-lifecycle phases. It changed the proven
-`long_then_short` starvation tail from secondary ITL p99 `25.615 s` to
-`0.089 s`, and decode min/max from `0.025` to `0.298`, while GSM8K,
-streaming pressure, prefix-cache stress, and KV lifecycle stayed green. It did
-not solve simultaneous long+long C=2 fairness: 59K C=2 ITL p99 moved from
-`0.301 s` to `0.831 s`, and 124K C=2 decode min/max moved from `0.131` to
-`0.094`. Therefore keep C=2 fairness and prefill/decode interference in the
-same profiling protocol, but score them separately.
-
-The fixed repeat
-`20260601_c2_fixed_protocol_repeat/20260601150253` confirmed the same split
-under one protocol: `long_then_short` stayed fixed with secondary TTFT
-`3.327 s` and ITL p99 `0.088 s`, while long+long stayed weak (`59K` C=2 ITL
-p99 `0.824 s`, `124K` C=2 ITL p99 `1.112 s`). Nsys from the same serve profile
-put `_accumulate_indexed_attention_chunk_multihead_kernel` at `37.1%` of
-captured CUDA time for `long_long_59k_c2` and `44.7%` for
-`long_long_124k_c2`; focused NCU showed low DRAM throughput and high
-register/dependency pressure. A `HEAD_BLOCK=4` probe reduced registers and
-raised occupancy, but regressed real duration (`1.080 ms -> 1.246 ms` for the
-target chunk microbench), so simple live-state shrinkage without reducing work
-is rejected.
+The latest C128/SWA follow-ups also narrow what not to do. Dense grouped-SWA
+value matmul was rejected on both RTX and GB10: even the best group64 SWA1024
+point was slower than the current value kernel (`0.491x` on RTX, `0.463x` on
+GB10). FlashInfer 0.6.12 now exposes
+`trtllm_batch_decode_sparse_mla_dsv4`, but its contract is a TRTLLM-GEN decode
+path with a fixed 128-entry SWA tile and SWA-first sparse indices. It is not a
+drop-in replacement for the raw-prefill `128 compressed + large SWA tail`
+layout.
 
 ## Profiling Matrix
 
@@ -111,33 +92,21 @@ artifact to debug.
 
 ## Experiment Order
 
-1. **Keep partial-state sparse MLA as the current Dev baseline.**
-   It has passed the SM120 promotion matrix, no-MTP GB10 smoke,
-   prefix-cache-enabled GB10 lifecycle, and a guarded GB10 MTP=2 128K-class
-   smoke. Keep the pending-decode guard with it on Dev because the full SM120
-   user-feedback matrix proved the short-after-long starvation fix without
-   correctness or stability fallout. The first GB10 long C=2 pressure gate
-   reproduced a high-SM, no-token-progress stall in both MTP=2 and no-MTP
-   profiles, so broad SM121 performance claims should wait for the reduced
-   long-C=2 repro and fix.
+1. **Keep indexed D512 split prefill as the current Dev baseline.**
+   It has passed the RTX promotion matrix, the prefill/decode promotion gate,
+   and the GB10 reduced long-C2 availability gate as the default path. Keep
+   `FULL_AND_PIECEWISE`, GSM8K, prefix/KV lifecycle, short-context throughput,
+   and C=2 fairness in the promotion matrix. Do not re-open scheduler tuning
+   unless those gates regress.
 
-2. **Use the GB10 long C=2 Nsys trace to guide the next kernel change.**
-   The pressure matrix now gives a concrete failure: the first two C=2 phases
-   complete, then the long-C=2 phase can keep both GPUs at high SM utilization
-   while prompt/decode counters stop. The reduced no-MTP 2048-token trace shows
-   both ranks spending the largest share of GPU time in
-   `_accumulate_indexed_attention_chunk_multihead_kernel`, with MXFP4 MoE,
-   FP8 MQA logits, and NCCL behind it. The next experiment should reduce or
-   restructure sparse-MLA prefill work for this shape before adding another
-   scheduler policy. A `VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE=128` probe still
-   timed out with zero prefill/decode progress, so do not spend more time on
-   simply shrinking the candidate chunk. A temporary `PREFILL_CHUNK_SIZE=1`
-   probe changed the failure from no-progress to one very slow completed
-   request plus one timed-out peer, which is useful evidence but not a
-   retention-quality fix. The no-code `max_num_seqs=1` control completed both
-   100K-class requests with ITL p99 around `80 ms`, at the expected cost of
-   queuing one request and max TTFT around `238 s`. The same safety profile
-   also completed with MTP=2 enabled: `gb10_mtp2_maxseq1_control` had zero
+2. **Treat GB10 long C=2 as an availability gate, not the next tuning source.**
+   The earlier pressure matrix gave a concrete failure: the first two C=2
+   phases completed, then the long-C=2 phase could keep both GPUs at high SM
+   utilization while prompt/decode counters stopped. The no-code
+   `max_num_seqs=1` control completed both 100K-class requests with ITL p99
+   around `80 ms`, at the expected cost of queuing one request and max TTFT
+   around `238 s`. The same safety profile also completed with MTP=2 enabled:
+   `gb10_mtp2_maxseq1_control` had zero
    request failures, max TTFT `231.239 s`, ITL p99 `0.086 s`,
    `max running = 1`, `max waiting = 1`, and no CUDA/NCCL/driver/engine error
    signals. Treat `max_num_seqs=1` as the current GB10 conservative safety
