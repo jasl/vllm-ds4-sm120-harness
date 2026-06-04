@@ -5816,6 +5816,35 @@ experiments should fail this gate before being promoted. The remaining C=2 work
 should be framed more narrowly as raw long-prefill TTFT and serialized-prefill
 efficiency, with decode-cadence fairness retained as a no-regression guard.
 
+Follow-up fixed C=2 fairness protocol after syncing the actual editable vLLM
+runtime to the same Dev head:
+
+- Artifact: `20260604_c2_fairness_repeat3_eac9/20260604143419`.
+- Profile: same default D512 path, MTP=2, expert parallel enabled, FP8 KV,
+  prefix cache disabled, `FULL_AND_PIECEWISE`; Nsys disabled.
+- Result: all phases exited `0` (`server_startup`,
+  `long_context_latency_matrix`, `long_context_decode_concurrency`,
+  `long_context_mixed_arrival`).
+
+| Check | Result |
+| --- | ---: |
+| 59K C=2 TTFT mean / max | `13.090 s` / `17.732 s` |
+| 59K C=2 decode min/max | `0.954` |
+| 59K C=2 ITL p99 | `0.023 s` |
+| 124K C=2 TTFT mean / max | `30.920 s` / `41.432 s` |
+| 124K C=2 decode min/max | `0.982` |
+| 124K C=2 ITL p99 | `0.030 s` |
+| 124K decode-concurrency C=2 decode min/max | `0.963` |
+| 124K decode-concurrency C=2 ITL p99 | `0.031 s` |
+| Mixed `long_long_c2` decode min/max | `0.931` |
+| Mixed `long_long_c2` secondary ITL p95 | `0.028 s` |
+
+Decision: do not treat long+long C=2 decode fairness as the current active
+blocker on this Dev head. It remains a promotion gate and should be traced only
+if the fixed protocol regresses again. The active kernel work should stay
+focused on raw long-prefill efficiency, especially value/KV traffic in the
+mixed C128/SWA sparse-MLA path.
+
 Default-path D512 raw-prefill attribution after the gate:
 
 - Artifact:
