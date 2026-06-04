@@ -6034,3 +6034,42 @@ GDDR7 DRAM roof and still has low eligible-warps-per-scheduler. The next
 grouped-SWA prototype should therefore target value/KV traffic reuse or a
 different value-accumulation structure. A score-only grouped query path is
 unlikely to move endpoint TTFT enough to justify production complexity.
+
+Rejected dense grouped-SWA value upper-bound, 2026-06-04:
+
+- Temporary harness script:
+  `scripts/run_sm12x_grouped_swa_value_microbench.py`; removed after this
+  measurement because it was a one-off diagnostic, not a durable gate.
+- The script isolated the sliding-SWA value subproblem. It compared the
+  current per-token D512 weighted-value kernel with an intentionally
+  optimistic grouped matmul over a shared SWA KV union. This was a test of
+  whether value/KV reuse through a dense banded matmul is worth an endpoint
+  prototype.
+- Artifacts:
+  - RTX PRO 6000:
+    `20260604_grouped_swa_value_upper_bound/20260604145835`,
+    `20260604_grouped_swa_value_group_sweep/g16_20260604145857`, and
+    `20260604_grouped_swa_value_group_sweep/g64_20260604145858`.
+  - GB10:
+    `20260604_grouped_swa_value_upper_bound/20260604145836`,
+    `20260604_grouped_swa_value_group_sweep/g16_20260604145857`, and
+    `20260604_grouped_swa_value_group_sweep/g64_20260604145900`.
+
+| Host | Shape | Current value | Dense grouped upper-bound | Relative |
+| --- | --- | ---: | ---: | ---: |
+| RTX PRO 6000 | group32, SWA 128 | `0.112 ms` | `0.488 ms` | `0.229x` |
+| RTX PRO 6000 | group32, SWA 512 | `0.332 ms` | `1.538 ms` | `0.216x` |
+| RTX PRO 6000 | group32, SWA 1024 | `0.760 ms` | `2.904 ms` | `0.262x` |
+| RTX PRO 6000 | group64, SWA 1024 | `0.773 ms` | `1.573 ms` | `0.491x` |
+| GB10 | group32, SWA 128 | `1.283 ms` | `3.739 ms` | `0.343x` |
+| GB10 | group32, SWA 512 | `3.170 ms` | `11.596 ms` | `0.273x` |
+| GB10 | group32, SWA 1024 | `5.629 ms` | `22.513 ms` | `0.250x` |
+| GB10 | group64, SWA 1024 | `5.631 ms` | `12.175 ms` | `0.463x` |
+
+Decision: reject dense grouped-SWA value matmul. It does reuse the SWA KV union
+across adjacent tokens, but the dense banded weight matrix and grouped matmul
+overhead lose badly on both SM120 and SM121. This closes the simplest
+value/KV-reuse route for the real `128 compressed + large SWA` C128A shape.
+Future C128/SWA work should avoid dense SWA band materialization; if it
+continues, it needs a sparse/banded value algorithm or a way to reduce actual
+SWA candidate visits, not just regroup the same visits.
