@@ -204,13 +204,16 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert 'SM12X_PREFILL_GAP_NUM_PROMPTS="${SM12X_PREFILL_GAP_NUM_PROMPTS:-4}"' in script
     assert 'SM12X_PREFILL_GAP_STATS_OVERLAP_ROWS="${SM12X_PREFILL_GAP_STATS_OVERLAP_ROWS:-0}"' in script
     assert 'SM12X_PREFILL_GAP_STAGE_TIMING="${SM12X_PREFILL_GAP_STAGE_TIMING:-0}"' in script
-    assert 'SERVE_REMOTE_ENV_VARS="${SERVE_REMOTE_ENV_VARS:+${SERVE_REMOTE_ENV_VARS},}VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH,VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_OVERLAP_ROWS,VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING,VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL"' in script
+    assert 'SM12X_PREFILL_GAP_D512_ENV="${SM12X_PREFILL_GAP_D512_ENV:-0}"' in script
+    assert "SM12X_PREFILL_GAP_D512_ENV must be 0, 1, or default" in script
+    assert 'SERVE_REMOTE_ENV_VARS="${SERVE_REMOTE_ENV_VARS:+${SERVE_REMOTE_ENV_VARS},}${_prefill_gap_remote_envs}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH="${stats_dir}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING="${SM12X_PREFILL_GAP_STAGE_TIMING}"' in script
     assert 'RANDOM_PREFILL_INPUT_LENS="${input_len}"' in script
     assert 'RANDOM_PREFILL_CONCURRENCY="${SM12X_PREFILL_GAP_CONCURRENCY}"' in script
     assert 'RANDOM_PREFILL_NUM_PROMPTS="${SM12X_PREFILL_GAP_NUM_PROMPTS}"' in script
     assert 'PYTHONPATH="$(harness_pythonpath)"' in script
+    assert '"${_prefill_gap_d512_env[@]}"' in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL" in script
     assert "sparse-mla-stats-report" in script
     assert "prefill_gap_attribution_summary.json" in script
