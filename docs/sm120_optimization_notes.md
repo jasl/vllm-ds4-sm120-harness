@@ -6073,3 +6073,25 @@ value/KV-reuse route for the real `128 compressed + large SWA` C128A shape.
 Future C128/SWA work should avoid dense SWA band materialization; if it
 continues, it needs a sparse/banded value algorithm or a way to reduce actual
 SWA candidate visits, not just regroup the same visits.
+
+Official FlashInfer 0.6.12 DS4 sparse-MLA API recheck, 2026-06-04:
+
+- Both RTX PRO 6000 and GB10 environments currently import
+  `flashinfer==0.6.12`, `b12x`, `flashinfer.sparse`, and `flashinfer.mla`.
+- New visible API:
+  `flashinfer.mla.trtllm_batch_decode_sparse_mla_dsv4(query, swa_kv_cache,
+  workspace_buffer, sparse_indices, compressed_kv_cache, sparse_topk_lens,
+  seq_lens, ...)`.
+- Source contract: "Decode DeepSeek V4 sparse MLA with separate SWA and
+  compressed KV pools." It accepts dense or varlen query input, but the SWA
+  side is fixed to `128` entries per query. `sparse_indices` must store those
+  fixed SWA entries first, followed by compressed/top-k indices into the
+  primary compressed KV pool.
+- Mismatch with the current raw-prefill target: the real long-prefill C128A
+  shape we have been optimizing is `128` compressed candidates plus a large
+  SWA tail around `1024` entries, and the current combined layout is not the
+  TRTLLM-GEN decode layout above.
+
+Decision: keep this API as a future decode-backend candidate, not a raw
+long-prefill replacement. It does not remove the need for the current D512
+prefill path, nor does it revive the rejected dense/grouped-SWA endpoint route.
