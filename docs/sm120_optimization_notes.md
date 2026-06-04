@@ -5984,3 +5984,24 @@ does not reduce the real score/value candidate traffic. The next C128/SWA
 prototype must reduce candidate visits, score workspace traffic, value traffic,
 or reuse state across adjacent tokens; simply specializing index generation is
 not enough.
+
+Mixed C128/SWA D512 NCU follow-up:
+
+- RTX artifact:
+  `20260604_d512_mixed_c128_swa_ncu/20260604142019`.
+- Shape: same 1024-token, 128 compressed + 1024 sliding SWA synthetic
+  microbench, profiled separately for `_indexed_score_kernel` and
+  `_indexed_value_kernel`.
+
+| Kernel | Duration | SM throughput | DRAM throughput | L2 hit | Eligible warps/sched | Registers/thread | Achieved occupancy |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `_indexed_score_kernel` | `1.06 ms` | `25.56%` | `27.90%` | `91.35%` | `0.16` | `42` | `16.60%` |
+| `_indexed_value_kernel` | `1.66 ms` | `39.33%` | `94.15%` | `64.61%` | `0.60` | `59` | `41.11%` |
+
+Interpretation: under the realistic mixed C128/SWA pattern, the score stage has
+already become mostly cache-resident compared with the earlier per-token random
+NCU result. The value stage remains the hard bottleneck: it is close to the
+GDDR7 DRAM roof and still has low eligible-warps-per-scheduler. The next
+grouped-SWA prototype should therefore target value/KV traffic reuse or a
+different value-accumulation structure. A score-only grouped query path is
+unlikely to move endpoint TTFT enough to justify production complexity.
