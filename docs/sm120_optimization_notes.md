@@ -5689,9 +5689,10 @@ Interpretation: D512 is now the highest-confidence raw-prefill improvement
 candidate in the current tree. It substantially improves the fixed 59K/124K
 random-prefill attribution cases without changing candidate visits, so it is a
 kernel-structure improvement rather than a true grouped-candidate reuse
-solution. It still must pass the full promotion matrix before becoming a
-default or PR recommendation: 59K/124K C=1/C=2 latency, mixed arrival,
-decode-concurrency fairness, prefix/KV lifecycle, streaming pressure, story
-recall, GSM8K limit-200, short 256/8K throughput, and GB10 reduced long-C2.
-If that matrix passes, promote D512 first; keep grouped-candidate C128A as the
-next research direction for closing the remaining gap.
+solution. This attribution run reinforces the prior promotion result rather
+than replacing it: the opt-in D512 path has already passed the full RTX
+promotion matrix and the current GB10 reduced long-C2 gate. If the Dev branch
+makes D512 the default path, rerun the same promotion matrix and GB10 reduced
+gate with the environment override removed, then promote D512 first if those
+default-path gates remain clean. Keep grouped-candidate C128A as the next
+research direction for closing the remaining gap.
