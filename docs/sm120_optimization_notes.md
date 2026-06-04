@@ -6325,6 +6325,43 @@ to the PR branch with the promotion evidence above, but it should not be
 mistaken for the next main research direction. The next main optimization target
 remains reducing total sparse-MLA prefill candidate/value work.
 
+Upstream rebase integration after the D512 retune, 2026-06-04:
+
+- Rebased the Dev branch onto upstream `d0975a4b5`, absorbing upstream
+  DeepSeek-related updates including selective sliding-window prefix-cache
+  retention, the compressor-128 CUTLASS DSL optimization, and speculator
+  prefill warmup/capture changes.
+- Conflict resolution kept both semantics:
+  - upstream selective retention remains active and is passed through the KV
+    cache manager stack;
+  - the prior DeepSeek V4 prompt-block protection remains active for compressed
+    MLA / FP8 DS MLA prompt reuse;
+  - the hybrid coordinator still caches complete tail blocks and leaves
+    returned cache hits aligned through `find_longest_cache_hit`.
+- The rebase exposed a real interface mismatch: hybrid coordinators now pass
+  both `alignment_tokens` and `retention_interval`, while several
+  `cache_blocks()` overrides only accepted one side. The retained fix aligns the
+  manager signatures and has unused managers explicitly accept the full
+  parameter set.
+
+Validation after resolving the rebase:
+
+| Check | Result |
+| --- | --- |
+| Prefix-cache unit coverage | `tests/v1/core/test_prefix_caching.py -q`: `78 passed` |
+| Sparse MLA focused tests | `test_sparse_mla_indexed_d512.py` + `test_deepseek_v4_sparse_mla_stats.py`: `13 passed` |
+| Ruff | relevant prefix-cache and sparse-MLA files passed |
+| RTX rebase smoke | `20260604_rebase_prefix_retention_smoke/20260604183435`, summary `ok=true` |
+| Smoke short bench | random 256/256 C=1, `16` successful, `136.83 tok/s`, failures `0` |
+| Smoke prefix-enabled KV lifecycle | `ok=true`, requests `3`, failures `0`, final idle KV `4.382%`, threshold `90.000%` |
+| Smoke runtime monitoring | server unresponsive `False`; serve/CUDA/NCCL/driver/engine error signals all `0` in phase summaries |
+
+Decision: keep the rebased Dev/PR code. The upstream prefix-cache retention
+work is compatible with the local DeepSeek V4 prompt-protection fix after the
+signature alignment above. This rebase does not change the next optimization
+target: reduce total sparse-MLA prefill candidate/value work rather than adding
+another launch-only or chunk-size-only experiment.
+
 Interpretation: the current RTX PRO 6000 Dev head does not reproduce the old
 59K/124K C=2 fairness collapse. C=2 fairness should stay in the promotion
 matrix as a no-regression gate, but it is not the next active tuning blocker
