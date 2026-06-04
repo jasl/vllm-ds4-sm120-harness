@@ -5815,3 +5815,39 @@ This closes the harness side of the prefill/decode interference work: future
 experiments should fail this gate before being promoted. The remaining C=2 work
 should be framed more narrowly as raw long-prefill TTFT and serialized-prefill
 efficiency, with decode-cadence fairness retained as a no-regression guard.
+
+Default-path D512 raw-prefill attribution after the gate:
+
+- Artifact:
+  `20260604_d512_default_stage_timing_rtx/20260604132616`.
+- Profile: same default D512 path, no D512 env override, MTP=2, expert
+  parallel enabled, FP8 KV, prefix cache disabled, `FULL_AND_PIECEWISE`.
+- Harness: `scripts/run_sm12x_prefill_gap_attribution.sh` with
+  `SM12X_PREFILL_GAP_D512_ENV=default`,
+  `SM12X_PREFILL_GAP_INPUT_LENS=58957,124000`,
+  `SM12X_PREFILL_GAP_CONCURRENCY=1,2`, and stage timing enabled.
+
+| Shape | Input tok/s | Mean TTFT | P99 TTFT | Stage total | Sparse accumulate |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 59K C=1 | `6883.48` | `8.564 s` | `8.594 s` | `34.005 s` | `98.972%` |
+| 59K C=2 | `6881.47` | `14.994 s` | `17.206 s` | `34.005 s` | `98.972%` |
+| 124K C=1 | `6209.31` | `19.969 s` | `20.289 s` | `73.335 s` | `98.856%` |
+| 124K C=2 | `6140.13` | `35.340 s` | `40.429 s` | `73.335 s` | `98.856%` |
+
+Sparse-MLA group timing:
+
+| Input | Group | Effective visits | Padding ratio | Stage total |
+| --- | --- | ---: | ---: | ---: |
+| 59K | C128A chunk | `6.562B` | `67.551%` | `15.026 s` |
+| 59K | C4A chunk | `11.797B` | `0.000%` | `12.753 s` |
+| 124K | C128A chunk | `24.091B` | `45.496%` | `36.355 s` |
+| 124K | C4A chunk | `25.784B` | `0.000%` | `28.458 s` |
+
+Interpretation: C=2 input-token throughput is almost identical to C=1, while
+TTFT roughly serializes. The current blocker is therefore not a decode-cadence
+collapse in this default-path run; it is sparse-MLA prefill accumulate work,
+especially C128A and C4A chunk groups. Simple scheduling caps, launch splits,
+or combine/gather changes are unlikely to close the remaining gap. The next
+code experiment should reduce sparse-accumulate candidate visits, live state,
+or memory traffic, with the prefill/decode promotion gate retained as the
+promotion blocker.
