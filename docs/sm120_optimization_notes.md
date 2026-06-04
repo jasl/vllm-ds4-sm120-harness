@@ -5953,6 +5953,35 @@ public API or a stricter endpoint adapter that proves a real gain over the
 current D512 path under DS4 metadata, then rerun the full RTX and GB10
 promotion gates.
 
+Official b12x MLA route recheck after the current GB10 environment refresh,
+2026-06-04:
+
+- RTX artifact:
+  `20260604_b12x_route_recheck/20260604151459`.
+- GB10 compile-failure artifact:
+  `20260604_b12x_route_recheck_compile_fail/20260604151546`.
+- Dependency stack: FlashInfer `0.6.12`, `flashinfer-cubin 0.6.12`,
+  `flashinfer-jit-cache 0.6.12+cu130`, b12x `0.15.2`, and vLLM
+  `eac9e008a`.
+- RTX timing still says the official b12x compressed-MLA helper is not a
+  replacement for current D512 split+finish:
+
+| Shape | Rows | Total candidates | b12x | Old packed helper | Current D512 split+finish | b12x / D512 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| tiny | `32` | `256` | `0.169 ms` | `0.220 ms` | `0.048 ms` | `3.521x` |
+| real C128-like | `256` | `1152` | `1.114 ms` | `5.802 ms` | `0.282 ms` | `3.948x` |
+| wide C128-like | `1024` | `1152` | `2.563 ms` | `23.416 ms` | `1.412 ms` | `1.815x` |
+
+- GB10 still fails before timing even the tiny shape with the same ptxas
+  failure class: `Unexpected instruction types specified for 'cvt'` from the
+  CUTLASS DSL generated compressed MLA kernel.
+
+Decision unchanged: reject official b12x compressed MLA as a direct endpoint
+backend for the current branch. It is still useful as evidence that the old
+packed helper is weak, but it neither beats current D512 on RTX nor compiles on
+GB10. Keep future b12x work gated on a public SM121-compatible API and a
+same-work comparison against D512, not against the old packed helper.
+
 D512 candidate-pattern microbench follow-up:
 
 - Harness commits:
@@ -5989,6 +6018,44 @@ That is worth a narrow follow-up, but it is not the full Reddit-style prefill
 gap. The next production prototype should only be attempted if it reduces
 candidate traffic or score/value workspace traffic for the real mixed
 C128/SWA layout; another random-candidate or launch-only sweep is not enough.
+
+D512 component-decomposition recheck, 2026-06-04:
+
+- RTX artifact:
+  `20260604_d512_component_decomposition/20260604151730`.
+- GB10 artifact:
+  `20260604_d512_component_decomposition/20260604151730`.
+- Shape: 1024 query tokens, 64 heads, D=512. Compare compressed-only
+  128-candidate patterns, SWA-only 1024-candidate sliding-window pattern, and
+  mixed 128 compressed + 1024 SWA pattern.
+
+RTX PRO 6000:
+
+| Pattern | Candidates | Partial | D512 split | Score | Stats | Value |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| compressed per-token | `128` | `1.119 ms` | `0.481 ms` | `0.272 ms` | `0.040 ms` | `0.169 ms` |
+| compressed shared | `128` | `1.125 ms` | `0.433 ms` | `0.181 ms` | `0.043 ms` | `0.210 ms` |
+| SWA sliding | `1024` | `7.362 ms` | `2.479 ms` | `0.870 ms` | `0.183 ms` | `1.426 ms` |
+| mixed C128/SWA | `1152` | `8.735 ms` | `3.004 ms` | `1.123 ms` | `0.208 ms` | `1.674 ms` |
+
+GB10:
+
+| Pattern | Candidates | Partial | D512 split | Score | Stats | Value |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| compressed per-token | `128` | `7.125 ms` | `6.014 ms` | `2.857 ms` | `0.170 ms` | `2.987 ms` |
+| compressed shared | `128` | `5.354 ms` | `2.945 ms` | `0.907 ms` | `0.170 ms` | `1.868 ms` |
+| SWA sliding | `1024` | `33.648 ms` | `19.767 ms` | `7.483 ms` | `1.187 ms` | `11.096 ms` |
+| mixed C128/SWA | `1152` | `41.674 ms` | `26.109 ms` | `10.471 ms` | `1.336 ms` | `14.302 ms` |
+
+Interpretation update: a grouped-compressed C128A path alone is not enough to
+explain or close the remaining endpoint prefill gap. On RTX, the mixed
+candidate shape is only `0.525 ms` slower than SWA-only, so the SWA tail already
+accounts for most of the current D512 split cost. On GB10, compressed candidate
+reuse has more visible upside, but the mixed shape is still dominated by SWA
+sliding score/value traffic. The next retained sparse-MLA experiment should
+therefore target SWA-tail value/score traffic or a combined algorithm that
+reduces effective SWA candidate visits; C128A grouped-compressed work can
+remain a secondary component, but it should not be the sole endpoint hypothesis.
 
 Range-SWA index-table-elision prototype, 2026-06-04:
 
