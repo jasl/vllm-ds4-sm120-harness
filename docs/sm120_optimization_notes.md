@@ -6397,6 +6397,47 @@ candidate/value work across the mixed C128A plus C4A/SWA shape, or use a public
 backend that matches that metadata contract and beats the current D512 path
 under the same DS4 workload.
 
+Rejected active-combined-topk clipping experiment, 2026-06-04:
+
+- Temporary vLLM experiment: before calling the D512 split sparse-MLA accumulate
+  path, slice `combined_indices` to the chunk-local active width inferred from
+  `seq_lens_cpu`, `compress_ratio`, `top_k`, and `window_size`. The intended
+  benefit was to remove padded C128A candidate slots without changing the
+  valid `combined_lens` semantics.
+- The first version used `gather_lens_cpu` as the SWA upper bound and was too
+  conservative. It did not reduce candidate slots or endpoint latency.
+  Artifact: `20260604_active_topk_clip_stage_nooverlap/20260604190727`.
+- The corrected version used the same formula as
+  `_combine_topk_swa_indices_kernel`:
+  `min(seq_len // compress_ratio, top_k) + min(seq_len, window_size)`.
+  Artifact: `20260604_active_topk_clip_v3_stage_nooverlap/20260604192510`.
+
+Corrected-version result:
+
+| Shape | Current retuned D512 input tok/s | Active-width input tok/s | Current TTFT | Active-width TTFT |
+| --- | ---: | ---: | ---: | ---: |
+| 59K C=1 | `7326.13` | `6351.41` | `8.047 s` | `9.283 s` |
+| 59K C=2 | `7332.96` | `6500.22` | `14.073 s` | `15.881 s` |
+| 124K C=1 | `6633.68` | `5970.87` | `18.693 s` | `20.767 s` |
+| 124K C=2 | `6550.45` | `6300.81` | `33.130 s` | `34.461 s` |
+
+The corrected version did reduce padded candidate slots substantially:
+
+| Input | Current candidate slots | Active-width candidate slots | Current padding ratio | Active-width padding ratio |
+| --- | ---: | ---: | ---: | ---: |
+| 59K | `34.774B` | `20.097B` | `43.611%` | `2.428%` |
+| 124K | `73.138B` | `52.356B` | `29.552%` | `1.589%` |
+
+Despite the lower candidate-slot count, sparse-accumulate stage time regressed:
+59K `25.8 s` to `42.8 s`, and 124K `53.8 s` to `76.8 s` in the same C=1/C=2
+diagnostic protocol. The likely reason is that changing the compile-time
+`num_candidates` away from the stable padded width produces less favorable
+D512 split kernel shapes and/or extra JIT/autotune churn. Decision: reject and
+remove the code and TDD helper. Future work should not simply remove padding
+width; it must either keep a stable favorable tile shape while skipping work
+inside the kernel, or reduce real score/value traffic through a different
+algorithm.
+
 Interpretation: the current RTX PRO 6000 Dev head does not reproduce the old
 59K/124K C=2 fairness collapse. C=2 fairness should stay in the promotion
 matrix as a no-regression gate, but it is not the next active tuning blocker
