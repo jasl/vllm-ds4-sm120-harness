@@ -1,5 +1,10 @@
 # SM120 Optimization Notes
 
+Start with `docs/sm120_current_state.md` for the live branch posture, promotion
+rules, and next target. Use `docs/sm120_experiment_index.md` to find historical
+evidence by topic. This file is now the append-only detailed archive; do not
+start here unless you need the full artifact trail.
+
 These notes are the current working assumptions for DeepSeek V4 SM120
 performance work. They are intentionally separate from historical baseline
 reports so later tuning does not accidentally inherit outdated architecture
