@@ -6303,12 +6303,26 @@ RTX prefill/decode no-regression gate:
 | Mixed `decode_then_124k` secondary ITL p99 | `0.0294 s` |
 | Streaming pressure | `36/36` requests, failures `0`, ITL p99 `0.729 s` |
 
-Decision: keep this as a high-confidence Dev candidate, but do not promote it
-to the PR branch until the remaining promotion matrix passes: GSM8K limit-200,
-prefix disabled/enabled KV lifecycle, prefix-cache stress, short-context
-throughput, 8K/1K and 256/256 throughput, and the existing
-`FULL_AND_PIECEWISE` requirement. This candidate is a useful incremental D512
-retune, not the next main research direction. The next main optimization target
+Remaining RTX promotion slice:
+`20260604_d512_hb32_bd128_remaining_promotion/20260604164422`.
+
+| Gate | Result |
+| --- | --- |
+| Overall summary | `ok=true`; all requested phase exit codes `0` |
+| GSM8K limit-200 | flexible EM `0.960`, strict EM `0.945` |
+| Short HF/MT-Bench C=1/2/4/8/16/24 | `172.03 / 270.51 / 403.08 / 573.36 / 806.66 / 891.22 tok/s`, failures `0` |
+| Random 8K/1K C=1/2/4/8/16/24 | `127.49 / 186.21 / 256.67 / 319.80 / 384.26 / 406.21 tok/s`, failures `0` |
+| Random 256/256 C=1/2/4/8/16/24 | `148.87 / 235.48 / 356.42 / 505.22 / 725.21 / 829.65 tok/s`, failures `0` |
+| Prefix-cache stress filler 100/400/800/1600/3200 | all `ok=true`, failures `0` |
+| Prefix disabled KV lifecycle | `ok=true`, final idle KV `0.000%` |
+| Prefix enabled KV lifecycle | `ok=true`, final idle KV `5.843%`, below threshold `90.000%` |
+| Runtime monitoring | server unresponsive `False`; serve/CUDA/NCCL/driver/engine error signals all `0` in phase summaries |
+
+Decision: promote this D512 tile retune to the Dev default. The remaining
+promotion slice passed, and the change is narrow: it only retunes the already
+selected D512 split sparse-MLA wrapper tile shape. It is reasonable to push this
+to the PR branch with the promotion evidence above, but it should not be
+mistaken for the next main research direction. The next main optimization target
 remains reducing total sparse-MLA prefill candidate/value work.
 
 Interpretation: the current RTX PRO 6000 Dev head does not reproduce the old
