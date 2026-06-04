@@ -5851,3 +5851,37 @@ or combine/gather changes are unlikely to close the remaining gap. The next
 code experiment should reduce sparse-accumulate candidate visits, live state,
 or memory traffic, with the prefill/decode promotion gate retained as the
 promotion blocker.
+
+Follow-up D512 split microbench and NCU:
+
+- Microbench artifacts:
+  `20260604_d512_split_stage_microbench/20260604133618` and
+  `20260604_d512_split_stage_microbench_shared/20260604133635`.
+- NCU artifact: `20260604_d512_split_ncu/20260604133916`.
+- Shape: RTX PRO 6000, 1024 query tokens, 64 heads, head dim 512,
+  1152 candidates, per-token candidate pattern.
+
+| Candidates | Old partial | D512 split | Speedup | Score | Stats | Value |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 640 | `4.893 ms` | `2.074 ms` | `2.359x` | `0.956 ms` | `0.110 ms` | `1.008 ms` |
+| 1152 | `9.108 ms` | `3.507 ms` | `2.597x` | `1.619 ms` | `0.198 ms` | `1.690 ms` |
+
+The shared-index control only improves the current D512 implementation by
+about `6-8%`, because this implementation still handles each token's candidate
+list independently and does not exploit cross-token reuse. This keeps the
+grouped-C128A hypothesis alive, but only for a redesigned path that avoids the
+old mixed-arrival p99 regression.
+
+Selected NCU counters for the 1152-candidate D512 split kernels:
+
+| Kernel | Duration | SM throughput | DRAM throughput | Eligible warps/sched | Registers/thread | Achieved occupancy | L2 hit |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `_indexed_score_kernel` | `1.44 ms` | `18.86%` | `79.04%` | `0.11` | `42` | `16.64%` | `69.35%` |
+| `_indexed_value_kernel` | `1.69 ms` | `38.94%` | `93.93%` | `0.59` | `59` | `41.00%` | `63.94%` |
+
+Interpretation: both score and value are dominated by candidate traffic and
+low eligible-warp availability, with value close to DRAM saturation. This
+argues against another block-size sweep as the main path. The next retained
+candidate should either reduce candidate visits/score-value traffic or exploit
+C128A cross-token candidate reuse while staying off active-decode mixed-arrival
+steps until the short-decode p99 regression is resolved.
