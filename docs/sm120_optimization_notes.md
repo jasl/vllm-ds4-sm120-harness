@@ -3632,6 +3632,43 @@ FlashInfer package version exactly. Do not use this as a production dependency
 claim until the probe shows the required DS4 sparse-MLA API and an SM120/SM121
 q-len>1 smoke passes.
 
+Official FlashInfer/b12x interface recheck, 2026-06-04:
+
+- FlashInfer `0.6.12` exposes
+  `flashinfer.mla.trtllm_batch_decode_sparse_mla_dsv4`, but still does not
+  expose the third-party fork's `BatchSparseMLAPagedAttentionWrapper` or a
+  `flashinfer.sparse_mla_sm120` module. The available helper is documented as a
+  DeepSeek V4 sparse-MLA decode API with separate SWA and compressed KV pools,
+  not a direct long-prefill/extend wrapper.
+- The installable `b12x==0.15.2` package exposes
+  `b12x.integration.mla.sparse_mla_extend_forward`,
+  `sparse_mla_decode_forward`, `compressed_mla_decode_forward`, and
+  `B12XAttentionWorkspace`, so the package is useful for research probes.
+  Import success alone is still insufficient evidence that the endpoint can
+  use the third-party fork's DS4 sparse-MLA path.
+- RTX PRO 6000 SM120 synthetic MLA microbench:
+
+| Shape | b12x compressed MLA | vLLM online packed | b12x vs online | current D512 split+finish | b12x / D512 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| tiny, 32 rows, 128 SWA, 128 indexed | `0.189 ms` | `0.226 ms` | `1.20x` faster | `0.045 ms` | `4.16x` slower |
+| real-C128, 256 rows, 1024 SWA, 128 indexed | `1.108 ms` | `5.852 ms` | `5.28x` faster | `0.283 ms` | `3.91x` slower |
+
+- The same b12x compressed MLA microbench currently fails on the GB10/SM121
+  CUDA 13.0 toolkit before producing performance data. CUTLASS DSL JIT reaches
+  NVPTX compilation for `sm_121a`, then `ptxas` reports repeated `Unexpected
+  instruction types specified for 'cvt'` errors. Artifact label:
+  `20260604_b12x_mla_microbench_gb10_compile_fail`. The failure did not crash
+  the GPUs.
+
+Decision update: keep released b12x MLA as a research-only route for now.
+FlashInfer `0.6.12` does not yet provide the missing public sparse-prefill
+wrapper, b12x compressed MLA does not beat the current D512 split+finish
+synthetic baseline on RTX, and the same b12x compressed path does not compile on
+the current GB10 CUDA 13.0 stack. Do not add a vLLM endpoint adapter or make
+b12x a default dependency until either the official FlashInfer wrapper becomes
+available or a GB10-compatible b12x path beats current Dev under the full
+promotion matrix.
+
 The currently installed optional stack exposes official FlashInfer b12x probes:
 `has_flashinfer_b12x_moe=True` and `has_flashinfer_b12x_gemm=True`. Those are
 not enough for DeepSeek V4 Flash because the upstream b12x MoE path is an

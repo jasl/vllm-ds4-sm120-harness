@@ -132,10 +132,23 @@ for name in (
 PY
 ```
 
+If the target venv was created without the `pip` module, install through `uv`
+while still pointing at the vLLM Python executable:
+
+```bash
+uv pip install --python .venv/bin/python --no-deps b12x==0.15.2
+```
+
 This is analogous to the NCCL override above: document the exact package
 version and verify imports on every GB10 node before running experiments. A
 successful import does not mean b12x is active; serve logs must still show the
 selected MoE, attention, indexer, and all-reduce backends.
+
+As of the 2026-06-04 optional-dependency recheck, import success is not enough
+for b12x MLA promotion. `b12x.integration.mla` imports on GB10, but the current
+CUDA 13.0 toolkit fails while JIT-compiling the compressed MLA microbench for
+SM121 with NVPTX/ptxas `cvt` instruction errors. Treat b12x MLA as research-only
+until the microbench compiles and the end-to-end GB10 promotion matrix passes.
 
 For one-off kernel/configuration experiments, `scripts/dgx_spark_start_mp_serve.sh`
 can forward explicitly named environment variables to the remote vLLM processes
