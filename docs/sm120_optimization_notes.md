@@ -5405,6 +5405,31 @@ optimization route; the next useful work needs to reduce real sparse-MLA work
 or use a scheduler policy that protects active decode while improving pure
 long-prefill batching.
 
+Official FlashInfer/b12x route recheck, 2026-06-04:
+
+- Installed stack on the RTX environment:
+  `flashinfer-python==0.6.12`, `flashinfer-cubin==0.6.12`,
+  `flashinfer-jit-cache==0.6.12+cu130`, `b12x==0.15.2`, and
+  `nvidia-nccl-cu13==2.30.4`.
+- `flashinfer show-config` completed and registered compiled modules. The
+  FlashInfer CuTe DSL FMHA artifact list still names `sm_100a`, `sm_103a`, and
+  `sm_110a`, so those prebuilt FMHA paths should not be assumed to cover
+  SM120/SM121 attention.
+- `b12x.integration.mla` now imports and exposes MLA APIs, including
+  `sparse_mla_extend_forward`, `sparse_mla_decode_forward`,
+  `compressed_mla_decode_forward`, `MLASparseExtendMetadata`, and
+  `MLASparseDecodeMetadata`.
+- Current vLLM code does not wire b12x MLA into the DeepSeek V4 sparse prefill
+  path. The only current b12x references in this checkout are MoE/GEMM-facing
+  tests and utilities, not a DS4 sparse-MLA backend.
+- This means installing the official dependency stack alone will not improve
+  the current endpoint. A maintainable b12x/FlashInfer route is now plausible,
+  but it is real integration work: adapt vLLM's compressed/SWA KV layout,
+  top-k lengths, page tables, attention sink, and fixed workspace/cudagraph
+  contract to b12x's `B12XAttentionWorkspace` APIs, then gate it with parity,
+  GSM8K, mixed-arrival ITL p99, long+long C=2, prefix/KV lifecycle, GB10
+  reduced long-C2, and short-throughput regression tests.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
