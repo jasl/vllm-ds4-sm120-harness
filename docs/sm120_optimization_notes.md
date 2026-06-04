@@ -6657,31 +6657,40 @@ Sparse-MLA candidate-work efficiency reporting, 2026-06-04:
   effective candidate visits/s, sparse-accumulate effective candidate visits/s,
   candidate slots/s, and sparse-accumulate milliseconds per million effective
   visits.
-- Recomputed the report over the existing D512 default RTX artifact label
-  `20260604_d512_default_stage_timing_rtx/20260604132616`; no vLLM code or new
-  endpoint run was involved.
+- Recomputed the report over the current tail-skip Dev-head RTX artifact label
+  `20260604_d512_tail_block_skip_stage_nooverlap/20260604193841`; no vLLM code
+  or new endpoint run was involved.
 
 | Shape | Effective visits | Padding ratio | Stage total | Sparse accumulate ratio | Sparse visits/s | Sparse ms/Mvisit |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 59K C=1-4 attribution | `19.609B` | `43.61%` | `34.005 s` | `98.97%` | `0.583B/s` | `1.716 ms` |
-| 124K C=1-4 attribution | `51.524B` | `29.55%` | `73.335 s` | `98.86%` | `0.711B/s` | `1.407 ms` |
+| 59K C=1-4 attribution | `19.609B` | `43.61%` | `22.075 s` | `98.41%` | `0.903B/s` | `1.108 ms` |
+| 124K C=1-4 attribution | `51.524B` | `29.55%` | `48.813 s` | `98.28%` | `1.074B/s` | `0.931 ms` |
+
+Compared with the earlier D512 retune artifact
+`20260604_d512_default_stage_timing_rtx/20260604132616`, the current tail-skip
+head keeps the same effective visits and padded widths but improves sparse
+visits/s from `0.583B/s` to `0.903B/s` at 59K and from `0.711B/s` to `1.074B/s`
+at 124K. This confirms the empty-tail skip is not just an endpoint-level noise
+win; it measurably improves the sparse accumulate work rate while preserving the
+stable padded shape.
 
 Per-group efficiency from the same report:
 
 | Shape | Group | Effective visits | Padding ratio | Stage total | Sparse visits/s |
 | --- | --- | ---: | ---: | ---: | ---: |
-| 59K | C128 chunk | `6.562B` | `67.55%` | `15.026 s` | `0.442B/s` |
-| 59K | C4 chunk | `11.797B` | `0.00%` | `12.753 s` | `0.935B/s` |
+| 59K | C128 chunk | `6.562B` | `67.55%` | `6.491 s` | `1.040B/s` |
+| 59K | C4 chunk | `11.797B` | `0.00%` | `9.353 s` | `1.281B/s` |
 | 59K | SWA-only chunk | `0.362B` | `0.11%` | `2.018 s` | `0.180B/s` |
-| 124K | C128 chunk | `24.091B` | `45.50%` | `36.355 s` | `0.671B/s` |
-| 124K | C4 chunk | `25.784B` | `0.00%` | `28.458 s` | `0.918B/s` |
-| 124K | SWA-only chunk | `0.761B` | `0.05%` | `4.276 s` | `0.179B/s` |
+| 124K | C128 chunk | `24.091B` | `45.50%` | `19.602 s` | `1.256B/s` |
+| 124K | C4 chunk | `25.784B` | `0.00%` | `20.691 s` | `1.269B/s` |
+| 124K | SWA-only chunk | `0.761B` | `0.05%` | `4.273 s` | `0.179B/s` |
 
 Interpretation: the endpoint stage timing is still almost entirely sparse
-accumulate work. C4 chunk layers sustain about `0.9B` effective visits/s, while
-C128 chunk layers are lower and carry substantial padding. However, the active
-width clipping experiment already showed that reducing padded width alone can
-make D512 kernel shapes worse. Future experiments should use this efficiency
-metric to separate "less work" from "slower work shape"; a promotion-worthy
-candidate needs to reduce real C128/SWA candidate/value work or improve the
-accumulator's effective visits/s without regressing the fixed promotion matrix.
+accumulate work. The current D512 tail-skip path raises C128 and C4 chunk groups
+to roughly `1.0-1.3B` effective visits/s on RTX, while SWA-only chunks remain
+much slower in this report. The active-width clipping experiment already showed
+that reducing padded width alone can make D512 kernel shapes worse, so future
+experiments should use this efficiency metric to separate "less work" from
+"slower work shape". A promotion-worthy candidate needs to reduce real C128/SWA
+candidate/value work or improve the accumulator's effective visits/s without
+regressing the fixed promotion matrix.
