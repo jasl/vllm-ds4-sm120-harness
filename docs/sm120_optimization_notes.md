@@ -5885,3 +5885,37 @@ argues against another block-size sweep as the main path. The next retained
 candidate should either reduce candidate visits/score-value traffic or exploit
 C128A cross-token candidate reuse while staying off active-decode mixed-arrival
 steps until the short-decode p99 regression is resolved.
+
+Official b12x MLA route recheck on the current D512 default path:
+
+- RTX artifact:
+  `20260604_b12x_vs_d512_current/20260604134907`.
+- GB10 compile-failure artifact:
+  `20260604_b12x_vs_d512_current_compile_fail/20260604135114`.
+- Profile: current clean Dev branch, installed optional `b12x` and FlashInfer
+  packages, synthetic packed C128/SWA shapes, and current indexed-D512
+  split+finish as the relevant Dev timing reference.
+
+RTX timing:
+
+| Shape | Rows | SWA | Indexed | b12x compressed MLA | vLLM old packed | Current D512 split+finish |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| tiny | 32 | 128 | 128 | `0.171 ms` | `0.228 ms` | `0.045 ms` |
+| real C128-like | 256 | 1024 | 128 | `1.109 ms` | `5.925 ms` | `0.287 ms` |
+| wide C128-like | 1024 | 1024 | 128 | `2.561 ms` | `23.705 ms` | `1.415 ms` |
+
+GB10 still fails before timing the same b12x compressed MLA route:
+
+```text
+NVPTX compiler invocation failed
+ptxas application ptx input, line 735; error   : Unexpected instruction types specified for 'cvt'
+ptxas fatal   : Ptx assembly aborted due to errors
+```
+
+Decision: do not wire the current official b12x compressed MLA API into the
+endpoint path. It is a large win over the older vLLM packed helper on RTX, but
+it is slower than the current D512 split+finish timing reference and still does
+not compile on the GB10 SM121 environment. Future b12x work should wait for a
+GB10-compatible public API or a stricter endpoint adapter that proves a real
+gain over the current D512 path under DS4 metadata, then rerun the full RTX and
+GB10 promotion gates.
