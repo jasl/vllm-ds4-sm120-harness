@@ -97,6 +97,20 @@ def _next_power_of_2(value: int) -> int:
     return 1 << (value - 1).bit_length()
 
 
+def _validate_sliding_window_index_shape(
+    *,
+    num_tokens: int,
+    num_candidates: int,
+    kv_tokens: int,
+) -> None:
+    required_kv_tokens = num_tokens + num_candidates - 1
+    if kv_tokens < required_kv_tokens:
+        raise ValueError(
+            "sliding-window index pattern requires kv_tokens >= "
+            f"num_tokens + num_candidates - 1 ({required_kv_tokens})"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Benchmark an indexed split D=512 sparse MLA path."
@@ -118,7 +132,7 @@ def main() -> int:
     parser.add_argument("--gpu-id", type=int, default=0)
     parser.add_argument(
         "--index-pattern",
-        choices=("per-token", "shared"),
+        choices=("per-token", "shared", "sliding-window"),
         default="per-token",
     )
     args = parser.parse_args()
@@ -365,6 +379,18 @@ def main() -> int:
                 dtype=torch.int64,
             )[:num_candidates]
             indices = indices.to(torch.int32).repeat(args.num_tokens, 1).contiguous()
+        elif args.index_pattern == "sliding-window":
+            try:
+                _validate_sliding_window_index_shape(
+                    num_tokens=args.num_tokens,
+                    num_candidates=num_candidates,
+                    kv_tokens=args.kv_tokens,
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+            starts = torch.arange(args.num_tokens, device=device, dtype=torch.int32)
+            offsets = torch.arange(num_candidates, device=device, dtype=torch.int32)
+            indices = (starts[:, None] + offsets[None, :]).contiguous()
         else:
             indices = torch.randint(
                 0,
