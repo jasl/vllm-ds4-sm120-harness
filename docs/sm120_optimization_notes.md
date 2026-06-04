@@ -5816,6 +5816,14 @@ experiments should fail this gate before being promoted. The remaining C=2 work
 should be framed more narrowly as raw long-prefill TTFT and serialized-prefill
 efficiency, with decode-cadence fairness retained as a no-regression guard.
 
+Harness tightening: the user-feedback matrix now runs the same
+`prefill-decode-gate` hard check against its primary baseline artifacts and
+includes the result in `user_feedback_matrix_summary.md/json`. This is
+harness-only: it does not add a workload, server knob, or vLLM inference-code
+change. The intent is to prevent future long-prefill or scheduler experiments
+from passing the regular matrix while silently failing the already-defined
+prefill/decode interference thresholds.
+
 Follow-up fixed C=2 fairness protocol after syncing the actual editable vLLM
 runtime to the same Dev head:
 

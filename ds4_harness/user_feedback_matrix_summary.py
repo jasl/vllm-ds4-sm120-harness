@@ -428,6 +428,34 @@ def _collect_kv_lifecycle_rows(run_label: str, variant: str, payload: Any) -> li
     ]
 
 
+def _collect_prefill_decode_gate_rows(run_label: str, payload: Any) -> list[Json]:
+    if not isinstance(payload, dict):
+        return []
+    thresholds = payload.get("thresholds")
+    if not isinstance(thresholds, dict):
+        thresholds = {}
+    return [
+        {
+            "run": run_label,
+            "variant": payload.get("variant"),
+            "ok": payload.get("ok"),
+            "regression_count": payload.get("regression_count"),
+            "min_long_c2_decode_min_max_ratio": _round_float(
+                thresholds.get("min_long_c2_decode_min_max_ratio")
+            ),
+            "max_long_c2_itl_p99_seconds": _round_float(
+                thresholds.get("max_long_c2_itl_p99_seconds")
+            ),
+            "max_mixed_secondary_itl_p99_seconds": _round_float(
+                thresholds.get("max_mixed_secondary_itl_p99_seconds")
+            ),
+            "max_streaming_itl_p99_seconds": _round_float(
+                thresholds.get("max_streaming_itl_p99_seconds")
+            ),
+        }
+    ]
+
+
 def _artifact_dir(run_root: Path, raw_path: str | Path | None) -> Path | None:
     if not raw_path:
         return None
@@ -540,6 +568,7 @@ def summarize_run(label: str, run_root: Path) -> Json:
         "story_recall_semantic": [],
         "prefix_cache_stress": [],
         "kv_lifecycle": [],
+        "prefill_decode_gate": [],
         "monitoring": [],
     }
     for variant_dir in _variant_dirs(run_root):
@@ -620,12 +649,18 @@ def summarize_run(label: str, run_root: Path) -> Json:
         result["kv_lifecycle"].extend(
             _collect_kv_lifecycle_rows(label, variant, kv_lifecycle)
         )
+    gate = _load_json(run_root / "prefill_decode_gate" / "prefill_decode_regression_gate.json")
+    result["prefill_decode_gate"].extend(
+        _collect_prefill_decode_gate_rows(label, gate)
+    )
     result["prefix_cache_stress"].extend(
         _collect_prefix_cache_diagnostic_rows(label, run_root)
     )
     result["monitoring"].extend(_collect_monitoring_rows(label, run_root))
     phase_codes = [row["exit_code"] for row in result["phase_exit_codes"]]
-    result["ok"] = bool(phase_codes) and all(code == 0 for code in phase_codes)
+    gate_rows = result["prefill_decode_gate"]
+    gate_ok = all(row.get("ok") is True for row in gate_rows)
+    result["ok"] = bool(phase_codes) and all(code == 0 for code in phase_codes) and gate_ok
     return result
 
 
@@ -698,6 +733,7 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
     story_rows: list[list[Any]] = []
     prefix_rows: list[list[Any]] = []
     kv_lifecycle_rows: list[list[Any]] = []
+    prefill_decode_gate_rows: list[list[Any]] = []
     monitoring_rows: list[list[Any]] = []
 
     for run in summary["runs"]:
@@ -899,6 +935,19 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                     row["idle_kv_within_threshold"],
                     row["prefix_hits_delta"],
                     row["prefix_queries_delta"],
+                ]
+            )
+        for row in run["prefill_decode_gate"]:
+            prefill_decode_gate_rows.append(
+                [
+                    row["run"],
+                    row["variant"],
+                    row["ok"],
+                    row["regression_count"],
+                    row["min_long_c2_decode_min_max_ratio"],
+                    row["max_long_c2_itl_p99_seconds"],
+                    row["max_mixed_secondary_itl_p99_seconds"],
+                    row["max_streaming_itl_p99_seconds"],
                 ]
             )
         for row in run["monitoring"]:
@@ -1122,6 +1171,20 @@ def write_summary_markdown(path: Path, summary: Json) -> None:
                 "Prefix Queries Delta",
             ],
             kv_lifecycle_rows,
+        ),
+        (
+            "Prefill/Decode Gate",
+            [
+                "Run",
+                "Variant",
+                "OK",
+                "Regression Count",
+                "Min Long C2 Decode Min/Max",
+                "Max Long C2 ITL P99 s",
+                "Max Mixed Secondary ITL P99 s",
+                "Max Streaming ITL P99 s",
+            ],
+            prefill_decode_gate_rows,
         ),
         (
             "Runtime Monitoring",

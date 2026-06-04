@@ -208,7 +208,10 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   missing JSON artifacts, empty mixed-arrival summaries, empty streaming
   matrices, and streaming matrices with zero requests are hard failures.
   Override these only for an explicitly named experimental or external machine
-  profile.
+  profile. The user-feedback matrix also runs the same hard check against its
+  primary baseline artifacts and includes the result in
+  `user_feedback_matrix_summary.md/json`, so a normal refresh cannot silently
+  pass while the prefill/decode gate fails.
 - Mixed-arrival Nsight Systems trace: when a scheduler or sparse-MLA kernel
   change targets prefill/decode interference, run
   `scripts/run_mixed_arrival_nsys_profile_launch.sh` with one case spec at a

@@ -885,6 +885,10 @@ def test_sm120_user_feedback_matrix_captures_child_and_summary_stdio():
 
     assert '>"${child_out}/child.stdout.log"' in script
     assert '2>"${child_out}/child.stderr.log"' in script
+    assert 'RUN_USER_FEEDBACK_PREFILL_DECODE_GATE="${RUN_USER_FEEDBACK_PREFILL_DECODE_GATE:-1}"' in script
+    assert "prefill-decode-gate" in script
+    assert "--baseline-dir \"${USER_FEEDBACK_PRIMARY_OUT_DIR}\"" in script
+    assert "--json-output \"${USER_FEEDBACK_PREFILL_DECODE_GATE_OUT_DIR}/prefill_decode_regression_gate.json\"" in script
     assert '>"${USER_FEEDBACK_MATRIX_ROOT}/summary.stdout.log"' in script
     assert '2>"${USER_FEEDBACK_MATRIX_ROOT}/summary.stderr.log"' in script
 

@@ -283,6 +283,20 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
             },
         },
     )
+    write_json(
+        primary / "prefill_decode_gate/prefill_decode_regression_gate.json",
+        {
+            "ok": True,
+            "variant": "mtp",
+            "regression_count": 0,
+            "thresholds": {
+                "min_long_c2_decode_min_max_ratio": 0.2,
+                "max_long_c2_itl_p99_seconds": 1.0,
+                "max_mixed_secondary_itl_p99_seconds": 1.0,
+                "max_streaming_itl_p99_seconds": 2.0,
+            },
+        },
+    )
 
     summary = summarize_runs([("primary", primary), ("prefix_cache", prefix)])
 
@@ -304,6 +318,18 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
     assert primary_summary["monitoring"][0]["gpu_utilization_avg"] == 91.4
     assert primary_summary["monitoring"][0]["serve_log_error_signals"] == 0
     assert primary_summary["monitoring"][0]["runtime_running_requests_max"] == 2.0
+    assert primary_summary["prefill_decode_gate"] == [
+        {
+            "run": "primary",
+            "variant": "mtp",
+            "ok": True,
+            "regression_count": 0,
+            "min_long_c2_decode_min_max_ratio": 0.2,
+            "max_long_c2_itl_p99_seconds": 1.0,
+            "max_mixed_secondary_itl_p99_seconds": 1.0,
+            "max_streaming_itl_p99_seconds": 2.0,
+        }
+    ]
     assert summary["runs"][1]["prefix_cache_stress"][0]["concurrent_hit_rate_mean"] == 0.75
 
     markdown_path = tmp_path / "summary.md"
@@ -323,6 +349,8 @@ def test_user_feedback_matrix_summary_collects_tradeoff_metrics(tmp_path):
     assert "Target Frontier" in markdown
     assert "DS4 Story Recall Semantic" in markdown
     assert "Matched Min" in markdown
+    assert "Prefill/Decode Gate" in markdown
+    assert "Regression Count" in markdown
     assert "already-started decode stream fairness" in markdown
 
 
