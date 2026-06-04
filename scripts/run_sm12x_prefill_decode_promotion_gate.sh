@@ -159,6 +159,8 @@ for line in _read_text(baseline_dir / "phase_exit_codes.tsv").splitlines():
     if not line.strip():
         continue
     columns = line.split("\t")
+    if columns[:2] == ["variant", "phase"]:
+        continue
     if len(columns) >= 3:
         phase_rows.append(
             {

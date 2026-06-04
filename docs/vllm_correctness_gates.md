@@ -204,6 +204,9 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   mixed-arrival, and streaming-pressure phases. Default thresholds require
   long C=2 decode min/max >= 0.2, long C=2 ITL p99 <= 1.0s, mixed-arrival
   secondary ITL p99 <= 1.0s, and streaming-pressure ITL p99 <= 2.0s.
+  A requested phase must appear in `phase_exit_codes.tsv` with exit `0`;
+  missing JSON artifacts, empty mixed-arrival summaries, empty streaming
+  matrices, and streaming matrices with zero requests are hard failures.
   Override these only for an explicitly named experimental or external machine
   profile.
 - Mixed-arrival Nsight Systems trace: when a scheduler or sparse-MLA kernel

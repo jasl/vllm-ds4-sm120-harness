@@ -65,6 +65,8 @@ def _write_prefill_decode_artifacts(root: Path, *, bad_fairness: bool = False) -
         {
             "ok": True,
             "summary": {
+                "case_count": 1,
+                "request_count": 8,
                 "failure_count": 0,
                 "slow_case_count": 0,
                 "p99_inter_chunk_seconds": 1.1,
@@ -127,6 +129,78 @@ def test_prefill_decode_gate_rejects_missing_c2_summary_rows(tmp_path):
     assert gate["ok"] is False
     reasons = {item["reason"] for item in gate["regressions"]}
     assert reasons == {"long-c2-summary-missing"}
+
+
+def test_prefill_decode_gate_rejects_missing_or_failed_required_phase(tmp_path):
+    baseline = tmp_path / "baseline"
+    _write_prefill_decode_artifacts(baseline)
+    (baseline / "phase_exit_codes.tsv").write_text(
+        "variant\tphase\texit_code\tartifact_dir\n"
+        "mtp\tlong_context_latency_matrix\t0\tmtp/long_context_latency_matrix\n"
+        "mtp\tlong_context_decode_concurrency\t1\tmtp/long_context_decode_concurrency\n"
+        "mtp\tlong_context_mixed_arrival\t0\tmtp/long_context_mixed_arrival\n",
+        encoding="utf-8",
+    )
+
+    gate = evaluate_prefill_decode_gate(baseline_dir=baseline, variant="mtp")
+
+    assert gate["ok"] is False
+    failed = {
+        (item["phase"], item["value"])
+        for item in gate["regressions"]
+        if item["reason"] == "phase-not-run-or-failed"
+    }
+    assert failed == {
+        ("long_context_decode_concurrency", 1),
+        ("streaming_pressure_matrix", None),
+    }
+
+
+def test_prefill_decode_gate_rejects_empty_mixed_arrival_summary(tmp_path):
+    baseline = tmp_path / "baseline"
+    _write_prefill_decode_artifacts(baseline)
+    path = (
+        baseline
+        / "mtp"
+        / "long_context_mixed_arrival"
+        / "long_context_mixed_arrival.json"
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["summary"] = []
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    gate = evaluate_prefill_decode_gate(baseline_dir=baseline, variant="mtp")
+
+    assert gate["ok"] is False
+    reasons = {item["reason"] for item in gate["regressions"]}
+    assert "mixed-summary-empty" in reasons
+
+
+def test_prefill_decode_gate_rejects_empty_streaming_pressure_matrix(tmp_path):
+    baseline = tmp_path / "baseline"
+    _write_prefill_decode_artifacts(baseline)
+    path = (
+        baseline
+        / "mtp"
+        / "streaming_pressure_matrix"
+        / "streaming_pressure_matrix.json"
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["summary"] = {
+        "case_count": 0,
+        "request_count": 0,
+        "failure_count": 0,
+        "slow_case_count": 0,
+        "p99_inter_chunk_seconds": 0.01,
+    }
+    payload["cases"] = []
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    gate = evaluate_prefill_decode_gate(baseline_dir=baseline, variant="mtp")
+
+    assert gate["ok"] is False
+    reasons = {item["reason"] for item in gate["regressions"]}
+    assert reasons == {"streaming-cases-missing", "streaming-requests-missing"}
 
 
 def test_prefill_decode_gate_cli_writes_outputs_and_fails_on_regression(tmp_path):

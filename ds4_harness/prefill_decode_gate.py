@@ -258,7 +258,34 @@ def _check_mixed_arrival(
     thresholds: PrefillDecodeGateThresholds,
 ) -> None:
     phase = "long_context_mixed_arrival"
-    for row in payload.get("summary", []):
+    summary = payload.get("summary")
+    if not isinstance(summary, list):
+        _append_regression(
+            regressions,
+            checks,
+            phase=phase,
+            subject="summary",
+            reason="missing-summary",
+            metric="summary",
+            value=None,
+            threshold=1,
+            comparator="present",
+        )
+        return
+    if not summary:
+        _append_regression(
+            regressions,
+            checks,
+            phase=phase,
+            subject="summary",
+            reason="mixed-summary-empty",
+            metric="summary_rows",
+            value=0,
+            threshold=1,
+            comparator=">=",
+        )
+        return
+    for row in summary:
         if not isinstance(row, dict):
             continue
         subject = str(row.get("case", "unknown"))
@@ -323,6 +350,52 @@ def _check_streaming_pressure(
         subject="summary",
         failure_count=summary.get("failure_count"),
     )
+    case_count = _as_int(summary.get("case_count"))
+    if case_count is None or case_count < 1:
+        _append_regression(
+            regressions,
+            checks,
+            phase=phase,
+            subject="summary",
+            reason="streaming-cases-missing",
+            metric="case_count",
+            value=case_count,
+            threshold=1,
+            comparator=">=",
+        )
+    else:
+        _append_ok(
+            checks,
+            phase=phase,
+            subject="summary",
+            metric="case_count",
+            value=case_count,
+            threshold=1,
+            comparator=">=",
+        )
+    request_count = _as_int(summary.get("request_count"))
+    if request_count is None or request_count < 1:
+        _append_regression(
+            regressions,
+            checks,
+            phase=phase,
+            subject="summary",
+            reason="streaming-requests-missing",
+            metric="request_count",
+            value=request_count,
+            threshold=1,
+            comparator=">=",
+        )
+    else:
+        _append_ok(
+            checks,
+            phase=phase,
+            subject="summary",
+            metric="request_count",
+            value=request_count,
+            threshold=1,
+            comparator=">=",
+        )
     slow_cases = _as_int(summary.get("slow_case_count"))
     if slow_cases is None or slow_cases > 0:
         _append_regression(
