@@ -5354,6 +5354,57 @@ Interpretation update:
   maintainable FlashInfer/b12x path. Scheduler chunk sweeps and launch-only
   refactors are lower priority unless a new trace shows a different pathology.
 
+2026-06-04 indexed-D512 fixed C=2 protocol and 8192 batch-token probe:
+
+- Artifact labels:
+  - `20260604_d512_c2_fixed_protocol_fairness_rerun/20260604080050`
+  - `20260604_d512_c2_fixed_protocol_mbt8192_probe/20260604081813`
+- Both runs used dual RTX PRO 6000, MTP=2, FP8 KV, prefix cache disabled,
+  `FULL_AND_PIECEWISE`, `max_num_seqs=4`, and indexed D512 enabled. The only
+  intentional variable in the second run was `max_num_batched_tokens=8192`
+  instead of the current `4096`.
+- Runtime health was clean in both runs: all fairness phases exited `0`, and
+  CUDA, NCCL, driver, engine, and preemption counts were all zero.
+
+4096 fixed-protocol rerun versus the earlier D512 promotion matrix:
+
+| Metric | D512 promotion | Fixed rerun | Interpretation |
+| --- | ---: | ---: | --- |
+| 59K C=1 TTFT | `8.235 s` | `8.236 s` | stable |
+| 59K C=2 TTFT | `12.813 s` | `12.850 s` | stable |
+| 124K C=1 TTFT | `19.653 s` | `19.724 s` | stable |
+| 124K C=2 TTFT | `30.230 s` | `30.379 s` | stable |
+| 124K decode-concurrency C=2 min/max | `0.978` | `0.965` | healthy |
+| 124K decode-concurrency C=2 ITL p99 | `0.0307 s` | `0.0306 s` | healthy |
+
+The old long+long C=2 decode fairness collapse is not present on the current
+indexed-D512 path. The residual long+long issue is TTFT serialization: the
+second 124K request still waits roughly one long-prefill chunk sequence, with
+C=2 TTFT max around `40-41 s`, but decode throughput and per-request ITL are
+balanced once decode starts.
+
+8192 batch-token probe:
+
+| Metric | 4096 | 8192 | Result |
+| --- | ---: | ---: | --- |
+| 59K C=1 TTFT | `8.236 s` | `8.168 s` | `0.8%` faster |
+| 59K C=2 TTFT | `12.850 s` | `12.738 s` | `0.9%` faster |
+| 124K C=1 TTFT | `19.724 s` | `19.566 s` | `0.8%` faster |
+| 124K C=2 TTFT | `30.379 s` | `29.973 s` | `1.3%` faster |
+| 124K decode-concurrency C=2 TTFT | `30.371 s` | `29.692 s` | `2.2%` faster |
+| `long_long_c2` combined ITL p99 | `0.029 s` | `0.031 s` | flat |
+| `long_decode_then_short` primary ITL p99 | `0.720 s` | `1.283 s` | worse |
+| mixed-arrival max KV usage | `13.97%` | `27.48%` | much less headroom |
+| mixed-arrival max GPU memory | `96650 MiB` | `97286 MiB` | closer to OOM cliff |
+
+Decision: reject `8192` as the next default. It gives only a small TTFT win
+while worsening the active long-decode plus short-prefill tail and consuming
+substantially more KV/memory headroom. Keep `4096` for the current long-context
+profile. Do not continue simple `max_num_batched_tokens` growth as a primary
+optimization route; the next useful work needs to reduce real sparse-MLA work
+or use a scheduler policy that protects active decode while improving pure
+long-prefill batching.
+
 ## Experiment Discipline
 
 - Keep measured-effective code changes in the active branch.
