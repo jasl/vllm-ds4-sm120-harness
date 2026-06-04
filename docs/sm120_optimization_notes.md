@@ -5429,6 +5429,25 @@ Official FlashInfer/b12x route recheck, 2026-06-04:
   contract to b12x's `B12XAttentionWorkspace` APIs, then gate it with parity,
   GSM8K, mixed-arrival ITL p99, long+long C=2, prefix/KV lifecycle, GB10
   reduced long-C2, and short-throughput regression tests.
+- Minimal RTX synthetic smoke:
+  - `compressed_mla_decode_forward` launched successfully on SM120 for
+    `32 rows x 32 heads x (128 C128 + 128 SWA)` and matched the package
+    reference with max diff about `9.8e-4`; steady time was `0.153 ms`.
+  - On the same packed-cache shape, b12x was about `1.8x` faster than vLLM's
+    old online packed helper (`0.113 ms` vs `0.202 ms`).
+  - On a more realistic C128-like packed shape,
+    `256 rows x 32 heads x (128 C128 + 1024 SWA)`, b12x was about `5.6x`
+    faster than the old online packed helper (`1.04 ms` vs `5.80 ms`), with
+    max diff about `7.3e-4`.
+  - However, the current indexed-D512 split path is the relevant Dev baseline,
+    not the old online helper. A synthetic D512 split+finish over
+    `256 rows x 32 heads x 1152 candidates` took about `0.27 ms` excluding
+    packed-cache gather/dequant, while stage timing already showed gather is a
+    small fraction of endpoint time. Therefore the official b12x compressed
+    helper is not yet a proven win over current Dev.
+- Decision: keep b12x MLA as a promising integration research route, but do
+  not spend PR-branch risk on it until a stricter same-work benchmark or a
+  small endpoint adapter proves it beats indexed-D512 under real DS4 metadata.
 
 ## Experiment Discipline
 
