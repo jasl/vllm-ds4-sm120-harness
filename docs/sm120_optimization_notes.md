@@ -5990,6 +5990,14 @@ packed helper is weak, but it neither beats current D512 on RTX nor compiles on
 GB10. Keep future b12x work gated on a public SM121-compatible API and a
 same-work comparison against D512, not against the old packed helper.
 
+Direction update after the route recheck: treat official b12x compressed MLA as
+a blocked/rejected backend route for the current endpoint work. It should not
+consume more endpoint-prototype time unless the public API changes in two ways:
+it must compile on SM121/GB10, and it must match DeepSeek V4 Flash prefill
+metadata closely enough to beat current D512 split+finish under the same
+candidate work. Installing b12x or FlashInfer alone is not a path to the
+Reddit-style prefill result.
+
 D512 candidate-pattern microbench follow-up:
 
 - Harness commits:
@@ -6064,6 +6072,16 @@ sliding score/value traffic. The next retained sparse-MLA experiment should
 therefore target SWA-tail value/score traffic or a combined algorithm that
 reduces effective SWA candidate visits; C128A grouped-compressed work can
 remain a secondary component, but it should not be the sole endpoint hypothesis.
+
+Direction update: do not advance a standalone C128 grouped-compressed vLLM
+endpoint implementation. The component split says the main mixed C128/SWA cost
+is the large SWA tail and value traffic, not the 128 compressed candidates by
+themselves. The next experiment target is broader and stricter: reduce total
+sparse-MLA prefill candidate/value work. Prioritize SWA-tail candidate visits,
+value/KV traffic, live state, and dependency depth, or a public backend that
+actually matches DS4 metadata. Simple launch splits, block-size sweeps, dense
+grouped-SWA matmuls, or score-only C128 reuse are rejected unless they reduce
+the real endpoint work and pass the promotion matrix.
 
 Range-SWA index-table-elision prototype, 2026-06-04:
 
@@ -6236,6 +6254,62 @@ Fixed C=2 fairness recheck after harness gate tightening, 2026-06-04:
 | `decode_then_124k` | `20.446 s` | `20.897 s` | `0.958` | `0.0297 s` |
 | `long_long_c2` | `20.419 s` | `41.196 s` | `0.946` | `0.0295 s` |
 | `long_then_short` | `22.015 s` | `3.361 s` | `0.535` | `0.0171 s` |
+
+Narrow D512 split tile retune candidate, 2026-06-04:
+
+- Temporary vLLM change: increase the default D512 split sparse-MLA tile shape
+  from `head_block=16, value_block=64` to `head_block=32, value_block=128`.
+- Motivation: narrow mixed C128/SWA and SWA-only microbench sweeps on both RTX
+  PRO 6000 and GB10 showed the larger tile reducing split kernel time. This is
+  a tile retune for the already-selected D512 split path; it does not change
+  candidate selection or solve the remaining candidate/value-work problem.
+- RTX prefill attribution artifact:
+  `20260604_d512_hb32_bd128_prefill_gap/20260604160349`.
+- GB10 reduced long-C2 artifact:
+  `20260604_d512_hb32_bd128_gb10_reduced_longc2/20260604161203`.
+- RTX prefill/decode no-regression artifact:
+  `20260604_d512_hb32_bd128_prefill_decode_gate/20260604162305`.
+
+Focused correctness:
+
+- RTX: `tests/v1/attention/test_sparse_mla_indexed_d512.py -q`, `2 passed`.
+- GB10 head: same test, `2 passed`.
+
+Endpoint comparison against the current default-path low-instrumentation
+prefill attribution smoke:
+
+| Shape | Current default input tok/s | Retuned input tok/s | Delta | Current TTFT | Retuned TTFT | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 59K C=1 | `6915.78` | `7326.13` | `+5.9%` | `8.524 s` | `8.047 s` | `-5.6%` |
+| 59K C=2 | `6913.75` | `7332.96` | `+6.1%` | `14.926 s` | `14.073 s` | `-5.7%` |
+| 124K C=1 | `6223.34` | `6633.68` | `+6.6%` | `19.925 s` | `18.693 s` | `-6.2%` |
+| 124K C=2 | `6148.51` | `6550.45` | `+6.5%` | `35.289 s` | `33.130 s` | `-6.1%` |
+
+GB10 reduced long-C2 result with MTP=2:
+
+| Requests | Failures | Max TTFT | ITL p99 | Runtime notes |
+| ---: | ---: | ---: | ---: | --- |
+| `4` | `0` | `156.647 s` | `0.091 s` | no no-progress recurrence; running max `1`, waiting max `1`, preemptions `0`, KV max `33.89%` |
+
+RTX prefill/decode no-regression gate:
+
+| Check | Result |
+| --- | --- |
+| Gate status | `ok=true`, regression count `0` |
+| 59K C=2 decode min/max / ITL p99 | `0.911` / `0.0226 s` |
+| 124K C=2 decode min/max / ITL p99 | `0.915` / `0.0307 s` |
+| Decode-concurrency 124K C=2 decode min/max / ITL p99 | `0.996` / `0.0308 s` |
+| Mixed `long_long_c2` secondary ITL p99 | `0.0309 s` |
+| Mixed `decode_then_124k` secondary ITL p99 | `0.0294 s` |
+| Streaming pressure | `36/36` requests, failures `0`, ITL p99 `0.729 s` |
+
+Decision: keep this as a high-confidence Dev candidate, but do not promote it
+to the PR branch until the remaining promotion matrix passes: GSM8K limit-200,
+prefix disabled/enabled KV lifecycle, prefix-cache stress, short-context
+throughput, 8K/1K and 256/256 throughput, and the existing
+`FULL_AND_PIECEWISE` requirement. This candidate is a useful incremental D512
+retune, not the next main research direction. The next main optimization target
+remains reducing total sparse-MLA prefill candidate/value work.
 
 Interpretation: the current RTX PRO 6000 Dev head does not reproduce the old
 59K/124K C=2 fairness collapse. C=2 fairness should stay in the promotion
