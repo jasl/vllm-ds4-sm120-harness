@@ -6210,3 +6210,37 @@ Official FlashInfer 0.6.12 DS4 sparse-MLA API recheck, 2026-06-04:
 Decision: keep this API as a future decode-backend candidate, not a raw
 long-prefill replacement. It does not remove the need for the current D512
 prefill path, nor does it revive the rejected dense/grouped-SWA endpoint route.
+
+Fixed C=2 fairness recheck after harness gate tightening, 2026-06-04:
+
+- Artifact: `20260604_c2_fairness_after_gate_harness/20260604153956`.
+- Profile: current clean Dev vLLM `eac9e008a`, MTP=2, expert parallel enabled,
+  FP8 KV, prefix cache disabled, `FULL_AND_PIECEWISE`, 131K max model length,
+  `max_num_batched_tokens=4096`, `max_num_seqs=4`.
+- Harness: current `main` after the user-feedback matrix started running the
+  hard `prefill-decode-gate` against primary artifacts.
+- Result: all fairness phases exited `0`; runtime health reported zero CUDA,
+  NCCL, driver, engine, or serve-log error signals.
+
+| Shape | TTFT mean | TTFT max | Decode tok/s | Decode min/max | ITL p99 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 59K C=1 | `8.298 s` | `8.325 s` | `138.573` | `0.992` | `0.0216 s` |
+| 59K C=2 | `12.907 s` | `17.372 s` | `139.041` | `0.978` | `0.0226 s` |
+| 124K C=1 | `19.838 s` | `19.905 s` | `105.676` | `0.999` | `0.0293 s` |
+| 124K C=2 | `30.639 s` | `40.980 s` | `104.602` | `0.944` | `0.0316 s` |
+| Decode-concurrency 124K C=2 | `30.390 s` | `40.689 s` | `106.217` | `0.996` | `0.0310 s` |
+
+| Mixed-arrival case | Primary TTFT | Secondary TTFT | Decode min/max | Secondary ITL p99 |
+| --- | ---: | ---: | ---: | ---: |
+| `decode_then_59k` | `8.787 s` | `9.229 s` | `0.947` | `0.0222 s` |
+| `decode_then_124k` | `20.446 s` | `20.897 s` | `0.958` | `0.0297 s` |
+| `long_long_c2` | `20.419 s` | `41.196 s` | `0.946` | `0.0295 s` |
+| `long_then_short` | `22.015 s` | `3.361 s` | `0.535` | `0.0171 s` |
+
+Interpretation: the current RTX PRO 6000 Dev head does not reproduce the old
+59K/124K C=2 fairness collapse. C=2 fairness should stay in the promotion
+matrix as a no-regression gate, but it is not the next active tuning blocker
+on this host. The next active work should target raw long-prefill TTFT and the
+serialized long-prefill efficiency gap; if fairness regresses, first rerun this
+fixed protocol, then capture a narrow Nsys trace for the failing mixed-arrival
+case.
