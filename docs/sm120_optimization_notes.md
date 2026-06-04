@@ -5626,3 +5626,72 @@ iteration on another scheduler fairness sweep unless the fixed protocol
 regresses again. The remaining long-context performance work should move back
 to sparse-MLA prefill work reduction and trace-guided kernel changes, while
 C=2 fairness stays in the promotion matrix as a regression guard.
+
+## 2026-06-04 Raw Prefill Attribution And D512 Recheck
+
+After the current C=2 fairness recheck, a focused raw-prefill attribution pass
+was run on dual RTX PRO 6000 SM120 with MTP=2, expert parallel enabled, FP8 KV,
+prefix cache disabled, `FULL_AND_PIECEWISE`,
+`max_num_batched_tokens=4096`, and `max_num_seqs=4`. The goal was to decide
+whether issue 2 should keep chasing scheduler fairness or move back to
+sparse-MLA prefill work reduction.
+
+First, the default path was run with sparse-MLA stage timing and overlap
+sampling enabled:
+`20260604_prefill_gap_stats_c1c2_stage_overlap`. This is not an endpoint
+performance baseline because overlap sampling copies sampled indices to CPU,
+but it is useful for root-cause analysis. `sparse_accumulate` dominated the
+prefill path:
+
+| Input | Sparse rows | Candidate slots | Effective visits | Padding ratio | Stage total | Sparse accumulate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 59K | `10560` | `34.77B` | `19.61B` | `43.61%` | `87.96 s` | `99.60%` |
+| 124K | `21824` | `73.14B` | `51.52B` | `29.55%` | `228.16 s` | `99.63%` |
+
+Candidate overlap is high enough to justify grouped-candidate research, but the
+current kernels do not exploit it:
+
+| Input | Region | group 8 unique/valid | group 16 unique/valid | group 32 unique/valid |
+| --- | --- | ---: | ---: | ---: |
+| 59K | all | `0.221` | `0.137` | `0.0847` |
+| 59K | compressed | `0.254` | `0.162` | `0.102` |
+| 59K | SWA | `0.132` | `0.0700` | `0.0389` |
+| 124K | all | `0.210` | `0.131` | `0.0825` |
+| 124K | compressed | `0.232` | `0.148` | `0.0945` |
+| 124K | SWA | `0.132` | `0.0699` | `0.0389` |
+
+Then a fair endpoint comparison was run with stage timing enabled but overlap
+sampling disabled:
+
+- default path: `20260604_prefill_gap_stats_default_c1c2_stage_nooverlap`;
+- D512 split opt-in:
+  `VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL=1`,
+  `20260604_prefill_gap_stats_d512_c1c2_stage`.
+
+Both runs exited 0 and runtime summaries reported CUDA errors 0 and NCCL errors
+0.
+
+| Shape | Default input tok/s | D512 input tok/s | Input tok/s delta | Default TTFT | D512 TTFT | TTFT delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 59K C=1 | `4873.49` | `6796.20` | `+39.5%` | `12.098 s` | `8.674 s` | `-28.3%` |
+| 59K C=2 | `4838.49` | `6780.56` | `+40.1%` | `21.319 s` | `15.214 s` | `-28.6%` |
+| 124K C=1 | `4122.00` | `6172.22` | `+49.7%` | `30.081 s` | `20.090 s` | `-33.2%` |
+| 124K C=2 | `4078.61` | `6124.21` | `+50.1%` | `53.178 s` | `35.439 s` | `-33.4%` |
+
+Stage timing moved the same way:
+
+| Input | Default stage total | D512 stage total | Delta | Default sparse accumulate | D512 sparse accumulate |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 59K | `88.45 s` | `34.21 s` | `-61.3%` | `99.60%` | `98.98%` |
+| 124K | `229.64 s` | `73.54 s` | `-68.0%` | `99.63%` | `98.86%` |
+
+Interpretation: D512 is now the highest-confidence raw-prefill improvement
+candidate in the current tree. It substantially improves the fixed 59K/124K
+random-prefill attribution cases without changing candidate visits, so it is a
+kernel-structure improvement rather than a true grouped-candidate reuse
+solution. It still must pass the full promotion matrix before becoming a
+default or PR recommendation: 59K/124K C=1/C=2 latency, mixed arrival,
+decode-concurrency fairness, prefix/KV lifecycle, streaming pressure, story
+recall, GSM8K limit-200, short 256/8K throughput, and GB10 reduced long-C2.
+If that matrix passes, promote D512 first; keep grouped-candidate C128A as the
+next research direction for closing the remaining gap.
