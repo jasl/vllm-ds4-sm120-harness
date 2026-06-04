@@ -61,6 +61,7 @@ def _summarize_ms(samples_ms: list[float]) -> dict[str, float]:
 
 
 def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
+    run_range_swa = payload["run_range_swa_candidate"]
     lines = [
         "# SM12x indexed D512 split microbench",
         "",
@@ -72,23 +73,53 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         f"- head_block: `{payload['head_block']}`",
         f"- block_c / block_d: `{payload['block_c']} / {payload['block_d']}`",
         f"- index_pattern: `{payload['index_pattern']}`",
+        f"- run_range_swa_candidate: `{run_range_swa}`",
         f"- warmup / iterations: `{payload['warmup']} / {payload['iterations']}`",
         "",
-        (
-            "| candidates | partial ms | split total ms | partial speedup | "
-            "score ms | stats ms | value ms | max abs diff |"
-        ),
-        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
-    for row in payload["rows"]:
-        lines.append(
-            (
-                "| {num_candidates} | {partial_mean_ms:.3f} | "
-                "{split_total_mean_ms:.3f} | {partial_speedup:.3f}x | "
-                "{score_mean_ms:.3f} | {stats_mean_ms:.3f} | "
-                "{value_mean_ms:.3f} | {max_abs_diff:.6f} |"
-            ).format(**row)
+    if run_range_swa:
+        lines.extend(
+            [
+                (
+                    "| candidates | partial ms | split total ms | range-SWA total ms | "
+                    "split speedup | range speedup | split score ms | "
+                    "range score ms | split value ms | range value ms | "
+                    "split diff | range diff |"
+                ),
+                "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
         )
+    else:
+        lines.extend(
+            [
+                (
+                    "| candidates | partial ms | split total ms | partial speedup | "
+                    "score ms | stats ms | value ms | max abs diff |"
+                ),
+                "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+    for row in payload["rows"]:
+        if run_range_swa:
+            lines.append(
+                (
+                    "| {num_candidates} | {partial_mean_ms:.3f} | "
+                    "{split_total_mean_ms:.3f} | {range_total_mean_ms:.3f} | "
+                    "{partial_speedup:.3f}x | {range_speedup:.3f}x | "
+                    "{score_mean_ms:.3f} | {range_score_mean_ms:.3f} | "
+                    "{value_mean_ms:.3f} | {range_value_mean_ms:.3f} | "
+                    "{max_abs_diff:.6f} | {range_max_abs_diff:.6f} |"
+                ).format(**row)
+            )
+        else:
+            lines.append(
+                (
+                    "| {num_candidates} | {partial_mean_ms:.3f} | "
+                    "{split_total_mean_ms:.3f} | {partial_speedup:.3f}x | "
+                    "{score_mean_ms:.3f} | {stats_mean_ms:.3f} | "
+                    "{value_mean_ms:.3f} | {max_abs_diff:.6f} |"
+                ).format(**row)
+            )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -130,6 +161,14 @@ def _validate_mixed_c128_swa_index_shape(
     )
 
 
+def _validate_range_swa_candidate_pattern(index_pattern: str) -> None:
+    if index_pattern not in ("sliding-window", "mixed-c128-swa"):
+        raise ValueError(
+            "range-SWA candidate requires sliding-window or mixed-c128-swa "
+            f"index pattern; got {index_pattern}"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Benchmark an indexed split D=512 sparse MLA path."
@@ -151,6 +190,14 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--gpu-id", type=int, default=0)
     parser.add_argument(
+        "--run-range-swa-candidate",
+        action="store_true",
+        help=(
+            "Also benchmark a diagnostic range-SWA path that treats the SWA "
+            "tail as consecutive slots instead of reading its index table."
+        ),
+    )
+    parser.add_argument(
         "--index-pattern",
         choices=("per-token", "shared", "sliding-window", "mixed-c128-swa"),
         default="per-token",
@@ -171,6 +218,11 @@ def main() -> int:
         parser.error("--part-size must be positive")
     if args.warmup < 0 or args.iterations <= 0:
         parser.error("--warmup must be >= 0 and --iterations must be > 0")
+    if args.run_range_swa_candidate:
+        try:
+            _validate_range_swa_candidate_pattern(args.index_pattern)
+        except ValueError as exc:
+            parser.error(str(exc))
 
     import torch
     import triton
@@ -362,6 +414,165 @@ def main() -> int:
             mask=head_mask[:, None] & dim_mask[None, :],
         )
 
+    @triton.jit
+    def _range_swa_score_kernel(
+        q_ptr,
+        kv_ptr,
+        indices_ptr,
+        scores_ptr,
+        stride_q_t: tl.constexpr,
+        stride_q_h: tl.constexpr,
+        stride_q_d: tl.constexpr,
+        stride_kv_t,
+        stride_kv_d: tl.constexpr,
+        stride_indices_t: tl.constexpr,
+        stride_indices_c: tl.constexpr,
+        stride_s_t: tl.constexpr,
+        stride_s_h: tl.constexpr,
+        stride_s_c: tl.constexpr,
+        num_tokens: tl.constexpr,
+        num_heads: tl.constexpr,
+        num_candidates: tl.constexpr,
+        compressed_candidates: tl.constexpr,
+        scale: tl.constexpr,
+        HEAD_BLOCK: tl.constexpr,
+        BLOCK_C: tl.constexpr,
+        HEAD_DIM: tl.constexpr,
+    ):
+        token_idx = tl.program_id(0)
+        head_block_idx = tl.program_id(1)
+        candidate_block = tl.program_id(2)
+        head_offsets = head_block_idx * HEAD_BLOCK + tl.arange(0, HEAD_BLOCK)
+        candidate_offsets = candidate_block * BLOCK_C + tl.arange(0, BLOCK_C)
+        dim_offsets = tl.arange(0, HEAD_DIM)
+        head_mask = head_offsets < num_heads
+        candidate_mask = candidate_offsets < num_candidates
+        is_compressed = candidate_offsets < compressed_candidates
+
+        q = tl.load(
+            q_ptr
+            + token_idx * stride_q_t
+            + head_offsets[:, None] * stride_q_h
+            + dim_offsets[None, :] * stride_q_d,
+            mask=head_mask[:, None],
+            other=0.0,
+        )
+        compressed_kv_indices = tl.load(
+            indices_ptr
+            + token_idx * stride_indices_t
+            + candidate_offsets * stride_indices_c,
+            mask=candidate_mask & is_compressed,
+            other=0,
+        )
+        range_kv_indices = token_idx + candidate_offsets - compressed_candidates
+        kv_indices = tl.where(is_compressed, compressed_kv_indices, range_kv_indices)
+        kv = tl.load(
+            kv_ptr
+            + kv_indices[None, :].to(tl.int64) * stride_kv_t
+            + dim_offsets[:, None] * stride_kv_d,
+            mask=candidate_mask[None, :],
+            other=0.0,
+        )
+        scores = tl.dot(q, kv) * scale
+        tl.store(
+            scores_ptr
+            + token_idx * stride_s_t
+            + head_offsets[:, None] * stride_s_h
+            + candidate_offsets[None, :] * stride_s_c,
+            scores,
+            mask=head_mask[:, None] & candidate_mask[None, :],
+        )
+
+    @triton.jit
+    def _range_swa_value_kernel(
+        scores_ptr,
+        kv_ptr,
+        indices_ptr,
+        max_ptr,
+        denom_ptr,
+        out_ptr,
+        stride_s_t: tl.constexpr,
+        stride_s_h: tl.constexpr,
+        stride_s_c: tl.constexpr,
+        stride_kv_t,
+        stride_kv_d: tl.constexpr,
+        stride_indices_t: tl.constexpr,
+        stride_indices_c: tl.constexpr,
+        stride_state_t: tl.constexpr,
+        stride_state_h: tl.constexpr,
+        stride_out_t: tl.constexpr,
+        stride_out_h: tl.constexpr,
+        stride_out_d: tl.constexpr,
+        num_heads: tl.constexpr,
+        num_candidates: tl.constexpr,
+        compressed_candidates: tl.constexpr,
+        head_dim: tl.constexpr,
+        HEAD_BLOCK: tl.constexpr,
+        BLOCK_C: tl.constexpr,
+        BLOCK_D: tl.constexpr,
+    ):
+        token_idx = tl.program_id(0)
+        head_block_idx = tl.program_id(1)
+        dim_block = tl.program_id(2)
+        head_offsets = head_block_idx * HEAD_BLOCK + tl.arange(0, HEAD_BLOCK)
+        candidate_offsets = tl.arange(0, BLOCK_C)
+        dim_offsets = dim_block * BLOCK_D + tl.arange(0, BLOCK_D)
+        head_mask = head_offsets < num_heads
+        dim_mask = dim_offsets < head_dim
+        max_score = tl.load(
+            max_ptr + token_idx * stride_state_t + head_offsets * stride_state_h,
+            mask=head_mask,
+            other=0.0,
+        ).to(tl.float32)
+        denom = tl.load(
+            denom_ptr + token_idx * stride_state_t + head_offsets * stride_state_h,
+            mask=head_mask,
+            other=1.0,
+        ).to(tl.float32)
+        acc = tl.zeros((HEAD_BLOCK, BLOCK_D), tl.float32)
+
+        for candidate_start in range(0, num_candidates, BLOCK_C):
+            candidates = candidate_start + candidate_offsets
+            candidate_mask = candidates < num_candidates
+            is_compressed = candidates < compressed_candidates
+            compressed_kv_indices = tl.load(
+                indices_ptr
+                + token_idx * stride_indices_t
+                + candidates * stride_indices_c,
+                mask=candidate_mask & is_compressed,
+                other=0,
+            )
+            range_kv_indices = token_idx + candidates - compressed_candidates
+            kv_indices = tl.where(
+                is_compressed, compressed_kv_indices, range_kv_indices
+            )
+            scores = tl.load(
+                scores_ptr
+                + token_idx * stride_s_t
+                + head_offsets[:, None] * stride_s_h
+                + candidates[None, :] * stride_s_c,
+                mask=head_mask[:, None] & candidate_mask[None, :],
+                other=-float("inf"),
+            ).to(tl.float32)
+            weights = tl.exp(scores - max_score[:, None]) / denom[:, None]
+            values = tl.load(
+                kv_ptr
+                + kv_indices[:, None].to(tl.int64) * stride_kv_t
+                + dim_offsets[None, :] * stride_kv_d,
+                mask=candidate_mask[:, None] & dim_mask[None, :],
+                other=0.0,
+            )
+            acc += tl.dot(weights.to(tl.bfloat16), values)
+
+        tl.store(
+            out_ptr
+            + token_idx * stride_out_t
+            + head_offsets[:, None] * stride_out_h
+            + dim_offsets[None, :] * stride_out_d,
+            acc,
+            mask=head_mask[:, None] & dim_mask[None, :],
+        )
+
     from vllm.v1.attention.backends.mla.sparse_mla_kernels import (
         accumulate_indexed_sparse_mla_attention_partial_states,
         merge_sparse_mla_attention_states,
@@ -451,6 +662,7 @@ def main() -> int:
             device=device,
             dtype=torch.float32,
         )
+        range_scores = torch.empty_like(scores)
         split_max = torch.empty(args.num_tokens, args.num_heads, device=device, dtype=torch.float32)
         split_denom = torch.empty_like(split_max)
         split_out = torch.empty(
@@ -460,6 +672,9 @@ def main() -> int:
             device=device,
             dtype=torch.float32,
         )
+        range_max = torch.empty_like(split_max)
+        range_denom = torch.empty_like(split_denom)
+        range_out = torch.empty_like(split_out)
 
         num_parts = (
             (num_candidates + args.part_size - 1) // args.part_size
@@ -640,10 +855,94 @@ def main() -> int:
                 num_stages=3,
             )
 
+        range_compressed_candidates = (
+            args.compressed_candidates if args.index_pattern == "mixed-c128-swa" else 0
+        )
+
+        def run_range_score() -> None:
+            _range_swa_score_kernel[score_grid](
+                q,
+                kv_flat,
+                indices,
+                range_scores,
+                q.stride(0),
+                q.stride(1),
+                q.stride(2),
+                kv_flat.stride(0),
+                kv_flat.stride(1),
+                indices.stride(0),
+                indices.stride(1),
+                range_scores.stride(0),
+                range_scores.stride(1),
+                range_scores.stride(2),
+                args.num_tokens,
+                args.num_heads,
+                num_candidates,
+                range_compressed_candidates,
+                args.scale,
+                HEAD_BLOCK=args.head_block,
+                BLOCK_C=args.block_c,
+                HEAD_DIM=args.head_dim,
+                num_warps=8,
+                num_stages=3,
+            )
+
+        def run_range_stats() -> None:
+            _indexed_stats_kernel[stats_grid](
+                range_scores,
+                range_max,
+                range_denom,
+                range_scores.stride(0),
+                range_scores.stride(1),
+                range_scores.stride(2),
+                range_max.stride(0),
+                range_max.stride(1),
+                num_candidates,
+                BLOCK_C=stats_block_c,
+                num_warps=4,
+                num_stages=3,
+            )
+
+        def run_range_value() -> None:
+            _range_swa_value_kernel[value_grid](
+                range_scores,
+                kv_flat,
+                indices,
+                range_max,
+                range_denom,
+                range_out,
+                range_scores.stride(0),
+                range_scores.stride(1),
+                range_scores.stride(2),
+                kv_flat.stride(0),
+                kv_flat.stride(1),
+                indices.stride(0),
+                indices.stride(1),
+                range_max.stride(0),
+                range_max.stride(1),
+                range_out.stride(0),
+                range_out.stride(1),
+                range_out.stride(2),
+                args.num_heads,
+                num_candidates,
+                range_compressed_candidates,
+                args.head_dim,
+                HEAD_BLOCK=args.head_block,
+                BLOCK_C=args.block_c,
+                BLOCK_D=args.block_d,
+                num_warps=4,
+                num_stages=3,
+            )
+
         def run_split() -> None:
             run_score()
             run_stats()
             run_value()
+
+        def run_range_swa_candidate() -> None:
+            run_range_score()
+            run_range_stats()
+            run_range_value()
 
         def time_call(fn) -> float:
             torch.cuda.synchronize()
@@ -658,6 +957,8 @@ def main() -> int:
         for _ in range(args.warmup):
             run_partial()
             run_split()
+            if args.run_range_swa_candidate:
+                run_range_swa_candidate()
         torch.cuda.synchronize()
 
         partial_samples_ms: list[float] = []
@@ -665,6 +966,10 @@ def main() -> int:
         score_samples_ms: list[float] = []
         stats_samples_ms: list[float] = []
         value_samples_ms: list[float] = []
+        range_samples_ms: list[float] = []
+        range_score_samples_ms: list[float] = []
+        range_stats_samples_ms: list[float] = []
+        range_value_samples_ms: list[float] = []
         for _ in range(args.iterations):
             partial_samples_ms.append(time_call(run_partial))
             score_ms = time_call(run_score)
@@ -674,6 +979,16 @@ def main() -> int:
             stats_samples_ms.append(stats_ms)
             value_samples_ms.append(value_ms)
             split_samples_ms.append(score_ms + stats_ms + value_ms)
+            if args.run_range_swa_candidate:
+                range_score_ms = time_call(run_range_score)
+                range_stats_ms = time_call(run_range_stats)
+                range_value_ms = time_call(run_range_value)
+                range_score_samples_ms.append(range_score_ms)
+                range_stats_samples_ms.append(range_stats_ms)
+                range_value_samples_ms.append(range_value_ms)
+                range_samples_ms.append(
+                    range_score_ms + range_stats_ms + range_value_ms
+                )
 
         partial_out = partial_out_acc / partial_out_denom[:, :, None]
         diff = (partial_out - split_out).abs()
@@ -695,16 +1010,50 @@ def main() -> int:
             "max_abs_diff": float(diff.max().item()),
             "mean_abs_diff": float(diff.mean().item()),
         }
+        if args.run_range_swa_candidate:
+            range_diff = (partial_out - range_out).abs()
+            range_summary = _summarize_ms(range_samples_ms)
+            row.update(
+                {
+                    "range_total": range_summary,
+                    "range_score": _summarize_ms(range_score_samples_ms),
+                    "range_stats": _summarize_ms(range_stats_samples_ms),
+                    "range_value": _summarize_ms(range_value_samples_ms),
+                    "range_total_mean_ms": range_summary["mean_ms"],
+                    "range_score_mean_ms": statistics.fmean(
+                        range_score_samples_ms
+                    ),
+                    "range_stats_mean_ms": statistics.fmean(
+                        range_stats_samples_ms
+                    ),
+                    "range_value_mean_ms": statistics.fmean(
+                        range_value_samples_ms
+                    ),
+                    "range_speedup": partial_summary["mean_ms"]
+                    / range_summary["mean_ms"],
+                    "range_vs_split_speedup": split_summary["mean_ms"]
+                    / range_summary["mean_ms"],
+                    "range_max_abs_diff": float(range_diff.max().item()),
+                    "range_mean_abs_diff": float(range_diff.mean().item()),
+                }
+            )
         rows.append(row)
-        print(
+        message = (
             "candidates={num_candidates} partial={partial_mean_ms:.3f}ms "
             "split={split_total_mean_ms:.3f}ms "
             "partial_speedup={partial_speedup:.3f}x "
             "score={score_mean_ms:.3f} stats={stats_mean_ms:.3f} "
-            "value={value_mean_ms:.3f} max_diff={max_abs_diff:.6f}".format(
-                **row
-            )
+            "value={value_mean_ms:.3f} max_diff={max_abs_diff:.6f}".format(**row)
         )
+        if args.run_range_swa_candidate:
+            message += (
+                " range={range_total_mean_ms:.3f}ms "
+                "range_vs_split={range_vs_split_speedup:.3f}x "
+                "range_score={range_score_mean_ms:.3f} "
+                "range_value={range_value_mean_ms:.3f} "
+                "range_diff={range_max_abs_diff:.6f}".format(**row)
+            )
+        print(message)
 
     payload = {
         "device_name": torch.cuda.get_device_name(args.gpu_id),
@@ -721,7 +1070,9 @@ def main() -> int:
         "block_c": args.block_c,
         "block_d": args.block_d,
         "part_size": args.part_size,
+        "compressed_candidates": args.compressed_candidates,
         "index_pattern": args.index_pattern,
+        "run_range_swa_candidate": args.run_range_swa_candidate,
         "warmup": args.warmup,
         "iterations": args.iterations,
         "rows": rows,

@@ -68,5 +68,23 @@ def test_indexed_d512_microbench_exposes_sliding_window_pattern():
 
     assert 'choices=("per-token", "shared", "sliding-window", "mixed-c128-swa")' in script
     assert '--compressed-candidates' in script
+    assert '--run-range-swa-candidate' in script
     assert 'elif args.index_pattern == "sliding-window":' in script
     assert 'elif args.index_pattern == "mixed-c128-swa":' in script
+    assert 'def run_range_swa_candidate()' in script
+
+
+def test_range_swa_candidate_rejects_unstructured_index_patterns():
+    module = _load_microbench_module()
+
+    module._validate_range_swa_candidate_pattern("sliding-window")
+    module._validate_range_swa_candidate_pattern("mixed-c128-swa")
+
+    for index_pattern in ("per-token", "shared"):
+        try:
+            module._validate_range_swa_candidate_pattern(index_pattern)
+        except ValueError as exc:
+            assert "range-SWA" in str(exc)
+            assert index_pattern in str(exc)
+        else:
+            raise AssertionError("expected range-SWA validation to fail")
