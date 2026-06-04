@@ -196,6 +196,7 @@ for case_dir in case_dirs:
                 "row_count": sparse_summary.get("row_count", 0),
                 "candidate_work": sparse_summary.get("candidate_work", {}),
                 "stage_timings_ms": sparse_summary.get("stage_timings_ms", {}),
+                "stage_efficiency": sparse_summary.get("stage_efficiency", {}),
                 "candidate_overlap": sparse_summary.get("candidate_overlap", {}),
                 "groups": sparse_summary.get("groups", []),
             },
@@ -220,13 +221,14 @@ lines = [
     f"- OK: `{summary['ok']}`",
     f"- Variant: `{variant}`",
     "",
-    "| Case | OK | C | Input tok/s | Mean TTFT ms | P99 TTFT ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Stage total ms | Dominant stage | Accumulate ratio |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |",
+    "| Case | OK | C | Input tok/s | Mean TTFT ms | P99 TTFT ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Stage total ms | Dominant stage | Accumulate ratio | Sparse visits/s | Sparse ms/Mvisit |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |",
 ]
 for row in rows:
     sparse = row.get("sparse_mla", {})
     work = sparse.get("candidate_work", {})
     timings = sparse.get("stage_timings_ms", {})
+    efficiency = sparse.get("stage_efficiency", {})
     timing_stages = timings.get("stages", {}) if isinstance(timings, dict) else {}
     sparse_accumulate = (
         timing_stages.get("sparse_accumulate", {})
@@ -236,7 +238,7 @@ for row in rows:
     bench_rows = row.get("bench_rows") or [{}]
     for bench_row in bench_rows:
         lines.append(
-            "| {case} | {ok} | {concurrency} | {input_tps} | {mean_ttft} | {p99_ttft} | {sparse_rows} | {slots} | {effective} | {padding} | {stage_total} | {dominant_stage} | {accumulate_ratio} |".format(
+            "| {case} | {ok} | {concurrency} | {input_tps} | {mean_ttft} | {p99_ttft} | {sparse_rows} | {slots} | {effective} | {padding} | {stage_total} | {dominant_stage} | {accumulate_ratio} | {sparse_visits_per_s} | {sparse_ms_per_mvisit} |".format(
                 case=f"`{row['case']}`",
                 ok="yes" if row.get("ok") else "no",
                 concurrency=bench_row.get("concurrency", "n/a"),
@@ -255,6 +257,18 @@ for row in rows:
                 else "n/a",
                 accumulate_ratio=sparse_accumulate.get("ratio", "n/a")
                 if isinstance(sparse_accumulate, dict)
+                else "n/a",
+                sparse_visits_per_s=efficiency.get(
+                    "sparse_accumulate_effective_candidate_visits_per_s",
+                    "n/a",
+                )
+                if isinstance(efficiency, dict)
+                else "n/a",
+                sparse_ms_per_mvisit=efficiency.get(
+                    "sparse_accumulate_ms_per_million_effective_visits",
+                    "n/a",
+                )
+                if isinstance(efficiency, dict)
                 else "n/a",
             )
         )

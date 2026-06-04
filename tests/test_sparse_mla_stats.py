@@ -149,6 +149,15 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert timings["stages"]["combine_indices"]["total"] == 5.0
     assert timings["stages"]["sparse_accumulate"]["total"] == 22.0
     assert timings["dominant_stage"] == "sparse_accumulate"
+    efficiency = report["stage_efficiency"]
+    assert efficiency["effective_candidate_visits_per_s"] == 7199030.30303
+    assert efficiency["sparse_accumulate_effective_candidate_visits_per_s"] == (
+        10798545.454545
+    )
+    assert efficiency["sparse_accumulate_ms_per_million_effective_visits"] == (
+        92.605065
+    )
+    assert efficiency["candidate_slots_per_s"] == 11419151.515152
     overlap = report["candidate_overlap"]
     assert overlap["sample_rows"] == 8
     assert overlap["groups"]["2"]["groups"] == 4
@@ -165,6 +174,9 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert report["groups"][0]["stage_timings_ms"]["dominant_stage"] == (
         "sparse_accumulate"
     )
+    assert report["groups"][0]["stage_efficiency"][
+        "sparse_accumulate_effective_candidate_visits_per_s"
+    ] == 14043428.571429
     assert report["groups"][0]["candidate_overlap"]["groups"]["4"][
         "unique_to_valid_ratio"
     ] == 0.35

@@ -219,9 +219,12 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert "prefill_gap_attribution_summary.json" in script
     assert "prefill_gap_attribution_summary.md" in script
     assert '"stage_timings_ms": sparse_summary.get("stage_timings_ms", {})' in script
+    assert '"stage_efficiency": sparse_summary.get("stage_efficiency", {})' in script
     assert '"candidate_overlap": sparse_summary.get("candidate_overlap", {})' in script
     assert "Stage total ms" in script
     assert "Dominant stage" in script
+    assert "Sparse visits/s" in script
+    assert "Sparse ms/Mvisit" in script
     assert "--enable-expert-parallel" in script
     assert "FULL_AND_PIECEWISE" in script
 

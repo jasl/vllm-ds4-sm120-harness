@@ -182,6 +182,44 @@ def _summarize_stage_timings(rows: list[Json]) -> Json:
     }
 
 
+def _stage_total_ms(timings: Json, stage_name: str) -> float | None:
+    stages = timings.get("stages")
+    if not isinstance(stages, dict):
+        return None
+    stage = stages.get(stage_name)
+    if not isinstance(stage, dict):
+        return None
+    return _float_value(stage.get("total"))
+
+
+def _summarize_stage_efficiency(work: Json, timings: Json) -> Json:
+    effective = _int_value(work.get("effective_candidate_visits")) or 0
+    slots = _int_value(work.get("candidate_slots")) or 0
+    total_ms = _float_value(timings.get("total"))
+    sparse_ms = _stage_total_ms(timings, "sparse_accumulate")
+
+    def visits_per_s(visits: int, elapsed_ms: float | None) -> float | None:
+        if not visits or elapsed_ms is None or elapsed_ms <= 0:
+            return None
+        return _round_float(float(visits) / (elapsed_ms / 1000.0))
+
+    sparse_ms_per_million = None
+    if effective and sparse_ms is not None and sparse_ms > 0:
+        sparse_ms_per_million = _round_float(sparse_ms / (effective / 1_000_000.0))
+
+    return {
+        "effective_candidate_visits_per_s": visits_per_s(effective, total_ms),
+        "sparse_accumulate_effective_candidate_visits_per_s": visits_per_s(
+            effective,
+            sparse_ms,
+        ),
+        "sparse_accumulate_ms_per_million_effective_visits": (
+            sparse_ms_per_million
+        ),
+        "candidate_slots_per_s": visits_per_s(slots, total_ms),
+    }
+
+
 def _summarize_overlap_group_values(group_values: list[Json]) -> Json:
     groups = 0
     valid_candidates = 0
@@ -296,6 +334,7 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
                 "combined_lens_mean": work["combined_lens_mean"],
                 "combined_lens_max": work["combined_lens_max"],
                 "stage_timings_ms": timings,
+                "stage_efficiency": _summarize_stage_efficiency(work, timings),
                 "candidate_overlap": overlap,
                 "layer_prefixes": sorted(
                     {
@@ -336,6 +375,8 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
         for row in rows
         if (ratio := _str_key(row.get("compress_ratio"))) is not None
     )
+    work = _summarize_candidate_work(rows)
+    timings = _summarize_stage_timings(rows)
     return {
         "stats_path": stats_path.name,
         "row_count": len(rows),
@@ -345,8 +386,9 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
         "counts_by_cuda_device": dict(sorted(cuda_device_counts.items())),
         "counts_by_layer_type": dict(sorted(layer_type_counts.items())),
         "counts_by_compress_ratio": dict(sorted(ratio_counts.items())),
-        "candidate_work": _summarize_candidate_work(rows),
-        "stage_timings_ms": _summarize_stage_timings(rows),
+        "candidate_work": work,
+        "stage_timings_ms": timings,
+        "stage_efficiency": _summarize_stage_efficiency(work, timings),
         "candidate_overlap": _summarize_candidate_overlap(rows),
         "groups": _group_sparse_mla_stats(rows),
     }
@@ -421,6 +463,7 @@ def _candidate_overlap_rows(overlap: Any) -> list[tuple[str, str, Json]]:
 def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
     work = report.get("candidate_work", {})
     timings = report.get("stage_timings_ms", {})
+    efficiency = report.get("stage_efficiency", {})
     overlap = report.get("candidate_overlap", {})
     lines = [
         "# Sparse MLA Prefill Stats Report",
@@ -463,6 +506,15 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
             f"`{_format_number(timings.get('dominant_stage'))}`"
         ),
         f"- Stage timing breakdown: {_format_stage_breakdown(timings)}",
+        (
+            "- Effective visits/s total/sparse-accumulate: "
+            f"`{_format_number(efficiency.get('effective_candidate_visits_per_s'))}` / "
+            f"`{_format_number(efficiency.get('sparse_accumulate_effective_candidate_visits_per_s'))}`"
+        ),
+        (
+            "- Sparse accumulate ms per million effective visits: "
+            f"`{_format_number(efficiency.get('sparse_accumulate_ms_per_million_effective_visits'))}`"
+        ),
         "",
         "Only artifact file names and sanitized layer prefixes are reported.",
         "",
@@ -497,16 +549,17 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
             (
                 "| Layer type | Compress | Rows | Candidate slots | Effective visits | "
                 "Padding ratio | Lens mean | Lens max | Stage total ms | "
-                "Dominant stage | Prefixes |"
+                "Sparse visits/s | Dominant stage | Prefixes |"
             ),
             (
                 "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-                "--- | --- |"
+                "---: | --- | --- |"
             ),
         ]
     )
     for group in report.get("groups", []):
         group_timings = group.get("stage_timings_ms", {})
+        group_efficiency = group.get("stage_efficiency", {})
         lines.append(
             "| "
             f"`{group.get('layer_type', '')}` | "
@@ -518,12 +571,13 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
             f"`{_format_number(group.get('combined_lens_mean'))}` | "
             f"`{_format_number(group.get('combined_lens_max'))}` | "
             f"`{_format_number(group_timings.get('total'))}` | "
+            f"`{_format_number(group_efficiency.get('sparse_accumulate_effective_candidate_visits_per_s'))}` | "
             f"`{_format_number(group_timings.get('dominant_stage'))}` | "
             f"{_format_prefixes(group.get('layer_prefixes'))} |"
         )
     if not report.get("groups"):
         lines.append(
-            "| n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |"
+            "| n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |"
         )
 
     path.parent.mkdir(parents=True, exist_ok=True)
