@@ -371,6 +371,14 @@ reported four-card or 512K/1M shapes:
   `max_num_batched_tokens`, `max_num_seqs`, prefix-cache mode, sampler/all-reduce
   flags, and NCCL/network environment before treating a 20-40% delta as a vLLM
   kernel regression.
+- GB10 reduced long-C2 companion gate: for scheduler or sparse-MLA experiments
+  that could affect prefill/decode interaction, run
+  `scripts/run_sm12x_prefill_decode_promotion_gate.sh` with
+  `RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2=1`. The RTX prefill/decode gate still
+  runs first; the wrapper then executes `scripts/run_gb10_long_c2_reduced_gate.sh`
+  and records `gb10_long_c2_reduced_gate.exit_code` plus the GB10 summary
+  artifact in the same promotion directory. This is an opt-in hard gate for
+  GB10 availability/cadence only; it is not a 256K+/512K+/1M throughput claim.
 - TP=2 RTX PRO 6000 FlashInfer sparse-MLA comparison tracking from
   [vLLM PR #43477](https://github.com/vllm-project/vllm/pull/43477): run
   `bench_random_8000x1000` with `RANDOM_8K1K_INPUT_LEN=8000`,

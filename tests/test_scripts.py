@@ -1323,6 +1323,21 @@ def test_gb10_long_c2_reduced_gate_runs_nomtp_and_mtp2_variants():
     assert "20260601_gb10_longc2_guard_mtp2" in docs
 
 
+def test_prefill_decode_promotion_gate_can_run_gb10_reduced_long_c2_companion():
+    script = (
+        ROOT / "scripts" / "run_sm12x_prefill_decode_promotion_gate.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2="${RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2:-0}"' in script
+    assert 'SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR="${SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR:-${SM12X_PREFILL_DECODE_ROOT}/gb10_long_c2_reduced_gate}"' in script
+    assert 'run_gb10_long_c2_reduced_gate.sh' in script
+    assert 'gb10_long_c2_reduced_gate.exit_code' in script
+    assert 'gb10_long_c2_reduced_gate_summary.json' in script
+    assert 'gb10_long_c2_reduced_gate_exit_code' in script
+    assert 'gb10_long_c2_reduced_gate_dir' in script
+    assert "companion GB10 reduced long-C2 gate exit" in script
+
+
 def test_sparse_mla_accumulate_microbench_targets_indexed_kernel_shapes():
     script = (
         ROOT / "scripts" / "run_sparse_mla_accumulate_microbench.py"

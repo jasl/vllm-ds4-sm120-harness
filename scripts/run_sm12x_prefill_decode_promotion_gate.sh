@@ -52,6 +52,8 @@ PREFILL_DECODE_GATE_MIN_LONG_C2_DECODE_MIN_MAX_RATIO="${PREFILL_DECODE_GATE_MIN_
 PREFILL_DECODE_GATE_MAX_LONG_C2_ITL_P99_SECONDS="${PREFILL_DECODE_GATE_MAX_LONG_C2_ITL_P99_SECONDS:-1.0}"
 PREFILL_DECODE_GATE_MAX_MIXED_SECONDARY_ITL_P99_SECONDS="${PREFILL_DECODE_GATE_MAX_MIXED_SECONDARY_ITL_P99_SECONDS:-1.0}"
 PREFILL_DECODE_GATE_MAX_STREAMING_ITL_P99_SECONDS="${PREFILL_DECODE_GATE_MAX_STREAMING_ITL_P99_SECONDS:-2.0}"
+RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2="${RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2:-0}"
+SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR="${SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR:-${SM12X_PREFILL_DECODE_ROOT}/gb10_long_c2_reduced_gate}"
 
 case "${SM12X_PREFILL_DECODE_VARIANT}" in
   *","*|*" "*)
@@ -126,10 +128,27 @@ gate_code="$?"
 set -e
 printf '%s\n' "${gate_code}" > "${SM12X_PREFILL_DECODE_ROOT}/prefill_decode_regression_gate.exit_code"
 
+gb10_long_c2_code=""
+if [[ "${RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2}" == "1" || "${RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2}" == "true" ]]; then
+  mkdir -p "${SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR}"
+  set +e
+  env \
+    OUT_DIR="${SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR}" \
+    GB10_LONG_C2_LABEL="${GB10_LONG_C2_LABEL:-${SM12X_PREFILL_DECODE_LABEL}_gb10_long_c2}" \
+    "${SCRIPT_DIR}/run_gb10_long_c2_reduced_gate.sh" \
+    >"${SM12X_PREFILL_DECODE_ROOT}/gb10_long_c2_reduced_gate.stdout.log" \
+    2>"${SM12X_PREFILL_DECODE_ROOT}/gb10_long_c2_reduced_gate.stderr.log"
+  gb10_long_c2_code="$?"
+  set -e
+  printf '%s\n' "${gb10_long_c2_code}" > "${SM12X_PREFILL_DECODE_ROOT}/gb10_long_c2_reduced_gate.exit_code"
+fi
+
 SM12X_PREFILL_DECODE_ROOT="${SM12X_PREFILL_DECODE_ROOT}" \
 SM12X_PREFILL_DECODE_LABEL="${SM12X_PREFILL_DECODE_LABEL}" \
 SM12X_PREFILL_DECODE_BASELINE_DIR="${SM12X_PREFILL_DECODE_BASELINE_DIR}" \
 SM12X_PREFILL_DECODE_VARIANT="${SM12X_PREFILL_DECODE_VARIANT}" \
+RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2="${RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2}" \
+SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR="${SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR}" \
 "${PYTHON}" - <<'PYEOF'
 import json
 import os
@@ -154,6 +173,8 @@ root = Path(os.environ["SM12X_PREFILL_DECODE_ROOT"])
 label = os.environ["SM12X_PREFILL_DECODE_LABEL"]
 baseline_dir = Path(os.environ["SM12X_PREFILL_DECODE_BASELINE_DIR"])
 variant = os.environ["SM12X_PREFILL_DECODE_VARIANT"]
+gb10_dir = Path(os.environ["SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR"])
+gb10_enabled = os.environ["RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2"] in {"1", "true"}
 phase_rows = []
 for line in _read_text(baseline_dir / "phase_exit_codes.tsv").splitlines():
     if not line.strip():
@@ -196,6 +217,14 @@ payload = {
         name: str(path) for name, path in phase_artifacts.items()
     },
     "companion_gb10_gate": "scripts/run_gb10_long_c2_reduced_gate.sh",
+    "gb10_long_c2_reduced_gate_enabled": gb10_enabled,
+    "gb10_long_c2_reduced_gate_exit_code": _read_exit(
+        root / "gb10_long_c2_reduced_gate.exit_code"
+    ),
+    "gb10_long_c2_reduced_gate_dir": str(gb10_dir),
+    "gb10_long_c2_reduced_gate_summary_json": str(
+        gb10_dir / "gb10_long_c2_reduced_gate_summary.json"
+    ),
 }
 (root / "prefill_decode_promotion_gate_summary.json").write_text(
     json.dumps(payload, indent=2, sort_keys=True) + "\n",
@@ -216,6 +245,12 @@ lines = [
     f"`{payload['prefill_decode_regression_gate_markdown']}`",
     "- companion GB10 reduced long-C2 gate: "
     "`scripts/run_gb10_long_c2_reduced_gate.sh`",
+    "- companion GB10 reduced long-C2 gate enabled: "
+    f"`{payload['gb10_long_c2_reduced_gate_enabled']}`",
+    "- companion GB10 reduced long-C2 gate exit: "
+    f"`{payload['gb10_long_c2_reduced_gate_exit_code']}`",
+    "- companion GB10 reduced long-C2 gate dir: "
+    f"`{payload['gb10_long_c2_reduced_gate_dir']}`",
     "",
     "## Phase Exit Codes",
     "",
@@ -254,4 +289,10 @@ echo "wrote ${SM12X_PREFILL_DECODE_ROOT}"
 if [[ "${baseline_code}" != "0" ]]; then
   exit "${baseline_code}"
 fi
-exit "${gate_code}"
+if [[ "${gate_code}" != "0" ]]; then
+  exit "${gate_code}"
+fi
+if [[ -n "${gb10_long_c2_code}" && "${gb10_long_c2_code}" != "0" ]]; then
+  exit "${gb10_long_c2_code}"
+fi
+exit 0
