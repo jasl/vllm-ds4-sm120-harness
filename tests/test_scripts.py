@@ -1333,6 +1333,45 @@ def test_gb10_long_c2_reduced_gate_runs_nomtp_and_mtp2_variants():
     assert "20260601_gb10_longc2_guard_mtp2" in docs
 
 
+def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
+    script = (
+        ROOT / "scripts" / "run_gb10_prefill_gap_attribution.sh"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        "HEAD_HOST",
+        "WORKER_HOST",
+        "HEAD_ROCE_IP",
+        "WORKER_ROCE_IP",
+        "ROCE_IFACE",
+        "NCCL_IB_HCA",
+        "VLLM_ROOT",
+        "VLLM_VENV",
+    ):
+        assert required in script
+
+    assert 'GB10_PREFILL_GAP_VARIANTS="${GB10_PREFILL_GAP_VARIANTS:-mtp2}"' in script
+    assert 'GB10_PREFILL_GAP_INPUT_LENS="${GB10_PREFILL_GAP_INPUT_LENS:-58957,100000}"' in script
+    assert 'GB10_PREFILL_GAP_CONCURRENCY="${GB10_PREFILL_GAP_CONCURRENCY:-1,2}"' in script
+    assert 'GB10_PREFILL_GAP_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING:-1}"' in script
+    assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH="${remote_stats_dir}"' in script
+    assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING}"' in script
+    assert 'SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}"' in script
+    assert '"${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh"' in script
+    assert '"${REMOTE_HARNESS_ROOT}/scripts/run_random_prefill_sweep.sh"' in script
+    assert "fetch_remote_stats_dir" in script
+    assert "sparse-mla-stats-report" in script
+    assert "candidate_region_work" in script
+    assert "Compressed effective visits" in script
+    assert "SWA effective visits" in script
+    assert "gb10_prefill_gap_attribution_summary.json" in script
+    assert "gb10_prefill_gap_attribution_summary.md" in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert "10.0.0." not in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+
+
 def test_prefill_decode_promotion_gate_can_run_gb10_reduced_long_c2_companion():
     script = (
         ROOT / "scripts" / "run_sm12x_prefill_decode_promotion_gate.sh"
