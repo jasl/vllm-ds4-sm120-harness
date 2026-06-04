@@ -5915,7 +5915,11 @@ ptxas fatal   : Ptx assembly aborted due to errors
 Decision: do not wire the current official b12x compressed MLA API into the
 endpoint path. It is a large win over the older vLLM packed helper on RTX, but
 it is slower than the current D512 split+finish timing reference and still does
-not compile on the GB10 SM121 environment. Future b12x work should wait for a
-GB10-compatible public API or a stricter endpoint adapter that proves a real
-gain over the current D512 path under DS4 metadata, then rerun the full RTX and
-GB10 promotion gates.
+not compile on the GB10 SM121 environment. The upstream
+`FLASHINFER_MLA_SPARSE` backend is also not a direct replacement for this path:
+its current support check targets SM10x and its metadata contract is a single
+sparse top-k physical-slot table, not DeepSeek V4 Flash's split compressed +
+SWA metadata. Future b12x/FlashInfer work should wait for a GB10-compatible
+public API or a stricter endpoint adapter that proves a real gain over the
+current D512 path under DS4 metadata, then rerun the full RTX and GB10
+promotion gates.
