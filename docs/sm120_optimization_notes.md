@@ -5923,3 +5923,40 @@ SWA metadata. Future b12x/FlashInfer work should wait for a GB10-compatible
 public API or a stricter endpoint adapter that proves a real gain over the
 current D512 path under DS4 metadata, then rerun the full RTX and GB10
 promotion gates.
+
+D512 candidate-pattern microbench follow-up:
+
+- Harness commits:
+  `bf35ee7 Add sliding-window D512 microbench pattern` and
+  `b6f6701 Add mixed C128 SWA D512 microbench pattern`.
+- RTX artifact:
+  `20260604_d512_mixed_c128_swa_microbench/20260604140829`.
+- GB10 artifact:
+  `20260604_d512_mixed_c128_swa_microbench/20260604140904`.
+- Shape: 1024 query tokens, 64 heads, D=512, 1152 candidates,
+  `--compressed-candidates 128`. `mixed-c128-swa` models the real C128A
+  combined layout more closely than the earlier random microbench: 128
+  per-token compressed candidates followed by a 1024-candidate sliding SWA
+  tail.
+
+| Host | Pattern | Partial-state ms | D512 split ms | Score ms | Value ms |
+| --- | --- | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 | per-token | `9.208` | `3.520` | `1.626` | `1.697` |
+| RTX PRO 6000 | shared | `8.904` | `3.325` | `1.519` | `1.601` |
+| RTX PRO 6000 | sliding-window | `8.810` | `2.804` | `0.998` | `1.602` |
+| RTX PRO 6000 | mixed-c128-swa | `8.851` | `3.001` | `1.123` | `1.674` |
+| GB10 | per-token | `52.997` | `45.745` | `25.300` | `19.140` |
+| GB10 | shared | `40.831` | `21.451` | `7.853` | `12.273` |
+| GB10 | sliding-window | `40.669` | `22.068` | `8.479` | `12.271` |
+| GB10 | mixed-c128-swa | `41.746` | `26.110` | `10.481` | `14.307` |
+
+Interpretation: the earlier per-token-random D512 microbench is a worst-case
+diagnostic, not a faithful model of the C128A endpoint. Real C128A has a large
+sliding SWA tail, and the current D512 kernels already benefit from that
+structure through ordinary memory/cache behavior. The remaining structured
+SWA-specific opportunity is the gap from `mixed-c128-swa` to all-sliding or
+shared: roughly `7-11%` on RTX and `15-18%` on GB10 for this synthetic shape.
+That is worth a narrow follow-up, but it is not the full Reddit-style prefill
+gap. The next production prototype should only be attempted if it reduces
+candidate traffic or score/value workspace traffic for the real mixed
+C128/SWA layout; another random-candidate or launch-only sweep is not enough.
