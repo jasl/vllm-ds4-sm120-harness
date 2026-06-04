@@ -222,6 +222,9 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert '"stage_efficiency": sparse_summary.get("stage_efficiency", {})' in script
     assert '"candidate_overlap": sparse_summary.get("candidate_overlap", {})' in script
     assert '"candidate_region_work": sparse_summary.get("candidate_region_work", {})' in script
+    assert "All group16 unique/valid" in script
+    assert "Compressed group16 unique/valid" in script
+    assert "SWA group16 unique/valid" in script
     assert "Stage total ms" in script
     assert "Dominant stage" in script
     assert "Sparse visits/s" in script
@@ -1361,9 +1364,13 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     assert '"${REMOTE_HARNESS_ROOT}/scripts/run_random_prefill_sweep.sh"' in script
     assert "fetch_remote_stats_dir" in script
     assert "sparse-mla-stats-report" in script
+    assert '"candidate_overlap": sparse_summary.get("candidate_overlap", {})' in script
     assert "candidate_region_work" in script
     assert "Compressed effective visits" in script
     assert "SWA effective visits" in script
+    assert "All group16 unique/valid" in script
+    assert "Compressed group16 unique/valid" in script
+    assert "SWA group16 unique/valid" in script
     assert "gb10_prefill_gap_attribution_summary.json" in script
     assert "gb10_prefill_gap_attribution_summary.md" in script
     assert "FULL_AND_PIECEWISE" in script

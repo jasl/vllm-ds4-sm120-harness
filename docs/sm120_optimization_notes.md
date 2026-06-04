@@ -6788,3 +6788,28 @@ compressed-plus-SWA metadata contract and beats the current D512 path under the
 same promotion matrix. Official b12x compressed MLA remains blocked/rejected
 for this endpoint route until it is GB10-compatible and faster than current
 D512 on the same mixed metadata shape.
+
+Candidate-overlap attribution probe, 2026-06-04:
+
+- RTX artifact label: `20260604_overlap_probe_rtx/20260604234117`.
+- Profile: same Dev head and serve profile as the region-split attribution, but
+  `SM12X_PREFILL_GAP_STATS_OVERLAP_ROWS=16`, C=1 only, one prompt per length,
+  and stage timing disabled. Treat endpoint TTFT as diagnostic only because
+  overlap sampling copies sampled indices back to CPU and the first request
+  still logged inference-time JIT warnings.
+- Both 59K and 124K samples completed, and the service exited cleanly.
+
+| Input | All group16 unique/valid | Compressed group16 unique/valid | SWA group16 unique/valid | All group2 unique/valid | Compressed group2 unique/valid | SWA group2 unique/valid |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 59K | `0.130` | `0.152` | `0.070` | `0.589` | `0.619` | `0.504` |
+| 124K | `0.132` | `0.149` | `0.070` | `0.579` | `0.599` | `0.504` |
+
+Interpretation: adjacent query tokens reuse a large fraction of candidate KV,
+especially in the SWA region. This supports continued investigation of
+grouped/reuse algorithms, but it does **not** prove same-token exact dedup
+between compressed and SWA candidates. The current overlap metric groups
+sampled rows across adjacent query tokens. Therefore do not implement a
+compressed/SWA dedup path from this evidence alone. A useful next prototype
+must preserve exact semantics while reducing repeated score/value work across
+neighboring rows, or wait for a public FlashInfer/b12x backend that can express
+the DS4 mixed compressed-plus-SWA prefill metadata directly.

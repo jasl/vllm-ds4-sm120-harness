@@ -169,6 +169,23 @@ def _read_exit(path: Path) -> int:
         return 1
 
 
+def _overlap_ratio(sparse: dict[str, Any], region: str, group_size: str = "16") -> Any:
+    overlap = sparse.get("candidate_overlap", {})
+    if not isinstance(overlap, dict):
+        return "n/a"
+    if region == "all":
+        groups = overlap.get("groups", {})
+    else:
+        regions = overlap.get("regions", {})
+        groups = regions.get(region, {}) if isinstance(regions, dict) else {}
+    if not isinstance(groups, dict):
+        return "n/a"
+    values = groups.get(group_size)
+    if not isinstance(values, dict):
+        return "n/a"
+    return values.get("unique_to_valid_ratio", "n/a")
+
+
 rows = []
 for case_dir in case_dirs:
     bench_summary = _load_json(
@@ -222,8 +239,8 @@ lines = [
     f"- OK: `{summary['ok']}`",
     f"- Variant: `{variant}`",
     "",
-    "| Case | OK | C | Input tok/s | Mean TTFT ms | P99 TTFT ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Compressed effective visits | Compressed padding ratio | SWA effective visits | SWA padding ratio | Stage total ms | Dominant stage | Accumulate ratio | Sparse visits/s | Sparse ms/Mvisit |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |",
+    "| Case | OK | C | Input tok/s | Mean TTFT ms | P99 TTFT ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Compressed effective visits | Compressed padding ratio | SWA effective visits | SWA padding ratio | All group16 unique/valid | Compressed group16 unique/valid | SWA group16 unique/valid | Stage total ms | Dominant stage | Accumulate ratio | Sparse visits/s | Sparse ms/Mvisit |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |",
 ]
 for row in rows:
     sparse = row.get("sparse_mla", {})
@@ -244,7 +261,7 @@ for row in rows:
     bench_rows = row.get("bench_rows") or [{}]
     for bench_row in bench_rows:
         lines.append(
-            "| {case} | {ok} | {concurrency} | {input_tps} | {mean_ttft} | {p99_ttft} | {sparse_rows} | {slots} | {effective} | {padding} | {compressed_effective} | {compressed_padding} | {swa_effective} | {swa_padding} | {stage_total} | {dominant_stage} | {accumulate_ratio} | {sparse_visits_per_s} | {sparse_ms_per_mvisit} |".format(
+            "| {case} | {ok} | {concurrency} | {input_tps} | {mean_ttft} | {p99_ttft} | {sparse_rows} | {slots} | {effective} | {padding} | {compressed_effective} | {compressed_padding} | {swa_effective} | {swa_padding} | {overlap_all_g16} | {overlap_compressed_g16} | {overlap_swa_g16} | {stage_total} | {dominant_stage} | {accumulate_ratio} | {sparse_visits_per_s} | {sparse_ms_per_mvisit} |".format(
                 case=f"`{row['case']}`",
                 ok="yes" if row.get("ok") else "no",
                 concurrency=bench_row.get("concurrency", "n/a"),
@@ -269,6 +286,9 @@ for row in rows:
                 swa_padding=swa_work.get("padding_ratio", "n/a")
                 if isinstance(swa_work, dict)
                 else "n/a",
+                overlap_all_g16=_overlap_ratio(sparse, "all"),
+                overlap_compressed_g16=_overlap_ratio(sparse, "compressed"),
+                overlap_swa_g16=_overlap_ratio(sparse, "swa"),
                 stage_total=timings.get("total", "n/a")
                 if isinstance(timings, dict)
                 else "n/a",
