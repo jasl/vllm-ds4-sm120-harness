@@ -198,6 +198,7 @@ for case_dir in case_dirs:
                 "stage_timings_ms": sparse_summary.get("stage_timings_ms", {}),
                 "stage_efficiency": sparse_summary.get("stage_efficiency", {}),
                 "candidate_overlap": sparse_summary.get("candidate_overlap", {}),
+                "candidate_region_work": sparse_summary.get("candidate_region_work", {}),
                 "groups": sparse_summary.get("groups", []),
             },
         }
@@ -221,12 +222,17 @@ lines = [
     f"- OK: `{summary['ok']}`",
     f"- Variant: `{variant}`",
     "",
-    "| Case | OK | C | Input tok/s | Mean TTFT ms | P99 TTFT ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Stage total ms | Dominant stage | Accumulate ratio | Sparse visits/s | Sparse ms/Mvisit |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |",
+    "| Case | OK | C | Input tok/s | Mean TTFT ms | P99 TTFT ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Compressed effective visits | Compressed padding ratio | SWA effective visits | SWA padding ratio | Stage total ms | Dominant stage | Accumulate ratio | Sparse visits/s | Sparse ms/Mvisit |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |",
 ]
 for row in rows:
     sparse = row.get("sparse_mla", {})
     work = sparse.get("candidate_work", {})
+    region_work = sparse.get("candidate_region_work", {})
+    compressed_work = (
+        region_work.get("compressed", {}) if isinstance(region_work, dict) else {}
+    )
+    swa_work = region_work.get("swa", {}) if isinstance(region_work, dict) else {}
     timings = sparse.get("stage_timings_ms", {})
     efficiency = sparse.get("stage_efficiency", {})
     timing_stages = timings.get("stages", {}) if isinstance(timings, dict) else {}
@@ -238,7 +244,7 @@ for row in rows:
     bench_rows = row.get("bench_rows") or [{}]
     for bench_row in bench_rows:
         lines.append(
-            "| {case} | {ok} | {concurrency} | {input_tps} | {mean_ttft} | {p99_ttft} | {sparse_rows} | {slots} | {effective} | {padding} | {stage_total} | {dominant_stage} | {accumulate_ratio} | {sparse_visits_per_s} | {sparse_ms_per_mvisit} |".format(
+            "| {case} | {ok} | {concurrency} | {input_tps} | {mean_ttft} | {p99_ttft} | {sparse_rows} | {slots} | {effective} | {padding} | {compressed_effective} | {compressed_padding} | {swa_effective} | {swa_padding} | {stage_total} | {dominant_stage} | {accumulate_ratio} | {sparse_visits_per_s} | {sparse_ms_per_mvisit} |".format(
                 case=f"`{row['case']}`",
                 ok="yes" if row.get("ok") else "no",
                 concurrency=bench_row.get("concurrency", "n/a"),
@@ -249,6 +255,20 @@ for row in rows:
                 slots=work.get("candidate_slots", "n/a"),
                 effective=work.get("effective_candidate_visits", "n/a"),
                 padding=work.get("padding_ratio", "n/a"),
+                compressed_effective=compressed_work.get(
+                    "effective_candidate_visits", "n/a"
+                )
+                if isinstance(compressed_work, dict)
+                else "n/a",
+                compressed_padding=compressed_work.get("padding_ratio", "n/a")
+                if isinstance(compressed_work, dict)
+                else "n/a",
+                swa_effective=swa_work.get("effective_candidate_visits", "n/a")
+                if isinstance(swa_work, dict)
+                else "n/a",
+                swa_padding=swa_work.get("padding_ratio", "n/a")
+                if isinstance(swa_work, dict)
+                else "n/a",
                 stage_total=timings.get("total", "n/a")
                 if isinstance(timings, dict)
                 else "n/a",
