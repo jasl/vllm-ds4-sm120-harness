@@ -6657,6 +6657,12 @@ Sparse-MLA candidate-work efficiency reporting, 2026-06-04:
   effective candidate visits/s, sparse-accumulate effective candidate visits/s,
   candidate slots/s, and sparse-accumulate milliseconds per million effective
   visits.
+- The stats schema now also reports `candidate_region_work` for mixed
+  compressed/SWA prefill rows. The aggregate report shows compressed-region and
+  SWA-tail candidate slots, effective visits, padding visits, and padding
+  ratio separately. Use this to distinguish "too many C128 compressed
+  candidates" from "too much SWA tail/value traffic" before changing kernels;
+  it is an observation hook, not an inference-path optimization by itself.
 - Recomputed the report over the current tail-skip Dev-head RTX artifact label
   `20260604_d512_tail_block_skip_stage_nooverlap/20260604193841`; no vLLM code
   or new endpoint run was involved.

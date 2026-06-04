@@ -80,6 +80,20 @@ def _stats_row(**overrides):
                 },
             },
         },
+        "candidate_region_work": {
+            "compressed": {
+                "candidate_slots": 32768,
+                "effective_candidate_visits": 8192,
+                "padding_candidate_visits": 24576,
+                "padding_ratio": 0.75,
+            },
+            "swa": {
+                "candidate_slots": 262144,
+                "effective_candidate_visits": 188416,
+                "padding_candidate_visits": 73728,
+                "padding_ratio": 0.28125,
+            },
+        },
     }
     row.update(overrides)
     return row
@@ -168,6 +182,15 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert overlap["regions"]["compressed"]["2"]["unique_to_valid_ratio"] == 0.5
     assert overlap["regions"]["swa"]["2"]["valid_candidates"] == 24
     assert overlap["regions"]["swa"]["2"]["unique_to_valid_ratio"] == 0.666667
+    region_work = report["candidate_region_work"]
+    assert region_work["compressed"]["candidate_slots"] == 65536
+    assert region_work["compressed"]["effective_candidate_visits"] == 16384
+    assert region_work["compressed"]["padding_candidate_visits"] == 49152
+    assert region_work["compressed"]["padding_ratio"] == 0.75
+    assert region_work["swa"]["candidate_slots"] == 524288
+    assert region_work["swa"]["effective_candidate_visits"] == 376832
+    assert region_work["swa"]["padding_candidate_visits"] == 147456
+    assert region_work["swa"]["padding_ratio"] == 0.28125
     assert report["groups"][0]["layer_type"] == "mla_prefill_chunk"
     assert report["groups"][0]["padding_ratio"] == 0.333333
     assert report["groups"][0]["stage_timings_ms"]["total"] == 21.0
@@ -183,6 +206,9 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert report["groups"][0]["candidate_overlap"]["regions"]["compressed"]["2"][
         "unique_to_valid_ratio"
     ] == 0.5
+    assert report["groups"][0]["candidate_region_work"]["swa"][
+        "effective_candidate_visits"
+    ] == 188416
 
 
 def test_sparse_mla_stats_report_skips_invalid_lines_and_unknown_kinds(tmp_path):
@@ -221,6 +247,9 @@ def test_sparse_mla_stats_markdown_does_not_leak_absolute_paths(tmp_path):
     assert "# Sparse MLA Prefill Stats Report" in text
     assert "stats.jsonl" in text
     assert "## Candidate Overlap" in text
+    assert "## Candidate Region Work" in text
+    assert "| compressed | `32768` | `8192` | `24576` | `0.75` |" in text
+    assert "| swa | `262144` | `188416` | `73728` | `0.28125` |" in text
     assert "| all | 2 |" in text
     assert "| compressed | 2 |" in text
     assert "/home/private" not in text

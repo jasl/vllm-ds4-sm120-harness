@@ -152,6 +152,64 @@ def _summarize_candidate_work(rows: list[Json]) -> Json:
     }
 
 
+def _row_candidate_region_work(row: Json) -> dict[str, Json]:
+    work = row.get("candidate_region_work")
+    if not isinstance(work, dict):
+        return {}
+    regions: dict[str, Json] = {}
+    for region_name, values in work.items():
+        region_key = _str_key(region_name)
+        if region_key is None or not isinstance(values, dict):
+            continue
+        regions[region_key] = {
+            "candidate_slots": _int_value(values.get("candidate_slots")) or 0,
+            "effective_candidate_visits": (
+                _int_value(values.get("effective_candidate_visits")) or 0
+            ),
+            "padding_candidate_visits": (
+                _int_value(values.get("padding_candidate_visits")) or 0
+            ),
+        }
+    return regions
+
+
+def _summarize_candidate_region_work(rows: list[Json]) -> Json:
+    totals: dict[str, Json] = {}
+    for row in rows:
+        for region, values in _row_candidate_region_work(row).items():
+            region_totals = totals.setdefault(
+                region,
+                {
+                    "candidate_slots": 0,
+                    "effective_candidate_visits": 0,
+                    "padding_candidate_visits": 0,
+                },
+            )
+            region_totals["candidate_slots"] += int(values["candidate_slots"])
+            region_totals["effective_candidate_visits"] += int(
+                values["effective_candidate_visits"]
+            )
+            region_totals["padding_candidate_visits"] += int(
+                values["padding_candidate_visits"]
+            )
+
+    summary: Json = {}
+    for region, values in sorted(totals.items()):
+        candidate_slots = int(values["candidate_slots"])
+        padding = int(values["padding_candidate_visits"])
+        summary[region] = {
+            "candidate_slots": candidate_slots,
+            "effective_candidate_visits": int(
+                values["effective_candidate_visits"]
+            ),
+            "padding_candidate_visits": padding,
+            "padding_ratio": _round_float(padding / candidate_slots)
+            if candidate_slots
+            else None,
+        }
+    return summary
+
+
 def _summarize_stage_timings(rows: list[Json]) -> Json:
     stage_totals: Counter[str] = Counter()
     for row in rows:
@@ -336,6 +394,9 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
                 "stage_timings_ms": timings,
                 "stage_efficiency": _summarize_stage_efficiency(work, timings),
                 "candidate_overlap": overlap,
+                "candidate_region_work": _summarize_candidate_region_work(
+                    group_rows
+                ),
                 "layer_prefixes": sorted(
                     {
                         _safe_prefix(row.get("layer_prefix"))
@@ -390,6 +451,7 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
         "stage_timings_ms": timings,
         "stage_efficiency": _summarize_stage_efficiency(work, timings),
         "candidate_overlap": _summarize_candidate_overlap(rows),
+        "candidate_region_work": _summarize_candidate_region_work(rows),
         "groups": _group_sparse_mla_stats(rows),
     }
 
@@ -460,11 +522,22 @@ def _candidate_overlap_rows(overlap: Any) -> list[tuple[str, str, Json]]:
     return rows
 
 
+def _candidate_region_work_rows(work: Any) -> list[tuple[str, Json]]:
+    if not isinstance(work, dict):
+        return []
+    return [
+        (str(region), values)
+        for region, values in sorted(work.items())
+        if isinstance(values, dict)
+    ]
+
+
 def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
     work = report.get("candidate_work", {})
     timings = report.get("stage_timings_ms", {})
     efficiency = report.get("stage_efficiency", {})
     overlap = report.get("candidate_overlap", {})
+    region_work = report.get("candidate_region_work", {})
     lines = [
         "# Sparse MLA Prefill Stats Report",
         "",
@@ -541,6 +614,30 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
         )
     if not overlap_rows:
         lines.append("| n/a | n/a | n/a | n/a | n/a | n/a |")
+    lines.extend(
+        [
+            "",
+            "## Candidate Region Work",
+            "",
+            (
+                "| Region | Candidate slots | Effective visits | "
+                "Padding visits | Padding ratio |"
+            ),
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    region_work_rows = _candidate_region_work_rows(region_work)
+    for region, values in region_work_rows:
+        lines.append(
+            "| "
+            f"{region} | "
+            f"`{_format_number(values.get('candidate_slots'))}` | "
+            f"`{_format_number(values.get('effective_candidate_visits'))}` | "
+            f"`{_format_number(values.get('padding_candidate_visits'))}` | "
+            f"`{_format_number(values.get('padding_ratio'))}` |"
+        )
+    if not region_work_rows:
+        lines.append("| n/a | n/a | n/a | n/a | n/a |")
     lines.extend(
         [
             "",
