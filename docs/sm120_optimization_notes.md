@@ -6362,6 +6362,41 @@ signature alignment above. This rebase does not change the next optimization
 target: reduce total sparse-MLA prefill candidate/value work rather than adding
 another launch-only or chunk-size-only experiment.
 
+Post-rebase default-D512 raw-prefill attribution:
+
+- Artifact:
+  `20260604_rebased_d512_stage_timing/20260604184259`.
+- Profile: current rebased Dev head, default D512 path, MTP=2, expert parallel
+  enabled, FP8 KV, prefix cache disabled, `FULL_AND_PIECEWISE`,
+  `max_num_batched_tokens=4096`, `max_num_seqs=4`, with stage timing and
+  overlap sampling enabled.
+- Result: the attribution run exited successfully for 59K and 124K, C=1/2/3/4.
+
+| Shape | Input tok/s | Mean TTFT | P99 TTFT | Stage total | Sparse accumulate |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 59K C=1 | `3811.05` | `15.469 s` | `15.545 s` | `51.512 s` | `98.64%` |
+| 59K C=2 | `3785.97` | `27.241 s` | `31.205 s` | `51.512 s` | `98.64%` |
+| 59K C=3 | `3744.49` | `35.479 s` | `47.245 s` | `51.512 s` | `98.64%` |
+| 59K C=4 | `3744.49` | `39.391 s` | `62.509 s` | `51.512 s` | `98.64%` |
+| 124K C=1 | `3293.49` | `37.649 s` | `37.752 s` | `106.388 s` | `98.42%` |
+| 124K C=2 | `3271.12` | `66.314 s` | `75.864 s` | `106.388 s` | `98.42%` |
+| 124K C=3 | `3241.41` | `86.227 s` | `114.935 s` | `106.388 s` | `98.42%` |
+| 124K C=4 | `3251.39` | `95.374 s` | `151.403 s` | `106.388 s` | `98.42%` |
+
+The run intentionally enabled overlap sampling, so these endpoint latencies are
+diagnostic rather than comparable to the low-instrumentation promotion numbers.
+They are still useful for root-cause direction: `combine_indices`,
+`gather_compressed_kv`, and `gather_swa_kv` each stayed below `1%` of the
+timed sparse-MLA path. The remaining cost is inside sparse accumulate. At
+124K, the C128A chunk group contributed `48.183B` effective visits and
+`49.743 s` stage time, while the C4A chunk group contributed `51.568B`
+effective visits and `39.684 s` stage time. This reinforces the current
+direction: do not advance C128-compressed-only, gather-only, or launch-only
+work. The next useful candidate must reduce total sparse-MLA prefill
+candidate/value work across the mixed C128A plus C4A/SWA shape, or use a public
+backend that matches that metadata contract and beats the current D512 path
+under the same DS4 workload.
+
 Interpretation: the current RTX PRO 6000 Dev head does not reproduce the old
 59K/124K C=2 fairness collapse. C=2 fairness should stay in the promotion
 matrix as a no-regression gate, but it is not the next active tuning blocker
