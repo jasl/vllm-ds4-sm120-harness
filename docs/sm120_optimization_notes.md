@@ -6694,3 +6694,32 @@ experiments should use this efficiency metric to separate "less work" from
 "slower work shape". A promotion-worthy candidate needs to reduce real C128/SWA
 candidate/value work or improve the accumulator's effective visits/s without
 regressing the fixed promotion matrix.
+
+GB10 reduced sparse-efficiency follow-up, 2026-06-04:
+
+- Artifact label:
+  `20260604_tail_skip_current_sparse_efficiency_reduced_retry/20260604222952`.
+- Profile: two-node GB10 / SM121, TP=2, PP=1, EP enabled, MTP=2, FP8 KV,
+  prefix cache disabled, `FULL_AND_PIECEWISE`, `max_model_len=131072`,
+  `max_num_seqs=2`, `max_num_batched_tokens=4096`, stats overlap disabled and
+  stage timing enabled.
+- All four reduced cases completed and the serve was cleanly stopped. This did
+  not reproduce the earlier GB10 high-SM/no-token-progress failure. The first
+  59K C=1 request had cold JIT warnings, so endpoint TTFT from this artifact
+  should be treated as diagnostic rather than sales-quality benchmark data.
+
+| Shape | Bench result | Mean TTFT | P99 TTFT | Effective visits | Sparse visits/s | Sparse ms/Mvisit |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 59K C=1 | `1/1` | `44.197 s` | `44.197 s` | `2.451B` | `0.161B/s` | `6.226 ms` |
+| 59K C=2 | `2/2` | `62.300 s` | `82.525 s` | `4.902B` | `0.160B/s` | `6.252 ms` |
+| 100K C=1 | `1/1` | `78.099 s` | `78.099 s` | `4.820B` | `0.172B/s` | `5.809 ms` |
+| 100K C=2 | `2/2` | `112.246 s` | `148.732 s` | `9.639B` | `0.172B/s` | `5.811 ms` |
+
+Interpretation: on this current GB10 profile, C=2 doubles effective sparse
+candidate work and preserves roughly the same sparse-accumulate work rate, so
+the long-tail latency is primarily more work plus single-stream tail behavior,
+not an immediate per-visit throughput collapse. However, GB10's effective
+sparse accumulate rate is only about `0.16-0.17B` visits/s, roughly `5-6x`
+below the same current tail-skip path on RTX PRO 6000. This reinforces that GB10
+is not just a smaller RTX: the next GB10-relevant raw-prefill work should reduce
+candidate/value traffic and dependency depth, not only retune RTX tile shapes.
