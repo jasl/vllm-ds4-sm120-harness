@@ -6552,3 +6552,38 @@ kernel already gets enough cache reuse from the sliding-window pattern that a
 simple group2 sparse/banded value kernel does not reduce endpoint-relevant cost.
 Do not promote this grouped-SWA value route unless a later design reduces actual
 SWA candidate visits or uses a stronger public sliding-window backend.
+
+Rejected D512 `head_block=64` value-traffic route, 2026-06-04:
+
+- No vLLM code change was made. The existing
+  `scripts/run_sm12x_indexed_d512_split_microbench.py` was used to test whether
+  widening the D512 split head grouping from the promoted
+  `head_block=32, block_c=64, block_d=128` shape could reduce repeated MQA KV
+  value loads.
+- RTX PRO 6000 artifacts:
+  `artifacts/local_rtx_d512_headblock64_probe/20260604214450_hb32`,
+  `artifacts/local_rtx_d512_headblock64_probe/20260604214510_hb64_bc32_bd128`,
+  `artifacts/local_rtx_d512_headblock64_probe/20260604214639_mixed640_hb32`,
+  and
+  `artifacts/local_rtx_d512_headblock64_probe/20260604214639_mixed640_hb64_bc32`.
+- GB10 artifacts:
+  `artifacts/local_gb10_d512_headblock64_probe/20260604214531_hb32`,
+  `artifacts/local_gb10_d512_headblock64_probe/20260604214531_hb64_bc32_bd128`,
+  `artifacts/local_gb10_d512_headblock64_probe/20260604214640_mixed640_hb32`,
+  and
+  `artifacts/local_gb10_d512_headblock64_probe/20260604214640_mixed640_hb64_bc32`.
+
+| Host | Shape | Current hb32/bc64/bd128 | hb64/bc32/bd128 | Decision |
+| --- | --- | ---: | ---: | --- |
+| RTX PRO 6000 | mixed `128 compressed + 1024 SWA` | `2.000 ms` | `1.971 ms` | noise-level positive |
+| GB10 | mixed `128 compressed + 1024 SWA` | `32.976 ms` | `35.447 ms` | reject |
+| RTX PRO 6000 | mixed `128 compressed + 512 SWA` | `1.277 ms` | `1.223 ms` | small positive |
+| GB10 | mixed `128 compressed + 512 SWA` | `19.557 ms` | `22.750 ms` | reject |
+
+The `hb64/bc64` shape also exceeded RTX shared-memory limits
+(`Required: 131072, Hardware limit: 101376`). Reducing `block_c` to 32 makes it
+compile and can lower the value sub-stage, but it raises or destabilizes the
+score sub-stage on the realistic mixed C128/SWA patterns. Because GB10 regresses
+on both mixed shapes, do not promote a `head_block=64` D512 route. The remaining
+exact kernel direction still needs a different way to reduce actual candidate
+visits or value traffic, not a simple head grouping retune.
