@@ -4151,6 +4151,24 @@ Rejected prefill-SWA precompute as a standalone current-path optimization,
   wrapper/direct-paged sparse-MLA backend. The next kernel work should focus on
   the sparse-MLA attention backend itself, not on the cheap combine step.
 
+Rejected same-row SWA/compressed candidate deduplication by semantics,
+2026-06-04:
+
+- Follow-up question: could we reduce sparse-MLA prefill candidate visits by
+  deleting duplicate entries between the compressed top-k part and the SWA tail
+  after `combine_topk_swa_indices()`?
+- Code inspection says no. The combine kernel intentionally writes
+  `[compressed, SWA]` into separate regions of the gathered KV workspace:
+  compressed candidates use local offsets below `N`, while SWA candidates use
+  `N + ...` offsets into the exact SWA gathered region. Even if both regions
+  cover related source-token positions, they are different model KV
+  representations and must both be visible to attention.
+- This is therefore not a safe work-reduction transform. Removing cross-region
+  "duplicates" would change model semantics rather than just trimming redundant
+  candidate visits. Keep future work focused on grouped-query reuse, a true
+  direct-paged DS4 sparse-MLA backend, or a kernel design that reduces live
+  state/dependency depth without dropping candidate semantics.
+
 Rejected public-b12x unified sparse-MLA extend as the missing prefill backend,
 2026-06-02:
 
