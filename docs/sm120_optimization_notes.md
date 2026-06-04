@@ -6903,3 +6903,24 @@ Rejected SWA-only D512 selector route, 2026-06-05:
   Future SWA work must reduce actual SWA candidate/value traffic or use a
   backend designed for the sliding-window contract, not only swap the current
   accumulate helper.
+
+Promotion/research checkpoint, 2026-06-05:
+
+- PR-branch-ready work is the D512 sparse-MLA prefill stack plus the supporting
+  scheduling, workspace warmup, prefix/KV lifecycle, and correctness fixes that
+  already passed promotion gates. Treat this as the current defensible customer
+  baseline for the dual RTX PRO 6000 and reduced GB10 envelopes.
+- Dev-only work remains narrower: the D512 empty-tail skip optimization and
+  sparse MLA candidate-region attribution. Empty-tail skip has small endpoint
+  gains but must keep GSM8K limit-200 and the promotion matrix green before it
+  is pushed as PR-branch behavior. Candidate-region reporting is diagnostic
+  infrastructure, not a claimed performance optimization.
+- Current research direction is no longer generic D512 selector/tile/chunk
+  sweeping. The next promotion-worthy sparse-MLA experiment must reduce real
+  candidate/value work, live state, dependency depth, or use a public backend
+  that directly matches the DS4 mixed compressed-plus-SWA metadata contract and
+  beats the current D512 path on the same workload.
+- Promotion gate remains fixed: GSM8K limit-200, FULL_AND_PIECEWISE,
+  prefix/KV lifecycle, short throughput, 59K/124K C=1/C=2,
+  mixed-arrival/prefill-decode fairness, streaming pressure, and GB10 reduced
+  long-C2.
