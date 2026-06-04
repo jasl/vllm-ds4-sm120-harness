@@ -6438,6 +6438,82 @@ width; it must either keep a stable favorable tile shape while skipping work
 inside the kernel, or reduce real score/value traffic through a different
 algorithm.
 
+D512 empty-tail block skip experiment, 2026-06-04:
+
+- Temporary vLLM experiment: keep the externally visible D512 split sparse-MLA
+  candidate width stable, but skip score/value work inside the Triton kernels
+  when a candidate block is beyond the per-token active `combined_lens` width.
+  This is the narrower version of the rejected active-width clipping idea:
+  preserve the good padded tile shape and avoid only fully empty tail blocks.
+- RTX attribution artifact:
+  `20260604_d512_tail_block_skip_stage_nooverlap/20260604193841`.
+- RTX prefill/decode gate artifact:
+  `20260604_d512_tail_block_skip_prefill_decode_gate/20260604194542`.
+- GB10 reduced long-C2 artifact:
+  `20260604_d512_tail_block_skip_gb10_reduced_longc2/20260604200520`.
+- RTX prefix/KV artifact:
+  `20260604_d512_tail_block_skip_prefix_kv_gate/20260604204023`.
+- RTX GSM repeat artifact:
+  `20260604_d512_tail_block_skip_gsm8k_repeat/20260604203655`.
+- RTX throughput artifact:
+  `20260604_d512_tail_block_skip_throughput_gate/20260604205049`.
+- RTX reduced random artifact:
+  `20260604_d512_tail_block_skip_reduced_random_gate/20260604211704`.
+
+Endpoint comparison against the promoted D512 retune:
+
+| Shape | Retuned input tok/s | Tail-skip input tok/s | Delta | Retuned TTFT | Tail-skip TTFT | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 59K C=1 | `7326.13` | `7505.67` | `+2.5%` | `8.047 s` | `7.855 s` | `-2.4%` |
+| 59K C=2 | `7332.96` | `7532.03` | `+2.7%` | `14.073 s` | `13.703 s` | `-2.6%` |
+| 124K C=1 | `6633.68` | `6741.88` | `+1.6%` | `18.693 s` | `18.392 s` | `-1.6%` |
+| 124K C=2 | `6550.45` | `6706.33` | `+3.1%` | `33.130 s` | `32.369 s` | `-2.3%` |
+
+RTX prefill/decode no-regression gate:
+
+| Check | Result |
+| --- | --- |
+| Gate status | `ok=true`, regression count `0` |
+| 59K C=2 decode min/max / ITL p99 | `0.955` / `0.0231 s` |
+| 124K C=2 decode min/max / ITL p99 | `0.954` / `0.0320 s` |
+| Decode-concurrency 124K C=2 decode min/max / ITL p99 | `0.959` / `0.0318 s` |
+| Mixed `long_long_c2` secondary ITL p99 | `0.0305 s` |
+| Mixed `decode_then_124k` secondary ITL p99 | `0.0305 s` |
+| Streaming pressure | `36/36` requests, failures `0`, ITL p99 `0.722 s` |
+
+GB10 reduced long-C2 result with MTP=2:
+
+| Requests | Failures | Max TTFT | ITL p99 | Runtime notes |
+| ---: | ---: | ---: | ---: | --- |
+| `4` | `0` | `152.664 s` | `0.097 s` | no no-progress recurrence; running max `1`, waiting max `1`, preemptions `0`, KV max `32.21%` |
+
+Correctness, prefix-cache, and throughput promotion slice:
+
+| Gate | Result |
+| --- | --- |
+| Focused RTX sparse-MLA tests | `tests/v1/attention/test_sparse_mla_indexed_d512.py -q`: `2 passed`; ruff passed |
+| Focused GB10 sparse-MLA tests | same test on GB10 head: `2 passed` |
+| GSM8K limit-200 first run | flexible EM `0.945`, strict EM `0.915`; strict was below the `0.925` floor, so treated as a blocker pending repeat |
+| GSM8K limit-200 repeat | flexible EM `0.965`, strict EM `0.935`; repeat passed |
+| Prefix-cache stress filler 100/400/800/1600/3200 | all `ok=true`, failures `0` |
+| Prefix disabled KV lifecycle | `ok=true`, final idle KV `0.000%` |
+| Prefix enabled KV lifecycle | `ok=true`, final idle KV `5.843%`, below threshold `90.000%` |
+| Short HF/MT-Bench C=1/2/4/8/16/24 | `172.19 / 272.72 / 406.74 / 573.23 / 779.25 / 881.01 tok/s`, failures `0` |
+| Reduced random 8K/1K C=1/4/16/24 | `125.40 / 256.43 / 354.09 / 408.19 tok/s`, failures `0` |
+| Reduced random 256/256 C=1/4/16/24 | `147.51 / 351.36 / 652.35 / 881.84 tok/s`, failures `0` |
+
+Operational note: aborting an unrelated full 8K/1K follow-on bench left a GPU
+busy with no process, and `sudo -n nvidia-smi --gpu-reset -i 1` restored the
+host without reboot. This was caused by manual interruption of the promotion
+script, not by the tail-skip kernel path; subsequent GSM, prefix/KV, throughput,
+and reduced random gates completed with both GPUs returning to idle.
+
+Decision: keep this change in Dev. The improvement is small but real for the
+128K-focused cold-prefill endpoint shape, it preserves the stable padded D512
+tile shape, and the promotion gates above did not show a repeatable regression.
+Because the first GSM run produced a strict-score outlier, keep GSM8K limit-200
+as a hard promotion gate before pushing this path to the PR branch.
+
 Interpretation: the current RTX PRO 6000 Dev head does not reproduce the old
 59K/124K C=2 fairness collapse. C=2 fairness should stay in the promotion
 matrix as a no-regression gate, but it is not the next active tuning blocker
