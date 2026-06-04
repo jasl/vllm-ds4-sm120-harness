@@ -6141,6 +6141,46 @@ Future C128/SWA work should avoid dense SWA band materialization; if it
 continues, it needs a sparse/banded value algorithm or a way to reduce actual
 SWA candidate visits, not just regroup the same visits.
 
+FlashInfer SM120 FMHAv2 SWA-tail proxy, 2026-06-04:
+
+- RTX standard single-prefill proxy artifact:
+  `20260604_flashinfer_swa_prefill_proxy_ninja/20260604152359`.
+- GB10 standard single-prefill proxy artifact:
+  `20260604_flashinfer_swa_prefill_proxy_ninja/20260604152400`.
+- RTX TRTLLM FMHAv2 proxy artifact:
+  `20260604_trtllm_fmha_swa_proxy/20260604152507`.
+- GB10 TRTLLM FMHAv2 proxy artifact:
+  `20260604_trtllm_fmha_swa_proxy/20260604152508`.
+- Environment note: FlashInfer D=512 JIT required `ninja` on `PATH`; the
+  experiment venvs now have a visible `ninja` executable.
+
+Results:
+
+- `flashinfer.single_prefill_with_kv_cache` works for smaller D=128 MQA/GQA
+  smokes, but D=512 MQA/GQA fails on both RTX and GB10 with:
+  `Invalid configuration : NUM_MMA_Q=1 NUM_MMA_D_QK=32 NUM_MMA_D_VO=32
+  NUM_MMA_KV=1 NUM_WARPS_Q=4 NUM_WARPS_KV=1`.
+- `trtllm_fmha_v2_prefill` with `SEPARATE_Q_K_V` supports D=512 MQA causal
+  prefill on both devices:
+
+| Host | Shape | Mask | Mean |
+| --- | --- | --- | ---: |
+| RTX PRO 6000 | `1024 x 64 x 512`, KV heads `1` | causal | `0.162 ms` |
+| GB10 | `1024 x 64 x 512`, KV heads `1` | causal | `1.348 ms` |
+
+- The same API rejects both `sliding_window` and `chunked` masks on SM120/SM121:
+  `Sliding window attention is not yet supported for FMHAv2 on SM120
+  (Blackwell). Only CAUSAL masks are available.`
+
+Interpretation: TRTLLM FMHAv2 proves there is a much faster D=512 MQA causal
+path on both SM120 and SM121, but the current public FlashInfer API cannot
+express DS4's SWA/sliding window correctly. Do not wire this into the endpoint
+as an approximation; it would attend to extra historical tokens unless the
+query chunking degenerates into too many tiny launches. Keep this as a future
+route only if FlashInfer exposes SM120 sliding-window/chunked FMHAv2 support or
+if a correctness-preserving state-difference algorithm can be proven against
+the current D512 SWA-tail output.
+
 Official FlashInfer 0.6.12 DS4 sparse-MLA API recheck, 2026-06-04:
 
 - Both RTX PRO 6000 and GB10 environments currently import
