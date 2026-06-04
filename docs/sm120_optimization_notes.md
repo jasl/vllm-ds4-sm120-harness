@@ -6648,3 +6648,40 @@ score/stats/value algorithm. Future native-kernel candidates need to change the
 amount of real work, the data representation, or the dependency structure;
 otherwise wait for a public DS4 direct-paged sparse-MLA backend that matches the
 current SWA+compressed metadata contract.
+
+Sparse-MLA candidate-work efficiency reporting, 2026-06-04:
+
+- Harness commit `fa6dcbc` adds `stage_efficiency` to
+  `sparse-mla-stats-report` and surfaces it in
+  `run_sm12x_prefill_gap_attribution.sh`. The new fields report total
+  effective candidate visits/s, sparse-accumulate effective candidate visits/s,
+  candidate slots/s, and sparse-accumulate milliseconds per million effective
+  visits.
+- Recomputed the report over the existing D512 default RTX artifact label
+  `20260604_d512_default_stage_timing_rtx/20260604132616`; no vLLM code or new
+  endpoint run was involved.
+
+| Shape | Effective visits | Padding ratio | Stage total | Sparse accumulate ratio | Sparse visits/s | Sparse ms/Mvisit |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 59K C=1-4 attribution | `19.609B` | `43.61%` | `34.005 s` | `98.97%` | `0.583B/s` | `1.716 ms` |
+| 124K C=1-4 attribution | `51.524B` | `29.55%` | `73.335 s` | `98.86%` | `0.711B/s` | `1.407 ms` |
+
+Per-group efficiency from the same report:
+
+| Shape | Group | Effective visits | Padding ratio | Stage total | Sparse visits/s |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 59K | C128 chunk | `6.562B` | `67.55%` | `15.026 s` | `0.442B/s` |
+| 59K | C4 chunk | `11.797B` | `0.00%` | `12.753 s` | `0.935B/s` |
+| 59K | SWA-only chunk | `0.362B` | `0.11%` | `2.018 s` | `0.180B/s` |
+| 124K | C128 chunk | `24.091B` | `45.50%` | `36.355 s` | `0.671B/s` |
+| 124K | C4 chunk | `25.784B` | `0.00%` | `28.458 s` | `0.918B/s` |
+| 124K | SWA-only chunk | `0.761B` | `0.05%` | `4.276 s` | `0.179B/s` |
+
+Interpretation: the endpoint stage timing is still almost entirely sparse
+accumulate work. C4 chunk layers sustain about `0.9B` effective visits/s, while
+C128 chunk layers are lower and carry substantial padding. However, the active
+width clipping experiment already showed that reducing padded width alone can
+make D512 kernel shapes worse. Future experiments should use this efficiency
+metric to separate "less work" from "slower work shape"; a promotion-worthy
+candidate needs to reduce real C128/SWA candidate/value work or improve the
+accumulator's effective visits/s without regressing the fixed promotion matrix.
