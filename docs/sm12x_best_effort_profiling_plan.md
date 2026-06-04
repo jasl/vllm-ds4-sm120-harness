@@ -396,26 +396,28 @@ artifact to debug.
 
 ## Current Best-Effort Recommendation
 
-- **RTX PRO 6000 / SM120:** use the current Dev branch with partial-state
-  sparse MLA plus the pending-decode guard as the single-instance baseline.
-  The supported optimization target remains edge-style C=1/C=2/C=4, FP8 KV,
-  expert parallel, MTP=2, prefix cache disabled by default, and
-  `FULL_AND_PIECEWISE` enabled. This profile is healthy for C=1 and fixes the
-  short-after-long decode starvation tail. Treat simultaneous 59K/124K C=2 as
-  the next performance blocker, not as a solved SLA.
+- **RTX PRO 6000 / SM120:** use the current Dev branch with indexed D512 split
+  sparse MLA prefill as the single-instance baseline. The supported
+  optimization target remains edge-style C=1/C=2/C=4, FP8 KV, expert parallel,
+  MTP=2, prefix cache disabled by default, `max_num_batched_tokens=4096`, and
+  `FULL_AND_PIECEWISE` enabled. The latest fixed-protocol C=2 repeat is healthy
+  enough to demote fairness back to a no-regression gate. Do not reopen
+  scheduler-only tuning unless the promotion gate regresses.
 - **GB10 / SM121:** use the same workload names, but keep GB10 as a
   stability/capacity target until long-C=2 sparse MLA behavior is fixed. The
   conservative 100K-class profile is `max_num_seqs=1` for concurrent long
   prefill pressure; it preserves availability and token cadence at the cost of
   queueing one request. MTP=2 is allowed only after startup, short deterministic
   generation, KV lifecycle, and bounded 128K-class smoke pass in the same boot.
-- **Next retained experiment:** target simultaneous long+long C=2 first.
-  Collect the C=2 fairness + interference protocol, then NCU the
-  multi-prefill sparse-MLA accumulate window. Keep the acceptance table split
-  into long-context TTFT, long+long C=2 fairness, staggered mixed-arrival ITL,
-  short C=1/C=2/C=4, GSM8K, prefix/KV lifecycle, and driver health. Reject any
-  candidate that improves `long_then_short` by hurting long+long C=2, or that
-  relies on a hidden user knob.
+- **Next retained experiment:** target raw long-prefill sparse-MLA accumulate,
+  not another scheduler or chunk-size sweep. A candidate must reduce effective
+  candidate visits, score/value workspace traffic, live state, dependency depth,
+  or integrate a public FlashInfer/b12x path that matches the real DS4 prefill
+  metadata. Keep the acceptance table split into long-context TTFT,
+  long+long C=2 fairness, staggered mixed-arrival ITL, short C=1/C=2/C=4,
+  GSM8K, prefix/KV lifecycle, GB10 reduced long-C2 availability, and driver
+  health. Reject any candidate that improves one interference shape by hurting
+  another, or that relies on a hidden user knob.
 
 ## Promotion Rules
 
