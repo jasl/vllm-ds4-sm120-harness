@@ -5558,3 +5558,34 @@ Validation:
 The full 1K-output proxy was also started with the fix and reached 256 chat
 requests plus target JIT coverage with zero workspace assertions before it was
 stopped to avoid spending a long run generating 256 x 1024 output tokens.
+
+## 2026-06-04 Current C=2 Fairness Recheck
+
+After adding the hard prefill/decode promotion gate, the current clean Dev
+state was rechecked with the fixed RTX PRO 6000 C=2 fairness/interference
+protocol, MTP=2, expert parallel enabled, prefix cache disabled,
+`FULL_AND_PIECEWISE`, `max_num_batched_tokens=4096`, `max_num_seqs=4`, and no
+D512 opt-in:
+`20260604_c2_fairness_current_clean_repeat/20260604091628`.
+
+All protocol phases exited 0. The old long+long C=2 decode-fairness collapse
+did not reproduce in this run:
+
+| Phase | Shape | TTFT mean | TTFT max | Decode min/max | ITL p99 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| latency | 59K C=2 | 18.087 s | 24.436 s | 0.924 | 0.0225 s |
+| latency | 124K C=2 | 45.769 s | 61.235 s | 0.946 | 0.0308 s |
+| decode-concurrency | 124K C=2 | 45.671 s | n/a | 1.000 | 0.0308 s |
+| mixed-arrival | long_long_c2 primary | 30.530 s | n/a | n/a | 0.0306 s |
+| mixed-arrival | long_long_c2 secondary | 61.235 s | n/a | n/a | 0.0293 s |
+
+Runtime summaries reported error signals 0 and CUDA/NCCL/driver/engine errors
+0 across latency, decode-concurrency, and mixed-arrival. GPU monitoring showed
+the run was not a light-load false positive: mixed-arrival averaged 99.46% GPU
+utilization with up to 98.74% memory used.
+
+Decision: keep the new prefill/decode hard gate, but do not spend the next
+iteration on another scheduler fairness sweep unless the fixed protocol
+regresses again. The remaining long-context performance work should move back
+to sparse-MLA prefill work reduction and trace-guided kernel changes, while
+C=2 fairness stays in the promotion matrix as a regression guard.
