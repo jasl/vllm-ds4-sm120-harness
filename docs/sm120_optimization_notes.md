@@ -6521,3 +6521,34 @@ on this host. The next active work should target raw long-prefill TTFT and the
 serialized long-prefill efficiency gap; if fairness regresses, first rerun this
 fixed protocol, then capture a narrow Nsys trace for the failing mixed-arrival
 case.
+
+Rejected grouped banded-SWA value microbench, 2026-06-04:
+
+- Temporary harness script:
+  `scripts/run_sm12x_grouped_swa_banded_value_microbench.py`; removed after this
+  measurement because it was only a route probe.
+- Motivation: test whether adjacent query tokens could share the sliding-SWA KV
+  union in the D512 value stage without dense band materialization. The candidate
+  grouped two adjacent tokens and loaded the union of `C + 1` SWA KV rows once,
+  comparing against the current per-token D512 value stage on the same random
+  scores and max-score inputs.
+- RTX PRO 6000 artifacts:
+  `artifacts/local_rtx_grouped_swa_banded_value/20260604214036` and
+  `artifacts/local_rtx_grouped_swa_banded_value/20260604214113`.
+- GB10 artifacts:
+  `artifacts/local_gb10_grouped_swa_banded_value/20260604214054` and
+  `artifacts/local_gb10_grouped_swa_banded_value/20260604214113`.
+
+| Host | Shape | group2 head8 | group2 head16 |
+| --- | --- | ---: | ---: |
+| RTX PRO 6000 | `1024 tokens x 1024 SWA` | `0.915x` | `0.998x` |
+| RTX PRO 6000 | `2048 tokens x 1024 SWA` | `0.915x` | `1.002x` |
+| GB10 | `1024 tokens x 1024 SWA` | `0.992x` | `1.006x` |
+| GB10 | `2048 tokens x 1024 SWA` | `0.993x` | `0.996x` |
+
+Correctness parity was fine (`max_abs_diff` about `1e-5`), but the speedup is
+noise-level or negative on both SM120 and SM121. The current per-token D512 value
+kernel already gets enough cache reuse from the sliding-window pattern that a
+simple group2 sparse/banded value kernel does not reduce endpoint-relevant cost.
+Do not promote this grouped-SWA value route unless a later design reduces actual
+SWA candidate visits or uses a stronger public sliding-window backend.
