@@ -6836,3 +6836,38 @@ Direction reset after the b12x and D512 decomposition rechecks, 2026-06-04:
   mixed-arrival/prefill-decode fairness, streaming pressure, and GB10 reduced
   long-C2 must stay green before any new sparse-MLA route is enabled by
   default or pushed as PR-branch behavior.
+
+Rejected BF16 D512 score-workspace route, 2026-06-05:
+
+- Hypothesis: the current indexed D512 split path materializes FP32 scores and
+  reads that score workspace again in the stats and value stages. A BF16 score
+  workspace might reduce score-workspace traffic and improve the realistic
+  mixed `128 compressed + 1024 SWA` D512 split path without changing candidate
+  semantics.
+- Harness support kept: `scripts/run_sm12x_indexed_d512_split_microbench.py`
+  now supports `--score-dtype float32|bfloat16` and reports
+  `score_workspace_mib`, so future score-workspace experiments can be measured
+  without touching production vLLM code.
+- Isolated microbench signal was positive. RTX PRO 6000 artifact
+  `artifacts/local_rtx_d512_score_dtype_probe/20260604235843_*` improved the
+  mixed C128/SWA split total from `2.003 ms` to `1.656 ms`; GB10 artifact
+  `artifacts/local_gb10_d512_score_dtype_probe/20260604235912_*` improved from
+  `17.506 ms` to `13.471 ms`. BF16 score workspace raised max output diff to
+  roughly `0.004-0.005`, which was acceptable for a probe but still requires
+  endpoint correctness gates before promotion.
+- Endpoint signal did not materialize. The temporary vLLM change used BF16 only
+  for the D512 score workspace while keeping max/denom/acc in FP32. RTX
+  endpoint attribution artifact
+  `20260605_bf16_score_workspace_rtx_probe/20260605000405` was essentially
+  flat versus the current D512 reference: 59K C=1 `7415.97 tok/s` and
+  `7.948 s` TTFT versus prior `7458.19 tok/s` and `7.904 s`; 124K C=1
+  `6790.80 tok/s` and `18.255 s` versus prior `6735.47 tok/s` and `18.408 s`.
+  The true C=2 follow-up
+  `20260605_bf16_score_workspace_rtx_c2_probe/20260605000852` was also flat:
+  59K C=2 `7434.68 tok/s`, `11.974 s` mean TTFT; 124K C=2
+  `6763.02 tok/s`, `27.638 s` mean TTFT.
+- Decision: reject and remove the vLLM production/test change. Keep only the
+  harness microbench dtype probe and this rejected note. The positive isolated
+  score-workspace signal is not enough without endpoint TTFT/input-token
+  improvement, and the extra BF16 numerical drift is not worth carrying as a
+  default path.
