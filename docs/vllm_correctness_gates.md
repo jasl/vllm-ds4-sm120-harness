@@ -212,6 +212,17 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   primary baseline artifacts and includes the result in
   `user_feedback_matrix_summary.md/json`, so a normal refresh cannot silently
   pass while the prefill/decode gate fails.
+- Sparse-MLA raw-prefill candidate rule: before promoting a kernel/backend
+  experiment, run the sparse attribution path and explain whether the change
+  reduces real candidate/value work, improves effective sparse visits/s, or
+  only reshuffles launches and temporary workspaces. The current blocked routes
+  are standalone C128 grouped-compressed prefill and official b12x compressed
+  MLA as a direct endpoint backend: both remain development notes until a
+  public backend can express the DS4 mixed compressed-plus-SWA prefill metadata
+  and beat the current D512 path on the same workload. Any revived grouped or
+  b12x route must still pass GSM8K limit-200, FULL_AND_PIECEWISE, prefix/KV
+  lifecycle, short throughput, 59K/124K C=1/C=2, mixed-arrival fairness,
+  streaming pressure, and the GB10 reduced long-C2 companion gate.
 - Mixed-arrival Nsight Systems trace: when a scheduler or sparse-MLA kernel
   change targets prefill/decode interference, run
   `scripts/run_mixed_arrival_nsys_profile_launch.sh` with one case spec at a

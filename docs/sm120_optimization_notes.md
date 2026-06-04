@@ -6813,3 +6813,26 @@ compressed/SWA dedup path from this evidence alone. A useful next prototype
 must preserve exact semantics while reducing repeated score/value work across
 neighboring rows, or wait for a public FlashInfer/b12x backend that can express
 the DS4 mixed compressed-plus-SWA prefill metadata directly.
+
+Direction reset after the b12x and D512 decomposition rechecks, 2026-06-04:
+
+- Official b12x compressed MLA is not a current endpoint backend candidate.
+  The visible public route does not match the real DS4 long-prefill mixed
+  compressed-plus-SWA metadata shape, and the same-work synthetic comparisons
+  did not beat the current D512 split+finish path.
+- Standalone C128 grouped-compressed prefill should not be promoted to a vLLM
+  endpoint implementation. The component decomposition showed that the real
+  C128A rows are closer to `128` compressed candidates plus a large SWA tail,
+  so compressed-prefix reuse alone does not attack enough of the endpoint
+  cost.
+- The next raw-prefill experiment should reduce total sparse-MLA candidate or
+  value work across the mixed C128/C4/SWA layout, cut live state or dependency
+  depth, or use a public backend that directly supports the same DS4 metadata
+  and beats the current D512 path. Simple chunk-size, tile-size, launch-split,
+  C128-compressed-only, or gather-only experiments are rejected unless they
+  demonstrably change that work model.
+- Promotion remains evidence-driven: GSM8K limit-200, FULL_AND_PIECEWISE,
+  prefix/KV lifecycle, short throughput, 59K/124K C=1/C=2,
+  mixed-arrival/prefill-decode fairness, streaming pressure, and GB10 reduced
+  long-C2 must stay green before any new sparse-MLA route is enabled by
+  default or pushed as PR-branch behavior.

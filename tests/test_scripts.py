@@ -1454,6 +1454,20 @@ def test_vllm_correctness_gate_docs_include_sm120_refresh_watchlist():
     assert "four-card" in docs
 
 
+def test_vllm_correctness_gate_docs_record_sparse_mla_raw_prefill_guardrails():
+    docs = (ROOT / "docs" / "vllm_correctness_gates.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Sparse-MLA raw-prefill candidate rule" in docs
+    assert "reduces real candidate/value work" in docs
+    assert "standalone C128 grouped-compressed prefill" in docs
+    assert "official b12x compressed" in docs
+    assert "MLA as a direct endpoint backend" in docs
+    assert "DS4 mixed compressed-plus-SWA prefill metadata" in docs
+    assert "GB10 reduced long-C2 companion gate" in docs
+
+
 def test_acceptance_script_writes_human_markdown_smoke_reports():
     script = (ROOT / "scripts" / "run_acceptance.sh").read_text(encoding="utf-8")
 
