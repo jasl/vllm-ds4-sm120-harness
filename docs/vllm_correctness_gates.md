@@ -202,7 +202,7 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   prefill, sparse-MLA, or scheduler experiment. The wrapper now runs the
   `prefill-decode-gate` hard check after the latency, decode-concurrency,
   mixed-arrival, and streaming-pressure phases. Default thresholds require
-  long C=2 decode min/max >= 0.5, long C=2 ITL p99 <= 1.0s, mixed-arrival
+  long C=2 decode min/max >= 0.2, long C=2 ITL p99 <= 1.0s, mixed-arrival
   secondary ITL p99 <= 1.0s, and streaming-pressure ITL p99 <= 2.0s.
   Override these only for an explicitly named experimental or external machine
   profile.

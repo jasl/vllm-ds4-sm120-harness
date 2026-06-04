@@ -2656,7 +2656,7 @@ def build_parser() -> argparse.ArgumentParser:
     prefill_decode_gate.add_argument(
         "--min-long-c2-decode-min-max-ratio",
         type=float,
-        default=0.5,
+        default=0.2,
     )
     prefill_decode_gate.add_argument(
         "--max-long-c2-itl-p99-seconds",

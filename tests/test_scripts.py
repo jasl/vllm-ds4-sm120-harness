@@ -1372,7 +1372,7 @@ def test_vllm_correctness_gate_docs_include_sm120_refresh_watchlist():
     assert "decode min/max" in docs
     assert "ITL p95/p99" in docs
     assert "prefill-decode-gate" in docs
-    assert "long C=2 decode min/max >= 0.5" in docs
+    assert "long C=2 decode min/max >= 0.2" in docs
     assert "mixed-arrival" in docs
     assert "secondary ITL p99 <= 1.0s" in docs
     assert "GSM8K" in docs

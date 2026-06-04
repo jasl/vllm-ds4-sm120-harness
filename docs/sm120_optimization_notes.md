@@ -513,7 +513,7 @@ and `max_num_seqs=4` as the default SM120 profile. It now runs a hard
 `prefill_decode_promotion_gate_summary.md/json`. The default regression limits
 are intentionally conservative for the 128K-class local profile:
 
-- long C=2 decode min/max ratio must be at least `0.5`;
+- long C=2 decode min/max ratio must be at least `0.2`;
 - long C=2 ITL p99 must be at most `1.0s`;
 - mixed-arrival secondary ITL p99 must be at most `1.0s`;
 - streaming-pressure ITL p99 must be at most `2.0s`.

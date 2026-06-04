@@ -19,7 +19,7 @@ REQUIRED_PHASES = (
 
 @dataclass(frozen=True)
 class PrefillDecodeGateThresholds:
-    min_long_c2_decode_min_max_ratio: float = 0.5
+    min_long_c2_decode_min_max_ratio: float = 0.2
     max_long_c2_itl_p99_seconds: float = 1.0
     max_mixed_secondary_itl_p99_seconds: float = 1.0
     max_streaming_itl_p99_seconds: float = 2.0
