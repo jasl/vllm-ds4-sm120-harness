@@ -6605,3 +6605,46 @@ score sub-stage on the realistic mixed C128/SWA patterns. Because GB10 regresses
 on both mixed shapes, do not promote a `head_block=64` D512 route. The remaining
 exact kernel direction still needs a different way to reduce actual candidate
 visits or value traffic, not a simple head grouping retune.
+
+Rejected D512 split score/value tile retune sweep, 2026-06-04:
+
+- No vLLM code change was made. The same
+  `scripts/run_sm12x_indexed_d512_split_microbench.py` route tested whether the
+  promoted `head_block=32, block_c=64, block_d=128` D512 split shape could be
+  improved by changing candidate or value tile sizes while keeping the same
+  algorithm.
+- RTX PRO 6000 artifacts:
+  `artifacts/local_rtx_d512_tile_shape_probe/20260604215856` and
+  `artifacts/local_rtx_d512_tile_shape_probe/20260604215951_remaining`.
+- GB10 artifacts:
+  `artifacts/local_gb10_d512_tile_shape_probe/20260604215856` and
+  `artifacts/local_gb10_d512_tile_shape_probe/20260604215951_remaining`.
+
+Representative results for the realistic mixed `128 compressed + 1024 SWA`
+shape (`1024` query tokens, `64` heads, `1152` candidates):
+
+| Host | Tile shape | Total | Score | Stats | Value | Decision |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| RTX PRO 6000 | `hb32/bc64/bd128` | `2.000 ms` | `0.834` | `0.203` | `0.963` | current best |
+| RTX PRO 6000 | `hb32/bc32/bd128` | `2.271 ms` | `1.063` | `0.211` | `0.996` | slower score |
+| RTX PRO 6000 | `hb16/bc64/bd128` | `2.440 ms` | `1.118` | `0.204` | `1.119` | slower |
+| RTX PRO 6000 | `hb32/bc64/bd64` | `2.765 ms` | `0.835` | `0.203` | `1.726` | slower value |
+| GB10 | `hb32/bc64/bd128` | `17.510 ms` | `8.769` | `1.338` | `7.404` | current best |
+| GB10 | `hb32/bc32/bd128` | `22.428 ms` | `13.461` | `1.319` | `7.648` | slower score |
+| GB10 | `hb16/bc64/bd128` | `20.206 ms` | `10.364` | `1.324` | `8.518` | slower |
+| GB10 | `hb32/bc64/bd64` | `23.296 ms` | `8.869` | `1.328` | `13.098` | slower value |
+
+The C4-like `640`-candidate per-token shape tells the same story. On RTX,
+`hb32/bc64/bd128` was `1.702 ms`; `hb16/bc64/bd128` was `1.732 ms`,
+`hb32/bc64/bd64` was `2.100 ms`, and `hb8/bc64/bd128` was `2.215 ms`. On GB10,
+`hb32/bc64/bd128` was `17.333 ms`; `hb16/bc64/bd128` was `24.912 ms`,
+`hb32/bc64/bd64` was `19.806 ms`, and `hb8/bc64/bd128` was `39.434 ms`.
+`block_c=128` exceeded shared-memory limits on both hosts (`Required: 163840,
+Hardware limit: 101376`).
+
+Decision: keep the promoted D512 split shape. The remaining raw-prefill gap is
+not likely to be closed by another local tile-size retune of the same split
+score/stats/value algorithm. Future native-kernel candidates need to change the
+amount of real work, the data representation, or the dependency structure;
+otherwise wait for a public DS4 direct-paged sparse-MLA backend that matches the
+current SWA+compressed metadata contract.
