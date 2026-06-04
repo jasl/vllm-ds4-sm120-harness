@@ -197,6 +197,15 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   local proxy for deciding whether best-effort single-instance scheduling is
   still enough, or whether a deployment needs stronger prefill/decode
   isolation.
+- Prefill/decode promotion gate: run
+  `scripts/run_sm12x_prefill_decode_promotion_gate.sh` before promoting a
+  prefill, sparse-MLA, or scheduler experiment. The wrapper now runs the
+  `prefill-decode-gate` hard check after the latency, decode-concurrency,
+  mixed-arrival, and streaming-pressure phases. Default thresholds require
+  long C=2 decode min/max >= 0.5, long C=2 ITL p99 <= 1.0s, mixed-arrival
+  secondary ITL p99 <= 1.0s, and streaming-pressure ITL p99 <= 2.0s.
+  Override these only for an explicitly named experimental or external machine
+  profile.
 - Mixed-arrival Nsight Systems trace: when a scheduler or sparse-MLA kernel
   change targets prefill/decode interference, run
   `scripts/run_mixed_arrival_nsys_profile_launch.sh` with one case spec at a

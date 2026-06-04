@@ -507,12 +507,22 @@ existing `run_b200_baseline.sh` phases:
 
 The gate intentionally keeps `FULL_AND_PIECEWISE`, expert parallel, FP8 KV,
 prefix cache disabled, 131K max model length, `max_num_batched_tokens=4096`,
-and `max_num_seqs=4` as the default SM120 profile. It writes
-`prefill_decode_promotion_gate_summary.md/json` and should be compared against
-the current baseline for TTFT, decode min/max, and ITL p95/p99 before any
-optimization is promoted. It is not a replacement for the full user-feedback
+and `max_num_seqs=4` as the default SM120 profile. It now runs a hard
+`prefill-decode-gate` after the baseline phases and writes both
+`prefill_decode_regression_gate.md/json` and
+`prefill_decode_promotion_gate_summary.md/json`. The default regression limits
+are intentionally conservative for the 128K-class local profile:
+
+- long C=2 decode min/max ratio must be at least `0.5`;
+- long C=2 ITL p99 must be at most `1.0s`;
+- mixed-arrival secondary ITL p99 must be at most `1.0s`;
+- streaming-pressure ITL p99 must be at most `2.0s`.
+
+This gate converts the prefill/decode interference concern into a routine
+promotion blocker. It is still not a replacement for the full user-feedback
 matrix, GSM8K, prefix/KV lifecycle, or the GB10 companion gate
-`scripts/run_gb10_long_c2_reduced_gate.sh`.
+`scripts/run_gb10_long_c2_reduced_gate.sh`; use the Nsys profile wrapper only
+when a failed gate needs kernel-launch attribution.
 
 ### DS4-Inspired Active Decode 1/16 Very-Long Prefill Cap
 

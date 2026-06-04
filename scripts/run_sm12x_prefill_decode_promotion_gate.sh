@@ -48,6 +48,10 @@ SM12X_PREFILL_DECODE_DECODE_MAX_TOKENS="${SM12X_PREFILL_DECODE_DECODE_MAX_TOKENS
 SM12X_PREFILL_DECODE_MIXED_CASE_SPECS="${SM12X_PREFILL_DECODE_MIXED_CASE_SPECS:-long_long_c2:4000:4000:fixed_delay:0:128:128,decode_then_59k:1900:1900:after_first_token:0:256:128,decode_then_124k:4000:4000:after_first_token:0:256:128,long_decode_then_short:4000:192:after_first_token:0:256:64,short_decode_then_124k:192:4000:after_first_token:0:256:128,long_then_short:4000:192:fixed_delay:2:128:64}"
 SM12X_PREFILL_DECODE_STREAMING_CASE_SPECS="${SM12X_PREFILL_DECODE_STREAMING_CASE_SPECS:-short_c4:4:3:1200:128,issue7_5k_c4:4:3:192:128,long_c2:2:2:4000:128,long_c4:4:2:2400:128}"
 SM12X_PREFILL_DECODE_STREAMING_FAIL_ON_SLOW="${SM12X_PREFILL_DECODE_STREAMING_FAIL_ON_SLOW:-0}"
+PREFILL_DECODE_GATE_MIN_LONG_C2_DECODE_MIN_MAX_RATIO="${PREFILL_DECODE_GATE_MIN_LONG_C2_DECODE_MIN_MAX_RATIO:-0.5}"
+PREFILL_DECODE_GATE_MAX_LONG_C2_ITL_P99_SECONDS="${PREFILL_DECODE_GATE_MAX_LONG_C2_ITL_P99_SECONDS:-1.0}"
+PREFILL_DECODE_GATE_MAX_MIXED_SECONDARY_ITL_P99_SECONDS="${PREFILL_DECODE_GATE_MAX_MIXED_SECONDARY_ITL_P99_SECONDS:-1.0}"
+PREFILL_DECODE_GATE_MAX_STREAMING_ITL_P99_SECONDS="${PREFILL_DECODE_GATE_MAX_STREAMING_ITL_P99_SECONDS:-2.0}"
 
 case "${SM12X_PREFILL_DECODE_VARIANT}" in
   *","*|*" "*)
@@ -106,6 +110,22 @@ baseline_code="$?"
 set -e
 printf '%s\n' "${baseline_code}" > "${SM12X_PREFILL_DECODE_ROOT}/baseline.exit_code"
 
+set +e
+"${PYTHON}" -m ds4_harness.cli prefill-decode-gate \
+  --baseline-dir "${SM12X_PREFILL_DECODE_BASELINE_DIR}" \
+  --variant "${SM12X_PREFILL_DECODE_VARIANT}" \
+  --min-long-c2-decode-min-max-ratio "${PREFILL_DECODE_GATE_MIN_LONG_C2_DECODE_MIN_MAX_RATIO}" \
+  --max-long-c2-itl-p99-seconds "${PREFILL_DECODE_GATE_MAX_LONG_C2_ITL_P99_SECONDS}" \
+  --max-mixed-secondary-itl-p99-seconds "${PREFILL_DECODE_GATE_MAX_MIXED_SECONDARY_ITL_P99_SECONDS}" \
+  --max-streaming-itl-p99-seconds "${PREFILL_DECODE_GATE_MAX_STREAMING_ITL_P99_SECONDS}" \
+  --json-output "${SM12X_PREFILL_DECODE_ROOT}/prefill_decode_regression_gate.json" \
+  --markdown-output "${SM12X_PREFILL_DECODE_ROOT}/prefill_decode_regression_gate.md" \
+  >"${SM12X_PREFILL_DECODE_ROOT}/prefill_decode_regression_gate.stdout.log" \
+  2>"${SM12X_PREFILL_DECODE_ROOT}/prefill_decode_regression_gate.stderr.log"
+gate_code="$?"
+set -e
+printf '%s\n' "${gate_code}" > "${SM12X_PREFILL_DECODE_ROOT}/prefill_decode_regression_gate.exit_code"
+
 SM12X_PREFILL_DECODE_ROOT="${SM12X_PREFILL_DECODE_ROOT}" \
 SM12X_PREFILL_DECODE_LABEL="${SM12X_PREFILL_DECODE_LABEL}" \
 SM12X_PREFILL_DECODE_BASELINE_DIR="${SM12X_PREFILL_DECODE_BASELINE_DIR}" \
@@ -160,6 +180,15 @@ payload = {
     "baseline_dir": str(baseline_dir),
     "variant": variant,
     "baseline_exit_code": _read_exit(root / "baseline.exit_code"),
+    "prefill_decode_regression_gate_exit_code": _read_exit(
+        root / "prefill_decode_regression_gate.exit_code"
+    ),
+    "prefill_decode_regression_gate_json": str(
+        root / "prefill_decode_regression_gate.json"
+    ),
+    "prefill_decode_regression_gate_markdown": str(
+        root / "prefill_decode_regression_gate.md"
+    ),
     "phase_exit_codes": phase_rows,
     "phase_artifacts": {
         name: str(path) for name, path in phase_artifacts.items()
@@ -179,6 +208,10 @@ lines = [
     f"- baseline dir: `{baseline_dir}`",
     f"- variant: `{variant}`",
     f"- baseline exit: `{payload['baseline_exit_code']}`",
+    "- prefill/decode regression gate exit: "
+    f"`{payload['prefill_decode_regression_gate_exit_code']}`",
+    "- prefill/decode regression gate: "
+    f"`{payload['prefill_decode_regression_gate_markdown']}`",
     "- companion GB10 reduced long-C2 gate: "
     "`scripts/run_gb10_long_c2_reduced_gate.sh`",
     "",
@@ -216,4 +249,7 @@ lines.extend(
 PYEOF
 
 echo "wrote ${SM12X_PREFILL_DECODE_ROOT}"
-exit "${baseline_code}"
+if [[ "${baseline_code}" != "0" ]]; then
+  exit "${baseline_code}"
+fi
+exit "${gate_code}"

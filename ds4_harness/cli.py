@@ -114,6 +114,11 @@ from ds4_harness.oracle import (
 )
 from ds4_harness.oracle_export import export_completion_oracles
 from ds4_harness.official_baseline import build_official_api_baseline
+from ds4_harness.prefill_decode_gate import (
+    PrefillDecodeGateThresholds,
+    evaluate_prefill_decode_gate,
+    write_prefill_decode_gate_markdown,
+)
 from ds4_harness.prefix_cache_probe import (
     DEFAULT_CASE_NAME as DEFAULT_PREFIX_CACHE_CASE_NAME,
     DEFAULT_LINE_COUNT as DEFAULT_PREFIX_CACHE_LINE_COUNT,
@@ -1830,6 +1835,35 @@ def _cmd_lm_eval_gate(args: argparse.Namespace) -> int:
     return 0 if gate["ok"] else 1
 
 
+def _cmd_prefill_decode_gate(args: argparse.Namespace) -> int:
+    thresholds = PrefillDecodeGateThresholds(
+        min_long_c2_decode_min_max_ratio=args.min_long_c2_decode_min_max_ratio,
+        max_long_c2_itl_p99_seconds=args.max_long_c2_itl_p99_seconds,
+        max_mixed_secondary_itl_p99_seconds=args.max_mixed_secondary_itl_p99_seconds,
+        max_streaming_itl_p99_seconds=args.max_streaming_itl_p99_seconds,
+    )
+    try:
+        gate = evaluate_prefill_decode_gate(
+            baseline_dir=args.baseline_dir,
+            variant=args.variant,
+            thresholds=thresholds,
+        )
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(gate, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_prefill_decode_gate_markdown(args.markdown_output, gate)
+    print(json.dumps(gate, ensure_ascii=False))
+    return 0 if gate["ok"] else 1
+
+
 def _cmd_toolcall15(args: argparse.Namespace) -> int:
     if args.repeat_count < 1:
         print("--repeat-count must be >= 1", file=sys.stderr)
@@ -2615,6 +2649,33 @@ def build_parser() -> argparse.ArgumentParser:
     lm_eval_gate.add_argument("--metric-floor", action="append", required=True)
     lm_eval_gate.add_argument("--json-output", type=Path)
     lm_eval_gate.set_defaults(func=_cmd_lm_eval_gate)
+
+    prefill_decode_gate = subparsers.add_parser("prefill-decode-gate")
+    prefill_decode_gate.add_argument("--baseline-dir", type=Path, required=True)
+    prefill_decode_gate.add_argument("--variant", required=True)
+    prefill_decode_gate.add_argument(
+        "--min-long-c2-decode-min-max-ratio",
+        type=float,
+        default=0.5,
+    )
+    prefill_decode_gate.add_argument(
+        "--max-long-c2-itl-p99-seconds",
+        type=float,
+        default=1.0,
+    )
+    prefill_decode_gate.add_argument(
+        "--max-mixed-secondary-itl-p99-seconds",
+        type=float,
+        default=1.0,
+    )
+    prefill_decode_gate.add_argument(
+        "--max-streaming-itl-p99-seconds",
+        type=float,
+        default=2.0,
+    )
+    prefill_decode_gate.add_argument("--json-output", type=Path)
+    prefill_decode_gate.add_argument("--markdown-output", type=Path)
+    prefill_decode_gate.set_defaults(func=_cmd_prefill_decode_gate)
 
     toolcall15 = subparsers.add_parser("toolcall15")
     toolcall15.add_argument("--base-url", default="http://127.0.0.1:8000")

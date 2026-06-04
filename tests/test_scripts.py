@@ -1371,6 +1371,10 @@ def test_vllm_correctness_gate_docs_include_sm120_refresh_watchlist():
     assert "C=1/C=2" in docs
     assert "decode min/max" in docs
     assert "ITL p95/p99" in docs
+    assert "prefill-decode-gate" in docs
+    assert "long C=2 decode min/max >= 0.5" in docs
+    assert "mixed-arrival" in docs
+    assert "secondary ITL p99 <= 1.0s" in docs
     assert "GSM8K" in docs
     assert "256K/512K/1M" in docs
     assert "four-card" in docs
@@ -1784,6 +1788,15 @@ def test_sm12x_prefill_decode_promotion_gate_covers_fairness_without_nsys():
     assert "long_c4:4:2:2400:128" in script
     assert "RUN_STREAMING_PRESSURE_MATRIX=1" in script
     assert '"${SCRIPT_DIR}/run_b200_baseline.sh"' in script
+    assert "PREFILL_DECODE_GATE_MIN_LONG_C2_DECODE_MIN_MAX_RATIO" in script
+    assert "PREFILL_DECODE_GATE_MAX_LONG_C2_ITL_P99_SECONDS" in script
+    assert "PREFILL_DECODE_GATE_MAX_MIXED_SECONDARY_ITL_P99_SECONDS" in script
+    assert "PREFILL_DECODE_GATE_MAX_STREAMING_ITL_P99_SECONDS" in script
+    assert "prefill-decode-gate" in script
+    assert "--min-long-c2-decode-min-max-ratio" in script
+    assert "--max-long-c2-itl-p99-seconds" in script
+    assert "prefill_decode_regression_gate.json" in script
+    assert "prefill_decode_regression_gate.md" in script
     assert "prefill_decode_promotion_gate_summary.json" in script
     assert "prefill_decode_promotion_gate_summary.md" in script
     assert "FULL_AND_PIECEWISE" in script
