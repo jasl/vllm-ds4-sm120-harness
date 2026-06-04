@@ -5696,3 +5696,40 @@ makes D512 the default path, rerun the same promotion matrix and GB10 reduced
 gate with the environment override removed, then promote D512 first if those
 default-path gates remain clean. Keep grouped-candidate C128A as the next
 research direction for closing the remaining gap.
+
+Default-path enablement smoke, 2026-06-04:
+
+- vLLM default changed so
+  `VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL` is enabled when unset, while
+  `VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL=0` remains an explicit opt-out.
+- Harness attribution script gained
+  `SM12X_PREFILL_GAP_D512_ENV=default`, which omits the vLLM env override and
+  tests the actual vLLM default path. The script keeps explicit `0` / `1`
+  modes for controlled A/B runs.
+- RTX default-path smoke:
+  `20260604_d512_default_path_prefill_gap_smoke_retry/20260604103320`.
+  `SM12X_PREFILL_GAP_D512_ENV=default`, MTP=2, expert parallel enabled, FP8 KV,
+  prefix cache disabled, `FULL_AND_PIECEWISE`, 59K/124K C=1/C=2, output len 1.
+
+| Shape | Default-path input tok/s | Default-path TTFT mean | Prior opt-in D512 input tok/s | Prior opt-in D512 TTFT mean |
+| --- | ---: | ---: | ---: | ---: |
+| 59K C=1 | `6915.78` | `8.524 s` | `6796.20` | `8.674 s` |
+| 59K C=2 | `6913.75` | `14.926 s` | `6780.56` | `15.214 s` |
+| 124K C=1 | `6223.34` | `19.925 s` | `6172.22` | `20.090 s` |
+| 124K C=2 | `6148.51` | `35.289 s` | `6124.21` | `35.439 s` |
+
+- GB10 reduced long-C2 default-path smoke:
+  `20260604_d512_default_path_gb10_reduced_longc2/20260604104300`.
+  MTP=2 only, C=2, 100K-class prompts, prefix cache disabled,
+  `FULL_AND_PIECEWISE`, no D512 env override.
+- GB10 result: serve exit `0`, matrix exit `0`, 4/4 requests completed,
+  failures `0`, max TTFT `233.769 s`, max elapsed `235.516 s`,
+  ITL p99 `0.134 s`, preemptions `0`, max running `1`, max waiting `1`,
+  KV usage max `32.1%`. This matches the current conservative GB10
+  availability profile: no high-SM/no-progress recurrence, but still serialized
+  long-prefill latency rather than a throughput solution.
+
+Decision: D512 can be the Dev default path under the current narrow selector.
+Before PR-branch promotion, rerun the full RTX promotion matrix and GB10
+reduced long-C2 gate from a clean committed default-path branch, with the D512
+env override unset throughout.
