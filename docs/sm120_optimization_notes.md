@@ -6871,3 +6871,35 @@ Rejected BF16 D512 score-workspace route, 2026-06-05:
   score-workspace signal is not enough without endpoint TTFT/input-token
   improvement, and the extra BF16 numerical drift is not worth carrying as a
   default path.
+
+Rejected SWA-only D512 selector route, 2026-06-05:
+
+- Hypothesis: split-D512 sparse MLA looked much faster than the current
+  partial-state path on synthetic sliding-window candidates, so the slow
+  SWA-only prefill rows might benefit from routing through the indexed D512
+  score/stats/value path even though they have only `128` candidates.
+- Isolated microbench signal was positive. RTX PRO 6000 artifact
+  `artifacts/local_rtx_swa128_d512_probe/20260605002233` showed partial
+  `1.093 ms` versus D512 split `0.266 ms` (`4.11x`). GB10 artifact
+  `artifacts/local_gb10_swa128_d512_probe/20260605002233` showed partial
+  `5.300 ms` versus D512 split `2.317 ms` (`2.29x`).
+- The first endpoint attempt,
+  `20260605_swaonly_d512_rtx_probe/20260605001721`, was a useful negative
+  control: it did not activate the real SWA-only rows because the selector
+  still required `combined_topk > 512`. A second attempt uncovered the real
+  metadata shape: SWA-only rows report `compress_ratio=1` and
+  `combined_topk=128`, not `compress_ratio=4`.
+- After narrowing the experimental selector to that real shape, focused tests
+  passed but endpoint signal still did not materialize. RTX artifact
+  `20260605_swa128_d512_realshape_rtx_probe/20260605003526` was flat or worse:
+  59K C=1/C=2 were `7439.37` / `7434.68 tok/s` with `7.927 s` /
+  `11.962 s` mean TTFT, while 124K C=1/C=2 were `6729.99` /
+  `6673.84 tok/s` with `18.424 s` / `28.001 s` mean TTFT. That does not beat
+  the current D512 references, and 124K showed a small regression.
+- Decision: reject and remove the vLLM selector/test change. Keep the
+  microbench artifact and this note only. The lesson is that SWA-only rows are
+  a real slow bucket, but simply routing `compress_ratio=1/topk=128` rows
+  through the current D512 helper does not improve endpoint TTFT/input tok/s.
+  Future SWA work must reduce actual SWA candidate/value traffic or use a
+  backend designed for the sliding-window contract, not only swap the current
+  accumulate helper.
