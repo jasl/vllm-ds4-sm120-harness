@@ -6729,3 +6729,62 @@ sparse accumulate rate is only about `0.16-0.17B` visits/s, roughly `5-6x`
 below the same current tail-skip path on RTX PRO 6000. This reinforces that GB10
 is not just a smaller RTX: the next GB10-relevant raw-prefill work should reduce
 candidate/value traffic and dependency depth, not only retune RTX tile shapes.
+
+RTX/GB10 region-split attribution follow-up, 2026-06-04:
+
+- RTX artifact label:
+  `20260604_region_work_reduced_rtx/20260604230524`.
+- GB10 artifact label:
+  `20260604_region_work_reduced_gb10/20260604231619`.
+- Profile: current rebased Dev head, default D512 path, MTP=2, expert
+  parallel enabled, FP8 KV, prefix cache disabled, `FULL_AND_PIECEWISE`,
+  `max_num_batched_tokens=4096`, stage timing enabled, sparse stats overlap
+  disabled. RTX used dual RTX PRO 6000 / SM120. GB10 used two-node GB10 /
+  SM121 with the reduced `59K/100K` long-prefill attribution matrix.
+- Both runs completed and services were stopped cleanly.
+
+Reduced endpoint summary:
+
+| Host | Input | C=1 input tok/s | C=1 TTFT | C=2 input tok/s | C=2 TTFT | Sparse effective visits | Compressed effective | SWA effective | Sparse visits/s | Sparse ms/Mvisit |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 | 59K | `7458.19` | `7.904 s` | `7429.99` | `11.976 s` | `9.804B` | `7.151B` | `2.654B` | `0.906B/s` | `1.104` |
+| RTX PRO 6000 | 124K | `6735.47` | `18.408 s` | `6739.13` | `27.645 s` | `25.762B` | `20.178B` | `5.584B` | `1.080B/s` | `0.926` |
+| GB10 | 59K | `1380.56` | `42.706 s` | `1407.59` | `62.985 s` | `9.804B` | `7.151B` | `2.654B` | `0.160B/s` | `6.264` |
+| GB10 | 100K | `1322.23` | `75.631 s` | `1338.15` | `112.249 s` | `19.258B` | `14.756B` | `4.503B` | `0.173B/s` | `5.794` |
+
+The identical 59K candidate-work shape is the cleanest cross-host comparison:
+GB10 sparse accumulate reaches about `0.160B` effective visits/s while RTX
+reaches about `0.906B` effective visits/s, or roughly `5.7x` lower per sparse
+visit. At the longer class, the comparison is approximate because GB10 used
+100K and RTX used 124K, but the ratio is similar at roughly `6.3x`.
+
+Per-group work-rate highlights:
+
+| Host | Input | Group | Effective visits | Padding ratio | Sparse visits/s | Sparse ms/Mvisit |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 | 59K | SWA-only chunk | `0.181B` | `0.11%` | `0.181B/s` | `5.53` |
+| RTX PRO 6000 | 59K | C128 chunk | `3.281B` | `76.00%` | `1.043B/s` | `0.959` |
+| RTX PRO 6000 | 59K | C4 chunk | `5.899B` | `0.00%` | `1.285B/s` | `0.778` |
+| RTX PRO 6000 | 124K | SWA-only chunk | `0.381B` | `0.05%` | `0.180B/s` | `5.56` |
+| RTX PRO 6000 | 124K | C128 chunk | `12.046B` | `51.18%` | `1.263B/s` | `0.791` |
+| RTX PRO 6000 | 124K | C4 chunk | `12.892B` | `0.00%` | `1.276B/s` | `0.784` |
+| GB10 | 59K | SWA-only chunk | `0.181B` | `0.11%` | `0.042B/s` | `23.75` |
+| GB10 | 59K | C128 chunk | `3.279B` | `75.96%` | `0.186B/s` | `5.38` |
+| GB10 | 59K | C4 chunk | `5.890B` | `0.00%` | `0.203B/s` | `4.94` |
+| GB10 | 100K | SWA-only chunk | `0.307B` | `0.06%` | `0.042B/s` | `23.61` |
+| GB10 | 100K | C128 chunk | `8.194B` | `60.31%` | `0.195B/s` | `5.14` |
+| GB10 | 100K | C4 chunk | `10.303B` | `0.00%` | `0.199B/s` | `5.03` |
+
+Interpretation update: the region split confirms that compressed candidates are
+the largest absolute work bucket, but SWA tail/value traffic is too large and
+too slow to ignore. At 59K, SWA is about `27%` of effective candidate visits;
+at the longer class it is about `22-23%`. SWA-only and partial groups also have
+much worse per-visit throughput than the main C128/C4 chunk groups on both
+hosts. Therefore a standalone C128 grouped-compressed endpoint implementation
+is not a good next promotion target. The next useful experiment should reduce
+total sparse-MLA candidate/value work across the mixed C128/C4/SWA layout, cut
+live state or dependency depth, or use a public backend that matches the DS4
+compressed-plus-SWA metadata contract and beats the current D512 path under the
+same promotion matrix. Official b12x compressed MLA remains blocked/rejected
+for this endpoint route until it is GB10-compatible and faster than current
+D512 on the same mixed metadata shape.
