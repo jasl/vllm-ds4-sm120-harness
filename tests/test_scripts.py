@@ -1385,7 +1385,14 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
         in script
     )
     assert 'GB10_PREFILL_GAP_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING:-1}"' in script
-    assert "--attention-backend FLASHINFER_MLA_SPARSE" in script
+    assert "--attention-backend FLASHINFER_MLA_SPARSE_DSV4" in script
+    assert (
+        "--attention-backend FLASHINFER_MLA_SPARSE "
+        "${GB10_PREFILL_GAP_FLASHINFER_EXTRA_ARGS}"
+        not in script
+    )
+    assert "explicit upstream FLASHINFER_MLA_SPARSE_DSV4 attention backend" in script
+    assert 'CASE_EXPECTED_ATTENTION_MARKER="${expected_attention_marker}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH="${remote_stats_dir}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING}"' in script
     assert 'SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}"' in script
@@ -1397,7 +1404,11 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     assert "_redact_evidence_line" in script
     assert '"<ip>"' in script
     assert '"<path>"' in script
+    assert '"FLASHINFER_MLA_SPARSE_DSV4"' in script
+    assert '            "FLASHINFER_MLA_SPARSE",' not in script
     assert "Using DeepSeek's fp8_ds_mla KV cache format" in script
+    assert '"attention_backend_match": attention_backend_match' in script
+    assert 'and attention_backend_match' in script
     assert "Warming up DeepSeek V4 sparse MLA attention" in script
     assert "Mxfp4 MoE backend" in script
     assert "Using ['PYNCCL'] all-reduce" in script

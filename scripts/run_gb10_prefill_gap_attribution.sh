@@ -144,7 +144,7 @@ profile_extra_args() {
       printf '%s' "${GB10_PREFILL_GAP_DEV_DEFAULT_EXTRA_ARGS}"
       ;;
     flashinfer_sparse_dsv4)
-      printf '%s' "--attention-backend FLASHINFER_MLA_SPARSE ${GB10_PREFILL_GAP_FLASHINFER_EXTRA_ARGS}"
+      printf '%s' "--attention-backend FLASHINFER_MLA_SPARSE_DSV4 ${GB10_PREFILL_GAP_FLASHINFER_EXTRA_ARGS}"
       ;;
     reddit_style)
       printf '%s' "${GB10_PREFILL_GAP_REDDIT_EXTRA_ARGS}"
@@ -179,10 +179,29 @@ profile_description() {
       printf 'current dev default attention path'
       ;;
     flashinfer_sparse_dsv4)
-      printf 'explicit upstream FLASHINFER_MLA_SPARSE attention backend'
+      printf 'explicit upstream FLASHINFER_MLA_SPARSE_DSV4 attention backend'
       ;;
     reddit_style)
       printf 'Reddit-style serve budget and caller-provided extra flags'
+      ;;
+    *)
+      printf 'unsupported GB10_PREFILL_GAP profile: %s\n' "${profile}" >&2
+      return 2
+      ;;
+  esac
+}
+
+profile_expected_attention_marker() {
+  local profile="$1"
+  case "${profile}" in
+    dev_default)
+      printf 'FLASHMLA_SPARSE_DSV4'
+      ;;
+    flashinfer_sparse_dsv4)
+      printf 'FLASHINFER_MLA_SPARSE_DSV4'
+      ;;
+    reddit_style)
+      printf ''
       ;;
     *)
       printf 'unsupported GB10_PREFILL_GAP profile: %s\n' "${profile}" >&2
@@ -255,6 +274,7 @@ for raw_profile in "${profiles[@]}"; do
   [[ -n "${profile}" ]] || continue
   profile_extra="$(profile_extra_args "${profile}")" || exit 2
   profile_description_text="$(profile_description "${profile}")" || exit 2
+  expected_attention_marker="$(profile_expected_attention_marker "${profile}")" || exit 2
   profile_max_batched_tokens="$(profile_max_num_batched_tokens "${profile}")" || exit 2
 
   for raw_prefix_cache_mode in "${prefix_cache_modes[@]}"; do
@@ -290,6 +310,7 @@ for raw_profile in "${profiles[@]}"; do
         CASE_CONCURRENCY="${GB10_PREFILL_GAP_CONCURRENCY}" \
         CASE_MAX_NUM_BATCHED_TOKENS="${profile_max_batched_tokens}" \
         CASE_SERVE_EXTRA_ARGS="${profile_extra}" \
+        CASE_EXPECTED_ATTENTION_MARKER="${expected_attention_marker}" \
         "${LOCAL_PYTHON}" - <<'PY'
 import json
 import os
@@ -305,6 +326,7 @@ payload = {
     "concurrency": os.environ["CASE_CONCURRENCY"],
     "max_num_batched_tokens": int(os.environ["CASE_MAX_NUM_BATCHED_TOKENS"]),
     "serve_extra_args": os.environ["CASE_SERVE_EXTRA_ARGS"],
+    "expected_attention_marker": os.environ["CASE_EXPECTED_ATTENTION_MARKER"],
 }
 Path(os.environ["CASE_METADATA_PATH"]).write_text(
     json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -474,7 +496,7 @@ def extract_backend_evidence(case_dir: Path) -> dict[str, list[str]]:
     }
     patterns = {
         "attention": (
-            "FLASHINFER_MLA_SPARSE",
+            "FLASHINFER_MLA_SPARSE_DSV4",
             "FLASHMLA_SPARSE_DSV4",
             "Using DeepSeek's fp8_ds_mla KV cache format",
             "Using FP8 indexer cache for Lightning Indexer",
@@ -510,6 +532,16 @@ def extract_backend_evidence(case_dir: Path) -> dict[str, list[str]]:
     return evidence
 
 
+def attention_marker_present(case_dir: Path, marker: str) -> bool:
+    if not marker:
+        return True
+    logs = (
+        _load_text(case_dir / "serve_head.log"),
+        _load_text(case_dir / "serve_worker.log"),
+    )
+    return any(marker in text for text in logs)
+
+
 def _overlap_ratio(sparse: dict[str, Any], region: str, group_size: str = "16") -> Any:
     overlap = sparse.get("candidate_overlap", {})
     if not isinstance(overlap, dict):
@@ -533,6 +565,10 @@ for case_dir in case_dirs:
     bench_summary = _load_json(case_dir / "prefill_sweep_summary.json", {})
     sparse_summary = _load_json(case_dir / "sparse_mla_stats_summary.json", {})
     backend_evidence = extract_backend_evidence(case_dir)
+    expected_attention_marker = metadata.get("expected_attention_marker", "")
+    attention_backend_match = attention_marker_present(
+        case_dir, expected_attention_marker
+    )
     start_exit = _read_exit(case_dir / "serve_start.exit_code")
     bench_exit = _read_exit(case_dir / "prefill_sweep.exit_code")
     rows.append(
@@ -546,13 +582,16 @@ for case_dir in case_dirs:
             "output_len": metadata.get("output_len"),
             "max_num_batched_tokens": metadata.get("max_num_batched_tokens"),
             "serve_extra_args": metadata.get("serve_extra_args", ""),
+            "expected_attention_marker": expected_attention_marker,
+            "attention_backend_match": attention_backend_match,
             "artifact_dir": str(case_dir),
             "serve_start_exit_code": start_exit,
             "prefill_sweep_exit_code": bench_exit,
             "ok": start_exit == 0
             and bench_exit == 0
             and bool(bench_summary.get("ok"))
-            and sparse_summary.get("row_count", 0) > 0,
+            and sparse_summary.get("row_count", 0) > 0
+            and attention_backend_match,
             "bench_rows": bench_summary.get("rows", []),
             "backend_evidence": backend_evidence,
             "sparse_mla": {
@@ -585,8 +624,8 @@ lines = [
     "",
     f"- OK: `{summary['ok']}`",
     "",
-    "| Profile | Prefix cache | Variant | ISL | OSL | Max batched | OK | C | Input tok/s | Decode tok/s | Mean TTFT ms | P95 TTFT ms | P99 TTFT ms | P95 ITL ms | P99 ITL ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Compressed effective visits | Compressed padding ratio | SWA effective visits | SWA padding ratio | All group16 unique/valid | Compressed group16 unique/valid | SWA group16 unique/valid | Stage total ms | Dominant stage | Accumulate ratio | Sparse visits/s | Sparse ms/Mvisit | Attention evidence | MoE evidence | NCCL/all-reduce evidence |",
-    "| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- |",
+    "| Profile | Prefix cache | Variant | ISL | OSL | Max batched | OK | Backend marker | Backend match | C | Input tok/s | Decode tok/s | Mean TTFT ms | P95 TTFT ms | P99 TTFT ms | P95 ITL ms | P99 ITL ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Compressed effective visits | Compressed padding ratio | SWA effective visits | SWA padding ratio | All group16 unique/valid | Compressed group16 unique/valid | SWA group16 unique/valid | Stage total ms | Dominant stage | Accumulate ratio | Sparse visits/s | Sparse ms/Mvisit | Attention evidence | MoE evidence | NCCL/all-reduce evidence |",
+    "| --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- |",
 ]
 for row in rows:
     sparse = row.get("sparse_mla", {})
@@ -608,7 +647,7 @@ for row in rows:
     for bench_row in bench_rows:
         evidence = row.get("backend_evidence", {})
         lines.append(
-            "| {profile} | {prefix_cache} | {variant} | {input_len} | {output_len} | {max_batched} | {ok} | {concurrency} | {input_tps} | {decode_tps} | {mean_ttft} | {p95_ttft} | {p99_ttft} | {p95_itl} | {p99_itl} | {sparse_rows} | {slots} | {effective} | {padding} | {compressed_effective} | {compressed_padding} | {swa_effective} | {swa_padding} | {overlap_all_g16} | {overlap_compressed_g16} | {overlap_swa_g16} | {stage_total} | {dominant_stage} | {accumulate_ratio} | {sparse_visits_per_s} | {sparse_ms_per_mvisit} | {attention_evidence} | {moe_evidence} | {nccl_evidence} |".format(
+            "| {profile} | {prefix_cache} | {variant} | {input_len} | {output_len} | {max_batched} | {ok} | {expected_attention_marker} | {attention_backend_match} | {concurrency} | {input_tps} | {decode_tps} | {mean_ttft} | {p95_ttft} | {p99_ttft} | {p95_itl} | {p99_itl} | {sparse_rows} | {slots} | {effective} | {padding} | {compressed_effective} | {compressed_padding} | {swa_effective} | {swa_padding} | {overlap_all_g16} | {overlap_compressed_g16} | {overlap_swa_g16} | {stage_total} | {dominant_stage} | {accumulate_ratio} | {sparse_visits_per_s} | {sparse_ms_per_mvisit} | {attention_evidence} | {moe_evidence} | {nccl_evidence} |".format(
                 profile=f"`{row.get('profile')}`",
                 prefix_cache=f"`{row.get('prefix_cache_mode')}`",
                 variant=f"`{row.get('variant')}`",
@@ -616,6 +655,12 @@ for row in rows:
                 output_len=row.get("output_len", "n/a"),
                 max_batched=row.get("max_num_batched_tokens", "n/a"),
                 ok="yes" if row.get("ok") else "no",
+                expected_attention_marker=f"`{row.get('expected_attention_marker')}`"
+                if row.get("expected_attention_marker")
+                else "n/a",
+                attention_backend_match="yes"
+                if row.get("attention_backend_match")
+                else "no",
                 concurrency=bench_row.get("concurrency", "n/a"),
                 input_tps=bench_row.get("input_token_throughput_tok_s", "n/a"),
                 decode_tps=bench_row.get("output_token_throughput_tok_s", "n/a"),
