@@ -41,6 +41,7 @@ MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-4176}"
 BLOCK_SIZE="${BLOCK_SIZE:-256}"
 KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-fp8}"
 MIN_AVAILABLE_MEM_GIB="${MIN_AVAILABLE_MEM_GIB:-96}"
+REQUIRE_DROP_CACHES="${REQUIRE_DROP_CACHES:-1}"
 ALLOW_CURRENT_BOOT_NVRM_OOM="${ALLOW_CURRENT_BOOT_NVRM_OOM:-0}"
 ALLOW_EXISTING_VLLM="${ALLOW_EXISTING_VLLM:-0}"
 RUN_DIR="${RUN_DIR:-/tmp/dgx_spark_mp_serve_$(date +%Y%m%d%H%M%S)}"
@@ -127,6 +128,7 @@ remote_env_prefix() {
   printf 'BLOCK_SIZE=%s ' "$(shell_quote "${BLOCK_SIZE}")"
   printf 'KV_CACHE_DTYPE=%s ' "$(shell_quote "${KV_CACHE_DTYPE}")"
   printf 'MIN_AVAILABLE_MEM_GIB=%s ' "$(shell_quote "${MIN_AVAILABLE_MEM_GIB}")"
+  printf 'REQUIRE_DROP_CACHES=%s ' "$(shell_quote "${REQUIRE_DROP_CACHES}")"
   printf 'ALLOW_CURRENT_BOOT_NVRM_OOM=%s ' "$(shell_quote "${ALLOW_CURRENT_BOOT_NVRM_OOM}")"
   printf 'ALLOW_EXISTING_VLLM=%s ' "$(shell_quote "${ALLOW_EXISTING_VLLM}")"
   printf 'RUN_DIR=%s ' "$(shell_quote "${RUN_DIR}")"
@@ -170,9 +172,17 @@ run_remote_script() {
 
 stop_existing_and_reclaim() {
   local host="$1"
+  local node_ip="$2"
 
-  run_remote_script "${host}" "" <<'REMOTE'
+  run_remote_script "${host}" "NODE_IP=$(shell_quote "${node_ip}")" <<'REMOTE'
 set -euo pipefail
+
+print_mem_available() {
+  local label="$1"
+  awk -v label="${label}" -v node="${NODE_IP}" \
+    '/MemAvailable/ { printf "%s MemAvailable=%d GiB on %s\n", label, $2 / 1024 / 1024, node }' \
+    /proc/meminfo
+}
 
 if [[ "${ALLOW_EXISTING_VLLM}" != "1" ]] \
     && pgrep -af '[V]LLM::|[p]ython -m vllm.entrypoints.cli.main|[v]llm serve' >/dev/null 2>&1; then
@@ -183,10 +193,18 @@ fi
 
 pkill -TERM -f '[d]s4_drop_cache_loop' >/dev/null 2>&1 || true
 
+print_mem_available before_drop_caches
 if sudo -n true >/dev/null 2>&1; then
   sudo -n sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'
+  printf 'drop_caches=ok on %s\n' "${NODE_IP}"
+  print_mem_available after_drop_caches
+elif [[ "${REQUIRE_DROP_CACHES}" != "0" ]]; then
+  printf 'drop_caches required on %s; passwordless sudo unavailable; set REQUIRE_DROP_CACHES=0 to skip\n' \
+    "${NODE_IP}" >&2
+  exit 7
 else
-  printf 'warning: passwordless sudo unavailable; skipped drop_caches\n' >&2
+  printf 'warning: passwordless sudo unavailable; skipped drop_caches on %s\n' \
+    "${NODE_IP}" >&2
 fi
 REMOTE
 }
@@ -520,8 +538,8 @@ REMOTE
 }
 
 printf 'stopping stale helpers and reclaiming file cache...\n'
-stop_existing_and_reclaim "${WORKER_HOST}"
-stop_existing_and_reclaim "${HEAD_HOST}"
+stop_existing_and_reclaim "${WORKER_HOST}" "${WORKER_ROCE_IP}"
+stop_existing_and_reclaim "${HEAD_HOST}" "${HEAD_ROCE_IP}"
 
 printf 'running node preflight...\n'
 preflight_node "${HEAD_HOST}" "${HEAD_ROCE_IP}" "${WORKER_ROCE_IP}"

@@ -24,6 +24,7 @@ RAY_PORT="${RAY_PORT:-6379}"
 RAY_OBJECT_STORE_MEMORY="${RAY_OBJECT_STORE_MEMORY:-1073741824}"
 RAY_STATUS_TIMEOUT="${RAY_STATUS_TIMEOUT:-60}"
 MIN_AVAILABLE_MEM_GIB="${MIN_AVAILABLE_MEM_GIB:-96}"
+REQUIRE_DROP_CACHES="${REQUIRE_DROP_CACHES:-1}"
 ALLOW_CURRENT_BOOT_NVRM_OOM="${ALLOW_CURRENT_BOOT_NVRM_OOM:-0}"
 ALLOW_EXISTING_VLLM="${ALLOW_EXISTING_VLLM:-0}"
 SSH_OPTS="${SSH_OPTS:-}"
@@ -42,6 +43,7 @@ remote_env_prefix() {
   printf 'RAY_OBJECT_STORE_MEMORY=%s ' "$(shell_quote "${RAY_OBJECT_STORE_MEMORY}")"
   printf 'RAY_STATUS_TIMEOUT=%s ' "$(shell_quote "${RAY_STATUS_TIMEOUT}")"
   printf 'MIN_AVAILABLE_MEM_GIB=%s ' "$(shell_quote "${MIN_AVAILABLE_MEM_GIB}")"
+  printf 'REQUIRE_DROP_CACHES=%s ' "$(shell_quote "${REQUIRE_DROP_CACHES}")"
   printf 'ALLOW_CURRENT_BOOT_NVRM_OOM=%s ' "$(shell_quote "${ALLOW_CURRENT_BOOT_NVRM_OOM}")"
   printf 'ALLOW_EXISTING_VLLM=%s ' "$(shell_quote "${ALLOW_EXISTING_VLLM}")"
 }
@@ -63,6 +65,13 @@ stop_ray_and_reclaim() {
   run_remote_script "${host}" "NODE_IP=$(shell_quote "${node_ip}")" <<'REMOTE'
 set -euo pipefail
 
+print_mem_available() {
+  local label="$1"
+  awk -v label="${label}" -v node="${NODE_IP}" \
+    '/MemAvailable/ { printf "%s MemAvailable=%d GiB on %s\n", label, $2 / 1024 / 1024, node }' \
+    /proc/meminfo
+}
+
 if [[ "${ALLOW_EXISTING_VLLM}" != "1" ]] \
     && pgrep -af 'vllm.entrypoints|vllm serve|python .* -m vllm' >/dev/null 2>&1; then
   printf 'existing vLLM process found on %s; stop it or set ALLOW_EXISTING_VLLM=1\n' "${NODE_IP}" >&2
@@ -72,8 +81,15 @@ fi
 
 "${VLLM_VENV}/bin/python" -m ray.scripts.scripts stop --force >/dev/null 2>&1 || true
 
+print_mem_available before_drop_caches
 if sudo -n true >/dev/null 2>&1; then
   sudo -n sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'
+  printf 'drop_caches=ok on %s\n' "${NODE_IP}"
+  print_mem_available after_drop_caches
+elif [[ "${REQUIRE_DROP_CACHES}" != "0" ]]; then
+  printf 'drop_caches required on %s; passwordless sudo unavailable; set REQUIRE_DROP_CACHES=0 to skip\n' \
+    "${NODE_IP}" >&2
+  exit 7
 else
   printf 'warning: passwordless sudo unavailable; skipped drop_caches on %s\n' "${NODE_IP}" >&2
 fi

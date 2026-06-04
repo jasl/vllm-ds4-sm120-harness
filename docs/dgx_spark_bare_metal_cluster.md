@@ -67,7 +67,7 @@ env \
   OMP_NUM_THREADS=1 \
   CCACHE_DIR="$HOME/.cache/ccache" \
   CCACHE_NOHASHDIR=true \
-  /home/jasl/.local/bin/uv pip install --python .venv/bin/python \
+  "$HOME/.local/bin/uv" pip install --python .venv/bin/python \
     --verbose --no-build-isolation -e .
 ```
 
@@ -226,6 +226,13 @@ sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'
 Use this before relaunching after checkpoint copies, failed model loads, or
 CUDA memory-guard failures.
 
+The harness startup helpers now do this automatically and fail closed by
+default if passwordless sudo cannot run the reclaim step. Use
+`REQUIRE_DROP_CACHES=0` only for a dedicated diagnostic environment where the
+missing reclaim is intentional and recorded. The helpers print
+`before_drop_caches` and `after_drop_caches` `MemAvailable` lines so a failed or
+ineffective reclaim is visible in the artifact log.
+
 For large-context runs, also fail closed if the current boot already contains
 NVIDIA driver OOM messages:
 
@@ -312,9 +319,10 @@ the active RoCE interface and HCA with `ip -br addr` and `ibdev2netdev` instead
 of reusing old local values.
 
 The helper stops stale drop-cache loops, refuses to continue if vLLM is already
-running unless `ALLOW_EXISTING_VLLM=1`, reclaims file cache when passwordless
-sudo is available, checks `torch`/`vllm`/`ninja` imports through the vLLM Python
-executable, rejects a current boot with NVIDIA driver OOM by default, verifies
+running unless `ALLOW_EXISTING_VLLM=1`, reclaims file cache by default, fails if
+passwordless sudo cannot run `drop_caches` unless `REQUIRE_DROP_CACHES=0`,
+checks `torch`/`vllm`/`ninja` imports through the vLLM Python executable,
+rejects a current boot with NVIDIA driver OOM by default, verifies
 `MemAvailable`, starts a headless worker and API head with
 `--distributed-executor-backend mp --nnodes 2`, and polls `/health`.
 It does not set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` by default;
@@ -327,11 +335,11 @@ MIN_AVAILABLE_MEM_GIB=96 \
 scripts/dgx_spark_start_ray_cluster.sh
 ```
 
-The helper stops Ray, reclaims file cache when passwordless sudo is available,
-checks imports through the vLLM Python executable on both nodes, rejects a
-current boot with NVIDIA driver OOM by default, checks `MemAvailable`, starts
-Ray through `$VLLM_VENV/bin/python -m ray.scripts.scripts`, and prints
-`ray status`.
+The helper stops Ray, reclaims file cache by default, fails if passwordless sudo
+cannot run `drop_caches` unless `REQUIRE_DROP_CACHES=0`, checks imports through
+the vLLM Python executable on both nodes, rejects a current boot with NVIDIA
+driver OOM by default, checks `MemAvailable`, starts Ray through
+`$VLLM_VENV/bin/python -m ray.scripts.scripts`, and prints `ray status`.
 
 ## Start vLLM: No-Ray MP TP=2 Topology
 
@@ -568,7 +576,9 @@ single smoke request.
 ## Common Failure Modes
 
 - CUDA memory guard fails immediately after file copies or failed launches:
-  reclaim page cache on both nodes with `drop_caches`, then retry.
+  reclaim page cache on both nodes with `drop_caches`, then retry. The harness
+  GB10 startup helpers require this by default; use `REQUIRE_DROP_CACHES=0`
+  only for an explicitly recorded diagnostic run.
 - Kernel logs contain `NVRM: GPU0 ... Out of memory [NV_ERR_NO_MEMORY]`:
   treat the current boot as contaminated and reboot both nodes before retrying.
 - `max_model_len=393216` dies during safetensors load or MXFP4 MoE

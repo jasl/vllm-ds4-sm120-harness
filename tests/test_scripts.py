@@ -1186,11 +1186,17 @@ def test_dgx_spark_ray_start_helper_uses_vllm_python_and_fail_closed_guards():
     assert "cluster_ready nodes=" in script
     assert "NV_ERR_NO_MEMORY" in script
     assert "drop_caches" in script
+    assert "REQUIRE_DROP_CACHES" in script
+    assert "print_mem_available before_drop_caches" in script
+    assert "print_mem_available after_drop_caches" in script
+    assert "drop_caches=ok on" in script
+    assert "set REQUIRE_DROP_CACHES=0 to skip" in script
     assert "10.0.0." not in script
     assert "/home/" not in script
     assert "/Users/" not in script
 
     assert "scripts/dgx_spark_start_ray_cluster.sh" in docs
+    assert "REQUIRE_DROP_CACHES=0" in docs
     assert "RAY_BIN" not in docs
     assert "$VLLM_VENV/bin/python -m ray.scripts.scripts" in docs
     assert "PATH='$VLLM_VENV/bin:/usr/local/cuda/bin:'" in docs
@@ -1229,6 +1235,11 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "ninja" in script
     assert "drop_caches" in script
     assert "NV_ERR_NO_MEMORY" in script
+    assert "REQUIRE_DROP_CACHES" in script
+    assert "print_mem_available before_drop_caches" in script
+    assert "print_mem_available after_drop_caches" in script
+    assert "drop_caches=ok on" in script
+    assert "set REQUIRE_DROP_CACHES=0 to skip" in script
     assert 'PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"' not in script
     assert "SERVE_ENABLE_EXPERT_PARALLEL" in script
     assert "--enable-expert-parallel" in script
@@ -1258,6 +1269,7 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "CCACHE_NOHASHDIR" in script
     assert "long-context-probe" in docs
     assert "scripts/dgx_spark_start_mp_serve.sh" in docs
+    assert "REQUIRE_DROP_CACHES=0" in docs
     assert "safetensors" in docs
     assert "MXFP4" in docs
     assert "upgrade NCCL to" in docs
