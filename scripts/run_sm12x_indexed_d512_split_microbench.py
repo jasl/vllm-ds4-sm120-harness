@@ -111,6 +111,25 @@ def _validate_sliding_window_index_shape(
         )
 
 
+def _validate_mixed_c128_swa_index_shape(
+    *,
+    num_tokens: int,
+    num_candidates: int,
+    compressed_candidates: int,
+    kv_tokens: int,
+) -> None:
+    if compressed_candidates <= 0 or compressed_candidates >= num_candidates:
+        raise ValueError(
+            "mixed-c128-swa index pattern requires compressed_candidates "
+            "to be between 1 and num_candidates - 1"
+        )
+    _validate_sliding_window_index_shape(
+        num_tokens=num_tokens,
+        num_candidates=num_candidates - compressed_candidates,
+        kv_tokens=kv_tokens,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Benchmark an indexed split D=512 sparse MLA path."
@@ -125,6 +144,7 @@ def main() -> int:
     parser.add_argument("--block-c", type=int, default=64)
     parser.add_argument("--block-d", type=int, default=64)
     parser.add_argument("--part-size", type=int, default=512)
+    parser.add_argument("--compressed-candidates", type=int, default=128)
     parser.add_argument("--scale", type=float, default=0.04419417382415922)
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iterations", type=int, default=20)
@@ -132,7 +152,7 @@ def main() -> int:
     parser.add_argument("--gpu-id", type=int, default=0)
     parser.add_argument(
         "--index-pattern",
-        choices=("per-token", "shared", "sliding-window"),
+        choices=("per-token", "shared", "sliding-window", "mixed-c128-swa"),
         default="per-token",
     )
     args = parser.parse_args()
@@ -391,6 +411,29 @@ def main() -> int:
             starts = torch.arange(args.num_tokens, device=device, dtype=torch.int32)
             offsets = torch.arange(num_candidates, device=device, dtype=torch.int32)
             indices = (starts[:, None] + offsets[None, :]).contiguous()
+        elif args.index_pattern == "mixed-c128-swa":
+            try:
+                _validate_mixed_c128_swa_index_shape(
+                    num_tokens=args.num_tokens,
+                    num_candidates=num_candidates,
+                    compressed_candidates=args.compressed_candidates,
+                    kv_tokens=args.kv_tokens,
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+            swa_candidates = num_candidates - args.compressed_candidates
+            compressed_indices = torch.randint(
+                0,
+                args.kv_tokens,
+                (args.num_tokens, args.compressed_candidates),
+                device=device,
+                generator=generator,
+                dtype=torch.int32,
+            )
+            starts = torch.arange(args.num_tokens, device=device, dtype=torch.int32)
+            offsets = torch.arange(swa_candidates, device=device, dtype=torch.int32)
+            swa_indices = (starts[:, None] + offsets[None, :]).contiguous()
+            indices = torch.cat((compressed_indices, swa_indices), dim=1).contiguous()
         else:
             indices = torch.randint(
                 0,

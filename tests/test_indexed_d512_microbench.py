@@ -37,10 +37,36 @@ def test_sliding_window_index_pattern_requires_window_room():
         raise AssertionError("expected sliding-window shape validation to fail")
 
 
+def test_mixed_c128_swa_index_pattern_validates_compressed_split():
+    module = _load_microbench_module()
+
+    module._validate_mixed_c128_swa_index_shape(
+        num_tokens=4,
+        num_candidates=10,
+        compressed_candidates=2,
+        kv_tokens=11,
+    )
+
+    for compressed_candidates in (0, 10):
+        try:
+            module._validate_mixed_c128_swa_index_shape(
+                num_tokens=4,
+                num_candidates=10,
+                compressed_candidates=compressed_candidates,
+                kv_tokens=11,
+            )
+        except ValueError as exc:
+            assert "compressed" in str(exc)
+        else:
+            raise AssertionError("expected mixed C128/SWA validation to fail")
+
+
 def test_indexed_d512_microbench_exposes_sliding_window_pattern():
     script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
         encoding="utf-8"
     )
 
-    assert 'choices=("per-token", "shared", "sliding-window")' in script
+    assert 'choices=("per-token", "shared", "sliding-window", "mixed-c128-swa")' in script
+    assert '--compressed-candidates' in script
     assert 'elif args.index_pattern == "sliding-window":' in script
+    assert 'elif args.index_pattern == "mixed-c128-swa":' in script
