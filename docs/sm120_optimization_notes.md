@@ -5960,3 +5960,27 @@ That is worth a narrow follow-up, but it is not the full Reddit-style prefill
 gap. The next production prototype should only be attempted if it reduces
 candidate traffic or score/value workspace traffic for the real mixed
 C128/SWA layout; another random-candidate or launch-only sweep is not enough.
+
+Range-SWA index-table-elision prototype, 2026-06-04:
+
+- Temporary harness commit:
+  `4c060b3 Prototype range-SWA D512 microbench candidate`; reverted after this
+  measurement because the code had no durable maintenance value.
+- RTX artifact:
+  `20260604_range_swa_d512_microbench/20260604141635`.
+- GB10 artifact:
+  `20260604_range_swa_d512_microbench/20260604141705`.
+- Shape: same `mixed-c128-swa` synthetic layout, 1024 query tokens, D=512,
+  1152 candidates, 128 compressed + 1024 sliding SWA.
+
+| Host | Current D512 split | Range-SWA candidate | Relative | Score | Value |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 | `2.996 ms` | `2.869 ms` | `1.044x` | `1.117 -> 1.013 ms` | `1.676 -> 1.654 ms` |
+| GB10 | `26.045 ms` | `24.594 ms` | `1.059x` | `10.406 -> 9.845 ms` | `14.316 -> 13.421 ms` |
+
+Decision: reject and remove the code. Directly replacing the SWA tail's index
+loads with a contiguous range calculation gives only a small microbench win and
+does not reduce the real score/value candidate traffic. The next C128/SWA
+prototype must reduce candidate visits, score workspace traffic, value traffic,
+or reuse state across adjacent tokens; simply specializing index generation is
+not enough.
