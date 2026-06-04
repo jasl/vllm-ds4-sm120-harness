@@ -130,8 +130,10 @@ for case_dir in case_dirs:
                     "output_token_throughput_tok_s"
                 ),
                 "mean_ttft_ms": metrics.get("mean_ttft_ms"),
+                "p95_ttft_ms": metrics.get("p95_ttft_ms"),
                 "p99_ttft_ms": metrics.get("p99_ttft_ms"),
                 "mean_tpot_ms": metrics.get("mean_tpot_ms"),
+                "p95_itl_ms": metrics.get("p95_itl_ms"),
                 "p99_itl_ms": metrics.get("p99_itl_ms"),
             }
         )
@@ -161,8 +163,8 @@ lines = [
     "",
     f"- OK: `{summary['ok']}`",
     "",
-    "| Case | OK | C | Successful | Input tok/s | Output tok/s | Mean TTFT ms | P99 TTFT ms |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Case | OK | C | Successful | Input tok/s | Output tok/s | Mean TTFT ms | P95 TTFT ms | P99 TTFT ms | P95 ITL ms | P99 ITL ms |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
 ]
 for row in rows:
     def fmt(value):
@@ -170,7 +172,8 @@ for row in rows:
 
     lines.append(
         "| `{case}` | {ok} | {concurrency} | {successful} | {input_tps} | "
-        "{output_tps} | {mean_ttft} | {p99_ttft} |".format(
+        "{output_tps} | {mean_ttft} | {p95_ttft} | {p99_ttft} | "
+        "{p95_itl} | {p99_itl} |".format(
             case=row.get("case"),
             ok="yes" if row.get("ok") else "no",
             concurrency=fmt(row.get("concurrency")),
@@ -178,7 +181,10 @@ for row in rows:
             input_tps=fmt(row.get("input_token_throughput_tok_s")),
             output_tps=fmt(row.get("output_token_throughput_tok_s")),
             mean_ttft=fmt(row.get("mean_ttft_ms")),
+            p95_ttft=fmt(row.get("p95_ttft_ms")),
             p99_ttft=fmt(row.get("p99_ttft_ms")),
+            p95_itl=fmt(row.get("p95_itl_ms")),
+            p99_itl=fmt(row.get("p99_itl_ms")),
         )
     )
 (out_dir / "prefill_sweep_summary.md").write_text(

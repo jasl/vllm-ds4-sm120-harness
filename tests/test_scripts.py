@@ -1353,15 +1353,42 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     ):
         assert required in script
 
+    assert (
+        'GB10_PREFILL_GAP_PROFILES="${GB10_PREFILL_GAP_PROFILES:-dev_default,flashinfer_sparse_dsv4,reddit_style}"'
+        in script
+    )
     assert 'GB10_PREFILL_GAP_VARIANTS="${GB10_PREFILL_GAP_VARIANTS:-mtp2}"' in script
-    assert 'GB10_PREFILL_GAP_INPUT_LENS="${GB10_PREFILL_GAP_INPUT_LENS:-58957,100000}"' in script
-    assert 'GB10_PREFILL_GAP_CONCURRENCY="${GB10_PREFILL_GAP_CONCURRENCY:-1,2}"' in script
+    assert (
+        'GB10_PREFILL_GAP_PREFIX_CACHE_MODES="${GB10_PREFILL_GAP_PREFIX_CACHE_MODES:-disabled,enabled}"'
+        in script
+    )
+    assert (
+        'GB10_PREFILL_GAP_INPUT_LENS="${GB10_PREFILL_GAP_INPUT_LENS:-4096,16384,32768,65536,128000}"'
+        in script
+    )
+    assert 'GB10_PREFILL_GAP_CONCURRENCY="${GB10_PREFILL_GAP_CONCURRENCY:-1}"' in script
+    assert 'GB10_PREFILL_GAP_OUTPUT_LEN="${GB10_PREFILL_GAP_OUTPUT_LEN:-128}"' in script
+    assert (
+        'GB10_PREFILL_GAP_REDDIT_MAX_NUM_BATCHED_TOKENS="${GB10_PREFILL_GAP_REDDIT_MAX_NUM_BATCHED_TOKENS:-8192}"'
+        in script
+    )
     assert 'GB10_PREFILL_GAP_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING:-1}"' in script
+    assert "--attention-backend FLASHINFER_MLA_SPARSE" in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH="${remote_stats_dir}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING}"' in script
     assert 'SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}"' in script
     assert '"${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh"' in script
     assert '"${REMOTE_HARNESS_ROOT}/scripts/run_random_prefill_sweep.sh"' in script
+    assert "fetch_remote_serve_logs" in script
+    assert "extract_backend_evidence" in script
+    assert '"backend_evidence": backend_evidence' in script
+    assert "_redact_evidence_line" in script
+    assert '"<ip>"' in script
+    assert '"<path>"' in script
+    assert "Using DeepSeek's fp8_ds_mla KV cache format" in script
+    assert "Warming up DeepSeek V4 sparse MLA attention" in script
+    assert "Mxfp4 MoE backend" in script
+    assert "Using ['PYNCCL'] all-reduce" in script
     assert "fetch_remote_stats_dir" in script
     assert "sparse-mla-stats-report" in script
     assert '"candidate_overlap": sparse_summary.get("candidate_overlap", {})' in script
@@ -1374,6 +1401,9 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     assert "gb10_prefill_gap_attribution_summary.json" in script
     assert "gb10_prefill_gap_attribution_summary.md" in script
     assert "FULL_AND_PIECEWISE" in script
+    assert "Prefix cache" in script
+    assert "P95 ITL ms" in script
+    assert "P99 ITL ms" in script
     assert "10.0.0." not in script
     assert "/home/" not in script
     assert "/Users/" not in script

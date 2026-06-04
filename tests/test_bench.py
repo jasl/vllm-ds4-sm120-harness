@@ -33,12 +33,15 @@ def test_parse_bench_output_extracts_latency_percentiles_and_spec_decode_metrics
     report = parse_bench_output(
         """
 Median TTFT (ms):                        371.19
+P95 TTFT (ms):                           392.15
 P99 TTFT (ms):                           395.08
 Mean TPOT (ms):                          10.14
 Median TPOT (ms):                        10.87
+P95 TPOT (ms):                           11.95
 P99 TPOT (ms):                           12.02
 Mean ITL (ms):                           11.59
 Median ITL (ms):                         11.27
+P95 ITL (ms):                            17.64
 P99 ITL (ms):                            18.14
 ---------------Speculative Decoding---------------
 Acceptance rate (%):                     7.11
@@ -54,10 +57,13 @@ Per-position acceptance (%):
     )
 
     assert report["median_ttft_ms"] == 371.19
+    assert report["p95_ttft_ms"] == 392.15
     assert report["p99_ttft_ms"] == 395.08
     assert report["median_tpot_ms"] == 10.87
+    assert report["p95_tpot_ms"] == 11.95
     assert report["p99_tpot_ms"] == 12.02
     assert report["median_itl_ms"] == 11.27
+    assert report["p95_itl_ms"] == 17.64
     assert report["p99_itl_ms"] == 18.14
     assert report["spec_acceptance_rate_percent"] == 7.11
     assert report["spec_acceptance_length"] == 1.14
