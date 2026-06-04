@@ -5789,3 +5789,29 @@ maximum-throughput tracking shape, not a low-latency recommendation. The next
 active optimization problem should return to the remaining C=2 long-context
 fairness/raw-prefill kernel work, with the promotion matrix retained as the
 no-regression guard.
+
+Dedicated prefill/decode gate confirmation:
+
+- Artifact:
+  `20260604_d512_default_path_prefill_decode_gate/20260604125601`.
+- Profile: same default D512 path, no D512 env override, MTP=2, expert
+  parallel enabled, FP8 KV, prefix cache disabled, `FULL_AND_PIECEWISE`.
+- Baseline exit `0`, prefill/decode regression gate exit `0`, regression count
+  `0`.
+
+| Check | Value | Gate |
+| --- | ---: | ---: |
+| 59K C=2 decode min/max | `0.946506` | `>= 0.2` |
+| 59K C=2 ITL p99 | `0.022520 s` | `<= 1.0 s` |
+| 124K C=2 decode min/max | `0.948720` | `>= 0.2` |
+| 124K C=2 ITL p99 | `0.030551 s` | `<= 1.0 s` |
+| Decode-concurrency 124K C=2 decode min/max | `0.991742` | `>= 0.2` |
+| Decode-concurrency 124K C=2 ITL p99 | `0.030982 s` | `<= 1.0 s` |
+| Mixed `long_long_c2` secondary ITL p99 | `0.030832 s` | `<= 1.0 s` |
+| Mixed `decode_then_124k` secondary ITL p99 | `0.029407 s` | `<= 1.0 s` |
+| Streaming pressure ITL p99 | `0.724885 s` | `<= 2.0 s` |
+
+This closes the harness side of the prefill/decode interference work: future
+experiments should fail this gate before being promoted. The remaining C=2 work
+should be framed more narrowly as raw long-prefill TTFT and serialized-prefill
+efficiency, with decode-cadence fairness retained as a no-regression guard.
