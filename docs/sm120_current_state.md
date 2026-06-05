@@ -111,12 +111,13 @@ mixed compressed-plus-SWA metadata shape.
 Latest focused microbench / NCU follow-up keeps this direction intact. On RTX
 PRO 6000, the D512 score kernel for the mixed C128/SWA shape is limited by low
 eligible-warps / long-scoreboard behavior and shared-memory-limited occupancy,
-while the value kernel is already near the GDDR7 DRAM roof. On GB10, performance
-counter access is currently blocked, but no-profiler candidate-length scaling is
-close to linear. This means a grouped launch or index-generation shortcut that
-keeps the same semantic candidates is unlikely to close the gap; the useful
-work must reduce effective score/value visits or use a backend with real
-cross-query KV reuse for the DS4 layout.
+while the value kernel is already near the GDDR7 DRAM roof. On GB10, `sudo ncu`
+shows both score and value are dominated by low eligible-warps and L1TEX
+long-scoreboard stalls rather than peak bandwidth. Candidate-length scaling is
+close to linear on both systems. This means a grouped launch or index-generation
+shortcut that keeps the same semantic candidates is unlikely to close the gap;
+the useful work must reduce effective score/value visits or use a backend with
+real cross-query KV reuse for the DS4 layout.
 
 ## Known Limits
 

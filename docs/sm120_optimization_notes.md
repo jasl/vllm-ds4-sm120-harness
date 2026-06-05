@@ -7038,21 +7038,31 @@ D512 candidate-scaling and RTX NCU follow-up, 2026-06-05:
 | `_indexed_score_kernel` | `756.48 us` | `22.83%` | `39.18%` | `86.00%` | `0.13` | `16.58%` | shared-memory-limited occupancy plus L1TEX long-scoreboard stalls |
 | `_indexed_value_kernel` | `959.23 us` | `35.50%` | `92.96%` | `59.14%` | `0.47` | `24.51%` | near-DRAM-roof value traffic with some predication / long-scoreboard stalls |
 
-- GB10 NCU status: the same NCU command on GB10 failed with
-  `ERR_NVGPUCTRPERM`, so GB10 counter-level conclusions are blocked until
-  performance-counter access is enabled. The no-profiler scaling data is still
-  useful because it shows the same near-linear dependence on candidate count.
+- GB10 NCU status: ordinary-user NCU initially failed with `ERR_NVGPUCTRPERM`.
+  The nodes already allowed passwordless sudo and `sudo ncu` collected the
+  missing metrics. A persistent
+  `/etc/modprobe.d/nvidia-profiler.conf` option was installed so ordinary-user
+  profiling can work after the next driver reload or reboot; until then,
+  `RmProfilingAdminOnly` remains `1` in the live driver and `sudo ncu` is the
+  immediate workaround.
+- GB10 NCU artifact:
+  `artifacts/d512_ncu_deep_gb10_sudo_20260605184155`.
+
+| GB10 kernel | Duration | SM throughput | Memory throughput | L2 hit | Eligible warps/sched | Achieved occupancy | Key limit |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `_indexed_score_kernel` | `8.63 ms` | `9.37%` | `23.11%` | `54.38%` | `0.05` | `16.63%` | severe L1TEX long-scoreboard stalls plus shared-memory-limited occupancy |
+| `_indexed_value_kernel` | `7.12 ms` | `20.41%` | `27.02%` | `57.17%` | `0.23` | `24.92%` | L1TEX long-scoreboard and low eligible-warps dominate; not near peak bandwidth |
 - Interpretation:
   - The score kernel is not limited by tensor compute peak; it has too few
     eligible warps and is constrained by shared-memory occupancy plus L1TEX
     dependencies. Reducing live score state or memory dependency depth is more
     promising than only changing launch count.
-  - The value kernel is already close to the RTX GDDR7 DRAM roof. Any path that
-    keeps the same value candidate traffic can only win marginally; a material
-    endpoint improvement needs lower effective value traffic or real cross-query
-    KV reuse.
-  - Candidate-length scaling is close enough to linear, especially on GB10, to
-    make candidate/work reduction the clearest next experiment criterion.
+  - The RTX value kernel is already close to the GDDR7 DRAM roof, while GB10
+    value is much more latency / dependency limited. A material endpoint
+    improvement still needs lower effective value traffic, shorter dependency
+    chains, or real cross-query KV reuse.
+  - Candidate-length scaling is close enough to linear on both systems to make
+    candidate/work reduction the clearest next experiment criterion.
 - Decision: do not add production code from this pass. Keep the microbench
   script API repair because it restores a useful harness diagnostic after the
   upstream sparse-MLA helper refactor. The next vLLM experiment should be

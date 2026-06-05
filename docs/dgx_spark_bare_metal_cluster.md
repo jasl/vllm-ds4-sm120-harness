@@ -164,6 +164,33 @@ scripts/dgx_spark_start_mp_serve.sh
 Keep experimental variables out of public default profiles until the run logs
 show the intended backend path and the standard GB10/SM120 gates pass.
 
+## Nsight Compute Performance Counters
+
+If Nsight Compute fails with `ERR_NVGPUCTRPERM`, the user may already have
+normal CUDA device access but the NVIDIA driver is still restricting GPU
+performance counters to administrative processes. Running `ncu` through `sudo`
+is a valid immediate workaround for one-off profiling. To allow ordinary user
+profiling after the next reboot, install this module option on every node:
+
+```bash
+printf '%s\n' 'options nvidia NVreg_RestrictProfilingToAdminUsers=0' \
+  | sudo tee /etc/modprobe.d/nvidia-profiler.conf >/dev/null
+if command -v update-initramfs >/dev/null 2>&1; then
+  sudo update-initramfs -u
+fi
+```
+
+Check the current live driver state with:
+
+```bash
+cat /proc/driver/nvidia/params | grep RmProfilingAdminOnly
+```
+
+`RmProfilingAdminOnly: 1` means the currently loaded driver still requires
+admin privileges for performance counters. The modprobe setting takes effect
+after a driver reload or reboot; until then, use `sudo ncu` and change the
+artifact owner back to the normal user if needed.
+
 Start Ray through the vLLM Python executable, not through a standalone Ray venv.
 Ray workers inherit the Python executable and environment used by `ray start`;
 if that executable cannot import `torch`, the remote actor can fail with
