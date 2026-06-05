@@ -6955,3 +6955,55 @@ DP/EP long-context OOM reduced gate, 2026-06-05:
   environments encounter related symptoms. Passing it does not prove that the
   full DP=3/256K report is fixed; failing it is actionable evidence for
   workspace/JIT/prefix-cache pressure investigation.
+
+Upstream FlashInfer MLA sparse DSV4 endpoint probe, 2026-06-05:
+
+- Goal: test whether the current Dev branch can use the upstream
+  `--attention-backend FLASHINFER_MLA_SPARSE_DSV4` endpoint path on GB10, so we
+  can decide whether to reduce vLLM-side maintenance by routing through the
+  official FlashInfer DS4 sparse MLA backend.
+- Local vLLM compatibility finding: the FlashInfer implementation did not
+  match the current DS4 attention call contract because `forward_mqa` did not
+  accept the optional prefill `kv_workspace`. A narrow dev-only patch added an
+  explicit `SUPPORTS_PREFILL_KV_WORKSPACE` capability flag and prevents the
+  D512 pre-gather workspace from being passed to backends that do not consume
+  it. Focused remote checks passed:
+  `pytest tests/model_executor/test_deepseek_v4_flashinfer_sparse.py -q` and
+  `ruff check` over the changed files.
+- After rebuilding vLLM on GB10 and re-upgrading NCCL to `2.30.4`, the no-MTP
+  FlashInfer endpoint smoke selected the expected backend marker on both ranks:
+  `Using FLASHINFER_MLA_SPARSE_DSV4 backend.` It then failed during startup in
+  `flashinfer_trtllm_batch_decode_sparse_mla_dsv4` with
+  `TllmGenFmhaRunner ... Unsupported architecture`.
+- The MTP=2 FlashInfer endpoint smoke is also not compatible today. Before
+  reaching the FlashInfer architecture failure, the target model selected the
+  FlashInfer full-cache path while the MTP draft model still selected the
+  FlashMLA `fp8_ds_mla` path, and KV cache initialization hit a page-size group
+  assertion. A correct MTP route would need a consistent target/draft backend
+  and KV-cache contract, not just a launch flag.
+- `flashinfer show-config` on the GB10 venv reported FlashInfer `0.6.12`,
+  `flashinfer-cubin 0.6.12`, `flashinfer-jit-cache 0.6.12+cu130`, and current
+  CUDA arch list `{(12, '1a')}`. The listed CuTe DSL FMHA cubins were only
+  `sm_100a`, `sm_103a`, and `sm_110a`, which is consistent with the runtime
+  `Unsupported architecture` failure on SM121.
+- Default-path regression smoke stayed healthy after the compatibility patch
+  and rebuild. Same narrow GB10 shape, prefix cache disabled, `FULL_AND_PIECEWISE`,
+  expert parallel, FP8 KV:
+
+  | Profile | Variant | ISL/OSL | Backend | Input tok/s | TTFT mean |
+  | --- | --- | ---: | --- | ---: | ---: |
+  | `dev_default` | no MTP | `4096/16` | `FLASHMLA_SPARSE_DSV4` | `758.52` | `4.568 s` |
+  | `dev_default` | MTP=2 | `4096/16` | `FLASHMLA_SPARSE_DSV4` | `744.73` | `4.025 s` |
+
+- Decision: current official FlashInfer `FLASHINFER_MLA_SPARSE_DSV4` is a
+  blocked endpoint backend on GB10/SM121, not a current promotion candidate and
+  not an explanation for the Reddit prefill gap. Keep the narrow
+  workspace-contract compatibility patch on Dev only if continuing FlashInfer
+  source/new-wheel experiments; do not push it as PR-branch behavior unless a
+  public FlashInfer backend first passes an SM120/SM121 startup smoke and then
+  beats the current D512 path under the promotion matrix.
+- Next direction remains unchanged: compare current default against Reddit-style
+  serving flags where runnable, and focus new kernel work on reducing real
+  sparse-MLA candidate/value work, live state, or dependency depth for the DS4
+  mixed compressed-plus-SWA metadata shape. Do not resume generic b12x/FI
+  endpoint wiring until the public backend matches the required SM12x contract.

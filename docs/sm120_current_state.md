@@ -28,13 +28,16 @@ Last updated: 2026-06-05.
   GSM8K limit-200 and the full promotion matrix green before becoming PR-branch
   behavior. Candidate-region reporting is diagnostic infrastructure, not a
   claimed performance optimization.
-- New upstream comparison point: upstream now exposes an optional
-  `FLASHINFER_MLA_SPARSE_DSV4` backend. It is a valuable A/B route, not a
-  default replacement until it beats the current path under the same gates.
+- Upstream comparison point: upstream now exposes an optional
+  `FLASHINFER_MLA_SPARSE_DSV4` backend, but the current official FlashInfer
+  `0.6.12` wheel is not a runnable SM121 endpoint backend in this setup. The
+  backend marker is selected, but the FlashInfer TRTLLM sparse MLA decode
+  runner fails during startup with `Unsupported architecture`.
 - Blocked or rejected as current endpoint backends: public b12x compressed MLA
-  as a direct DS4 endpoint backend, standalone C128 grouped-compressed prefill,
-  generic D512 selector/tile/chunk sweeps, BF16 score workspace, and SWA-only
-  routing through the current D512 helper.
+  as a direct DS4 endpoint backend, upstream
+  `FLASHINFER_MLA_SPARSE_DSV4` with the current official wheel, standalone C128
+  grouped-compressed prefill, generic D512 selector/tile/chunk sweeps, BF16
+  score workspace, and SWA-only routing through the current D512 helper.
 
 ## Promotion Matrix
 
@@ -77,9 +80,11 @@ This did not close the GB10 raw-prefill gap.
 
 GB10 / SM121 remains the main uncertainty. Current GB10 attribution shows much
 lower effective sparse visits/s than RTX, and the Reddit / unholy-fusion report
-is still materially ahead in GB10 prefill. We do not yet have a clean
-apples-to-apples 4K / 16K / 32K / 64K / 128K GB10 matrix across current default,
-upstream FlashInfer sparse backend, and Reddit-style flags.
+is still materially ahead in GB10 prefill. A first same-shape startup probe says
+the official `FLASHINFER_MLA_SPARSE_DSV4` route is blocked on the current
+FlashInfer wheel, so the remaining clean comparison is current default versus
+Reddit-style serving flags and any future public backend that explicitly
+supports the real SM120/SM121 DS4 sparse-MLA contract.
 
 ## Active Direction
 
@@ -87,8 +92,10 @@ The next high-value target is the GB10 long-prefill performance gap, measured
 before more production code is added:
 
 - Build an apples-to-apples GB10 C=1 matrix for 4K / 16K / 32K / 64K / 128K.
-- Compare current dev default, explicit upstream `FLASHINFER_MLA_SPARSE_DSV4`
-  if runnable, and Reddit-style serving flags.
+- Compare current dev default and Reddit-style serving flags. Do not spend more
+  endpoint time on explicit upstream `FLASHINFER_MLA_SPARSE_DSV4` until the
+  public FlashInfer stack advertises and passes an SM120/SM121 DS4 sparse MLA
+  startup smoke.
 - Keep prefix-cache-on and prefix-cache-off results separate.
 - Record backend selection, MoE path, NCCL/all-reduce path, sparse candidate /
   value attribution, TTFT, input tok/s, decode tok/s, and ITL p95/p99.

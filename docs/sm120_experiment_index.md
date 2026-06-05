@@ -126,6 +126,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 
 - GB10 Reddit / unholy-fusion performance comparison:
   `docs/sm120_current_state.md`.
+- Upstream `FLASHINFER_MLA_SPARSE_DSV4` endpoint startup probe:
+  open `docs/sm120_optimization_notes.md` and search
+  `Upstream FlashInfer MLA sparse DSV4 endpoint probe`.
 - vLLM PR #43477 8K/1K comparison shape:
   open `docs/vllm_correctness_gates.md` and search
   `FlashInfer sparse-MLA comparison tracking`.
