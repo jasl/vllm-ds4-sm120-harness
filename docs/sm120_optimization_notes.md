@@ -7387,6 +7387,27 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   prototype should therefore revisit C128A grouped-compressed candidate reuse
   against this corrected shape, not resurrect the rejected endpoint patch that
   was evaluated under the old `128 compressed + large SWA` model.
+- Rejected current-shape grouped-compressed microbench, 2026-06-05:
+  a temporary harness-only extension split `c128a-current` into a shared
+  compressed state plus a `128`-candidate SWA state, then merged them with the
+  existing two-state finish kernel. This directly tested whether current C128A
+  compressed reuse is enough to beat the promoted D512 split path.
+
+  | Shape | Current D512 split | Grouped compressed total | Relative | Grouped score | Grouped stats | Grouped value | SWA split | Merge |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `512 compressed + 128 SWA`, group 32 | `8.237 ms` | `11.108 ms` | `0.742x` | `3.378 ms` | `0.605 ms` | `3.071 ms` | `2.286 ms` | `1.769 ms` |
+  | `1024 compressed + 128 SWA`, group 32 | `14.207 ms` | `16.891 ms` | `0.841x` | `6.434 ms` | `1.137 ms` | `5.320 ms` | `2.236 ms` | `1.763 ms` |
+  | `1024 compressed + 128 SWA`, group 16 | `14.272 ms` | `16.588 ms` | `0.860x` | `6.178 ms` | `1.133 ms` | `5.242 ms` | `2.215 ms` | `1.820 ms` |
+
+  Group 64 failed compilation because the grouped score tile exceeded shared
+  memory (`131072` bytes required versus a `101376` byte hardware limit).
+  Correctness against D512 split stayed near `1e-3`, so this is a performance
+  rejection. The grouped compressed score/value pieces are slightly faster than
+  processing the same compressed work inside the full split path, but not
+  enough to pay for the extra SWA state and merge launches. The temporary
+  grouped kernels and command-line flag were removed.
+  Artifacts: `artifacts/c128a_grouped_target_20260605224451` and
+  `artifacts/c128a_grouped_group_sweep_20260605224523`.
 
 - Updated direction:
   - Do not continue local-SWA value tiling or simple query/head/union block
@@ -7395,9 +7416,10 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
     fewer compressed/SWA candidate visits, less score/value workspace traffic,
     less live state/dependency depth in the existing D512 split, or a public
     backend that directly matches DS4 metadata and supports SM120/SM121 `D=512`.
-  - With the corrected C128A shape, grouped-compressed candidate reuse is again
-    the highest-signal native route. It must start as a faithful microbench
-    and only move into vLLM after proving endpoint TTFT/input-token gains
-    without active-decode or mixed-arrival regressions.
+  - With the corrected C128A shape, grouped-compressed candidate reuse remains
+    real at the component level, but a separate compressed state plus merge is
+    not enough. Future native work should either fuse the compressed/SWA states
+    more tightly, reduce candidate visits before score materialization, or
+    reduce D512 value dependency depth without adding merge launches.
   - Any new candidate still needs the full promotion matrix before PR-branch
     behavior changes.

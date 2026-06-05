@@ -67,6 +67,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Current C128A shape correction:
   open `docs/sm120_optimization_notes.md` and search
   `Current-shape correction after re-reading the latest sparse-MLA stats`.
+- Rejected current-shape grouped-compressed microbench:
+  open `docs/sm120_optimization_notes.md` and search
+  `Rejected current-shape grouped-compressed microbench`.
 
 ## Rejected Or Blocked Prefill Routes
 
