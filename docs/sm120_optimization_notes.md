@@ -7200,3 +7200,44 @@ Rebase after upstream DeepSeek V4 attention refactor, 2026-06-05:
   `TllmGenFmhaRunner ... Unsupported architecture`. This matches the earlier
   GB10/SM121 finding and keeps the official FlashInfer DSV4 endpoint route
   blocked for the current public wheel.
+
+GB10 current-default versus Reddit-style mini matrix, 2026-06-05:
+
+- Artifact:
+  `artifacts/main/2x_gb10_sm121/gb10_prefill_gap_mini_20260605/20260605200714`.
+- Profile: two-node GB10 / SM121, TP=2, PP=1, EP enabled, MTP=2, FP8 KV,
+  prefix cache disabled, `FULL_AND_PIECEWISE`, `max_model_len=131072`,
+  `max_num_seqs=2`, one random cold-prefill request per shape, output length
+  32. `dev_default` used `max_num_batched_tokens=4176`; `reddit_style` used
+  `max_num_batched_tokens=8192`.
+- All four cases passed without CUDA, NCCL, driver, or engine errors. The run
+  selected the current `fp8_ds_mla` KV-cache format, FP8 indexer cache, MARLIN
+  MXFP4 MoE, and PYNCCL all-reduce path.
+
+| Profile | ISL | Max batched | Input tok/s | TTFT | Sparse ms/M effective visit | Sparse visits/s | 131K KV concurrency |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `dev_default` | 4096 | 4176 | `842.80` | `3.898 s` | `20.22` | `0.049B/s` | `3.05x` |
+| `reddit_style` | 4096 | 8192 | `841.07` | `3.947 s` | `20.23` | `0.049B/s` | `1.35x` |
+| `dev_default` | 16384 | 4176 | `1301.35` | `11.806 s` | `8.79` | `0.114B/s` | `3.07x` |
+| `reddit_style` | 16384 | 8192 | `1339.66` | `11.462 s` | `5.96` | `0.168B/s` | `1.38x` |
+
+Interpretation:
+
+- The Reddit-style `8192` chunk is not a broad explanation for the public
+  Reddit-scale GB10 prefill gap. It is flat at 4K and only improves 16K endpoint
+  TTFT/input throughput by about `3%` despite improving sparse-accumulate
+  per-visit efficiency by about `1.47x`.
+- The same `8192` setting materially reduces long-context capacity. With the
+  tested 70% memory budget, 131K maximum KV-cache concurrency drops from about
+  `3.05x` to about `1.35x`. This is not acceptable as the default GB10
+  long-context profile.
+- The stage attribution remains consistent with prior conclusions:
+  sparse accumulate dominates stage timing, compressed-region padding is high,
+  SWA padding is low, and the next useful work must reduce real
+  sparse-MLA candidate/value work or find a public backend with true DS4
+  metadata-compatible reuse. Larger chunk sizes can stay as a measured
+  opt-in latency tradeoff, not a promoted default.
+- Warmup coverage still has gaps: the first inference logged JIT compiles for
+  C128 top-k metadata, FP8 MQA logits, FP8 einsum, combine-topk-SWA, and MTP
+  sampling kernels. This is a separate cold-start latency cleanup target, not
+  evidence for a new sparse-MLA backend.

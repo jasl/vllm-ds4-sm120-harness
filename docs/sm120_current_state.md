@@ -84,16 +84,25 @@ lower effective sparse visits/s than RTX, and the Reddit / unholy-fusion report
 is still materially ahead in GB10 prefill. A first same-shape startup probe says
 the official `FLASHINFER_MLA_SPARSE_DSV4` route is blocked on the current
 FlashInfer wheel, and a reduced dual RTX PRO 6000 / SM120 startup smoke shows
-the same `Unsupported architecture` failure. The remaining clean comparison is
-current default versus Reddit-style serving flags and any future public backend
-that explicitly supports the real SM120/SM121 DS4 sparse-MLA contract.
+the same `Unsupported architecture` failure.
+
+The first current-default versus Reddit-style GB10 mini matrix covered 4K and
+16K cold prefill with prefix cache disabled, MTP=2, EP enabled, FP8 KV, and
+`FULL_AND_PIECEWISE`. `max_num_batched_tokens=8192` was effectively identical
+at 4K, and at 16K improved sparse accumulate efficiency by about `1.47x`
+(`8.79 -> 5.96 ms/M effective visit`) but only improved endpoint TTFT/input
+throughput by about `3%`. It also cut 131K KV-cache concurrency from about
+`3.05x` to about `1.35x`. Treat larger chunks as a narrow latency tradeoff, not
+as a default GB10 profile or an explanation of the public Reddit-scale gap.
 
 ## Active Direction
 
 The next high-value target is the GB10 long-prefill performance gap, measured
 before more production code is added:
 
-- Build an apples-to-apples GB10 C=1 matrix for 4K / 16K / 32K / 64K / 128K.
+- Build an apples-to-apples GB10 C=1 matrix for 32K / 64K / 128K when more
+  long-context evidence is needed. The 4K / 16K mini matrix is already recorded
+  as a small-shape parameter tradeoff.
 - Compare current dev default and Reddit-style serving flags. Do not spend more
   endpoint time on explicit upstream `FLASHINFER_MLA_SPARSE_DSV4` until the
   public FlashInfer stack advertises and passes an SM120/SM121 DS4 sparse MLA

@@ -135,6 +135,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 
 - GB10 Reddit / unholy-fusion performance comparison:
   `docs/sm120_current_state.md`.
+- GB10 current-default versus Reddit-style mini matrix:
+  open `docs/sm120_optimization_notes.md` and search
+  `GB10 current-default versus Reddit-style mini matrix`.
 - Upstream `FLASHINFER_MLA_SPARSE_DSV4` endpoint startup probe:
   open `docs/sm120_optimization_notes.md` and search
   `Upstream FlashInfer MLA sparse DSV4 endpoint probe`.
