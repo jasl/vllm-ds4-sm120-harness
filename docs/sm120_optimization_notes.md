@@ -3245,6 +3245,34 @@ Operational rule for future Docker long-context runs:
 - run a Docker-specific `max_model_len` ceiling sweep before carrying any
   bare-metal 64K/128K claim over to Docker.
 
+GB10 issue-14 CUDA graph correctness repro and root cause:
+
+On 2026-06-05, the reported two-node GB10/Ray shape was reproduced with TP=2,
+PP=1, EP enabled, FP8 KV, `max_model_len=65536`, block size `256`, and
+`FULL_AND_PIECEWISE`. A temperature-0 math probe with 60 short requests failed
+`60/60` under the default DeepSeek V4 breakable-cudagraph path; outputs were
+deterministically corrupted rather than merely sampled incorrectly.
+
+Control runs isolated the issue:
+
+| Variant | CUDA graph mode | Result |
+| --- | --- | --- |
+| Default DeepSeek V4 breakable cudagraph | `FULL_AND_PIECEWISE` | `60/60` math failures |
+| Eager diagnostic | disabled by `--enforce-eager` | `0/60` math failures |
+| Default + `--disable-custom-all-reduce` | `FULL_AND_PIECEWISE` | `60/60` math failures |
+| Default + prefix cache disabled | `FULL_AND_PIECEWISE` | `60/60` math failures |
+| `VLLM_USE_BREAKABLE_CUDAGRAPH=0` | `FULL_AND_PIECEWISE` | `0/60` math failures |
+
+Interpretation: eager is only a diagnostic workaround. The actionable root
+cause is the automatically selected DeepSeek V4 breakable-cudagraph path on
+SM121/GB10 Ray. Keeping `FULL_AND_PIECEWISE` enabled while selecting the
+compiled PIECEWISE path fixes the correctness smoke in the controlled variant.
+The vLLM-side fix keeps the SM120 default unchanged, skips automatic breakable
+cudagraph on SM121, and preserves explicit `VLLM_USE_BREAKABLE_CUDAGRAPH=1`
+for manual diagnostics. A clean-boot GB10 default-startup rerun is still needed
+because the repro boot later contained NVIDIA driver OOM records and the GB10
+safety preflight correctly refused to launch another service.
+
 Cross-device sparse-MLA accumulate microbench:
 
 The harness now includes
@@ -3701,10 +3729,12 @@ logged during the run.
 | `VLLM_USE_BREAKABLE_CUDAGRAPH=0` | `2055.71` | `1392.61` | `1939.80` | `1718.41` | still `MARLIN`/`PYNCCL`; logs warn that torch.compile is on for an unsupported model |
 
 This rejects the "breakable cudagraph is the prefill bottleneck" hypothesis for
-now. Disabling it did not improve throughput, reduced effective KV headroom, and
-uses a path the DeepSeek V4 logs mark as unsupported. The retained direction is
-therefore to keep breakable cudagraph as-is and investigate runtime backend
-differences: native MXFP4 MoE, sparse MLA/indexer, and possibly PCIe all-reduce.
+now. That conclusion only applies to raw prefill throughput, not to the
+issue-14 GB10/Ray correctness problem above. Disabling it did not improve
+throughput, reduced effective KV headroom, and uses a path the DeepSeek V4 logs
+mark as unsupported on the tested run. The retained prefill-performance
+direction is therefore to investigate runtime backend differences: native MXFP4
+MoE, sparse MLA/indexer, and possibly PCIe all-reduce.
 The random-prefill sweep above is useful only as a quick config screen because
 prefix cache and benchmark prompt generation can distort cold-prefill
 monotonicity; candidate vLLM code changes still need the fixed frontier,
