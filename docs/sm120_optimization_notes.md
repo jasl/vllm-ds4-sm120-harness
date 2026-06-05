@@ -7170,6 +7170,50 @@ Upstream FlashInfer MLA sparse DSV4 endpoint probe, 2026-06-05:
   mixed compressed-plus-SWA metadata shape. Do not resume generic b12x/FI
   endpoint wiring until the public backend matches the required SM12x contract.
 
+Upstream FlashInfer MLA sparse DSV4 recheck, 2026-06-06:
+
+- Goal: retry the official/FlashInfer-side backend that directly accepts
+  DeepSeek V4 sparse MLA metadata before investing more vLLM-side kernel work.
+- Dependency status:
+  - RTX PRO 6000 / SM120 venv imports `flashinfer==0.6.12`,
+    `flashinfer-cubin==0.6.12`, and `flashinfer-jit-cache==0.6.12+cu130`.
+  - GB10 / SM121 venv imports the same FlashInfer family.
+  - `flashinfer.mla.trtllm_batch_decode_sparse_mla_dsv4` is present on both
+    systems.
+  - Package index checks showed `flashinfer-python==0.6.12`,
+    `flashinfer-cubin==0.6.12`, and `flashinfer-jit-cache==0.6.12+cu130` are
+    still the latest available versions for the tested stack.
+- GB10 endpoint smoke:
+  artifact
+  `artifacts/main/2x_gb10_sm121/20260606_flashinfer_sparse_dsv4_nomtp_smoke/20260606031353`.
+  The reduced no-MTP case used explicit
+  `--attention-backend FLASHINFER_MLA_SPARSE_DSV4`, prefix cache disabled,
+  `FULL_AND_PIECEWISE`, `max_model_len=32768`, `max_num_batched_tokens=4096`,
+  and `max_num_seqs=2`.
+- Endpoint result: `serve_start_exit_code=6`, benchmark did not run
+  (`prefill_sweep_exit_code=125`). The summary recorded
+  `attention_backend_match=true`, proving the explicit backend was selected.
+  Startup failed during CUDA graph memory profiling / dummy run inside:
+  `vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py` ->
+  `flashinfer.mla._core.trtllm_batch_decode_sparse_mla_dsv4` ->
+  `TllmGenFmhaRunner`, with `Unsupported architecture`.
+- Direct API isolation: a minimal BF16 direct call to
+  `trtllm_batch_decode_sparse_mla_dsv4` using the documented DS4 contract
+  (`headDim=512`, 64 query heads, 128 fixed SWA indices, BF16 SWA/compressed
+  KV pools, 128 MiB zeroed workspace) failed on both GB10 / SM121 and RTX PRO
+  6000 / SM120 with the same `TllmGenFmhaRunner ... Unsupported architecture`
+  error. This bypassed vLLM's metadata builder, so the current blocker is the
+  official FlashInfer runner architecture support, not vLLM metadata assembly.
+- Health note: the failed endpoint smoke did not leave the GB10 GPUs busy after
+  cleanup; `nvidia-smi` reported both devices idle, and no new driver crash was
+  observed during the check.
+- Decision: keep `FLASHINFER_MLA_SPARSE_DSV4` as a blocked/recheck-only route.
+  Do not spend more endpoint time on this backend until a future official
+  FlashInfer release first passes the direct SM120/SM121 DSV4 API smoke. If a
+  future wheel passes the direct API smoke, the next gate is endpoint startup
+  with no MTP, then MTP target/draft KV-cache consistency, then the normal
+  promotion matrix.
+
 Rebase after upstream DeepSeek V4 attention refactor, 2026-06-05:
 
 - Upstream PR `#44569` reorganized DeepSeek V4 attention so shared attention

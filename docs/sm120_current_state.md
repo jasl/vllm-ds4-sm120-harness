@@ -30,9 +30,10 @@ Last updated: 2026-06-06.
   claimed performance optimization.
 - Upstream comparison point: upstream now exposes an optional
   `FLASHINFER_MLA_SPARSE_DSV4` backend, but the current official FlashInfer
-  `0.6.12` wheel is not a runnable SM120/SM121 endpoint backend in this setup.
-  The backend marker is selected, but the FlashInfer TRTLLM sparse MLA decode
-  runner fails during startup with `Unsupported architecture`.
+  `0.6.12` wheel is not a runnable SM120/SM121 backend in this setup. The
+  backend marker is selected, but both a GB10 endpoint startup smoke and a
+  direct minimal FlashInfer DSV4 API call on SM120/SM121 fail in
+  `TllmGenFmhaRunner` with `Unsupported architecture`.
 - Blocked or rejected as current endpoint backends: public b12x compressed MLA
   as a direct DS4 endpoint backend, upstream
   `FLASHINFER_MLA_SPARSE_DSV4` with the current official wheel, standalone C128
@@ -84,10 +85,10 @@ This did not close the GB10 raw-prefill gap.
 
 GB10 / SM121 remains the main uncertainty. Current GB10 attribution shows much
 lower effective sparse visits/s than RTX, and the Reddit / unholy-fusion report
-is still materially ahead in GB10 prefill. A first same-shape startup probe says
-the official `FLASHINFER_MLA_SPARSE_DSV4` route is blocked on the current
-FlashInfer wheel, and a reduced dual RTX PRO 6000 / SM120 startup smoke shows
-the same `Unsupported architecture` failure.
+is still materially ahead in GB10 prefill. Repeated startup/API probes say the
+official `FLASHINFER_MLA_SPARSE_DSV4` route is blocked on the current
+FlashInfer wheel, and both SM120 and SM121 direct API calls show the same
+`Unsupported architecture` failure.
 
 The current-default versus Reddit-style GB10 matrix covered 4K, 16K, 32K, 64K,
 and 128K cold prefill with prefix cache disabled, MTP=2, EP enabled, FP8 KV,
@@ -106,9 +107,9 @@ before more production code is added:
 - The apples-to-apples GB10 C=1 default-versus-Reddit-style serving-flag matrix
   is now recorded for 4K / 16K / 32K / 64K / 128K. Do not promote the 8192
   chunk profile by default; keep it as an opt-in latency/capacity tradeoff.
-- Do not spend more
-  endpoint time on explicit upstream `FLASHINFER_MLA_SPARSE_DSV4` until the
-  public FlashInfer stack advertises and passes an SM120/SM121 DS4 sparse MLA
+- Do not spend more endpoint time on explicit upstream
+  `FLASHINFER_MLA_SPARSE_DSV4` until the public FlashInfer stack advertises and
+  passes an SM120/SM121 DS4 sparse MLA direct-API smoke first, then an endpoint
   startup smoke.
 - Keep prefix-cache-on and prefix-cache-off results separate.
 - Record backend selection, MoE path, NCCL/all-reduce path, sparse candidate /
