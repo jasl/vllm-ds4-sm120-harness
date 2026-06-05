@@ -79,6 +79,18 @@ def test_summarize_runtime_stats_counts_serve_error_signals(tmp_path):
         "\n".join(
             [
                 "ERROR CUDA: unspecified launch failure in sparse MLA prefill",
+                "RuntimeError: Triton Error [CUDA]: out of memory",
+                (
+                    "WARNING [jit_monitor.py:103] Triton kernel JIT compilation "
+                    "during inference: _fp8_paged_mqa_logits_rowwise_kernel"
+                ),
+                (
+                    "[TileLang:tilelang.jit.kernel:INFO] TileLang begins to compile "
+                    "kernel `mhc_pre_big_fuse_with_norm_tilelang`"
+                ),
+                "WorkerProc hit an exception.",
+                "RuntimeError: [/pytorch/third_party/gloo/gloo/transport/tcp/pair.cc:547] Connection closed by peer",
+                "RuntimeError: Process ApiServer_2 (PID: 783) died with exit code None",
                 "No available shared memory broadcast block found in 60 seconds",
                 "NVRM: Xid 79, GPU has fallen off the bus",
             ]
@@ -90,10 +102,15 @@ def test_summarize_runtime_stats_counts_serve_error_signals(tmp_path):
     summary = summarize_runtime_stats(None, serve_log)
 
     assert summary["serve_log"]["available"] is True
-    assert summary["serve_log"]["error_signal_count"] == 3
-    assert summary["serve_log"]["cuda_error_count"] == 1
+    assert summary["serve_log"]["error_signal_count"] == 8
+    assert summary["serve_log"]["cuda_error_count"] == 2
     assert summary["serve_log"]["nccl_error_count"] == 1
     assert summary["serve_log"]["driver_error_count"] == 1
+    assert summary["serve_log"]["runtime_jit_warning_count"] == 1
+    assert summary["serve_log"]["tilelang_runtime_compile_count"] == 1
+    assert summary["serve_log"]["worker_crash_count"] == 2
+    assert summary["serve_log"]["distributed_peer_closed_count"] == 1
+    assert summary["serve_log"]["cuda_oom_count"] == 1
 
 
 def test_runtime_summary_cli_writes_json_and_markdown(tmp_path):

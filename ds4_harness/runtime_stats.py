@@ -235,6 +235,7 @@ _SPEC_RE = re.compile(
 _SERVE_LOG_ERROR_PATTERNS = {
     "cuda_error_count": re.compile(
         r"(CUDA.*(error|unspecified launch failure|illegal memory access)|"
+        r"CUDA.*out of memory|Triton Error \[CUDA\]|"
         r"unspecified launch failure|illegal memory access)",
         re.IGNORECASE,
     ),
@@ -250,6 +251,29 @@ _SERVE_LOG_ERROR_PATTERNS = {
     "engine_error_count": re.compile(
         r"((EngineCore|EngineCoreProc|engine core).*(error|exception|failed|died|dead)|"
         r"Traceback|RuntimeError)",
+        re.IGNORECASE,
+    ),
+    "runtime_jit_warning_count": re.compile(
+        r"Triton kernel JIT compilation during inference",
+        re.IGNORECASE,
+    ),
+    "worker_crash_count": re.compile(
+        r"(WorkerProc hit an exception|Process ApiServer_\d+ .*died)",
+        re.IGNORECASE,
+    ),
+    "distributed_peer_closed_count": re.compile(
+        r"(Connection closed by peer|TCPStore.*(Broken pipe|failed)|"
+        r"Gloo.*Connection closed)",
+        re.IGNORECASE,
+    ),
+    "cuda_oom_count": re.compile(
+        r"(CUDA.*out of memory|Triton Error \[CUDA\]: out of memory)",
+        re.IGNORECASE,
+    ),
+}
+_SERVE_LOG_DIAGNOSTIC_PATTERNS = {
+    "tilelang_runtime_compile_count": re.compile(
+        r"TileLang begins to compile kernel",
         re.IGNORECASE,
     ),
 }
@@ -275,6 +299,7 @@ def summarize_serve_log(path: Path | None) -> dict[str, Any]:
     avg_draft_acceptance_rate: list[float] = []
     per_position_values: list[list[float]] = []
     error_counts = {key: 0 for key in _SERVE_LOG_ERROR_PATTERNS}
+    diagnostic_counts = {key: 0 for key in _SERVE_LOG_DIAGNOSTIC_PATTERNS}
     error_signal_count = 0
 
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -285,6 +310,9 @@ def summarize_serve_log(path: Path | None) -> dict[str, Any]:
                 matched_error = True
         if matched_error:
             error_signal_count += 1
+        for key, pattern in _SERVE_LOG_DIAGNOSTIC_PATTERNS.items():
+            if pattern.search(line):
+                diagnostic_counts[key] += 1
 
         logger_match = _LOGGER_RE.search(line)
         if logger_match:
@@ -326,6 +354,7 @@ def summarize_serve_log(path: Path | None) -> dict[str, Any]:
         "samples": len(prefill),
         "error_signal_count": error_signal_count,
         **error_counts,
+        **diagnostic_counts,
     }
     metric_lists = {
         "prefill_throughput_tok_s": prefill,

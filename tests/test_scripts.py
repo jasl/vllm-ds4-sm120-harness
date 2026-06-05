@@ -1432,6 +1432,32 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     assert "/Users/" not in script
 
 
+def test_sm12x_dp_ep_oom_reduced_gate_tracks_user_report_shape():
+    script = (
+        ROOT / "scripts" / "run_sm12x_dp_ep_oom_reduced_gate.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "user_report_4619507132_dp_ep_oom_reduced" in script
+    assert 'B200_DATA_PARALLEL_SIZE="${B200_DATA_PARALLEL_SIZE:-2}"' in script
+    assert 'SERVE_MAX_MODEL_LEN="${SERVE_MAX_MODEL_LEN:-131072}"' in script
+    assert 'SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-enabled}"' in script
+    assert 'SERVE_ENABLE_EXPERT_PARALLEL="${SERVE_ENABLE_EXPERT_PARALLEL:-1}"' in script
+    assert 'SERVE_ENABLE_CHUNKED_PREFILL="${SERVE_ENABLE_CHUNKED_PREFILL:-1}"' in script
+    assert 'FULL_AND_PIECEWISE' in script
+    assert r'{\"method\":\"mtp\",\"num_speculative_tokens\":2}' in script
+    assert "--enable-prompt-tokens-details" in script
+    assert "prefix_cache_stress,streaming_pressure_soak" in script
+    assert "RuntimeWarning" in script
+    assert "Triton kernel JIT compilation during inference" in script
+    assert "TileLang begins to compile kernel" in script
+    assert "Triton Error [CUDA]: out of memory" in script
+    assert "Connection closed by peer" in script
+    assert "Process ApiServer" in script
+    assert "10.0.0." not in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+
+
 def test_prefill_decode_promotion_gate_can_run_gb10_reduced_long_c2_companion():
     script = (
         ROOT / "scripts" / "run_sm12x_prefill_decode_promotion_gate.sh"

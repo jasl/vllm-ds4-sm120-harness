@@ -6929,3 +6929,29 @@ Promotion/research checkpoint, 2026-06-05:
   prefix/KV lifecycle, short throughput, 59K/124K C=1/C=2,
   mixed-arrival/prefill-decode fairness, streaming pressure, and GB10 reduced
   long-C2.
+
+DP/EP long-context OOM reduced gate, 2026-06-05:
+
+- External feedback reported a DP/EP long-context run where the first material
+  failure signal was `Triton Error [CUDA]: out of memory` during attention
+  execution. Subsequent `Connection closed by peer`, `Process ApiServer_* died`,
+  and distributed transport errors are treated as cascades unless an earlier
+  log line says otherwise. The report also showed runtime JIT debt:
+  `Triton kernel JIT compilation during inference` and `TileLang begins to
+  compile kernel`.
+- Harness addition:
+  `scripts/run_sm12x_dp_ep_oom_reduced_gate.sh`. The default profile is a
+  reduced SM12x development gate: DP=2, 131K max model length, MTP=2, FP8 KV,
+  expert parallel enabled, prefix cache enabled, chunked prefill enabled,
+  `FULL_AND_PIECEWISE`, plus `prefix_cache_stress` and
+  `streaming_pressure_soak`. Matching larger external topologies should
+  override the DP size, max model length, and pressure dimensions explicitly.
+- Runtime-summary addition: serve-log summaries now count runtime Triton JIT
+  warnings, TileLang runtime compile diagnostics, worker crashes, distributed
+  peer closures, and CUDA OOM separately. TileLang runtime compile lines are
+  diagnostic counters and do not by themselves increment `error_signal_count`.
+- Interpretation rule: this gate is regression coverage for the user-reported
+  failure surface and a way to preserve artifacts when our smaller SM12x
+  environments encounter related symptoms. Passing it does not prove that the
+  full DP=3/256K report is fixed; failing it is actionable evidence for
+  workspace/JIT/prefix-cache pressure investigation.

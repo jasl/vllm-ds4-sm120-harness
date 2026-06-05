@@ -50,6 +50,11 @@ behavior must preserve:
 - Mixed-arrival prefill/decode interference and streaming pressure.
 - GB10 reduced long-C2 availability/cadence when the change could affect GB10,
   scheduler behavior, or sparse-MLA prefill.
+- User-feedback reduced gates when the change touches the reported failure
+  surface. `scripts/run_sm12x_dp_ep_oom_reduced_gate.sh` tracks the external
+  DP/EP long-context JIT/OOM/worker-crash shape with reduced local defaults.
+  A local pass is useful regression evidence, not proof that the full
+  DP=3/256K external topology is solved.
 
 Prefix-cache hits must be reported separately from cold-prefill performance.
 Do not use prefix-cache-enabled numbers as cold-prefill gains.
