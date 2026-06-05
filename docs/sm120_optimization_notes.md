@@ -88,9 +88,11 @@ Immediate stability / semantic checks:
   graph / MLA metadata and `torch.compile` correctness. They are not raw
   prefill optimizations. Result: `#44492` is broad EAGLE/spec-decode work and
   should be observed rather than cherry-picked into the SM12x branch. `#43058`
-  is narrower and remains a candidate for a dedicated compile-correctness
-  slice, but it should be absorbed as a cleaned TDD patch rather than copied
-  verbatim.
+  was absorbed narrowly as a cleaned TDD slice: the functionalization pass now
+  handles the DeepSeek V4 fused qnorm/RoPE/KV-cache insert op in both `_C` and
+  `vllm` namespaces, with a focused custom-op regression test. RED on RTX
+  PRO 6000 left `auto_functionalized` in the post-pass graph; GREEN removed it
+  and the related compile/ubatch/indexer tests passed.
 - `vllm-project/vllm#43730` remains relevant to SM12x crash resilience for
   quantized Marlin MoE shapes. Result: the current branch already has the core
   `c_tmp` sizing fix that avoids clamping the FP32 reduce buffer to
