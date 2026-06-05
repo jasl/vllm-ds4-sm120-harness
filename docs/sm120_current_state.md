@@ -151,6 +151,16 @@ Future cross-query reuse work must be tighter: fewer effective score/value
 visits, less value traffic, or a single/fused backend that preserves current
 head reuse and avoids extra merge or split value launches.
 
+A narrower single-launch grouped full-score probe also did not win. It kept
+the current stats/value path and only replaced score materialization, reusing
+compressed KV across query rows inside one score launch and conservatively
+falling back for the small SWA tail. On RTX PRO 6000, the corrected
+`1024 compressed + 128 SWA` C128A shape regressed from about `0.797-0.798 ms`
+split total to `0.891-1.522 ms` across token/head group tiles. The best tile
+still made score slower (`0.321 -> 0.414 ms`) and did not touch value traffic.
+Do not continue grouped-score-only work unless it also reduces value traffic
+or preserves current head-block reuse without losing occupancy.
+
 A follow-up exact row-dedup diagnostic also found no current opportunity: the
 new opt-in `candidate_row_duplicates` stats field reported `0` duplicate
 candidate visits across `1408` sampled rows in a 4K RTX attribution smoke, both

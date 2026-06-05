@@ -7564,6 +7564,47 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   `artifacts/local_rtx_grouped_combined_probe_20260606` and
   `artifacts/local_gb10_grouped_combined_probe_20260606`.
 
+- Rejected single-launch grouped full-score probe, 2026-06-06:
+  after rejecting split-launch grouped-combined reuse, a narrower temporary
+  harness-only extension tested whether cross-query compressed KV reuse could
+  be folded into one score materialization launch without changing the current
+  stats/value path. The prototype used a grouped-query score kernel for
+  compressed C128A candidate blocks and conservatively fell back to per-token
+  score calculation for the small SWA tail/boundary block. No vLLM endpoint
+  code was changed, and the temporary script/test extension was removed after
+  measurement.
+
+  RTX PRO 6000 / SM120 smoke:
+  `artifacts/local_rtx_grouped_full_score_smoke_20260606`. The small
+  `512 compressed + 128 SWA` shape compiled and matched the D512 split
+  reference (`max_diff=0.000887`), but grouped full-score total was
+  `0.214 ms` versus current split `0.093 ms`.
+
+  RTX PRO 6000 / SM120 current C128A shape, `512` query tokens, `64` heads,
+  `D=512`, `1024 compressed + 128 SWA`, current split
+  `head_block=32, block_c=64, block_d=128`:
+
+  | Tile | Current split | Grouped full-score total | Relative | Current score | Grouped score |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | `g32/h1` | `0.798 ms` | `1.522 ms` | `0.524x` | `0.321 ms` | `1.044 ms` |
+  | `g16/h2` | `0.798 ms` | `1.143 ms` | `0.698x` | `0.320 ms` | `0.666 ms` |
+  | `g8/h4` | `0.797 ms` | `0.972 ms` | `0.819x` | `0.320 ms` | `0.496 ms` |
+  | `g4/h8` | `0.797 ms` | `0.891 ms` | `0.895x` | `0.321 ms` | `0.414 ms` |
+
+  Artifacts:
+  `artifacts/local_rtx_grouped_full_score_current_20260606_g32h1`,
+  `artifacts/local_rtx_grouped_full_score_current_20260606_g16h2`,
+  `artifacts/local_rtx_grouped_full_score_current_20260606_g8h4`, and
+  `artifacts/local_rtx_grouped_full_score_current_20260606_g4h8`.
+
+  Decision: reject and remove the temporary code. This formulation avoided the
+  previous merge launch, but still lost current head-block score reuse and did
+  not reduce value traffic. The result narrows the next route further: a
+  production candidate must either preserve current head-block reuse while
+  adding cross-query reuse, reduce value traffic too, or use a backend that
+  natively handles the full DS4 metadata shape. Score-only grouped reuse is
+  not enough.
+
 - Candidate row duplicate diagnostic, 2026-06-06:
   after the split-launch grouped-combined route failed, the next exact
   work-reduction question was whether a single query row contains duplicate

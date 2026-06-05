@@ -82,6 +82,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Rejected grouped-combined C128A reuse microbench:
   open `docs/sm120_optimization_notes.md` and search
   `Rejected grouped-combined C128A reuse microbench`.
+- Rejected single-launch grouped full-score probe:
+  open `docs/sm120_optimization_notes.md` and search
+  `Rejected single-launch grouped full-score probe`.
 - Candidate row duplicate diagnostic:
   open `docs/sm120_optimization_notes.md` and search
   `Candidate row duplicate diagnostic`.
