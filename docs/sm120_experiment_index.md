@@ -73,6 +73,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Current-shape C128A D512 NCU:
   open `docs/sm120_optimization_notes.md` and search
   `Current-shape C128A D512 NCU`.
+- Rejected fused / lower-live-state D512 microbench:
+  open `docs/sm120_optimization_notes.md` and search
+  `Rejected fused / lower-live-state D512 microbench`.
 
 ## Rejected Or Blocked Prefill Routes
 
@@ -98,6 +101,9 @@ with `docs/sm120_current_state.md` for the live decision state.
   open `docs/sm120_optimization_notes.md` and search
   `value-traffic route, 2026-06-04` or
   `Rejected D512 split score/value tile retune sweep`.
+- D512 fused stats+value / lower-live-state reject:
+  open `docs/sm120_optimization_notes.md` and search
+  `Rejected fused / lower-live-state D512 microbench`.
 
 ## Scheduler, Fairness, And Interference
 

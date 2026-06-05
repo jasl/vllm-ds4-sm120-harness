@@ -7443,3 +7443,48 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
     reduce D512 value dependency depth without adding merge launches.
   - Any new candidate still needs the full promotion matrix before PR-branch
     behavior changes.
+
+- Rejected fused / lower-live-state D512 microbench, 2026-06-06:
+  a temporary harness-only extension to
+  `scripts/run_sm12x_indexed_d512_split_microbench.py` tested two variants
+  against the retained `1024 compressed + 128 SWA` C128A shape:
+
+  1. score and value tile decoupling, keeping the score stage at the promoted
+     `head_block=32, block_c=64` while lowering the value stage to
+     `value_head_block=16, block_d=128`;
+  2. a fused stats+value value-stage prototype that keeps the score workspace
+     but removes the separate stats launch and max/denom state buffer.
+
+  RTX PRO 6000 / SM120, `1024` query tokens, `64` heads, `D=512`,
+  `1152` candidates:
+
+  | Variant | Total | Score | Stats | Value / fused stats+value | Relative |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | current split `hb32/bd128` | `1.731-1.736 ms` | `0.664-0.666 ms` | `0.204 ms` | `0.863-0.865 ms` | `1.000x` |
+  | value `head_block=16` | `1.897 ms` | `0.654 ms` | `0.203 ms` | `1.040 ms` | `0.903x` |
+  | fused stats+value | `1.678-1.681 ms` | `0.664-0.666 ms` | n/a | `1.013-1.015 ms` | `1.031x` |
+
+  The fused variant is a small RTX-only microbench win because it saves the
+  stats launch/state despite making the value-stage work heavier. It is not a
+  robust endpoint candidate: the per-token `640` candidate shape regressed
+  from `1.538 ms` to `1.682 ms` (`0.914x`).
+
+  GB10 / SM121, same C128A shape:
+
+  | Variant | Total | Score | Stats | Value / fused stats+value | Relative |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | current split `hb32/bd128` | `14.112 ms` | `6.831 ms` | `1.274 ms` | `6.008 ms` | `1.000x` |
+  | value `head_block=16` | `14.437 ms` | `6.795 ms` | `1.272 ms` | `6.370 ms` | `0.978x` |
+  | fused stats+value | `15.181 ms` | `6.831 ms` | n/a | `8.237 ms` | `0.930x` |
+
+  Decision: reject and remove the temporary script extension. This experiment
+  does not address the GB10 prefill gap and should not be promoted into the
+  vLLM endpoint. The result narrows the next sparse-MLA direction further:
+  changing D512 split state/launch organization without reducing effective
+  candidate/value visits is insufficient. Continue only with candidates that
+  reduce real C128A score/value work or introduce maintainable cross-query KV
+  reuse for the DS4 metadata layout.
+
+  Artifacts:
+  `artifacts/d512_lower_live_state_microbench_20260606` and
+  `artifacts/d512_lower_live_state_microbench_20260606_gb10`.

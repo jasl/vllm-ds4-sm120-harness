@@ -5,7 +5,7 @@ working entrypoint for DeepSeek V4 SM12x optimization status, current gates, and
 next-step decisions. Treat `docs/sm120_optimization_notes.md` as the append-only
 evidence archive.
 
-Last updated: 2026-06-05.
+Last updated: 2026-06-06.
 
 ## Read Order
 
@@ -38,7 +38,10 @@ Last updated: 2026-06-05.
   `FLASHINFER_MLA_SPARSE_DSV4` with the current official wheel, standalone C128
   grouped-compressed prefill, generic D512 selector/tile/chunk sweeps, BF16
   score workspace, SWA-only routing through the current D512 helper, and
-  grouped-query local-SWA tiling that keeps the same candidate work.
+  grouped-query local-SWA tiling that keeps the same candidate work. A
+  fused-stats/value D512 prototype and a lower-live-state value-tile prototype
+  were also rejected because they did not improve GB10 and did not reduce real
+  candidate/value visits.
 
 ## Promotion Matrix
 
@@ -126,7 +129,9 @@ long-scoreboard stalls rather than peak bandwidth. Candidate-length scaling is
 close to linear on both systems. This means a grouped launch or index-generation
 shortcut that keeps the same semantic candidates is unlikely to close the gap;
 the useful work must reduce effective score/value visits or use a backend with
-real cross-query KV reuse for the DS4 layout.
+real cross-query KV reuse for the DS4 layout. The latest fused-stats/value and
+lower-live-state D512 microbench confirmed this: RTX saw at most a small
+microbench-only fused win, while GB10 regressed.
 
 ## Known Limits
 
