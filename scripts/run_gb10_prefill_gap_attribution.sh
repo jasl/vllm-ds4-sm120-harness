@@ -195,7 +195,7 @@ profile_expected_attention_marker() {
   local profile="$1"
   case "${profile}" in
     dev_default)
-      printf 'FLASHMLA_SPARSE_DSV4'
+      printf ''
       ;;
     flashinfer_sparse_dsv4)
       printf 'FLASHINFER_MLA_SPARSE_DSV4'

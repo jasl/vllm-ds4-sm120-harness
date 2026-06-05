@@ -1406,6 +1406,8 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     assert '"<ip>"' in script
     assert '"<path>"' in script
     assert '"FLASHINFER_MLA_SPARSE_DSV4"' in script
+    assert "dev_default)\n      printf ''" in script
+    assert "flashinfer_sparse_dsv4)\n      printf 'FLASHINFER_MLA_SPARSE_DSV4'" in script
     assert '            "FLASHINFER_MLA_SPARSE",' not in script
     assert "Using DeepSeek's fp8_ds_mla KV cache format" in script
     assert '"attention_backend_match": attention_backend_match' in script
