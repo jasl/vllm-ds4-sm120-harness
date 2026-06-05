@@ -70,6 +70,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Rejected current-shape grouped-compressed microbench:
   open `docs/sm120_optimization_notes.md` and search
   `Rejected current-shape grouped-compressed microbench`.
+- Current-shape C128A D512 NCU:
+  open `docs/sm120_optimization_notes.md` and search
+  `Current-shape C128A D512 NCU`.
 
 ## Rejected Or Blocked Prefill Routes
 

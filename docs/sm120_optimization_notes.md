@@ -7408,6 +7408,26 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   grouped kernels and command-line flag were removed.
   Artifacts: `artifacts/c128a_grouped_target_20260605224451` and
   `artifacts/c128a_grouped_group_sweep_20260605224523`.
+- Current-shape C128A D512 NCU, 2026-06-05:
+  after rejecting the separate grouped-compressed state, a focused NCU run
+  profiled the retained D512 split path on the corrected `1024 compressed +
+  128 SWA` shape (`1024` query tokens, `64` heads, `D=512`, `head_block=32`,
+  `block_c=64`, `block_d=128`). The profiler inflates wall-clock time, so use
+  these counters as bottleneck evidence rather than endpoint timing.
+
+  Artifact: `artifacts/c128a_current_d512_ncu_20260605224811`.
+
+  | Kernel | Duration | Issue slots busy | No eligible | Eligible warps/scheduler | Registers/thread | Achieved occupancy | L2 hit | Memory throughput |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | split score | `6.73 ms` | `5.55%` | `94.36%` | `0.07` | `44` | `16.52%` | `61.28%` | `29.62%` |
+  | split value | `6.02 ms` | `24.14%` | `75.68%` | `0.29` | `105` | `25.06%` | `63.51%` | `31.94%` |
+
+  Interpretation: the corrected C128A shape is still dominated by dependency
+  stalls and low eligible-warps, not by a saturated memory roof. The value
+  kernel remains first-order work, but its measured memory throughput is only
+  about one third of peak. This supports a fused or lower-live-state design
+  that reduces dependency depth and candidate/value traffic in place. It does
+  not support adding more separate states and merge launches.
 
 - Updated direction:
   - Do not continue local-SWA value tiling or simple query/head/union block
