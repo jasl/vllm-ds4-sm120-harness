@@ -85,6 +85,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Rejected single-launch grouped full-score probe:
   open `docs/sm120_optimization_notes.md` and search
   `Rejected single-launch grouped full-score probe`.
+- Rejected two-pass grouped-union replay probe:
+  open `docs/sm120_optimization_notes.md` and search
+  `Rejected two-pass grouped-union replay probe`.
 - Candidate row duplicate diagnostic:
   open `docs/sm120_optimization_notes.md` and search
   `Candidate row duplicate diagnostic`.

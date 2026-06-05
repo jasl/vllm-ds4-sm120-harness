@@ -162,6 +162,17 @@ still made score slower (`0.321 -> 0.414 ms`) and did not touch value traffic.
 Do not continue grouped-score-only work unless it also reduces value traffic
 or preserves current head-block reuse without losing occupancy.
 
+A two-pass grouped-union replay probe also did not win. It traversed a
+group-level union of C128A candidates, computed per-row grouped stats without
+writing the full score workspace, then replayed the same union for value
+accumulation. The shape had high theoretical reuse, but the value pass had to
+recompute QK scores and use smaller grouped tiles to fit shared memory. On RTX
+PRO 6000 it reached only about `0.33x` of the current D512 split path at the
+target `1024 compressed + 128 SWA` shape; on GB10 the best reduced probe was
+about `0.74x`. Do not continue two-pass grouped replay. Future fused C128A
+work must avoid score replay and preserve the current split path's head reuse,
+or reduce effective value traffic inside a single backend.
+
 A follow-up exact row-dedup diagnostic also found no current opportunity: the
 new opt-in `candidate_row_duplicates` stats field reported `0` duplicate
 candidate visits across `1408` sampled rows in a 4K RTX attribution smoke, both

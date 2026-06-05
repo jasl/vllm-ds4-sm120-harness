@@ -7649,6 +7649,51 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   natively handles the full DS4 metadata shape. Score-only grouped reuse is
   not enough.
 
+- Rejected two-pass grouped-union replay probe, 2026-06-06:
+  a temporary harness-only extension to
+  `scripts/run_sm12x_indexed_d512_split_microbench.py` tested whether a
+  group-level candidate union could reduce both score workspace traffic and
+  value traffic for the corrected C128A shape. The prototype did not write the
+  full score workspace. It first computed per-row grouped softmax stats over a
+  shared candidate union, then replayed the union for value accumulation. This
+  preserved exact per-row membership masks for the `1024 compressed + 128 SWA`
+  shape and matched the current chunk reference at about `1e-3` max absolute
+  error.
+
+  The probe confirmed the theoretical reuse but rejected the implementation
+  route. To fit shared memory it had to use smaller grouped tiles, and the
+  value replay had to recompute QK scores instead of reusing the current split
+  path's score workspace. The extra compute and weaker head-block reuse
+  outweighed the value-load reuse.
+
+  | Host | Tile | Current D512 split | Grouped union replay | Relative | Reuse ratio |
+  | --- | --- | ---: | ---: | ---: | ---: |
+  | RTX PRO 6000 / SM120 | group 4, head block 4 | `0.804 ms` | `2.466 ms` | `0.326x` | `0.749` |
+  | RTX PRO 6000 / SM120 | group 8, head block 2 | `0.812 ms` | `2.432 ms` | `0.334x` | `0.874` |
+  | RTX PRO 6000 / SM120 | group 16, head block 1 | `0.801 ms` | `2.421 ms` | `0.331x` | `0.937` |
+  | GB10 / SM121 | group 4, head block 2 | `7.186 ms` | `17.130 ms` | `0.419x` | `0.749` |
+  | GB10 / SM121 | group 8, head block 2 | `7.186 ms` | `9.894 ms` | `0.726x` | `0.874` |
+  | GB10 / SM121 | group 16, head block 1 | `7.302 ms` | `9.882 ms` | `0.739x` | `0.937` |
+
+  A small RTX smoke (`64` tokens, `512 compressed + 128 SWA`) did compile and
+  showed group 4 slightly above split (`1.057x`), but the target C128A shape
+  regressed badly and GB10 never beat split. Group 8 with head block 4 exceeded
+  shared memory (`116736` bytes required versus a `101376` byte limit).
+
+  Artifacts:
+  `artifacts/local_grouped_union_smoke_20260606`,
+  `artifacts/local_rtx_grouped_union_target_20260606`,
+  `artifacts/local_rtx_grouped_union_target_g8_h2_20260606`,
+  `artifacts/local_rtx_grouped_union_target_g16_20260606`,
+  `artifacts/local_gb10_grouped_union_target_20260606`, and
+  `artifacts/local_gb10_grouped_union_target_g16_20260606`.
+
+  Decision: reject and remove the temporary code. Do not retry two-pass
+  grouped-union replay. A future fused C128A backend must avoid replaying QK,
+  preserve the current D512 split path's head reuse, or reduce effective value
+  traffic inside one backend rather than by adding a separate grouped replay
+  path.
+
 - Candidate row duplicate diagnostic, 2026-06-06:
   after the split-launch grouped-combined route failed, the next exact
   work-reduction question was whether a single query row contains duplicate
