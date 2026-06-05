@@ -6942,6 +6942,125 @@ Rejected SWA-only D512 selector route, 2026-06-05:
   backend designed for the sliding-window contract, not only swap the current
   accumulate helper.
 
+Rejected grouped-query local-SWA tiled route, 2026-06-05:
+
+- Hypothesis: adjacent prefill query tokens share almost the whole sliding
+  window, so a grouped-query local-SWA tiled kernel might reuse the same SWA
+  K/V tile across multiple query rows and reduce value traffic. This was a
+  stricter follow-up to the overlap attribution: unlike range-SWA index
+  elision, it tried to exploit the local-window structure rather than only
+  remove index loads.
+- Temporary harness-only probe:
+  `scripts/run_sm12x_grouped_swa_microbench.py`; removed after measurement
+  because it had no durable maintenance value. No vLLM serving code was
+  changed.
+- The probe compared current production indexed D512 split against a local
+  sliding-window candidate on the exact SWA-only shape: `1024` query tokens,
+  `64` heads, `D=512`, `window=1024`, `block_n=64`, `block_d=128`. It swept
+  `token_block:head_block` pairs with `token_block * head_block = 32`.
+- RTX PRO 6000 artifact:
+  `artifacts/grouped_swa_rtx_probe_20260605182104`.
+
+| RTX token/head block | Current D512 | Grouped-SWA | Relative | Score | Stats | Value |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `1:32` | `1.565 ms` | `2.350 ms` | `0.666x` | `0.831` | `0.188` | `1.331` |
+| `2:16` | `1.565 ms` | `2.587 ms` | `0.605x` | `0.887` | `0.192` | `1.508` |
+| `4:8` | `1.565 ms` | `2.565 ms` | `0.610x` | `0.852` | `0.192` | `1.522` |
+| `8:4` | `1.566 ms` | `2.498 ms` | `0.627x` | `0.797` | `0.192` | `1.509` |
+
+- GB10 artifact:
+  `artifacts/grouped_swa_gb10_probe_20260605182203`.
+
+| GB10 token/head block | Current D512 | Grouped-SWA | Relative | Score | Stats | Value |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `1:32` | `13.274 ms` | `17.236 ms` | `0.770x` | `7.547` | `1.103` | `8.586` |
+| `2:16` | `13.138 ms` | `17.767 ms` | `0.739x` | `7.768` | `1.108` | `8.891` |
+| `4:8` | `13.109 ms` | `16.785 ms` | `0.781x` | `7.047` | `1.121` | `8.617` |
+| `8:4` | `13.046 ms` | `16.374 ms` | `0.797x` | `6.715` | `1.127` | `8.531` |
+
+- Correctness: all measured variants had `max_diff=0.000000` versus current
+  D512 split after normalization.
+- Decision: reject and do not carry the probe code. The exact local-window
+  tiled formulation did not reduce the real score/value work enough to beat
+  the current D512 split on either RTX PRO 6000 or GB10. This also tightens the
+  next-step rule: SWA work needs a genuine algorithm/backend improvement that
+  reduces candidate visits, value traffic, live state, or dependency depth. A
+  grouped launch that keeps the same SWA score/value work is not sufficient.
+
+D512 candidate-scaling and RTX NCU follow-up, 2026-06-05:
+
+- Motivation: after rejecting grouped local-SWA tiling, verify whether the
+  remaining C128/SWA cost scales with real candidate count and whether RTX
+  score/value kernels are limited by compute, memory bandwidth, or scheduler
+  latency. This determines whether the next experiment should keep changing
+  launch shape or instead reduce effective candidate/value work.
+- Harness maintenance: `scripts/run_sm12x_indexed_d512_split_microbench.py`
+  was updated from the removed partial-state helper API to the current
+  `accumulate_indexed_sparse_mla_attention_chunk` baseline. Local syntax,
+  ruff, and focused script tests passed, and a remote RTX smoke returned
+  numerically close output (`max_diff=0.002756`) against the split path.
+- RTX no-profiler artifact:
+  `artifacts/d512_microbench_rtx_20260605183224`. GB10 no-profiler artifact:
+  `artifacts/d512_microbench_gb10_20260605183225`. Shape:
+  `1024` query tokens, `64` heads, `D=512`, `1152` mixed C128/SWA candidates,
+  `128` compressed candidates plus SWA tail.
+
+| Host | Current chunk | D512 split | Split speedup | Score | Stats | Value |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 | `8.467 ms` | `1.915 ms` | `4.422x` | `0.745 ms` | `0.204 ms` | `0.966 ms` |
+| GB10 | `42.994 ms` | `16.851 ms` | `2.552x` | `8.422 ms` | `1.281 ms` | `7.148 ms` |
+
+- Candidate-length scaling, no profiler. RTX artifact:
+  `artifacts/d512_candidate_scaling_rtx_20260605183321`; GB10 artifact:
+  `artifacts/d512_candidate_scaling_gb10_20260605183322`. Shape was the same
+  except the synthetic candidate length used a sliding-window layout.
+
+| Host | Candidates | Split total | Score | Stats | Value |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 | `128` | `0.244 ms` | `0.094 ms` | `0.040 ms` | `0.110 ms` |
+| RTX PRO 6000 | `256` | `0.377 ms` | `0.164 ms` | `0.040 ms` | `0.174 ms` |
+| RTX PRO 6000 | `512` | `0.768 ms` | `0.309 ms` | `0.075 ms` | `0.385 ms` |
+| RTX PRO 6000 | `1152` | `1.755 ms` | `0.686 ms` | `0.204 ms` | `0.866 ms` |
+| GB10 | `128` | `2.232 ms` | `0.837 ms` | `0.161 ms` | `1.235 ms` |
+| GB10 | `256` | `3.871 ms` | `1.684 ms` | `0.305 ms` | `1.882 ms` |
+| GB10 | `512` | `7.090 ms` | `3.358 ms` | `0.601 ms` | `3.131 ms` |
+| GB10 | `1152` | `14.742 ms` | `7.614 ms` | `1.248 ms` | `5.880 ms` |
+
+- RTX NCU artifacts:
+  `artifacts/d512_ncu_basic_rtx_20260605183103` and
+  `artifacts/d512_ncu_deep_rtx_20260605183405`. The first NCU attempt with
+  `--set speedOfLight` collected no metric sections; the corrected runs used
+  `--set basic` and then explicit LaunchStats / Occupancy / SpeedOfLight /
+  SchedulerStats / WarpStateStats / MemoryWorkloadAnalysis sections.
+
+| RTX kernel | Duration | SM throughput | DRAM throughput | L2 hit | Eligible warps/sched | Achieved occupancy | Key limit |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `_indexed_score_kernel` | `756.48 us` | `22.83%` | `39.18%` | `86.00%` | `0.13` | `16.58%` | shared-memory-limited occupancy plus L1TEX long-scoreboard stalls |
+| `_indexed_value_kernel` | `959.23 us` | `35.50%` | `92.96%` | `59.14%` | `0.47` | `24.51%` | near-DRAM-roof value traffic with some predication / long-scoreboard stalls |
+
+- GB10 NCU status: the same NCU command on GB10 failed with
+  `ERR_NVGPUCTRPERM`, so GB10 counter-level conclusions are blocked until
+  performance-counter access is enabled. The no-profiler scaling data is still
+  useful because it shows the same near-linear dependence on candidate count.
+- Interpretation:
+  - The score kernel is not limited by tensor compute peak; it has too few
+    eligible warps and is constrained by shared-memory occupancy plus L1TEX
+    dependencies. Reducing live score state or memory dependency depth is more
+    promising than only changing launch count.
+  - The value kernel is already close to the RTX GDDR7 DRAM roof. Any path that
+    keeps the same value candidate traffic can only win marginally; a material
+    endpoint improvement needs lower effective value traffic or real cross-query
+    KV reuse.
+  - Candidate-length scaling is close enough to linear, especially on GB10, to
+    make candidate/work reduction the clearest next experiment criterion.
+- Decision: do not add production code from this pass. Keep the microbench
+  script API repair because it restores a useful harness diagnostic after the
+  upstream sparse-MLA helper refactor. The next vLLM experiment should be
+  judged by reduced effective score/value visits or improved visits/s under
+  the real `128 compressed + large SWA tail` layout; more simple
+  head-block/chunk/launch sweeps should remain rejected unless a rebase brings
+  a materially different upstream backend.
+
 Promotion/research checkpoint, 2026-06-05:
 
 - PR-branch-ready work is the D512 sparse-MLA prefill stack plus the supporting

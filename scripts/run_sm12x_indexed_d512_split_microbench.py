@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Prototype an indexed D=512 split sparse-MLA accumulate path.
 
-This is an experiment script, not a harness gate. It targets the C4-style
-production bottleneck where candidate lists differ per token, so grouped C128
-candidate reuse does not apply. The baseline is vLLM's production partial-state
-indexed sparse MLA path. The candidate path splits work into:
+This is an experiment script, not a harness gate. It targets production-like
+candidate patterns where candidate lists differ per token, so grouped C128
+candidate reuse does not apply. The baseline is vLLM's current indexed sparse
+MLA chunk path. The candidate path splits work into:
 
 1. score materialization with a head-block x candidate-block tensor-core dot;
 2. per-token/head max and denom over the score workspace;
 3. value accumulation split over the D=512 dimension.
 
-If this does not beat the production partial path for per-token random
+If this does not beat the production chunk path for per-token random
 candidates, it should stay as a rejected experiment.
 """
 
@@ -77,7 +77,7 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         f"- warmup / iterations: `{payload['warmup']} / {payload['iterations']}`",
         "",
         (
-            "| candidates | partial ms | split total ms | partial speedup | "
+            "| candidates | current chunk ms | split total ms | split speedup | "
             "score ms | stats ms | value ms | max abs diff |"
         ),
         "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
@@ -85,8 +85,8 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
     for row in payload["rows"]:
         lines.append(
             (
-                "| {num_candidates} | {partial_mean_ms:.3f} | "
-                "{split_total_mean_ms:.3f} | {partial_speedup:.3f}x | "
+                "| {num_candidates} | {current_chunk_mean_ms:.3f} | "
+                "{split_total_mean_ms:.3f} | {split_speedup:.3f}x | "
                 "{score_mean_ms:.3f} | {stats_mean_ms:.3f} | "
                 "{value_mean_ms:.3f} | {max_abs_diff:.6f} |"
             ).format(**row)
@@ -145,7 +145,6 @@ def main() -> int:
     parser.add_argument("--head-block", type=int, default=16)
     parser.add_argument("--block-c", type=int, default=64)
     parser.add_argument("--block-d", type=int, default=64)
-    parser.add_argument("--part-size", type=int, default=512)
     parser.add_argument("--compressed-candidates", type=int, default=128)
     parser.add_argument(
         "--score-dtype",
@@ -175,8 +174,6 @@ def main() -> int:
         parser.error("--head-dim must be divisible by --block-d")
     if max(args.candidate_lens) > args.kv_tokens:
         parser.error("--kv-tokens must cover the largest candidate length")
-    if args.part_size <= 0:
-        parser.error("--part-size must be positive")
     if args.warmup < 0 or args.iterations <= 0:
         parser.error("--warmup must be >= 0 and --iterations must be > 0")
 
@@ -371,8 +368,7 @@ def main() -> int:
         )
 
     from vllm.v1.attention.backends.mla.sparse_mla_kernels import (
-        accumulate_indexed_sparse_mla_attention_partial_states,
-        merge_sparse_mla_attention_states,
+        accumulate_indexed_sparse_mla_attention_chunk,
     )
 
     torch.cuda.set_device(args.gpu_id)
@@ -473,98 +469,25 @@ def main() -> int:
             dtype=torch.float32,
         )
 
-        num_parts = (
-            (num_candidates + args.part_size - 1) // args.part_size
-            if num_candidates > args.part_size
-            else 1
-        )
-        partial_max = torch.empty(
-            num_parts,
-            args.num_tokens,
-            args.num_heads,
-            device=device,
-            dtype=torch.float32,
-        )
-        partial_denom = torch.empty_like(partial_max)
-        partial_acc = torch.empty(
-            num_parts,
-            args.num_tokens,
-            args.num_heads,
-            args.head_dim,
-            device=device,
-            dtype=torch.float32,
-        )
-        partial_out_max = torch.empty_like(split_max)
-        partial_out_denom = torch.empty_like(split_denom)
-        partial_out_acc = torch.empty_like(split_out)
-        scratch_max = torch.empty_like(split_max)
-        scratch_denom = torch.empty_like(split_denom)
-        scratch_acc = torch.empty_like(split_out)
+        current_chunk_max = torch.empty_like(split_max)
+        current_chunk_denom = torch.empty_like(split_denom)
+        current_chunk_acc = torch.empty_like(split_out)
 
-        def run_partial() -> None:
-            if num_parts == 1:
-                accumulate_indexed_sparse_mla_attention_partial_states(
-                    q=q,
-                    kv_flat=kv_flat,
-                    indices=indices,
-                    lens=lens,
-                    scale=args.scale,
-                    part_size=num_candidates,
-                    max_score=partial_max,
-                    denom=partial_denom,
-                    acc=partial_acc,
-                )
-                partial_out_max.copy_(partial_max[0])
-                partial_out_denom.copy_(partial_denom[0])
-                partial_out_acc.copy_(partial_acc[0])
-                return
-            accumulate_indexed_sparse_mla_attention_partial_states(
+        def run_current_chunk() -> None:
+            current_chunk_max.fill_(float("-inf"))
+            current_chunk_denom.zero_()
+            current_chunk_acc.zero_()
+            accumulate_indexed_sparse_mla_attention_chunk(
                 q=q,
                 kv_flat=kv_flat,
                 indices=indices,
                 lens=lens,
+                candidate_offset=0,
                 scale=args.scale,
-                part_size=args.part_size,
-                max_score=partial_max,
-                denom=partial_denom,
-                acc=partial_acc,
+                max_score=current_chunk_max,
+                denom=current_chunk_denom,
+                acc=current_chunk_acc,
             )
-            merge_sparse_mla_attention_states(
-                partial_max[0],
-                partial_denom[0],
-                partial_acc[0],
-                partial_max[1],
-                partial_denom[1],
-                partial_acc[1],
-                partial_out_max,
-                partial_out_denom,
-                partial_out_acc,
-            )
-            current_max = partial_out_max
-            current_denom = partial_out_denom
-            current_acc = partial_out_acc
-            next_max = scratch_max
-            next_denom = scratch_denom
-            next_acc = scratch_acc
-            for part_idx in range(2, num_parts):
-                merge_sparse_mla_attention_states(
-                    current_max,
-                    current_denom,
-                    current_acc,
-                    partial_max[part_idx],
-                    partial_denom[part_idx],
-                    partial_acc[part_idx],
-                    next_max,
-                    next_denom,
-                    next_acc,
-                )
-                current_max, next_max = next_max, current_max
-                current_denom, next_denom = next_denom, current_denom
-                current_acc, next_acc = next_acc, current_acc
-            if current_max is not partial_out_max:
-                partial_out_max.copy_(current_max)
-                partial_out_denom.copy_(current_denom)
-                partial_out_acc.copy_(current_acc)
 
         score_grid = (
             args.num_tokens,
@@ -668,17 +591,17 @@ def main() -> int:
             return float(start.elapsed_time(end))
 
         for _ in range(args.warmup):
-            run_partial()
+            run_current_chunk()
             run_split()
         torch.cuda.synchronize()
 
-        partial_samples_ms: list[float] = []
+        current_chunk_samples_ms: list[float] = []
         split_samples_ms: list[float] = []
         score_samples_ms: list[float] = []
         stats_samples_ms: list[float] = []
         value_samples_ms: list[float] = []
         for _ in range(args.iterations):
-            partial_samples_ms.append(time_call(run_partial))
+            current_chunk_samples_ms.append(time_call(run_current_chunk))
             score_ms = time_call(run_score)
             stats_ms = time_call(run_stats)
             value_ms = time_call(run_value)
@@ -687,31 +610,33 @@ def main() -> int:
             value_samples_ms.append(value_ms)
             split_samples_ms.append(score_ms + stats_ms + value_ms)
 
-        partial_out = partial_out_acc / partial_out_denom[:, :, None]
-        diff = (partial_out - split_out).abs()
-        partial_summary = _summarize_ms(partial_samples_ms)
+        current_chunk_out = current_chunk_acc / current_chunk_denom[:, :, None]
+        diff = (current_chunk_out - split_out).abs()
+        current_chunk_summary = _summarize_ms(current_chunk_samples_ms)
         split_summary = _summarize_ms(split_samples_ms)
         row = {
             "num_candidates": num_candidates,
-            "partial": partial_summary,
+            "current_chunk": current_chunk_summary,
             "split_total": split_summary,
             "score": _summarize_ms(score_samples_ms),
             "stats": _summarize_ms(stats_samples_ms),
             "value": _summarize_ms(value_samples_ms),
-            "partial_mean_ms": partial_summary["mean_ms"],
+            "current_chunk_mean_ms": current_chunk_summary["mean_ms"],
             "split_total_mean_ms": split_summary["mean_ms"],
             "score_mean_ms": statistics.fmean(score_samples_ms),
             "stats_mean_ms": statistics.fmean(stats_samples_ms),
             "value_mean_ms": statistics.fmean(value_samples_ms),
-            "partial_speedup": partial_summary["mean_ms"] / split_summary["mean_ms"],
+            "split_speedup": (
+                current_chunk_summary["mean_ms"] / split_summary["mean_ms"]
+            ),
             "max_abs_diff": float(diff.max().item()),
             "mean_abs_diff": float(diff.mean().item()),
         }
         rows.append(row)
         print(
-            "candidates={num_candidates} partial={partial_mean_ms:.3f}ms "
+            "candidates={num_candidates} current_chunk={current_chunk_mean_ms:.3f}ms "
             "split={split_total_mean_ms:.3f}ms "
-            "partial_speedup={partial_speedup:.3f}x "
+            "split_speedup={split_speedup:.3f}x "
             "score={score_mean_ms:.3f} stats={stats_mean_ms:.3f} "
             "value={value_mean_ms:.3f} max_diff={max_abs_diff:.6f}".format(
                 **row
@@ -740,7 +665,6 @@ def main() -> int:
             * torch.empty((), dtype=score_dtype).element_size()
             / (1024 * 1024)
         ),
-        "part_size": args.part_size,
         "index_pattern": args.index_pattern,
         "warmup": args.warmup,
         "iterations": args.iterations,

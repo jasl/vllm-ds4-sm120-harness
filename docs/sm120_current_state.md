@@ -37,7 +37,8 @@ Last updated: 2026-06-05.
   as a direct DS4 endpoint backend, upstream
   `FLASHINFER_MLA_SPARSE_DSV4` with the current official wheel, standalone C128
   grouped-compressed prefill, generic D512 selector/tile/chunk sweeps, BF16
-  score workspace, and SWA-only routing through the current D512 helper.
+  score workspace, SWA-only routing through the current D512 helper, and
+  grouped-query local-SWA tiling that keeps the same candidate work.
 
 ## Promotion Matrix
 
@@ -106,6 +107,16 @@ matrix, prefer that route over carrying fork-specific kernel code. If no public
 backend wins, the next production-worthy experiment must reduce real
 sparse-MLA candidate/value work, live state, or dependency depth for the DS4
 mixed compressed-plus-SWA metadata shape.
+
+Latest focused microbench / NCU follow-up keeps this direction intact. On RTX
+PRO 6000, the D512 score kernel for the mixed C128/SWA shape is limited by low
+eligible-warps / long-scoreboard behavior and shared-memory-limited occupancy,
+while the value kernel is already near the GDDR7 DRAM roof. On GB10, performance
+counter access is currently blocked, but no-profiler candidate-length scaling is
+close to linear. This means a grouped launch or index-generation shortcut that
+keeps the same semantic candidates is unlikely to close the gap; the useful
+work must reduce effective score/value visits or use a backend with real
+cross-query KV reuse for the DS4 layout.
 
 ## Known Limits
 

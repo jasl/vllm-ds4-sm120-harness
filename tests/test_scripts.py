@@ -235,18 +235,19 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert "FULL_AND_PIECEWISE" in script
 
 
-def test_indexed_d512_split_microbench_targets_c4_style_partial_path():
+def test_indexed_d512_split_microbench_targets_current_chunk_path():
     script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
         encoding="utf-8"
     )
 
     assert "Prototype an indexed D=512 split sparse-MLA accumulate path" in script
-    assert "accumulate_indexed_sparse_mla_attention_partial_states" in script
+    assert "accumulate_indexed_sparse_mla_attention_chunk" in script
+    assert "accumulate_indexed_sparse_mla_attention_partial_states" not in script
     assert "_indexed_score_kernel" in script
     assert "_indexed_value_kernel" in script
     assert "--index-pattern" in script
     assert "per-token" in script
-    assert "partial_speedup" in script
+    assert "split_speedup" in script
 
 
 def test_prefix_cache_probe_wrapper_records_kv_runtime_artifacts():

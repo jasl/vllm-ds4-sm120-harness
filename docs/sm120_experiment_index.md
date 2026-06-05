@@ -58,6 +58,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Mixed C128/SWA D512 NCU follow-up:
   open `docs/sm120_optimization_notes.md` and search
   `Mixed C128/SWA D512 NCU follow-up`.
+- D512 candidate-scaling and RTX NCU follow-up:
+  open `docs/sm120_optimization_notes.md` and search
+  `D512 candidate-scaling and RTX NCU follow-up`.
 
 ## Rejected Or Blocked Prefill Routes
 
@@ -73,6 +76,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - SWA-only D512 selector:
   open `docs/sm120_optimization_notes.md` and search
   `Rejected SWA-only D512 selector route`.
+- Grouped-query local-SWA tiled route:
+  open `docs/sm120_optimization_notes.md` and search
+  `Rejected grouped-query local-SWA tiled route`.
 - SWA range candidate / gather-only style routes:
   open `docs/sm120_optimization_notes.md` and search
   `range-SWA D512 microbench candidate`.
