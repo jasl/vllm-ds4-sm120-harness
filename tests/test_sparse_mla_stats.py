@@ -94,6 +94,35 @@ def _stats_row(**overrides):
                 "padding_ratio": 0.28125,
             },
         },
+        "candidate_row_duplicates": {
+            "sample_rows": 4,
+            "valid_candidates": 20,
+            "unique_candidates": 18,
+            "duplicate_candidate_visits": 2,
+            "duplicate_visit_ratio": 0.1,
+            "rows_with_duplicates": 1,
+            "row_duplicate_ratio": 0.25,
+            "regions": {
+                "compressed": {
+                    "sample_rows": 4,
+                    "valid_candidates": 8,
+                    "unique_candidates": 7,
+                    "duplicate_candidate_visits": 1,
+                    "duplicate_visit_ratio": 0.125,
+                    "rows_with_duplicates": 1,
+                    "row_duplicate_ratio": 0.25,
+                },
+                "swa": {
+                    "sample_rows": 4,
+                    "valid_candidates": 12,
+                    "unique_candidates": 11,
+                    "duplicate_candidate_visits": 1,
+                    "duplicate_visit_ratio": 0.083333,
+                    "rows_with_duplicates": 1,
+                    "row_duplicate_ratio": 0.25,
+                },
+            },
+        },
     }
     row.update(overrides)
     return row
@@ -192,6 +221,16 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert reuse["regions"]["compressed"]["2"]["effective_visit_share"] == 0.041667
     assert reuse["regions"]["swa"]["2"]["sampled_reuse_ratio"] == 0.333333
     assert reuse["regions"]["swa"]["2"]["effective_visit_share"] == 0.958333
+    duplicates = report["candidate_row_duplicates"]
+    assert duplicates["sample_rows"] == 8
+    assert duplicates["valid_candidates"] == 40
+    assert duplicates["unique_candidates"] == 36
+    assert duplicates["duplicate_candidate_visits"] == 4
+    assert duplicates["duplicate_visit_ratio"] == 0.1
+    assert duplicates["rows_with_duplicates"] == 2
+    assert duplicates["row_duplicate_ratio"] == 0.25
+    assert duplicates["regions"]["compressed"]["duplicate_candidate_visits"] == 2
+    assert duplicates["regions"]["swa"]["duplicate_candidate_visits"] == 2
     region_work = report["candidate_region_work"]
     assert region_work["compressed"]["candidate_slots"] == 65536
     assert region_work["compressed"]["effective_candidate_visits"] == 16384
@@ -219,6 +258,9 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert report["groups"][0]["candidate_region_work"]["swa"][
         "effective_candidate_visits"
     ] == 188416
+    assert report["groups"][0]["candidate_row_duplicates"][
+        "duplicate_candidate_visits"
+    ] == 2
 
 
 def test_sparse_mla_stats_report_skips_invalid_lines_and_unknown_kinds(tmp_path):
@@ -258,6 +300,7 @@ def test_sparse_mla_stats_markdown_does_not_leak_absolute_paths(tmp_path):
     assert "stats.jsonl" in text
     assert "## Candidate Overlap" in text
     assert "## Cross-Query Reuse Potential" in text
+    assert "## Candidate Row Duplicates" in text
     assert "## Candidate Region Work" in text
     assert "| compressed | `32768` | `8192` | `24576` | `0.75` |" in text
     assert "| swa | `262144` | `188416` | `73728` | `0.28125` |" in text

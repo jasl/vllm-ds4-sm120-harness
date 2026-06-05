@@ -151,6 +151,13 @@ Future cross-query reuse work must be tighter: fewer effective score/value
 visits, less value traffic, or a single/fused backend that preserves current
 head reuse and avoids extra merge or split value launches.
 
+A follow-up exact row-dedup diagnostic also found no current opportunity: the
+new opt-in `candidate_row_duplicates` stats field reported `0` duplicate
+candidate visits across `1408` sampled rows in a 4K RTX attribution smoke, both
+overall and within compressed/SWA regions. Do not spend kernel time on
+same-row duplicate elimination unless a future stats run shows non-zero
+duplicate visits.
+
 ## Known Limits
 
 - GB10 reduced long-C2 validates availability and token cadence only. It is not

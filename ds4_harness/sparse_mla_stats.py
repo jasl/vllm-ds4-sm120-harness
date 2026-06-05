@@ -368,6 +368,65 @@ def _summarize_candidate_overlap(rows: list[Json]) -> Json:
     }
 
 
+def _summarize_duplicate_values(values_list: list[Json]) -> Json:
+    sample_rows = 0
+    valid_candidates = 0
+    unique_candidates = 0
+    duplicate_candidate_visits = 0
+    rows_with_duplicates = 0
+    for values in values_list:
+        if not isinstance(values, dict):
+            continue
+        sample_rows += _int_value(values.get("sample_rows")) or 0
+        valid_candidates += _int_value(values.get("valid_candidates")) or 0
+        unique_candidates += _int_value(values.get("unique_candidates")) or 0
+        duplicate_candidate_visits += (
+            _int_value(values.get("duplicate_candidate_visits")) or 0
+        )
+        rows_with_duplicates += _int_value(values.get("rows_with_duplicates")) or 0
+    return {
+        "sample_rows": sample_rows,
+        "valid_candidates": valid_candidates,
+        "unique_candidates": unique_candidates,
+        "duplicate_candidate_visits": duplicate_candidate_visits,
+        "duplicate_visit_ratio": _round_float(
+            duplicate_candidate_visits / valid_candidates
+        )
+        if valid_candidates
+        else None,
+        "rows_with_duplicates": rows_with_duplicates,
+        "row_duplicate_ratio": _round_float(rows_with_duplicates / sample_rows)
+        if sample_rows
+        else None,
+    }
+
+
+def _summarize_candidate_row_duplicates(rows: list[Json]) -> Json:
+    values_list: list[Json] = []
+    regions: dict[str, list[Json]] = {}
+    for row in rows:
+        duplicates = row.get("candidate_row_duplicates")
+        if not isinstance(duplicates, dict):
+            continue
+        values_list.append(duplicates)
+        duplicate_regions = duplicates.get("regions")
+        if not isinstance(duplicate_regions, dict):
+            continue
+        for region, values in duplicate_regions.items():
+            region_key = _str_key(region)
+            if region_key is None or not isinstance(values, dict):
+                continue
+            regions.setdefault(region_key, []).append(values)
+    if not values_list:
+        return {}
+    summary = _summarize_duplicate_values(values_list)
+    summary["regions"] = {
+        region: _summarize_duplicate_values(values)
+        for region, values in sorted(regions.items())
+    }
+    return summary
+
+
 def _reuse_potential_row(values: Json, effective_visit_share: float | None) -> Json:
     valid = _int_value(values.get("valid_candidates")) or 0
     unique = _int_value(values.get("unique_candidates")) or 0
@@ -461,6 +520,7 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
         timings = _summarize_stage_timings(group_rows)
         overlap = _summarize_candidate_overlap(group_rows)
         region_work = _summarize_candidate_region_work(group_rows)
+        row_duplicates = _summarize_candidate_row_duplicates(group_rows)
         groups.append(
             {
                 "layer_type": layer_type,
@@ -475,6 +535,7 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
                 "stage_timings_ms": timings,
                 "stage_efficiency": _summarize_stage_efficiency(work, timings),
                 "candidate_overlap": overlap,
+                "candidate_row_duplicates": row_duplicates,
                 "cross_query_reuse_potential": (
                     _summarize_cross_query_reuse_potential(
                         overlap,
@@ -525,6 +586,7 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
     timings = _summarize_stage_timings(rows)
     overlap = _summarize_candidate_overlap(rows)
     region_work = _summarize_candidate_region_work(rows)
+    row_duplicates = _summarize_candidate_row_duplicates(rows)
     return {
         "stats_path": stats_path.name,
         "row_count": len(rows),
@@ -538,6 +600,7 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
         "stage_timings_ms": timings,
         "stage_efficiency": _summarize_stage_efficiency(work, timings),
         "candidate_overlap": overlap,
+        "candidate_row_duplicates": row_duplicates,
         "cross_query_reuse_potential": _summarize_cross_query_reuse_potential(
             overlap,
             region_work,
@@ -639,12 +702,25 @@ def _cross_query_reuse_rows(reuse: Any) -> list[tuple[str, str, Json]]:
     return rows
 
 
+def _candidate_row_duplicate_rows(duplicates: Any) -> list[tuple[str, Json]]:
+    if not isinstance(duplicates, dict):
+        return []
+    rows: list[tuple[str, Json]] = [("all", duplicates)]
+    regions = duplicates.get("regions")
+    if isinstance(regions, dict):
+        for region, values in sorted(regions.items()):
+            if isinstance(values, dict):
+                rows.append((str(region), values))
+    return rows
+
+
 def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
     work = report.get("candidate_work", {})
     timings = report.get("stage_timings_ms", {})
     efficiency = report.get("stage_efficiency", {})
     overlap = report.get("candidate_overlap", {})
     reuse = report.get("cross_query_reuse_potential", {})
+    row_duplicates = report.get("candidate_row_duplicates", {})
     region_work = report.get("candidate_region_work", {})
     lines = [
         "# Sparse MLA Prefill Stats Report",
@@ -750,6 +826,34 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
         )
     if not reuse_rows:
         lines.append("| n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
+    lines.extend(
+        [
+            "",
+            "## Candidate Row Duplicates",
+            "",
+            (
+                "| Region | Sample rows | Valid candidates | Unique candidates | "
+                "Duplicate visits | Duplicate visit ratio | Rows with duplicates | "
+                "Row duplicate ratio |"
+            ),
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    duplicate_rows = _candidate_row_duplicate_rows(row_duplicates)
+    for region, values in duplicate_rows:
+        lines.append(
+            "| "
+            f"{region} | "
+            f"{_format_number(values.get('sample_rows'))} | "
+            f"{_format_number(values.get('valid_candidates'))} | "
+            f"{_format_number(values.get('unique_candidates'))} | "
+            f"{_format_number(values.get('duplicate_candidate_visits'))} | "
+            f"{_format_number(values.get('duplicate_visit_ratio'))} | "
+            f"{_format_number(values.get('rows_with_duplicates'))} | "
+            f"{_format_number(values.get('row_duplicate_ratio'))} |"
+        )
+    if not duplicate_rows:
+        lines.append("| n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
     lines.extend(
         [
             "",

@@ -7563,3 +7563,35 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   Artifacts:
   `artifacts/local_rtx_grouped_combined_probe_20260606` and
   `artifacts/local_gb10_grouped_combined_probe_20260606`.
+
+- Candidate row duplicate diagnostic, 2026-06-06:
+  after the split-launch grouped-combined route failed, the next exact
+  work-reduction question was whether a single query row contains duplicate
+  candidates, especially between compressed and SWA regions. Exact duplicate
+  candidates could be reduced without changing semantics only if the repeated
+  candidate contribution were accounted for, so this was worth measuring before
+  any kernel work.
+
+  Instrumentation added:
+  `candidate_row_duplicates` in the opt-in sparse-MLA stats writer, plus
+  harness report/markdown aggregation. The field is emitted only when
+  `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_OVERLAP_ROWS > 0`, so default serving and
+  normal baselines do not do extra GPU-to-CPU sampling.
+
+  RTX PRO 6000 / SM120 smoke artifact:
+  `artifacts/local_rtx_row_duplicate_probe_20260606`. Shape was a small 4K
+  attribution run with overlap sampling enabled; use it for candidate-shape
+  evidence only, not latency.
+
+  | Scope | Sample rows | Valid candidates | Duplicate visits | Duplicate ratio | Rows with duplicates |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | all | `1408` | `13144` | `0` | `0.000000` | `0` |
+  | compressed | `1408` | `1176` | `0` | `0.000000` | `0` |
+  | SWA | `1408` | `11968` | `0` | `0.000000` | `0` |
+
+  Decision: keep the diagnostic field because it is low-risk and protects
+  future analysis, but do not pursue same-row duplicate elimination. The
+  measured DS4 C128/C4/SWA rows have no sampled exact duplicate candidates, so
+  this route would not reduce current score/value visits. Future work should
+  stay focused on real cross-query KV reuse, lower value traffic, dependency
+  depth, or a backend that natively handles the DS4 metadata shape.
