@@ -182,6 +182,16 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert overlap["regions"]["compressed"]["2"]["unique_to_valid_ratio"] == 0.5
     assert overlap["regions"]["swa"]["2"]["valid_candidates"] == 24
     assert overlap["regions"]["swa"]["2"]["unique_to_valid_ratio"] == 0.666667
+    reuse = report["cross_query_reuse_potential"]
+    assert reuse["sample_rows"] == 8
+    assert reuse["regions"]["all"]["2"]["sampled_valid_candidate_visits"] == 40
+    assert reuse["regions"]["all"]["2"]["sampled_union_candidate_visits"] == 24
+    assert reuse["regions"]["all"]["2"]["sampled_reusable_candidate_visits"] == 16
+    assert reuse["regions"]["all"]["2"]["sampled_reuse_ratio"] == 0.4
+    assert reuse["regions"]["compressed"]["2"]["sampled_reuse_ratio"] == 0.5
+    assert reuse["regions"]["compressed"]["2"]["effective_visit_share"] == 0.041667
+    assert reuse["regions"]["swa"]["2"]["sampled_reuse_ratio"] == 0.333333
+    assert reuse["regions"]["swa"]["2"]["effective_visit_share"] == 0.958333
     region_work = report["candidate_region_work"]
     assert region_work["compressed"]["candidate_slots"] == 65536
     assert region_work["compressed"]["effective_candidate_visits"] == 16384
@@ -247,10 +257,12 @@ def test_sparse_mla_stats_markdown_does_not_leak_absolute_paths(tmp_path):
     assert "# Sparse MLA Prefill Stats Report" in text
     assert "stats.jsonl" in text
     assert "## Candidate Overlap" in text
+    assert "## Cross-Query Reuse Potential" in text
     assert "## Candidate Region Work" in text
     assert "| compressed | `32768` | `8192` | `24576` | `0.75` |" in text
     assert "| swa | `262144` | `188416` | `73728` | `0.28125` |" in text
     assert "| all | 2 |" in text
+    assert "| swa | 2 | 12 | 8 | 4 | 0.333333 | 0.958333 |" in text
     assert "| compressed | 2 |" in text
     assert "/home/private" not in text
     assert "model.layers.3.self_attn" in text

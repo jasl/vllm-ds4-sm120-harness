@@ -76,6 +76,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Rejected fused / lower-live-state D512 microbench:
   open `docs/sm120_optimization_notes.md` and search
   `Rejected fused / lower-live-state D512 microbench`.
+- Cross-query KV reuse observation:
+  open `docs/sm120_optimization_notes.md` and search
+  `Cross-query KV reuse observation infrastructure`.
 
 ## Rejected Or Blocked Prefill Routes
 

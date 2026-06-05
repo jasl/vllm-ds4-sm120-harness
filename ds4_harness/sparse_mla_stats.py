@@ -368,6 +368,86 @@ def _summarize_candidate_overlap(rows: list[Json]) -> Json:
     }
 
 
+def _reuse_potential_row(values: Json, effective_visit_share: float | None) -> Json:
+    valid = _int_value(values.get("valid_candidates")) or 0
+    unique = _int_value(values.get("unique_candidates")) or 0
+    reusable = max(0, valid - unique)
+    return {
+        "groups": _int_value(values.get("groups")) or 0,
+        "sampled_valid_candidate_visits": valid,
+        "sampled_union_candidate_visits": unique,
+        "sampled_reusable_candidate_visits": reusable,
+        "sampled_reuse_ratio": _round_float(reusable / valid) if valid else None,
+        "unique_to_valid_ratio": _round_float(unique / valid) if valid else None,
+        "effective_visit_share": _round_float(effective_visit_share),
+    }
+
+
+def _region_effective_visit_shares(region_work: Json) -> dict[str, float]:
+    if not isinstance(region_work, dict):
+        return {}
+    effective_by_region: dict[str, int] = {}
+    for region, values in region_work.items():
+        if not isinstance(values, dict):
+            continue
+        region_key = _str_key(region)
+        if region_key is None:
+            continue
+        effective_by_region[region_key] = (
+            _int_value(values.get("effective_candidate_visits")) or 0
+        )
+    total = sum(effective_by_region.values())
+    if not total:
+        return {}
+    return {
+        region: effective / total
+        for region, effective in effective_by_region.items()
+        if effective
+    }
+
+
+def _summarize_cross_query_reuse_potential(
+    overlap: Json,
+    region_work: Json,
+) -> Json:
+    if not isinstance(overlap, dict):
+        overlap = {}
+    shares = _region_effective_visit_shares(region_work)
+    regions: dict[str, Json] = {}
+
+    groups = overlap.get("groups")
+    if isinstance(groups, dict):
+        regions["all"] = {
+            str(group_size): _reuse_potential_row(values, 1.0)
+            for group_size, values in sorted(
+                groups.items(), key=lambda item: int(item[0])
+            )
+            if isinstance(values, dict)
+        }
+
+    overlap_regions = overlap.get("regions")
+    if isinstance(overlap_regions, dict):
+        for region, region_groups in sorted(overlap_regions.items()):
+            if not isinstance(region_groups, dict):
+                continue
+            region_key = str(region)
+            regions[region_key] = {
+                str(group_size): _reuse_potential_row(
+                    values,
+                    shares.get(region_key),
+                )
+                for group_size, values in sorted(
+                    region_groups.items(), key=lambda item: int(item[0])
+                )
+                if isinstance(values, dict)
+            }
+
+    return {
+        "sample_rows": _int_value(overlap.get("sample_rows")) or 0,
+        "regions": regions,
+    }
+
+
 def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
     grouped: dict[tuple[str, str], list[Json]] = {}
     for row in rows:
@@ -380,6 +460,7 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
         work = _summarize_candidate_work(group_rows)
         timings = _summarize_stage_timings(group_rows)
         overlap = _summarize_candidate_overlap(group_rows)
+        region_work = _summarize_candidate_region_work(group_rows)
         groups.append(
             {
                 "layer_type": layer_type,
@@ -394,9 +475,13 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
                 "stage_timings_ms": timings,
                 "stage_efficiency": _summarize_stage_efficiency(work, timings),
                 "candidate_overlap": overlap,
-                "candidate_region_work": _summarize_candidate_region_work(
-                    group_rows
+                "cross_query_reuse_potential": (
+                    _summarize_cross_query_reuse_potential(
+                        overlap,
+                        region_work,
+                    )
                 ),
+                "candidate_region_work": region_work,
                 "layer_prefixes": sorted(
                     {
                         _safe_prefix(row.get("layer_prefix"))
@@ -438,6 +523,8 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
     )
     work = _summarize_candidate_work(rows)
     timings = _summarize_stage_timings(rows)
+    overlap = _summarize_candidate_overlap(rows)
+    region_work = _summarize_candidate_region_work(rows)
     return {
         "stats_path": stats_path.name,
         "row_count": len(rows),
@@ -450,8 +537,12 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
         "candidate_work": work,
         "stage_timings_ms": timings,
         "stage_efficiency": _summarize_stage_efficiency(work, timings),
-        "candidate_overlap": _summarize_candidate_overlap(rows),
-        "candidate_region_work": _summarize_candidate_region_work(rows),
+        "candidate_overlap": overlap,
+        "cross_query_reuse_potential": _summarize_cross_query_reuse_potential(
+            overlap,
+            region_work,
+        ),
+        "candidate_region_work": region_work,
         "groups": _group_sparse_mla_stats(rows),
     }
 
@@ -532,11 +623,28 @@ def _candidate_region_work_rows(work: Any) -> list[tuple[str, Json]]:
     ]
 
 
+def _cross_query_reuse_rows(reuse: Any) -> list[tuple[str, str, Json]]:
+    if not isinstance(reuse, dict):
+        return []
+    regions = reuse.get("regions")
+    if not isinstance(regions, dict):
+        return []
+    rows: list[tuple[str, str, Json]] = []
+    for region, groups in sorted(regions.items()):
+        if not isinstance(groups, dict):
+            continue
+        for group_size, values in sorted(groups.items(), key=lambda item: int(item[0])):
+            if isinstance(values, dict):
+                rows.append((str(region), str(group_size), values))
+    return rows
+
+
 def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
     work = report.get("candidate_work", {})
     timings = report.get("stage_timings_ms", {})
     efficiency = report.get("stage_efficiency", {})
     overlap = report.get("candidate_overlap", {})
+    reuse = report.get("cross_query_reuse_potential", {})
     region_work = report.get("candidate_region_work", {})
     lines = [
         "# Sparse MLA Prefill Stats Report",
@@ -614,6 +722,34 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
         )
     if not overlap_rows:
         lines.append("| n/a | n/a | n/a | n/a | n/a | n/a |")
+    lines.extend(
+        [
+            "",
+            "## Cross-Query Reuse Potential",
+            "",
+            f"- Sample rows: `{_format_number(reuse.get('sample_rows'))}`",
+            "",
+            (
+                "| Region | Group size | Sampled valid visits | Sampled union visits | "
+                "Sampled reusable visits | Sampled reuse ratio | Effective visit share |"
+            ),
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    reuse_rows = _cross_query_reuse_rows(reuse)
+    for region, group_size, values in reuse_rows:
+        lines.append(
+            "| "
+            f"{region} | "
+            f"{group_size} | "
+            f"{_format_number(values.get('sampled_valid_candidate_visits'))} | "
+            f"{_format_number(values.get('sampled_union_candidate_visits'))} | "
+            f"{_format_number(values.get('sampled_reusable_candidate_visits'))} | "
+            f"{_format_number(values.get('sampled_reuse_ratio'))} | "
+            f"{_format_number(values.get('effective_visit_share'))} |"
+        )
+    if not reuse_rows:
+        lines.append("| n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
     lines.extend(
         [
             "",

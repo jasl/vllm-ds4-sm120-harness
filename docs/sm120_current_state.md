@@ -133,6 +133,13 @@ real cross-query KV reuse for the DS4 layout. The latest fused-stats/value and
 lower-live-state D512 microbench confirmed this: RTX saw at most a small
 microbench-only fused win, while GB10 regressed.
 
+The current research hypothesis is therefore cross-query KV reuse for the C128A
+DS4 sparse-MLA metadata layout. Harness stats reporting now derives
+`cross_query_reuse_potential` from sampled candidate overlap so prototype work
+can first prove reusable candidate mass before any endpoint code is added. Treat
+that field as an upper-bound signal only: it is not a performance claim until a
+microbench and then the endpoint promotion matrix show an actual win.
+
 ## Known Limits
 
 - GB10 reduced long-C2 validates availability and token cadence only. It is not

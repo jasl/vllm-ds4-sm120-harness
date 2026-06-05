@@ -7488,3 +7488,29 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   Artifacts:
   `artifacts/d512_lower_live_state_microbench_20260606` and
   `artifacts/d512_lower_live_state_microbench_20260606_gb10`.
+
+- Cross-query KV reuse observation infrastructure, 2026-06-06:
+  `ds4_harness.sparse_mla_stats` now reports
+  `cross_query_reuse_potential`, derived from the existing sampled sparse-MLA
+  candidate overlap data. The field records, per region and group size,
+  sampled valid candidate visits, sampled union visits, sampled reusable visits,
+  sampled reuse ratio, and each region's share of effective candidate visits.
+  This is deliberately an observation metric, not an endpoint optimization.
+
+  The first validation reprocessed an existing GB10 sparse-MLA stats artifact
+  with overlap sampling enabled:
+  `artifacts/local_analysis/20260606_cross_query_reuse_report`.
+
+  | Region | Group16 sampled valid | Group16 union | Group16 reusable | Sampled reuse ratio | Effective visit share |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | all | `13144` | `1576` | `11568` | `0.880097` | `1.000000` |
+  | compressed | `1176` | `168` | `1008` | `0.857143` | `0.601567` |
+  | swa | `11968` | `1408` | `10560` | `0.882353` | `0.398433` |
+
+  Interpretation: the sampled rows show substantial cross-query candidate
+  reuse potential, including in the SWA region, so the next prototype should
+  focus on a real grouped-query KV reuse microbench for the DS4 C128A metadata
+  layout. This does not contradict the earlier rejected local-SWA tiling path:
+  that path kept the same semantic candidate work. The next candidate must
+  reduce actual score/value visits or value traffic before it can justify
+  endpoint integration.
