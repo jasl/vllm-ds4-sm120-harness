@@ -7280,3 +7280,90 @@ Interpretation:
   latency experiment for moderate contexts, but the next real optimization
   should reduce sparse-MLA candidate/value work or integrate a public backend
   that is both SM121-compatible and DS4-metadata-compatible.
+
+GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
+
+- Goal: restart the raw sparse-MLA work-reduction line after GB10 reboot and
+  GPU performance-counter access was restored. This pass intentionally avoids
+  already rejected routes: generic b12x/FI endpoint wiring, C128-only grouped
+  compressed prefill, range-SWA index-table elision, SWA-only D512 selector,
+  and simple D512 tile/chunk sweeps.
+- Public backend probe on GB10:
+  `vllm.vllm_flash_attn.flash_attn_varlen_func` can run local-window attention
+  with `window_size=[1023, 0]` at head dimensions `128` and `256`, but rejects
+  DeepSeek V4's production `D=512` path with
+  `FlashAttention forward only supports head dimension at most 256`. Earlier
+  FlashInfer FMHAv2 probes still reject sliding-window masks on SM120/SM121.
+  Therefore there is no currently installed official local-window primitive
+  that can replace the D512 SWA tail exactly.
+- Focused GB10 D512 split microbench, self-contained script
+  `run_sm12x_indexed_d512_split_microbench.py`, mixed real-shape
+  `128 compressed + 1024 SWA`, `1024` query tokens, `64` heads, `D=512`,
+  `head_block=32`, `block_c=64`, `block_d=128`:
+
+  | Path | Mean time |
+  | --- | ---: |
+  | current online chunk | `42.394 ms` |
+  | split score + stats + value | `17.008 ms` |
+  | score | `8.619 ms` |
+  | stats | `1.301 ms` |
+  | value | `7.089 ms` |
+
+- Nsight Compute artifact:
+  `artifacts/local_gb10_d512_ncu_hb32_20260605221537`. The profile confirms
+  the current split path is not a simple LPDDR bandwidth roof:
+
+  | Kernel | Duration | Issue slots busy | Eligible warps/scheduler | Registers/thread | Achieved occupancy | L2 hit |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | current online chunk | `44.05 ms` | `51.49%` | `1.06` | `118` | `32.72%` | `96.34%` |
+  | split score | `8.61 ms` | `4.36%` | `0.05` | `44` | `16.57%` | `54.39%` |
+  | split stats | `1.30 ms` | `9.41%` | `0.10` | `28` | `100.30%` | `1.36%` |
+  | split value | `7.02 ms` | `20.71%` | `0.24` | `105` | `24.90%` | `57.18%` |
+
+- Dynamic-lens/full-lens check using the current vLLM helper on the same GB10:
+  full-width `1152` candidates measured about `16.53 ms`; endpoint-style C128
+  variable lengths measured about `10.06 ms`. The no-lens self-contained split
+  path measured `17.01 ms`, which means a full-lens-only specialization is not
+  the missing optimization.
+- Interpretation:
+  - Existing installed public attention backends cannot currently express exact
+    DS4 `D=512` sliding-window prefill.
+  - The retained D512 split is structurally much better than the old online
+    accumulate, but both score and value have extremely low eligible-warp
+    rates. Value is still a first-order cost, so a score-only grouped route is
+    insufficient.
+  - A narrow exact D512 local-SWA value-tile prototype was tested immediately
+    after this profile and then removed. It used the existing D512 split
+    score/stats path, replaced only the SWA value phase, and compared against
+    `_indexed_d512_split_value_kernel` on the real SWA-only
+    `1024 tokens x 64 heads x D512 x 1024 window` shape.
+
+- Local-SWA value-tile prototype result:
+
+  | Shape | Current value | Local value | Value speedup | Estimated total speedup | Decision |
+  | --- | ---: | ---: | ---: | ---: | --- |
+  | `q4/h4/u64/v128` | `5.423 ms` | `5.531 ms` | `0.981x` | `0.992x` | reject |
+  | `q4/h8/u64/v128` | `5.373 ms` | `6.646 ms` | `0.808x` | `0.912x` | reject |
+  | `q8/h4/u64/v128` | `5.406 ms` | `6.594 ms` | `0.820x` | `0.918x` | reject |
+  | `q8/h8/u64/v128` | `5.391 ms` | `7.434 ms` | `0.725x` | `0.864x` | reject |
+  | `q2/h16/u64/v128` | `5.371 ms` | `6.797 ms` | `0.790x` | `0.901x` | reject |
+  | `q4/h4/u128/v128` | `5.477 ms` | `5.259 ms` | `1.041x` | `1.017x` | too small |
+  | `q4/h4/u64/v64` | `10.225 ms` | `9.717 ms` | `1.052x` | `1.029x` | not production tile |
+  | `q2/h8/u64/v128` | `5.401 ms` | `5.453 ms` | `0.991x` | `0.996x` | reject |
+  | `q1/h16/u64/v128` | `5.414 ms` | `5.374 ms` | `1.008x` | `1.003x` | noise |
+
+  Artifacts: `artifacts/local_swa_d512_target_20260605222758` and
+  `artifacts/local_swa_d512_block_sweep_20260605222827`. Correctness deltas
+  stayed near `1e-5`, so the rejection is performance-driven, not correctness.
+  The prototype was removed from the tree per the "no A/B switch pollution"
+  rule.
+
+- Updated direction:
+  - Do not continue local-SWA value tiling or simple query/head/union block
+    sweeps. The best robust signal was too small for endpoint risk.
+  - The next candidate must reduce effective work before the value phase:
+    fewer SWA/compressed candidate visits, less score/value workspace traffic,
+    less live state/dependency depth in the existing D512 split, or a public
+    backend that directly matches DS4 metadata and supports SM120/SM121 `D=512`.
+  - Any new candidate still needs the full promotion matrix before PR-branch
+    behavior changes.

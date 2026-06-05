@@ -61,6 +61,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - D512 candidate-scaling and RTX NCU follow-up:
   open `docs/sm120_optimization_notes.md` and search
   `D512 candidate-scaling and RTX NCU follow-up`.
+- GB10 D512 score/value NCU after counter unlock:
+  open `docs/sm120_optimization_notes.md` and search
+  `GB10 sparse-MLA candidate/value work recheck after counter unlock`.
 
 ## Rejected Or Blocked Prefill Routes
 
