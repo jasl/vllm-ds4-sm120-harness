@@ -3269,9 +3269,12 @@ SM121/GB10 Ray. Keeping `FULL_AND_PIECEWISE` enabled while selecting the
 compiled PIECEWISE path fixes the correctness smoke in the controlled variant.
 The vLLM-side fix keeps the SM120 default unchanged, skips automatic breakable
 cudagraph on SM121, and preserves explicit `VLLM_USE_BREAKABLE_CUDAGRAPH=1`
-for manual diagnostics. A clean-boot GB10 default-startup rerun is still needed
-because the repro boot later contained NVIDIA driver OOM records and the GB10
-safety preflight correctly refused to launch another service.
+for manual diagnostics. After rebooting both GB10 nodes, the same default
+serve shape, without any `VLLM_USE_BREAKABLE_CUDAGRAPH` override, reached
+`/health`, captured both PIECEWISE and FULL CUDA graphs, passed the 60-request
+temperature-0 math probe with `0/60` failures, and left no new NVRM/Xid/OOM
+driver-health signals. Artifact label:
+`issue14_ray_default_after_fix_20260605171949`.
 
 Cross-device sparse-MLA accumulate microbench:
 
