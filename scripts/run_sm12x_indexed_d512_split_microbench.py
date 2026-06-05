@@ -159,7 +159,13 @@ def main() -> int:
     parser.add_argument("--gpu-id", type=int, default=0)
     parser.add_argument(
         "--index-pattern",
-        choices=("per-token", "shared", "sliding-window", "mixed-c128-swa"),
+        choices=(
+            "per-token",
+            "shared",
+            "sliding-window",
+            "mixed-c128-swa",
+            "c128a-current",
+        ),
         default="per-token",
     )
     args = parser.parse_args()
@@ -441,6 +447,29 @@ def main() -> int:
             starts = torch.arange(args.num_tokens, device=device, dtype=torch.int32)
             offsets = torch.arange(swa_candidates, device=device, dtype=torch.int32)
             swa_indices = (starts[:, None] + offsets[None, :]).contiguous()
+            indices = torch.cat((compressed_indices, swa_indices), dim=1).contiguous()
+        elif args.index_pattern == "c128a-current":
+            try:
+                _validate_mixed_c128_swa_index_shape(
+                    num_tokens=args.num_tokens,
+                    num_candidates=num_candidates,
+                    compressed_candidates=args.compressed_candidates,
+                    kv_tokens=args.kv_tokens,
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+            swa_candidates = num_candidates - args.compressed_candidates
+            compressed_indices = torch.arange(
+                args.compressed_candidates,
+                device=device,
+                dtype=torch.int32,
+            )
+            compressed_indices = compressed_indices.repeat(args.num_tokens, 1)
+            starts = torch.arange(args.num_tokens, device=device, dtype=torch.int32)
+            offsets = torch.arange(swa_candidates, device=device, dtype=torch.int32)
+            swa_indices = (
+                args.compressed_candidates + starts[:, None] + offsets[None, :]
+            ).contiguous()
             indices = torch.cat((compressed_indices, swa_indices), dim=1).contiguous()
         else:
             indices = torch.randint(

@@ -66,7 +66,9 @@ def test_indexed_d512_microbench_exposes_sliding_window_pattern():
         encoding="utf-8"
     )
 
-    assert 'choices=("per-token", "shared", "sliding-window", "mixed-c128-swa")' in script
+    assert '"c128a-current"' in script
     assert '--compressed-candidates' in script
     assert 'elif args.index_pattern == "sliding-window":' in script
     assert 'elif args.index_pattern == "mixed-c128-swa":' in script
+    assert 'elif args.index_pattern == "c128a-current":' in script
+    assert "compressed_indices.repeat(args.num_tokens, 1)" in script

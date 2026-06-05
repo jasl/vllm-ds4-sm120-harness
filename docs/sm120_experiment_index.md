@@ -64,6 +64,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - GB10 D512 score/value NCU after counter unlock:
   open `docs/sm120_optimization_notes.md` and search
   `GB10 sparse-MLA candidate/value work recheck after counter unlock`.
+- Current C128A shape correction:
+  open `docs/sm120_optimization_notes.md` and search
+  `Current-shape correction after re-reading the latest sparse-MLA stats`.
 
 ## Rejected Or Blocked Prefill Routes
 

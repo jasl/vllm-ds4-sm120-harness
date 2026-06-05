@@ -7358,12 +7358,46 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   The prototype was removed from the tree per the "no A/B switch pollution"
   rule.
 
+- Current-shape correction after re-reading the latest sparse-MLA stats:
+  the current rebased code no longer matches the older working assumption of
+  `128 compressed + 1024 SWA` for C128A. The long-context C128A rows now look
+  like a wide compressed region plus a small `128`-token SWA tail. In the
+  GB10 prefill-gap attribution artifact, C128A at about `128K` reported
+  `lensmax=1128` with roughly `1024` compressed candidates plus `128` SWA
+  candidates; C4A reported `lensmax=640` with roughly `512` compressed plus
+  `128` SWA candidates.
+- Artifact used for the correction:
+  `artifacts/main/2x_gb10_sm121/gb10_prefill_gap_long_20260605/20260605203252/gb10_prefill_gap_attribution_summary.json`.
+  The main `128K` run attributed about `3.189B` effective C128A candidate
+  visits (`2.555B` compressed, `0.634B` SWA) and about `3.328B` effective C4A
+  visits (`2.663B` compressed, `0.666B` SWA). This makes compressed candidate
+  reuse a first-order target again.
+- A follow-up self-contained GB10 microbench added the `c128a-current` pattern
+  to `run_sm12x_indexed_d512_split_microbench.py`, where compressed candidates
+  are shared across query rows and only the `128`-token SWA tail slides:
+
+  | Shape | Current online chunk | D512 split | Split speedup | Score | Stats | Value |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `512 compressed + 128 SWA` | `20.957 ms` | `8.138 ms` | `2.575x` | `3.825 ms` | `0.716 ms` | `3.596 ms` |
+  | `1024 compressed + 128 SWA` | `37.173 ms` | `14.100 ms` | `2.636x` | `6.800 ms` | `1.269 ms` | `6.031 ms` |
+
+  Artifact: `artifacts/c128a_current_d512_microbench_20260605223519`.
+  The result confirms that the retained D512 split still helps, but score and
+  value cost scale with the wide compressed candidate region. The next
+  prototype should therefore revisit C128A grouped-compressed candidate reuse
+  against this corrected shape, not resurrect the rejected endpoint patch that
+  was evaluated under the old `128 compressed + large SWA` model.
+
 - Updated direction:
   - Do not continue local-SWA value tiling or simple query/head/union block
     sweeps. The best robust signal was too small for endpoint risk.
   - The next candidate must reduce effective work before the value phase:
-    fewer SWA/compressed candidate visits, less score/value workspace traffic,
+    fewer compressed/SWA candidate visits, less score/value workspace traffic,
     less live state/dependency depth in the existing D512 split, or a public
     backend that directly matches DS4 metadata and supports SM120/SM121 `D=512`.
+  - With the corrected C128A shape, grouped-compressed candidate reuse is again
+    the highest-signal native route. It must start as a faithful microbench
+    and only move into vLLM after proving endpoint TTFT/input-token gains
+    without active-decode or mixed-arrival regressions.
   - Any new candidate still needs the full promotion matrix before PR-branch
     behavior changes.
