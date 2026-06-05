@@ -30,8 +30,8 @@ Last updated: 2026-06-05.
   claimed performance optimization.
 - Upstream comparison point: upstream now exposes an optional
   `FLASHINFER_MLA_SPARSE_DSV4` backend, but the current official FlashInfer
-  `0.6.12` wheel is not a runnable SM121 endpoint backend in this setup. The
-  backend marker is selected, but the FlashInfer TRTLLM sparse MLA decode
+  `0.6.12` wheel is not a runnable SM120/SM121 endpoint backend in this setup.
+  The backend marker is selected, but the FlashInfer TRTLLM sparse MLA decode
   runner fails during startup with `Unsupported architecture`.
 - Blocked or rejected as current endpoint backends: public b12x compressed MLA
   as a direct DS4 endpoint backend, upstream
@@ -82,9 +82,10 @@ GB10 / SM121 remains the main uncertainty. Current GB10 attribution shows much
 lower effective sparse visits/s than RTX, and the Reddit / unholy-fusion report
 is still materially ahead in GB10 prefill. A first same-shape startup probe says
 the official `FLASHINFER_MLA_SPARSE_DSV4` route is blocked on the current
-FlashInfer wheel, so the remaining clean comparison is current default versus
-Reddit-style serving flags and any future public backend that explicitly
-supports the real SM120/SM121 DS4 sparse-MLA contract.
+FlashInfer wheel, and a reduced dual RTX PRO 6000 / SM120 startup smoke shows
+the same `Unsupported architecture` failure. The remaining clean comparison is
+current default versus Reddit-style serving flags and any future public backend
+that explicitly supports the real SM120/SM121 DS4 sparse-MLA contract.
 
 ## Active Direction
 

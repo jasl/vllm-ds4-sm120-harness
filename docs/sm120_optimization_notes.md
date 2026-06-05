@@ -7007,3 +7007,34 @@ Upstream FlashInfer MLA sparse DSV4 endpoint probe, 2026-06-05:
   sparse-MLA candidate/value work, live state, or dependency depth for the DS4
   mixed compressed-plus-SWA metadata shape. Do not resume generic b12x/FI
   endpoint wiring until the public backend matches the required SM12x contract.
+
+Rebase after upstream DeepSeek V4 attention refactor, 2026-06-05:
+
+- Upstream PR `#44569` reorganized DeepSeek V4 attention so shared attention
+  code owns common dispatch while NVIDIA and ROCm keep hardware-specific
+  implementations in their backend modules. This is the right direction for
+  the SM12x branch: keep new SM12x code isolated under
+  `vllm/models/deepseek_v4/nvidia/*` and the sparse-MLA backend helpers rather
+  than adding hardware checks to shared `attention.py`.
+- Two SM12x regressions surfaced after the refactor and were fixed in the
+  NVIDIA-specific path:
+  - O-proj now routes through the DS4 FP8 einsum wrapper again, so SM120/SM121
+    keep the legacy DeepGEMM block-scale layout instead of the SM100/SM110
+    TMA-aligned recipe.
+  - Triton sparse-MLA decode dispatch is restored before the FlashMLA
+    tile-scheduler fallback. This preserves the metadata-builder contract that
+    Triton sparse MLA does not allocate FlashMLA tile schedulers.
+- Focused remote verification passed: ruff, py_compile, and pytest for
+  `test_deepseek_v4_flashmla_decode_dispatch.py`,
+  `test_deepseek_v4_o_proj.py`, sparse-MLA env, D512, and FP8 Marlin selection
+  (`14 passed`). A reduced dual RTX PRO 6000 startup smoke with
+  `FLASHMLA_SPARSE`, TP=2, FP8 KV, expert parallel, prefix cache disabled, and
+  `FULL_AND_PIECEWISE` reached `/v1/models`, and a temperature-0 `2+2` request
+  returned `4`.
+- The same reduced RTX smoke with explicit
+  `--attention-backend FLASHINFER_MLA_SPARSE_DSV4` selected the FlashInfer path
+  but failed during CUDA graph warmup in
+  `flashinfer.mla.trtllm_batch_decode_sparse_mla_dsv4` with
+  `TllmGenFmhaRunner ... Unsupported architecture`. This matches the earlier
+  GB10/SM121 finding and keeps the official FlashInfer DSV4 endpoint route
+  blocked for the current public wheel.

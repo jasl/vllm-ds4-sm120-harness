@@ -11,6 +11,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Promotion and research checkpoint: open
   `docs/sm120_optimization_notes.md` and search
   `Promotion/research checkpoint, 2026-06-05`.
+- Rebase after upstream DeepSeek V4 attention refactor:
+  open `docs/sm120_optimization_notes.md` and search
+  `Rebase after upstream DeepSeek V4 attention refactor`.
 - Direction reset after b12x and D512 decomposition:
   open `docs/sm120_optimization_notes.md` and search
   `Direction reset after the b12x and D512 decomposition rechecks`.
