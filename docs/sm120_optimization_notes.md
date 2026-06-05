@@ -7241,3 +7241,42 @@ Interpretation:
   C128 top-k metadata, FP8 MQA logits, FP8 einsum, combine-topk-SWA, and MTP
   sampling kernels. This is a separate cold-start latency cleanup target, not
   evidence for a new sparse-MLA backend.
+
+GB10 current-default versus Reddit-style long matrix, 2026-06-05:
+
+- Long artifact:
+  `artifacts/main/2x_gb10_sm121/gb10_prefill_gap_long_20260605/20260605203252`.
+- Missing-case retry artifact:
+  `artifacts/main/2x_gb10_sm121/gb10_prefill_gap_long_reddit128_retry_20260605/20260605210651`.
+- Profile: same as the mini matrix, but ISL `32768`, `65536`, and `128000`.
+  The first long run completed all dev-default cases and reddit-style 32K/64K.
+  The reddit-style 128K case was blocked by the preflight driver-health guard
+  after the head node logged `NV_ERR_NO_MEMORY` in the current boot. After
+  rebooting both nodes, the isolated reddit-style 128K retry passed and the new
+  boot stayed clean.
+
+| Profile | ISL | Max batched | Input tok/s | TTFT | Decode tok/s | p99 ITL | Sparse ms/M effective visit | Sparse visits/s | 131K KV concurrency |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `dev_default` | 32768 | 4176 | `1354.05` | `23.256 s` | `1.32` | `111.97 ms` | `6.955` | `0.144B/s` | `3.05x` |
+| `reddit_style` | 32768 | 8192 | `1467.44` | `21.548 s` | `1.43` | `67.28 ms` | `5.653` | `0.177B/s` | `1.46x` |
+| `dev_default` | 65536 | 4176 | `1313.08` | `49.036 s` | `0.64` | `82.47 ms` | `6.012` | `0.166B/s` | `3.15x` |
+| `reddit_style` | 65536 | 8192 | `1394.38` | `45.914 s` | `0.68` | `74.64 ms` | `5.413` | `0.185B/s` | `1.40x` |
+| `dev_default` | 128000 | 4176 | `1220.56` | `104.155 s` | `0.31` | `83.31 ms` | `5.644` | `0.177B/s` | `2.94x` |
+| `reddit_style` | 128000 | 8192 | `1218.47` | `103.840 s` | `0.30` | `325.97 ms` | `5.373` | `0.186B/s` | `1.35x` |
+
+Interpretation:
+
+- The 8192 profile gives modest endpoint gains at 32K/64K (`+6-8%` input
+  throughput, `-6-7%` TTFT), but it does not improve 128K endpoint throughput
+  and worsens the 128K p99 ITL tail.
+- The 8192 profile consistently cuts 131K KV-cache concurrency to roughly
+  `1.35-1.46x`, versus about `3x` for the 4176 dev default. That is a severe
+  capacity and reliability tradeoff on GB10.
+- The sparse-accumulate efficiency improvement from 8192 shrinks as context
+  grows: about `1.23x` at 32K, `1.11x` at 64K, and `1.05x` at 128K by
+  ms/M effective visit. This is not the missing Reddit-scale backend advantage.
+- Conclusion: keep `max_num_batched_tokens=4176` as the conservative GB10
+  long-context default. `8192` can stay in the harness as a measured opt-in
+  latency experiment for moderate contexts, but the next real optimization
+  should reduce sparse-MLA candidate/value work or integrate a public backend
+  that is both SM121-compatible and DS4-metadata-compatible.
