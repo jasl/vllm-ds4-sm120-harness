@@ -7514,3 +7514,52 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   that path kept the same semantic candidate work. The next candidate must
   reduce actual score/value visits or value traffic before it can justify
   endpoint integration.
+
+- Rejected grouped-combined C128A reuse microbench, 2026-06-06:
+  a temporary harness-only extension to
+  `scripts/run_sm12x_indexed_d512_split_microbench.py` tested a tighter
+  grouped-compressed design than the earlier separate-state experiment. The
+  candidate wrote grouped-compressed scores and the SWA-tail scores into the
+  same combined score workspace, then used one full stats pass and separate
+  compressed/SWA value passes into the same output buffer. This removed the
+  previous compressed-state / SWA-state merge launch while preserving exact
+  combined softmax semantics for the corrected `1024 compressed + 128 SWA`
+  C128A shape.
+
+  RTX PRO 6000 / SM120, `512` query tokens, `64` heads, `D=512`,
+  `1152` candidates, current split `head_block=32, block_c=64, block_d=128`:
+
+  | Variant | Split total | Grouped combined | Relative |
+  | --- | ---: | ---: | ---: |
+  | `group32 score-head1 value-head1` | `0.798 ms` | `0.852 ms` | `0.937x` |
+  | `group16 score-head2 value-head2` | `0.799 ms` | `0.864 ms` | `0.925x` |
+  | `group32 score-head1 value-head2` | `0.800 ms` | `0.874 ms` | `0.916x` |
+  | `group16 score-head2 value-head4` | `0.800 ms` | `0.870 ms` | `0.919x` |
+
+  GB10 / SM121, same shape:
+
+  | Variant | Split total | Grouped combined | Relative |
+  | --- | ---: | ---: | ---: |
+  | `group32 score-head1 value-head1` | `7.225 ms` | `7.795 ms` | `0.927x` |
+  | `group16 score-head2 value-head2` | `7.296 ms` | `7.921 ms` | `0.921x` |
+  | `group32 score-head1 value-head2` | `7.220 ms` | `7.951 ms` | `0.908x` |
+  | `group16 score-head2 value-head4` | `7.254 ms` | `8.017 ms` | `0.905x` |
+
+  A wider `group32 score-head2 value-head2` score tile failed at launch on
+  GB10 with shared memory `131072` bytes required versus a `101376` byte
+  hardware limit. Correctness deltas for the runnable variants stayed around
+  `8e-4` to `1e-3`, consistent with the D512 split reference, so the rejection
+  is performance-driven.
+
+  Decision: reject and remove the temporary script/test extension. Removing
+  the merge launch is still insufficient: the extra compressed/SWA split
+  launches and weaker current head-block reuse outweigh the grouped compressed
+  KV reuse on both hosts. Do not reintroduce this split-launch
+  grouped-combined route. Future cross-query reuse work must either fuse the
+  reuse into a backend that preserves current head reuse, reduce effective
+  score/value visits before materialization, or reduce value traffic without
+  adding separate score/value/merge launches.
+
+  Artifacts:
+  `artifacts/local_rtx_grouped_combined_probe_20260606` and
+  `artifacts/local_gb10_grouped_combined_probe_20260606`.

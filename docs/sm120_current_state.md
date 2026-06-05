@@ -140,6 +140,17 @@ can first prove reusable candidate mass before any endpoint code is added. Treat
 that field as an upper-bound signal only: it is not a performance claim until a
 microbench and then the endpoint promotion matrix show an actual win.
 
+The first follow-up grouped-combined microbench did not win. It removed the
+old separate compressed/SWA state merge by writing grouped-compressed and SWA
+scores into one combined score workspace, then using one full stats pass and
+separate compressed/SWA value passes into one output. The extra split launches
+and loss of current head-block reuse still outweighed the compressed KV reuse
+on both RTX PRO 6000 and GB10, and a wider grouped score tile exceeded GB10
+shared memory. Do not reintroduce this split-launch grouped-combined route.
+Future cross-query reuse work must be tighter: fewer effective score/value
+visits, less value traffic, or a single/fused backend that preserves current
+head reuse and avoids extra merge or split value launches.
+
 ## Known Limits
 
 - GB10 reduced long-C2 validates availability and token cadence only. It is not
