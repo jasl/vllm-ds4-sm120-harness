@@ -62,6 +62,81 @@ not at a simple GDDR7 bandwidth ceiling:
 
 ## Successful Optimization Notes
 
+### Upstream DeepSeek Backlog Triage
+
+2026-06-06 scan target: open `deepseek` issues and recent open / merged
+DeepSeek-related PRs in `vllm-project/vllm`. Use this as the ordered watchlist
+before adding more local sparse-MLA production code.
+
+Immediate stability / semantic checks:
+
+- `vllm-project/vllm#43966` preserves DeepSeek V4 DBO prefill metadata across
+  ubatch splitting. This overlaps our long-prefill and mixed prefill/decode
+  risk surface because sparse indexer metadata can be misclassified after
+  splitting. Result: the full PR was not cherry-picked because its branch would
+  undo existing SM12x sparse-indexer safeguards. The useful core was absorbed
+  narrowly: `split_attn_metadata()` now preserves `positions` and
+  `is_prefilling`, and the MLA indexer uses `is_prefilling` to keep short
+  prefill continuations on the prefill side. Focused RED/GREEN tests cover both
+  behaviors.
+- `vllm-project/vllm#43447` is merged and fixes DeepSeek V4 prefix-cache
+  retention for sliding-window KV cache by preferring non-cached block reuse
+  and adding selective retention support. Rebase must preserve the semantics
+  covered by our prefix-cache stress and KV-lifecycle gates. Do not use
+  prefix-cache hit numbers as cold-prefill performance evidence.
+- `vllm-project/vllm#44492` and `vllm-project/vllm#43058` are relevant to CUDA
+  graph / MLA metadata and `torch.compile` correctness. They are not raw
+  prefill optimizations. Result: `#44492` is broad EAGLE/spec-decode work and
+  should be observed rather than cherry-picked into the SM12x branch. `#43058`
+  is narrower and remains a candidate for a dedicated compile-correctness
+  slice, but it should be absorbed as a cleaned TDD patch rather than copied
+  verbatim.
+- `vllm-project/vllm#43730` remains relevant to SM12x crash resilience for
+  quantized Marlin MoE shapes. Result: the current branch already has the core
+  `c_tmp` sizing fix that avoids clamping the FP32 reduce buffer to
+  `sms * 4`; keep the reduced crash/startup gate in the user-feedback matrix.
+
+Complexity reduction / rebase-alignment checks:
+
+- `vllm-project/vllm#44569`, `#43149`, and `#43829` move DeepSeek V4 sparse MLA
+  code into model-local NVIDIA / ROCm implementations and remove dead
+  cross-platform code from NVIDIA paths. Rebase should follow this structure
+  instead of preserving local compatibility shims.
+- `vllm-project/vllm#44454`, `#44458`, `#44316`, and `#44577` are the KV-cache
+  planning / layout / contiguous-packing track. They are too broad for blind
+  cherry-pick, but they are the likely long-term route for lowering DeepSeek V4
+  KV layout complexity and improving future KV connector / PD behavior.
+- Compatibility PRs such as `vllm-project/vllm#44031`, `#44030`, `#44433`,
+  `#43892`, and `#43655` should be checked during rebase when the touched
+  checkpoint/config/quantization surfaces overlap our branch. Treat them as
+  robustness work unless a user workload specifically exercises that artifact.
+
+Performance research tracks:
+
+- `vllm-project/vllm#43827` is merged and provides the official TRTLLM-gen /
+  FlashInfer sparse-MLA route plus C128A metadata caching ideas. Current
+  FlashInfer `0.6.12` direct API and endpoint startup probes fail on SM120 /
+  SM121 with `Unsupported architecture`, so endpoint work on this route is
+  blocked until a direct FlashInfer DS4 sparse-MLA API smoke passes first.
+- `vllm-project/vllm#43809` context-parallel prefill reports strong 128K-1M
+  TTFT improvements on larger topology. Keep it as a four-card / larger-cluster
+  research item, not a dual-card default path.
+- `vllm-project/vllm#44573`, `#44044`, and related DCP decode work may matter
+  for long-context decode fairness under larger topology. Observe first; do not
+  conflate with the current dual-card raw-prefill bottleneck.
+- `vllm-project/vllm#44420` DSA MTP index sharing could reduce duplicate MTP
+  metadata/index work. Read the diff before any MTP-specific local experiment.
+
+Current execution order:
+
+1. During the next upstream rebase, verify the immediate semantic fixes above,
+   starting with DBO prefill metadata and prefix-cache / KV lifecycle behavior.
+2. Align local DeepSeek V4 code organization with merged upstream cleanup and
+   remove any local shims made obsolete by that structure.
+3. Keep official FlashInfer sparse-MLA as a blocked route until direct API
+   architecture support changes.
+4. Only then return to sparse-MLA candidate/value work reduction.
+
 ### Runtime-M TF32 MHC Prenorm GEMM
 
 User feedback on the PR reported a DP=2 + EP + MTP=2 + prefix-cache-enabled

@@ -121,6 +121,25 @@ backend wins, the next production-worthy experiment must reduce real
 sparse-MLA candidate/value work, live state, or dependency depth for the DS4
 mixed compressed-plus-SWA metadata shape.
 
+Upstream DeepSeek backlog triage should run before adding more local sparse-MLA
+code. The current order is:
+
+1. Check stability and semantic fixes that overlap known user reports:
+   DeepSeek V4 DBO prefill metadata preservation, prefix-cache retention /
+   KV lifecycle behavior, CUDA graph / MLA metadata correctness, and SM12x
+   crash workarounds.
+2. Follow upstream simplification and KV-cache layout work when rebasing:
+   DeepSeek V4 attention refactors, NVIDIA-only cleanup, model-specific
+   KV-cache planning, and contiguous KV packing. Prefer aligning with these
+   designs over preserving local compatibility shims.
+3. Treat upstream official FlashInfer / TRTLLM sparse-MLA work as blocked for
+   SM120 / SM121 until a direct DS4 sparse-MLA FlashInfer API smoke passes on
+   the target architecture. Do not re-enter endpoint tests first.
+4. Keep PCP / DCP / context-parallel prefill as a four-card or larger-topology
+   research track, not a dual-card default-optimization path.
+5. Only after the above checks are clean, return to new candidate/value-work
+   reduction experiments.
+
 Latest focused microbench / NCU follow-up keeps this direction intact. On RTX
 PRO 6000, the D512 score kernel for the mixed C128/SWA shape is limited by low
 eligible-warps / long-scoreboard behavior and shared-memory-limited occupancy,

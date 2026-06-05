@@ -8,6 +8,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 
 - Current state and next direction:
   `docs/sm120_current_state.md`.
+- Upstream DeepSeek backlog watchlist:
+  open `docs/sm120_optimization_notes.md` and search
+  `Upstream DeepSeek backlog triage`.
 - Promotion and research checkpoint: open
   `docs/sm120_optimization_notes.md` and search
   `Promotion/research checkpoint, 2026-06-05`.
@@ -140,6 +143,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - KV lifecycle and prefix-cache recoverability gates:
   open `docs/vllm_correctness_gates.md` and search
   `KV lifecycle and prefix-cache recoverability`.
+- Upstream DBO / prefix-cache / KV-layout watchlist:
+  open `docs/sm120_optimization_notes.md` and search
+  `Upstream DeepSeek backlog triage`.
 - Workspace high-concurrency gate:
   open `docs/vllm_correctness_gates.md` and search
   `workspace high-concurrency stress`.
