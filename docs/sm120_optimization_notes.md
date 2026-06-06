@@ -8440,6 +8440,56 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
     that provides equivalent behavior for the DS4 metadata shape without
     dropping candidates.
 
+- Existing vLLM top-k primitives audit, 2026-06-07:
+  re-read the current vLLM CUDA/Python call chain after the MQA valid-span
+  follow-up to check whether an existing selector could be reused as the next
+  optimization route.
+
+  Findings:
+
+  - `top_k_per_row_prefill` in `csrc/libtorch_stable/sampler.cu` consumes a
+    `logits` tensor plus row-start / row-end bounds and writes indices. The
+    DeepSeek V4 SM12x prefill path calls it only after
+    `fp8_mqa_logits_triton()` has already produced the full `[query, kv]`
+    float32 logits matrix.
+  - `persistent_topk` and the FlashInfer-derived
+    `FilteredTopKRaggedTransform` in `csrc/libtorch_stable/topk.cu` /
+    `persistent_topk.cuh` have the same fundamental boundary: they take a
+    `float* input` logits matrix and select indices. They can improve the
+    selector itself, but they cannot reduce the FP8 MQA logits producer's
+    write/read traffic.
+  - The installed FlashInfer `0.6.12` wheel exposes
+    `flashinfer.mla.trtllm_batch_decode_sparse_mla_dsv4`, and vLLM has the
+    `FLASHINFER_MLA_SPARSE_DSV4` backend wrapper. The route remains blocked as
+    a production endpoint backend on SM120 / SM121 because the direct API and
+    endpoint probes fail inside `TllmGenFmhaRunner` with
+    `Unsupported architecture`. A refreshed minimal direct API smoke on
+    2026-06-07 used one BF16 query token, 64 heads, 128 SWA indices, and
+    256-token BF16 KV pages; it still failed with the same
+    `TllmGenFmhaRunner` unsupported-architecture error.
+  - The viable vLLM insertion point is `sparse_attn_indexer()`'s prefill branch:
+    it slices `topk_indices_buffer[chunk.token_start:chunk.token_end,
+    :topk_tokens]`, calls `fp8_fp4_mqa_topk_indices()`, and the resulting
+    indices later feed `combine_topk_swa_indices()` and sparse accumulate.
+    Model and MTP layers each allocate their own shared
+    `[max_num_batched_tokens, index_topk]` int32 buffer. A replacement must
+    preserve that mutating buffer contract and write exact global KV indices.
+  - Do not mix this with C128A metadata work. For compress-ratio-4 layers the
+    compressed prefill indices come from `topk_indices_buffer`; for C128A
+    layers they come from deterministic `c128a_prefill_topk_indices`. The
+    512K/1M MQA problem is in the C4A FP8 indexer top-k path, not in the C128A
+    metadata generator.
+
+  Decision: do not re-enter selector-only MQA experiments. Replacing
+  `top_k_per_row_prefill` with another existing vLLM top-k primitive cannot
+  remove the 512K-scale logits materialization. The next viable MQA experiment
+  must either:
+
+  1. introduce a fused FP8 MQA score-generation plus indexed top-k primitive
+     that preserves exact candidates and current tensor-core-friendly tiling, or
+  2. wait for an official FlashInfer / TRTLLM-gen DS4 sparse-MLA backend that
+     passes a direct SM120 / SM121 API smoke before any endpoint test.
+
   Useful reported configuration details:
 
   - TP=2, EP enabled in the throughput report, MTP=2, FP8 KV, block size 256,

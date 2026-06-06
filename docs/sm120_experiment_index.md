@@ -107,6 +107,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - MQA valid-span clipping rejection:
   open `docs/sm120_optimization_notes.md` and search
   `MQA valid-span accounting follow-up`.
+- vLLM top-k selector audit:
+  open `docs/sm120_optimization_notes.md` and search
+  `Existing vLLM top-k primitives audit`.
 
 ## Rejected Or Blocked Prefill Routes
 

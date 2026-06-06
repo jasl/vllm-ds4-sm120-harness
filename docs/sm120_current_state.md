@@ -224,6 +224,14 @@ run slower than the current `M=64,N=128` logits kernel. Treat Triton tile-local
 fused MQA topK as blocked until there is an indexed selection primitive or a
 backend that keeps current tensor-core tiling while avoiding full logits
 materialization.
+The follow-up vLLM top-k primitive audit keeps the same boundary: existing
+`top_k_per_row_prefill`, `persistent_topk`, and the FlashInfer-derived
+`FilteredTopKRaggedTransform` are selectors over an already materialized
+float32 logits matrix. They can improve selection behavior, but they cannot
+remove the 512K-scale MQA logits write/read by themselves. Do not start a new
+optimization by swapping only the selector. A useful MQA route must fuse FP8
+MQA score generation with indexed top-k selection, or use an official backend
+that does the equivalent for the DS4 sparse metadata shape.
 
 The first follow-up grouped-combined microbench did not win. It removed the
 old separate compressed/SWA state merge by writing grouped-compressed and SWA
