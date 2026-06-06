@@ -8665,3 +8665,66 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   remain separate. Use local GB10 gates for correctness and liveness, but do
   not convert external Docker throughput numbers into a local bare-metal
   baseline without replaying the same profile.
+
+- C128A active-width metadata narrowing, 2026-06-07:
+  implemented an exact C128A metadata-width reduction for the DS4 sparse-MLA
+  path. `build_c128a_topk_metadata()` already derived the current batch's
+  compressed-position frontier, but it returned the full `max_model_len`-sized
+  decode/prefill buffers. Downstream sparse prefill then used
+  `topk_indices.shape[-1]` as the candidate width, so a 512K prompt under a 1M
+  serving profile still exposed the dead 8192-column C128A width instead of the
+  4096 columns needed by the current positions.
+
+  The new helper computes the smallest block-aligned width that covers every
+  in-flight token's compressed candidate range and returns narrowed buffer
+  views. It keeps one sentinel column for non-empty batches whose first token
+  has no compressed candidates, preserves the existing `-1` sentinel contract,
+  and does not change CUDA graph mode or add a user-visible switch. This is not
+  the rejected C128 prefill-width cap: it does not cap below the current
+  position-derived frontier and therefore does not drop candidates.
+
+  Focused verification:
+
+  - Remote CUDA tests:
+    `.venv/bin/python -m pytest tests/model_executor/test_deepseek_v4_sparse_mla_prefill_stats.py -q`
+    -> `7 passed`.
+  - Remote lint/compile:
+    `.venv/bin/python -m ruff check vllm/v1/attention/backends/mla/flashmla_sparse.py tests/model_executor/test_deepseek_v4_sparse_mla_prefill_stats.py`,
+    `.venv/bin/python -m py_compile ...`, and `git diff --check` all passed.
+  - Local Mac py_compile and `git diff --check` passed; local pytest/ruff were
+    blocked because the local vLLM venv does not install `torch` / `ruff`.
+
+  Endpoint probe:
+
+  - Artifact label:
+    `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260607_c128_effective_width_512k_probe/20260607012220`.
+  - Profile: TP=2, MTP=2, EP enabled, FP8 KV, prefix cache disabled,
+    `max_model_len=1048576`, `max_num_batched_tokens=4096`,
+    `max_num_seqs=1`, `gpu_memory_utilization=0.975`, and
+    `FULL_AND_PIECEWISE` CUDA graphs.
+  - Phase exit codes: `server_startup=0`,
+    `very_long_context_capacity=0`.
+  - Runtime health: CUDA/NCCL/driver/engine/worker-crash/OOM counts were `0`;
+    the only serve-log signal was `15` JIT warnings.
+
+  | Shape | Reference TTFT | New TTFT | Reference input tok/s | New input tok/s |
+  | --- | ---: | ---: | ---: | ---: |
+  | 512K actual prompt under 1M profile | `234.965s` | `221.435s` | `2231.30` | `2365.15` |
+
+  Interpretation:
+
+  - The endpoint signal is positive: about `5.8%` lower TTFT and `6.0%`
+    higher input throughput for the 512K-under-1M C=1 cold probe.
+  - The optimization helps dead-tail C128A metadata shapes where the configured
+    `max_model_len` is materially larger than the actual prompt. It should not
+    be claimed as a true 1M improvement because at a real 1M prompt the
+    effective C128A width equals the full configured width.
+  - It also should not materially affect the 59K/124K 131K-profile gates,
+    because those shapes already round to the same 1024 C128A block width.
+    Promotion still needs to re-run short throughput, GSM8K, prefix/KV
+    lifecycle, 59K/124K long-context, and GB10 reduced long-C2 before treating
+    it as PR-ready behavior.
+  - This is a useful bounded optimization, but it does not solve the main
+    512K/1M TTFT problem. The true max-context path still needs an exact route
+    that reduces real FP8 MQA logits/top-k work, SWA/C128 candidate visits,
+    sparse-accumulate value traffic, live state, or dependency depth.

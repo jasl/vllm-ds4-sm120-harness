@@ -92,6 +92,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Cross-query KV reuse observation:
   open `docs/sm120_optimization_notes.md` and search
   `Cross-query KV reuse observation infrastructure`.
+- C128A active-width metadata narrowing:
+  open `docs/sm120_optimization_notes.md` and search
+  `C128A active-width metadata narrowing`.
 - Rejected grouped-combined C128A reuse microbench:
   open `docs/sm120_optimization_notes.md` and search
   `Rejected grouped-combined C128A reuse microbench`.

@@ -5,7 +5,7 @@ working entrypoint for DeepSeek V4 SM12x optimization status, current gates, and
 next-step decisions. Treat `docs/sm120_optimization_notes.md` as the append-only
 evidence archive.
 
-Last updated: 2026-06-06.
+Last updated: 2026-06-07.
 
 ## Read Order
 
@@ -23,10 +23,13 @@ Last updated: 2026-06-06.
   scheduling, workspace warmup, prefix/KV lifecycle, and correctness fixes that
   already passed promotion gates. This is the current defensible customer
   baseline for dual RTX PRO 6000 / SM120 and the reduced GB10 / SM121 envelope.
-- Dev-only work: D512 empty-tail skip and sparse MLA candidate-region
-  attribution. Empty-tail skip has small endpoint gains, but it must keep
-  GSM8K limit-200 and the full promotion matrix green before becoming PR-branch
-  behavior. Candidate-region reporting and MQA top-k elapsed/work reporting are
+- Dev-only work: D512 empty-tail skip, exact C128A active-width metadata
+  narrowing, and sparse MLA candidate-region attribution. Empty-tail skip has
+  small endpoint gains, but it must keep GSM8K limit-200 and the full promotion
+  matrix green before becoming PR-branch behavior. C128A active-width narrowing
+  has a positive 512K-under-1M endpoint signal and does not drop candidates, but
+  it is a bounded dead-tail reduction rather than a true 1M work reduction.
+  Candidate-region reporting and MQA top-k elapsed/work reporting are
   diagnostic infrastructure, not claimed performance optimizations.
 - Upstream comparison point: upstream now exposes an optional
   `FLASHINFER_MLA_SPARSE_DSV4` backend, but the current official FlashInfer
@@ -187,6 +190,18 @@ DS4 sparse-MLA metadata layout. Harness stats reporting now derives
 can first prove reusable candidate mass before any endpoint code is added. Treat
 that field as an upper-bound signal only: it is not a performance claim until a
 microbench and then the endpoint promotion matrix show an actual win.
+
+Latest dev-only C128A active-width result: for a 1M `max_model_len` profile with
+an actual 512K prompt, narrowing the returned C128A top-k metadata view to the
+current compressed-position width reduced cold TTFT from the no-cap reference
+`234.965s` to `221.435s` and improved input throughput from `2231.30` to
+`2365.15 tok/s` on dual RTX PRO 6000. This is exact-preserving because the width
+is aligned to cover every current token's compressed candidate range. It should
+help prompts materially below the configured model-length ceiling, but it cannot
+help a true 1M prompt where the effective width equals the full configured
+width. Keep it behind the normal promotion matrix until short throughput,
+59K/124K long-context, prefix/KV lifecycle, GSM8K, and GB10 reduced long-C2 are
+rechecked.
 
 Persistent TODO: the next production-class prefill improvement must reduce
 long-prefill sparse-MLA real work or memory pressure, especially in
