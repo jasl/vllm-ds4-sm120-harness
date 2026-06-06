@@ -113,6 +113,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - MQA weight-sign diagnostic / pruning boundary:
   open `docs/sm120_optimization_notes.md` and search
   `MQA weight-sign diagnostic and pruning boundary`.
+- Rejected MQA head-split lower-live-state probe:
+  open `docs/sm120_optimization_notes.md` and search
+  `Rejected MQA head-split lower-live-state probe`.
 
 ## Rejected Or Blocked Prefill Routes
 

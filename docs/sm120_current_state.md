@@ -245,6 +245,10 @@ pruning shortcut: C4A MQA scores accumulate `ReLU(q*k)*weight_h`, and
 softmax/head scales. A 4K RTX attribution smoke found about `44.1%` negative
 MQA top-k weights, so head-wise early-stop or monotonic upper-bound pruning
 that assumes non-negative weights is not correctness-safe.
+A scratch head-split MQA logits probe also failed to justify endpoint work:
+splitting 64 heads into multiple launches preserved exact logits but made the
+32K/131K KV microbench slower even at the coarsest two-launch split. Extra
+logits read/write traffic and launch overhead outweighed any live-state relief.
 
 The first follow-up grouped-combined microbench did not win. It removed the
 old separate compressed/SWA state merge by writing grouped-compressed and SWA

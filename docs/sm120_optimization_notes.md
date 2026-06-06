@@ -8561,6 +8561,44 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
     with DS4 metadata support, or target live-state/dependency depth rather
     than dropping score terms.
 
+- Rejected MQA head-split lower-live-state probe, 2026-06-07:
+  tested a scratch Triton prototype that splits the C4A FP8 MQA logits
+  accumulation across head groups. The goal was to reduce live state/register
+  pressure in `_fp8_mqa_logits_kernel` while preserving exact candidates. The
+  prototype writes the intermediate fp32 logits matrix after each head group
+  and reloads it for the next group, then applies the same final valid-span
+  mask. It does not change the top-k selector or drop candidates.
+
+  Artifact:
+  `/home/jasl/Workspace/vllm-ds4-sm120-harness/artifacts/main/mqa_headsplit_probe/20260607005738/summary.json`.
+  Shape: one RTX PRO 6000 GPU, `num_q=256`, `num_heads=64`, `head_dim=128`,
+  full valid KV span, random FP8 Q/K, signed FP32 weights, current
+  `BLOCK_M=64`, `BLOCK_N=128`, `BLOCK_D=64`, `num_warps=4`.
+
+  | KV tokens | Variant | Launches | Min ms | Relative | Max abs error |
+  | ---: | --- | ---: | ---: | ---: | ---: |
+  | `32,768` | current full | `1` | `0.723680` | `1.000x` | `0` |
+  | `32,768` | head group 32 | `2` | `0.726176` | `1.003x` | `0` |
+  | `32,768` | head group 16 | `4` | `0.734848` | `1.015x` | `0` |
+  | `32,768` | head group 8 | `8` | `0.757696` | `1.047x` | `0` |
+  | `32,768` | head group 4 | `16` | `0.830624` | `1.148x` | `0` |
+  | `131,072` | current full | `1` | `2.559552` | `1.000x` | `0` |
+  | `131,072` | head group 32 | `2` | `2.593344` | `1.013x` | `0` |
+  | `131,072` | head group 16 | `4` | `2.697024` | `1.054x` | `0` |
+  | `131,072` | head group 8 | `8` | `2.933248` | `1.146x` | `0` |
+  | `131,072` | head group 4 | `16` | `3.396128` | `1.327x` | `0` |
+
+  Interpretation:
+  - Splitting heads preserves exact logits in the probe, but it does not beat
+    the current single-launch logits kernel. Even the coarsest two-launch split
+    regressed at both 32K and 131K KV.
+  - The extra fp32 logits matrix read/write and launch overhead outweigh any
+    live-state relief from reducing the per-kernel head loop.
+  - Do not promote split-launch MQA head grouping into vLLM. Future
+    lower-live-state work must keep the current single-launch/tensor-core
+    structure, reduce score work with a correctness-proof signed bound, or use
+    an official DS4 sparse-MQA backend that passes SM120/SM121 smoke.
+
   Useful reported configuration details:
 
   - TP=2, EP enabled in the throughput report, MTP=2, FP8 KV, block size 256,
