@@ -8409,6 +8409,37 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   priority of treating current GB10 MTP startup as an unresolved crash by
   default.
 
+- MQA valid-span accounting follow-up, 2026-06-07:
+  added diagnostic-only MQA top-k accounting for logits padding, valid/logits
+  ratio, and KV-span summary. The fields are emitted only when the sparse-MLA
+  stats path is enabled, so normal serving and CUDA graph capture are unchanged.
+
+  Reprocessed the existing 512K no-cap stats artifact with the new harness
+  summary logic:
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_mqa_work_512k/20260606_mqa_attribution_512k_234220`.
+
+  | Field | Value |
+  | --- | ---: |
+  | MQA valid KV visits | `1.443T` |
+  | MQA logits elements | `1.455T` |
+  | MQA logits padding elements | `11.456B` |
+  | MQA logits valid ratio | `0.992126` |
+  | MQA logits padding ratio | `0.007874` |
+
+  Interpretation:
+  - The current 512K MQA full-logits path is doing mostly semantically valid
+    logits work. Simple valid-span clipping, row-block mask early-exit, or
+    avoiding out-of-span logits can recover at most about `0.8%` of this
+    artifact's logits elements.
+  - This rejects valid-span clipping as a primary optimization route for the
+    512K / 1M TTFT gap. It remains useful as a diagnostic field for future
+    artifacts, especially mixed/multi-request shapes where padding could be
+    higher.
+  - The MQA route still requires either an exact fused/streaming indexed top-k
+    that avoids writing and rereading the logits matrix, or an official backend
+    that provides equivalent behavior for the DS4 metadata shape without
+    dropping candidates.
+
   Useful reported configuration details:
 
   - TP=2, EP enabled in the throughput report, MTP=2, FP8 KV, block size 256,

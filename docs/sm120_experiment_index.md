@@ -104,6 +104,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Candidate row duplicate diagnostic:
   open `docs/sm120_optimization_notes.md` and search
   `Candidate row duplicate diagnostic`.
+- MQA valid-span clipping rejection:
+  open `docs/sm120_optimization_notes.md` and search
+  `MQA valid-span accounting follow-up`.
 
 ## Rejected Or Blocked Prefill Routes
 

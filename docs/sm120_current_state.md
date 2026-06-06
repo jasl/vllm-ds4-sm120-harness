@@ -212,6 +212,10 @@ is slower (`1.4-1.5x` at 32K-131K KV for the endpoint-like 256-query,
 32-head, topk-512 shape), so do not re-enter simple MQA chunking. A useful MQA
 experiment must fuse logits generation with top-k selection or otherwise
 avoid writing/reading the logits matrix without adding extra merge launches.
+The 512K MQA stats were also reprocessed with explicit valid/logits accounting:
+valid KV visits were `1.443T` out of `1.455T` logits elements, so logits
+padding was only about `0.79%`. Do not prioritize simple valid-span clipping or
+row-block mask early-exit as a primary 512K optimization route.
 The first Triton exact tile-local topK feasibility probe also does not justify
 endpoint work: `tl.topk` returns values but not indices, the threshold+cumsum
 index recovery path hits shared-memory limits at the useful `M=16,N=1024` and

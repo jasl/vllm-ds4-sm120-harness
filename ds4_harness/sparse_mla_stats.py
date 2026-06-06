@@ -296,6 +296,9 @@ def _row_mqa_topk_work(row: Json) -> list[Json]:
             "topk_tokens": _int_value(values.get("topk_tokens")) or 0,
             "valid_kv_visits": _int_value(values.get("valid_kv_visits")) or 0,
             "logits_elements": _int_value(values.get("logits_elements")) or 0,
+            "logits_padding_elements": (
+                _int_value(values.get("logits_padding_elements")) or 0
+            ),
             "materialized_logits_bytes": (
                 _int_value(values.get("materialized_logits_bytes")) or 0
             ),
@@ -311,6 +314,37 @@ def _row_mqa_topk_work(row: Json) -> list[Json]:
         elapsed_ms = _float_value(values.get("elapsed_ms"))
         if elapsed_ms is not None:
             item["elapsed_ms"] = elapsed_ms
+        logits_elements = int(item["logits_elements"])
+        valid_kv_visits = int(item["valid_kv_visits"])
+        if not item["logits_padding_elements"]:
+            item["logits_padding_elements"] = max(
+                0,
+                logits_elements - valid_kv_visits,
+            )
+        item["logits_valid_ratio"] = (
+            _float_value(values.get("logits_valid_ratio"))
+            if values.get("logits_valid_ratio") is not None
+            else (
+                float(valid_kv_visits) / float(logits_elements)
+                if logits_elements
+                else None
+            )
+        )
+        item["logits_padding_ratio"] = (
+            _float_value(values.get("logits_padding_ratio"))
+            if values.get("logits_padding_ratio") is not None
+            else (
+                float(item["logits_padding_elements"]) / float(logits_elements)
+                if logits_elements
+                else None
+            )
+        )
+        kv_span = values.get("kv_span")
+        if isinstance(kv_span, dict):
+            item["kv_span_count"] = _int_value(kv_span.get("count")) or 0
+            item["kv_span_sum"] = _int_value(kv_span.get("sum")) or 0
+            item["kv_span_min"] = _int_value(kv_span.get("min"))
+            item["kv_span_max"] = _int_value(kv_span.get("max"))
         chunk_size = _int_value(values.get("chunk_size"))
         if chunk_size is not None:
             item["chunk_size"] = chunk_size
@@ -333,6 +367,9 @@ def _summarize_mqa_topk_work(rows: list[Json]) -> Json:
         "query_tokens": sum(int(item["query_tokens"]) for item in items),
         "valid_kv_visits": sum(int(item["valid_kv_visits"]) for item in items),
         "logits_elements": sum(int(item["logits_elements"]) for item in items),
+        "logits_padding_elements": sum(
+            int(item["logits_padding_elements"]) for item in items
+        ),
         "materialized_logits_bytes": sum(
             int(item["materialized_logits_bytes"]) for item in items
         ),
@@ -348,6 +385,37 @@ def _summarize_mqa_topk_work(rows: list[Json]) -> Json:
         "topk_tokens_max": max(int(item["topk_tokens"]) for item in items),
         "counts_by_path": dict(sorted(path_counts.items())),
     }
+    logits_elements = int(summary["logits_elements"])
+    if logits_elements:
+        summary["logits_valid_ratio"] = _round_float(
+            int(summary["valid_kv_visits"]) / logits_elements
+        )
+        summary["logits_padding_ratio"] = _round_float(
+            int(summary["logits_padding_elements"]) / logits_elements
+        )
+    kv_span_counts = [
+        int(item.get("kv_span_count", 0))
+        for item in items
+        if int(item.get("kv_span_count", 0)) > 0
+    ]
+    if kv_span_counts:
+        kv_span_sum = sum(int(item.get("kv_span_sum", 0)) for item in items)
+        kv_span_count = sum(kv_span_counts)
+        kv_span_mins = [
+            int(item["kv_span_min"])
+            for item in items
+            if item.get("kv_span_min") is not None
+        ]
+        kv_span_maxes = [
+            int(item["kv_span_max"])
+            for item in items
+            if item.get("kv_span_max") is not None
+        ]
+        summary["kv_span_count"] = kv_span_count
+        summary["kv_span_sum"] = kv_span_sum
+        summary["kv_span_mean"] = _round_float(kv_span_sum / kv_span_count)
+        summary["kv_span_min"] = min(kv_span_mins) if kv_span_mins else None
+        summary["kv_span_max"] = max(kv_span_maxes) if kv_span_maxes else None
     torch_tiles = sum(int(item.get("torch_matmul_tiles", 0)) for item in items)
     if torch_tiles:
         summary["torch_matmul_tiles"] = torch_tiles
@@ -1132,6 +1200,18 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
                 "- MQA top-k valid KV visits / logits elements: "
                 f"`{_format_number(mqa_topk_work.get('valid_kv_visits'))}` / "
                 f"`{_format_number(mqa_topk_work.get('logits_elements'))}`"
+            ),
+            (
+                "- MQA top-k logits padding elements / valid ratio / padding ratio: "
+                f"`{_format_number(mqa_topk_work.get('logits_padding_elements'))}` / "
+                f"`{_format_number(mqa_topk_work.get('logits_valid_ratio'))}` / "
+                f"`{_format_number(mqa_topk_work.get('logits_padding_ratio'))}`"
+            ),
+            (
+                "- MQA top-k KV span count / mean / max: "
+                f"`{_format_number(mqa_topk_work.get('kv_span_count'))}` / "
+                f"`{_format_number(mqa_topk_work.get('kv_span_mean'))}` / "
+                f"`{_format_number(mqa_topk_work.get('kv_span_max'))}`"
             ),
             (
                 "- MQA top-k materialized logits bytes: "

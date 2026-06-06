@@ -120,12 +120,24 @@ def _stats_row(**overrides):
                 "topk_tokens": 1152,
                 "valid_kv_visits": 8_388_608,
                 "logits_elements": 8_388_608,
+                "logits_padding_elements": 0,
+                "logits_valid_ratio": 1.0,
+                "logits_padding_ratio": 0.0,
                 "materialized_logits_bytes": 33_554_432,
                 "peak_logits_bytes": 33_554_432,
                 "estimated_temp_bytes": 34_734_080,
                 "mqa_logits_launches": 1,
                 "topk_merge_count": 1,
                 "elapsed_ms": 1.25,
+                "kv_span": {
+                    "count": 256,
+                    "min": 32768,
+                    "p50": 32768,
+                    "p95": 32768,
+                    "p99": 32768,
+                    "max": 32768,
+                    "sum": 8_388_608,
+                },
             }
         ],
         "candidate_row_duplicates": {
@@ -334,6 +346,14 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     mqa_topk = report["mqa_topk_work"]
     assert mqa_topk["query_tokens"] == 512
     assert mqa_topk["valid_kv_visits"] == 16_777_216
+    assert mqa_topk["logits_elements"] == 16_777_216
+    assert mqa_topk["logits_padding_elements"] == 0
+    assert mqa_topk["logits_valid_ratio"] == 1.0
+    assert mqa_topk["logits_padding_ratio"] == 0.0
+    assert mqa_topk["kv_span_count"] == 512
+    assert mqa_topk["kv_span_sum"] == 16_777_216
+    assert mqa_topk["kv_span_mean"] == 32768.0
+    assert mqa_topk["kv_span_max"] == 32768
     assert mqa_topk["materialized_logits_bytes"] == 67_108_864
     assert mqa_topk["peak_logits_bytes"] == 33_554_432
     assert mqa_topk["estimated_temp_bytes"] == 34_734_080
@@ -387,6 +407,11 @@ def test_sparse_mla_stats_markdown_does_not_leak_absolute_paths(tmp_path):
     assert "- Accumulate value-read bytes estimate: `201326592`" in text
     assert "## MQA Top-K Work" in text
     assert "- MQA top-k paths: `triton_full`=1" in text
+    assert (
+        "- MQA top-k logits padding elements / valid ratio / padding ratio: "
+        "`0` / `1` / `0`"
+    ) in text
+    assert "- MQA top-k KV span count / mean / max: `256` / `32768` / `32768`" in text
     assert "- MQA top-k materialized logits bytes: `33554432`" in text
     assert "- MQA top-k elapsed ms: `1.25`" in text
     assert "| compressed | `32768` | `8192` | `24576` | `0.75` |" in text
