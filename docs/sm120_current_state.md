@@ -199,9 +199,10 @@ current compressed-position width reduced cold TTFT from the no-cap reference
 is aligned to cover every current token's compressed candidate range. It should
 help prompts materially below the configured model-length ceiling, but it cannot
 help a true 1M prompt where the effective width equals the full configured
-width. Keep it behind the normal promotion matrix until short throughput,
-59K/124K long-context, prefix/KV lifecycle, GSM8K, and GB10 reduced long-C2 are
-rechecked.
+width. The first RTX prefill/decode promotion subset passed with zero
+regressions across 59K/124K C=1/C=2, decode concurrency, mixed arrival, and
+streaming pressure. Keep it behind the full promotion matrix until short
+throughput, prefix/KV lifecycle, GSM8K, and GB10 reduced long-C2 are rechecked.
 
 Persistent TODO: the next production-class prefill improvement must reduce
 long-prefill sparse-MLA real work or memory pressure, especially in

@@ -8721,10 +8721,37 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
     effective C128A width equals the full configured width.
   - It also should not materially affect the 59K/124K 131K-profile gates,
     because those shapes already round to the same 1024 C128A block width.
-    Promotion still needs to re-run short throughput, GSM8K, prefix/KV
-    lifecycle, 59K/124K long-context, and GB10 reduced long-C2 before treating
-    it as PR-ready behavior.
+    The first RTX prefill/decode promotion subset confirms this expectation:
+    artifact
+    `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260607_c128_active_width_prefill_decode_gate/20260607013645`
+    exited with `baseline=0`, `prefill_decode_regression_gate=0`, and
+    regression count `0`. `long_context_latency_matrix`,
+    `long_context_decode_concurrency`, `long_context_mixed_arrival`, and
+    `streaming_pressure_matrix` all exited `0`.
+  - Promotion is still incomplete: short throughput, GSM8K, prefix/KV
+    lifecycle, and GB10 reduced long-C2 still need to be rechecked before
+    treating it as PR-ready behavior.
   - This is a useful bounded optimization, but it does not solve the main
     512K/1M TTFT problem. The true max-context path still needs an exact route
     that reduces real FP8 MQA logits/top-k work, SWA/C128 candidate visits,
     sparse-accumulate value traffic, live state, or dependency depth.
+
+  RTX prefill/decode promotion subset summary:
+
+  | Check | Result |
+  | --- | ---: |
+  | Regression count | `0` |
+  | 59K C=2 decode min/max | `0.982` |
+  | 59K C=2 ITL p99 | `0.016s` |
+  | 124K C=2 decode min/max | `0.903` |
+  | 124K C=2 ITL p99 | `0.019s` |
+  | 124K decode-concurrency C=2 decode min/max | `0.944` |
+  | 124K decode-concurrency C=2 ITL p99 | `0.019s` |
+  | Mixed-arrival failures | `0` |
+  | Streaming-pressure failures / slow cases | `0` / `0` |
+  | Streaming-pressure p99 ITL | `0.737s` |
+
+  Runtime health stayed clean for CUDA/NCCL/driver/engine/worker-crash/OOM
+  signals in the decode-concurrency, mixed-arrival, and streaming-pressure
+  phases. The latency-matrix phase reported JIT warnings only; CUDA/NCCL/driver
+  and worker-crash counts remained `0`.
