@@ -245,6 +245,13 @@ pruning shortcut: C4A MQA scores accumulate `ReLU(q*k)*weight_h`, and
 softmax/head scales. A 4K RTX attribution smoke found about `44.1%` negative
 MQA top-k weights, so head-wise early-stop or monotonic upper-bound pruning
 that assumes non-negative weights is not correctness-safe.
+A follow-up positive-score upper-bound diagnostic tested the safer signed
+variant: first compute positive-weight heads for all candidates, then use the
+positive score as an upper bound before evaluating negative heads. Under a
+tie-safe exact top-k rule, 4K retained every sampled candidate and 32K retained
+nearly every sampled candidate; the optimistic work ratio was about `0.997x`
+at 32K before counting the extra pass overhead. Do not pursue this pruning
+route as a production kernel.
 A scratch head-split MQA logits probe also failed to justify endpoint work:
 splitting 64 heads into multiple launches preserved exact logits but made the
 32K/131K KV microbench slower even at the coarsest two-launch split. Extra

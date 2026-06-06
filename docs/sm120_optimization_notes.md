@@ -8561,6 +8561,52 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
     with DS4 metadata support, or target live-state/dependency depth rather
     than dropping score terms.
 
+- Rejected positive-score MQA pruning bound, 2026-06-07:
+  tested a scratch diagnostic for the correctness-safe variant of signed MQA
+  score pruning. Because negative weights can only reduce final scores, the
+  positive-weight-only MQA score is an upper bound on the final weighted-ReLU
+  score. An exact branch-and-bound implementation could only skip negative-head
+  work for candidates whose positive-score upper bound is below the current
+  kth full-score threshold. For tie safety, candidates equal to the threshold
+  must be retained.
+
+  This diagnostic deliberately used an optimistic lower-bound cost model: it
+  used the already-known true full-score top-k threshold from the current
+  logits and did not charge for the extra positive-score pass, top-k
+  maintenance, or candidate compaction. If this optimistic ratio does not win,
+  the production route should not be implemented.
+
+  Artifacts:
+
+  - 4K C=1:
+    `/home/jasl/Workspace/vllm-ds4-sm120-harness/artifacts/main/mqa_prune_bound_diag/20260607010759/mqa_prune_bound_diag.jsonl`
+  - 32K C=1:
+    `/home/jasl/Workspace/vllm-ds4-sm120-harness/artifacts/main/mqa_prune_bound_diag/20260607010940/mqa_prune_bound_diag.jsonl`
+
+  | Input | KV tokens per call | Sample rows | Sampled KV | Keep ratio | Optimistic work ratio |
+  | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `4K` | `1024` | `8` per record | `8182` per record | `1.000000` | `1.000000` |
+  | `32K` | `8192` | `8` per record | `65526` per record | `0.939993-1.000000` | `0.978573-1.000000` |
+
+  The 32K run recorded 16 sampled MQA calls. Average optimistic work ratio was
+  `0.997318`, before charging any extra pass, bound computation, or compaction
+  overhead. Most records retained every sampled candidate for negative-head
+  evaluation. The best record still retained about `94%` of sampled candidates
+  and reached only `0.9786x` optimistic score work.
+
+  Interpretation:
+  - The safe positive-score upper-bound idea is mathematically valid, but the
+    actual DS4 MQA score distribution leaves almost no exact pruning space in
+    the sampled 32K long-prefill shape.
+  - Since the diagnostic already grants the algorithm an unrealistically strong
+    full-threshold oracle, a real implementation would be slower after adding
+    the positive-score pass, candidate tracking, tie handling, and CUDA graph
+    integration.
+  - Do not implement positive-score MQA pruning in vLLM. Future score-work
+    reduction needs a materially tighter bound, a model/backend semantic change,
+    or a backend that avoids the full candidate scan while preserving exact
+    DS4 top-k semantics.
+
 - Rejected MQA head-split lower-live-state probe, 2026-06-07:
   tested a scratch Triton prototype that splits the C4A FP8 MQA logits
   accumulation across head groups. The goal was to reduce live state/register
