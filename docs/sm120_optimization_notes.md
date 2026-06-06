@@ -8353,6 +8353,54 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   matrix without adding split launches, or an official backend that provides
   equivalent behavior for the DS4 metadata shape.
 
+- Rejected Triton tile-local exact fused MQA top-k route, 2026-06-06:
+  followed up the no-cap work scaling with temporary microbench probes for an
+  exact tile-local route. The intended exact algorithm was:
+
+  1. Generate a wider MQA logits tile.
+  2. Within that tile, keep tile-local top-512 values/indices.
+  3. Merge the tile candidates across the full KV range.
+
+  This would preserve candidates because any element not in a tile's local
+  topK cannot be in the row's global topK. It would only help if the tile
+  selection can be fused into the logits kernel without losing the current
+  tensor-core-friendly logits tiling or adding large merge overhead.
+
+  Evidence from temporary probes:
+
+  - `tl.topk` in the installed Triton returns values only, not indices. A
+    values-only fused topK is insufficient for sparse MLA metadata. Recovering
+    indices needs an extra threshold/compaction step or a custom indexed sort.
+  - A threshold plus `tl.cumsum(mask)` compaction primitive is correct for
+    power-of-two tiles, but useful shapes are resource-limited:
+
+    | Shape | Result |
+    | --- | --- |
+    | `M=8,N=1024,K=512` | compaction primitive runs, about `0.053 ms` |
+    | `M=16,N=1024,K=512` | shared memory OOR, required `131,072`, limit `101,376` |
+    | `M=8,N=2048,K=512` | shared memory OOR, required `131,072`, limit `101,376` |
+    | non-power-of-two `N=768` | Triton topK compilation fails |
+
+  - More importantly, the corresponding wide-N MQA logits tile cannot preserve
+    current performance:
+
+    | Logits tile | Result |
+    | --- | --- |
+    | current `BLOCK_M=64,BLOCK_N=128` | `1.321 ms` min for `256 x 131072`, `32` heads, `D=128` |
+    | probe `BLOCK_M=8,BLOCK_N=1024` | shared memory OOR, required `131,584`, limit `101,376` |
+    | probe `BLOCK_M=4,BLOCK_N=2048` | shared memory OOR, required `262,400`, limit `101,376` |
+    | probe `BLOCK_M=16,BLOCK_N=512` | runs but regresses to `2.187 ms` |
+    | probe `BLOCK_M=8,BLOCK_N=512` | runs but regresses to `4.793 ms` |
+
+  Decision: reject the Triton tile-local exact fused MQA topK route for current
+  endpoint work. It either cannot compile at the useful tile widths or loses
+  the tensor-core/occupancy shape that makes the existing logits kernel fast.
+  Do not spend more time on local Triton MQA tile selection unless one of these
+  changes: Triton/FlashInfer exposes an indexed tile topK primitive, an official
+  backend can avoid full logits materialization while preserving current logits
+  tiling, or a design appears that reduces MQA candidate work rather than only
+  changing where selection happens.
+
 - GB10 field reports on PR head `8725eb974`, 2026-06-06:
   two independent dual-node GB10 / SM121 reports tested the current PR head and
   reported stable CUDA graphs plus MTP, contrasting with earlier May builds

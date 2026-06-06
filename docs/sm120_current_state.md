@@ -212,6 +212,14 @@ is slower (`1.4-1.5x` at 32K-131K KV for the endpoint-like 256-query,
 32-head, topk-512 shape), so do not re-enter simple MQA chunking. A useful MQA
 experiment must fuse logits generation with top-k selection or otherwise
 avoid writing/reading the logits matrix without adding extra merge launches.
+The first Triton exact tile-local topK feasibility probe also does not justify
+endpoint work: `tl.topk` returns values but not indices, the threshold+cumsum
+index recovery path hits shared-memory limits at the useful `M=16,N=1024` and
+`M=8,N=2048` shapes, and wide-N MQA logits tiles either exceed shared memory or
+run slower than the current `M=64,N=128` logits kernel. Treat Triton tile-local
+fused MQA topK as blocked until there is an indexed selection primitive or a
+backend that keeps current tensor-core tiling while avoiding full logits
+materialization.
 
 The first follow-up grouped-combined microbench did not win. It removed the
 old separate compressed/SWA state merge by writing grouped-compressed and SWA
