@@ -93,6 +93,19 @@ FRONTIER_CONTEXT_SWEEP_TOP_P="${FRONTIER_CONTEXT_SWEEP_TOP_P:-1.0}"
 FRONTIER_CONTEXT_SWEEP_THINKING_MODE="${FRONTIER_CONTEXT_SWEEP_THINKING_MODE:-non-thinking}"
 FRONTIER_CONTEXT_SWEEP_TIMEOUT="${FRONTIER_CONTEXT_SWEEP_TIMEOUT:-1800}"
 FRONTIER_CONTEXT_SWEEP_PREWARM="${FRONTIER_CONTEXT_SWEEP_PREWARM:-1}"
+RUN_VERY_LONG_CONTEXT_CAPACITY="${RUN_VERY_LONG_CONTEXT_CAPACITY:-0}"
+VERY_LONG_CONTEXT_CASE_NAME="${VERY_LONG_CONTEXT_CASE_NAME:-very_long_context_capacity}"
+VERY_LONG_CONTEXT_TARGETS="${VERY_LONG_CONTEXT_TARGETS:-524288,786432,1048576}"
+VERY_LONG_CONTEXT_MAX_TOKENS="${VERY_LONG_CONTEXT_MAX_TOKENS:-16}"
+VERY_LONG_CONTEXT_TEMPERATURE="${VERY_LONG_CONTEXT_TEMPERATURE:-0.0}"
+VERY_LONG_CONTEXT_TOP_P="${VERY_LONG_CONTEXT_TOP_P:-1.0}"
+VERY_LONG_CONTEXT_THINKING_MODE="${VERY_LONG_CONTEXT_THINKING_MODE:-non-thinking}"
+VERY_LONG_CONTEXT_EVALUATION_MODE="${VERY_LONG_CONTEXT_EVALUATION_MODE:-ttft-only}"
+VERY_LONG_CONTEXT_CACHE_MODES="${VERY_LONG_CONTEXT_CACHE_MODES:-cold,warm}"
+VERY_LONG_CONTEXT_REPEAT_COUNT="${VERY_LONG_CONTEXT_REPEAT_COUNT:-1}"
+VERY_LONG_CONTEXT_TIMEOUT="${VERY_LONG_CONTEXT_TIMEOUT:-7200}"
+VERY_LONG_CONTEXT_MATERIALIZE_TIMEOUT="${VERY_LONG_CONTEXT_MATERIALIZE_TIMEOUT:-2400}"
+VERY_LONG_CONTEXT_TOKENIZER_MODE="${VERY_LONG_CONTEXT_TOKENIZER_MODE:-deepseek_v4}"
 RUN_DS4_STORY_RECALL_SEMANTIC="${RUN_DS4_STORY_RECALL_SEMANTIC:-0}"
 DS4_STORY_RECALL_CASE_NAME="${DS4_STORY_RECALL_CASE_NAME:-ds4_story_recall_semantic}"
 DS4_STORY_RECALL_PROMPT_FILE="${DS4_STORY_RECALL_PROMPT_FILE:-${REPO_ROOT}/prompts/long_context/ds4_story_recall.txt}"
@@ -423,6 +436,7 @@ VALID_BASELINE_PHASES=(
   long_context_probe
   long_context_latency_matrix
   frontier_context_sweep
+  very_long_context_capacity
   ds4_story_recall_semantic
   long_context_decode_concurrency
   long_context_mixed_arrival
@@ -452,6 +466,7 @@ phase_run_flag() {
     long_context_probe) printf '%s\n' RUN_LONG_CONTEXT_PROBE ;;
     long_context_latency_matrix) printf '%s\n' RUN_LONG_CONTEXT_LATENCY_MATRIX ;;
     frontier_context_sweep) printf '%s\n' RUN_FRONTIER_CONTEXT_SWEEP ;;
+    very_long_context_capacity) printf '%s\n' RUN_VERY_LONG_CONTEXT_CAPACITY ;;
     ds4_story_recall_semantic) printf '%s\n' RUN_DS4_STORY_RECALL_SEMANTIC ;;
     long_context_decode_concurrency) printf '%s\n' RUN_LONG_CONTEXT_DECODE_CONCURRENCY ;;
     long_context_mixed_arrival) printf '%s\n' RUN_LONG_CONTEXT_MIXED_ARRIVAL ;;
@@ -502,7 +517,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,kv_lifecycle_probe,streaming_pressure_soak,streaming_pressure_matrix,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_256x256,bench_random_1024x1024_c256,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,very_long_context_capacity,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,kv_lifecycle_probe,streaming_pressure_soak,streaming_pressure_matrix,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_256x256,bench_random_1024x1024_c256,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
     run_flag="$(phase_run_flag "${item}")"
@@ -913,6 +928,11 @@ write_summary() {
       "${RUN_FRONTIER_CONTEXT_SWEEP}" "${FRONTIER_CONTEXT_SWEEP_PROMPT_FILES}" \
       "${FRONTIER_CONTEXT_SWEEP_FRONTIERS}" "${FRONTIER_CONTEXT_SWEEP_REPEAT_COUNT}" \
       "${FRONTIER_CONTEXT_SWEEP_MAX_TOKENS}" "${FRONTIER_CONTEXT_SWEEP_THINKING_MODE}"
+    printf -- '- very_long_context_capacity: `%s`, targets `%s`, cache `%s`, repeats `%s`, max tokens `%s`, eval `%s`, thinking `%s`\n' \
+      "${RUN_VERY_LONG_CONTEXT_CAPACITY}" "${VERY_LONG_CONTEXT_TARGETS}" \
+      "${VERY_LONG_CONTEXT_CACHE_MODES}" "${VERY_LONG_CONTEXT_REPEAT_COUNT}" \
+      "${VERY_LONG_CONTEXT_MAX_TOKENS}" "${VERY_LONG_CONTEXT_EVALUATION_MODE}" \
+      "${VERY_LONG_CONTEXT_THINKING_MODE}"
     printf -- '- ds4_story_recall_semantic: `%s`, prompt `%s`, concurrency `%s`, repeats `%s`, max tokens `%s`, thinking `%s`\n' \
       "${RUN_DS4_STORY_RECALL_SEMANTIC}" "${DS4_STORY_RECALL_PROMPT_FILE}" \
       "${DS4_STORY_RECALL_CONCURRENCY}" "${DS4_STORY_RECALL_REPEAT_COUNT}" \
@@ -1381,6 +1401,32 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_frontier_context_sweep.sh"
+  fi
+
+  if phase_enabled "very_long_context_capacity" && { [[ "${RUN_VERY_LONG_CONTEXT_CAPACITY}" == "1" ]] || [[ "${RUN_VERY_LONG_CONTEXT_CAPACITY}" == "true" ]]; }; then
+    run_phase "${variant}" "very_long_context_capacity" "${variant_dir}/very_long_context_capacity" \
+      env OUT_DIR="${variant_dir}/very_long_context_capacity" \
+        BASE_URL="${BASE_URL}" MODEL="${MODEL}" PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
+        TARGET_PYTHON="${B200_VLLM_VENV}/bin/python" \
+        VERY_LONG_CONTEXT_VARIANT="${variant}" \
+        VERY_LONG_CONTEXT_CASE_NAME="${VERY_LONG_CONTEXT_CASE_NAME}" \
+        VERY_LONG_CONTEXT_TARGETS="${VERY_LONG_CONTEXT_TARGETS}" \
+        VERY_LONG_CONTEXT_MAX_TOKENS="${VERY_LONG_CONTEXT_MAX_TOKENS}" \
+        VERY_LONG_CONTEXT_TEMPERATURE="${VERY_LONG_CONTEXT_TEMPERATURE}" \
+        VERY_LONG_CONTEXT_TOP_P="${VERY_LONG_CONTEXT_TOP_P}" \
+        VERY_LONG_CONTEXT_THINKING_MODE="${VERY_LONG_CONTEXT_THINKING_MODE}" \
+        VERY_LONG_CONTEXT_EVALUATION_MODE="${VERY_LONG_CONTEXT_EVALUATION_MODE}" \
+        VERY_LONG_CONTEXT_CACHE_MODES="${VERY_LONG_CONTEXT_CACHE_MODES}" \
+        VERY_LONG_CONTEXT_REPEAT_COUNT="${VERY_LONG_CONTEXT_REPEAT_COUNT}" \
+        VERY_LONG_CONTEXT_TIMEOUT="${VERY_LONG_CONTEXT_TIMEOUT}" \
+        VERY_LONG_CONTEXT_MATERIALIZE_TIMEOUT="${VERY_LONG_CONTEXT_MATERIALIZE_TIMEOUT}" \
+        VERY_LONG_CONTEXT_TOKENIZER_MODE="${VERY_LONG_CONTEXT_TOKENIZER_MODE}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_sm12x_very_long_context_frontier.sh"
   fi
 
   if phase_enabled "ds4_story_recall_semantic" && { [[ "${RUN_DS4_STORY_RECALL_SEMANTIC}" == "1" ]] || [[ "${RUN_DS4_STORY_RECALL_SEMANTIC}" == "true" ]]; }; then

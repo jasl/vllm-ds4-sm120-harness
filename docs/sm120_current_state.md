@@ -101,8 +101,24 @@ Reddit-scale prefill gap.
 
 ## Active Direction
 
-The next high-value target is the GB10 long-prefill performance gap, measured
-before more production code is added:
+The next high-value target is split into two measurement tracks before more
+production code is added:
+
+1. Establish a 512K / 768K / 1M context frontier baseline on SM120 and GB10.
+   This is a development observation gate, not a normal PR hard gate. Use
+   `scripts/run_sm12x_very_long_context_frontier.sh` or the
+   `very_long_context_capacity` baseline phase to record startup capacity,
+   KV-cache bytes/token, C=1 cold/warm TTFT, input tok/s, decode tok/s, ITL
+   p95/p99, runtime health, and GPU stats with prefix cache disabled and
+   `FULL_AND_PIECEWISE` CUDA graphs still enabled.
+   The first 2026-06-06 frontier baseline shows dual RTX PRO 6000 can admit and
+   complete 1M C=1 with positive KV margin, but 1M cold TTFT is about `845s`.
+   GB10 can admit and complete 1M C=1 only after raising the current MTP=2
+   profile from `gpu_memory_utilization=0.70` to `0.75`, and measured 1M cold
+   TTFT is about `3504s`, so GB10 1M is currently an availability probe rather
+   than an interactive-latency claim.
+2. Continue the GB10 long-prefill performance gap work, measured before more
+   production code is added:
 
 - The apples-to-apples GB10 C=1 default-versus-Reddit-style serving-flag matrix
   is now recorded for 4K / 16K / 32K / 64K / 128K. Do not promote the 8192

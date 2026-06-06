@@ -17,6 +17,7 @@ PHASE_LABELS = {
     "acceptance": "Acceptance",
     "long_context_probe": "Long Context Probe",
     "long_context_latency_matrix": "Long Context Latency Matrix",
+    "very_long_context_capacity": "Very Long Context Frontier",
     "prefix_cache_probe": "Prefix Cache Probe",
     "streaming_pressure_soak": "Streaming Pressure Soak",
     "streaming_pressure_matrix": "Streaming Pressure Matrix",

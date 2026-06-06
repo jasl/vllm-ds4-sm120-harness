@@ -7802,3 +7802,66 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   this route would not reduce current score/value visits. Future work should
   stay focused on real cross-query KV reuse, lower value traffic, dependency
   depth, or a backend that natively handles the DS4 metadata shape.
+
+- 512K / 768K / 1M frontier harness gate, 2026-06-06:
+  added a development-only very-long-context gate for separating capacity,
+  runtime latency, and correctness follow-up before making 1M claims. The new
+  `very_long_context_capacity` baseline phase and
+  `scripts/run_sm12x_very_long_context_frontier.sh` parse serve-log capacity
+  fields, estimate KV bytes/token and C=1/C=2 margins for
+  `524288,786432,1048576`, materialize artifact-only synthetic prompts near
+  those token frontiers through the target vLLM Python/tokenizer, and run a C=1
+  cold/warm `ttft-only` latency matrix.
+
+  Default profile: MTP=2 primary, FP8 KV, prefix cache disabled,
+  `max_num_seqs=1`, `max_num_batched_tokens=4096`, low output budget, and
+  `FULL_AND_PIECEWISE` CUDA graphs. On RTX PRO 6000 / SM120 this gate should
+  become the first 512K/768K/1M baseline. On GB10 / SM121 it is first an
+  availability and speed-meaningfulness probe: preserve partial artifacts if
+  1M is too slow, and classify failures by startup capacity, prefill latency,
+  decode cadence, NCCL/runtime liveness, or driver health before changing vLLM
+  code.
+
+  Decision: keep this outside the normal PR hard gate. Use it as the evaluation
+  baseline for future 1M context capacity, KV accounting, and sparse-MLA
+  long-prefill optimization work.
+
+  First baseline artifacts:
+  `20260606_sm120_1m_frontier_baseline_retry/20260606140805`,
+  `20260606_sm120_1m_nomtp_capacity_smoke/20260606153222`, and
+  `gb10_1m_capacity_smoke_075_20260606150356`.
+
+  Capacity summary:
+
+  | System | Profile | KV GiB | KV tokens | Bytes/token | Est. 1M C |
+  | --- | --- | ---: | ---: | ---: | ---: |
+  | RTX PRO 6000 / SM120 | MTP=2, `gpu_memory_utilization=0.975` | `14.45` | `2,765,705` | `5,609.99` | `2.64` |
+  | RTX PRO 6000 / SM120 | no-MTP, `gpu_memory_utilization=0.975` | `15.89` | `3,042,577` | `5,607.67` | `2.90` |
+  | GB10 / SM121 | MTP=2, `gpu_memory_utilization=0.75` | `12.02` | `2,176,643` | `5,929.49` | `2.08` |
+
+  GB10 `gpu_memory_utilization=0.70` was not enough for 1M MTP=2 startup:
+  vLLM reported `5.67 GiB` KV required, `5.41 GiB` available, and an estimated
+  max model length of `980,992`. With `0.75`, 1M C=1 and C=2 are capacity-OK,
+  but this is an admission result only.
+
+  Latency summary, C=1, prefix cache disabled, FP8 KV, low-output `ttft-only`:
+
+  | System | Target | Cache | Prompt tok | TTFT s | Input tok/s | Decode tok/s | ITL p99 s |
+  | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+  | RTX PRO 6000 / SM120 | `524288` | cold | `523,728` | `273.900` | `1,912.11` | `33.47` | `0.079` |
+  | RTX PRO 6000 / SM120 | `524288` | warm | `523,706` | `233.961` | `2,238.43` | `37.05` | `0.079` |
+  | RTX PRO 6000 / SM120 | `786432` | cold | `785,868` | `508.216` | `1,546.33` | `30.66` | `0.111` |
+  | RTX PRO 6000 / SM120 | `786432` | warm | `785,846` | `481.957` | `1,630.53` | `30.53` | `0.112` |
+  | RTX PRO 6000 / SM120 | `1048576` | cold | `1,048,011` | `845.203` | `1,239.95` | `17.34` | `0.143` |
+  | RTX PRO 6000 / SM120 | `1048576` | warm | `1,047,988` | `818.055` | `1,281.07` | `20.35` | `0.143` |
+  | GB10 / SM121 | `524288` | cold | `523,728` | `1,082.609` | `483.77` | `87.74` | `0.090` |
+  | GB10 / SM121 | `1048576` | cold | `1,048,031` | `3,503.950` | `299.10` | `312.90` | `0.024` |
+
+  Interpretation: dual RTX PRO 6000 can admit and complete 1M C=1 with positive
+  KV margin, but TTFT is already long enough that future work must optimize raw
+  long-prefill before making interactive 1M claims. GB10 can admit and complete
+  1M C=1 at `gpu_memory_utilization=0.75`, but the measured 1M TTFT is about
+  `58.4` minutes and is not practically interactive under this profile. Both
+  systems show super-linear TTFT growth from 512K to 1M, so future work should
+  focus on very-long sparse-MLA prefill work and KV accounting first, then add
+  NIAH/story correctness only after the capacity/latency baseline is stable.

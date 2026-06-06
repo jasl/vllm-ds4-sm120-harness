@@ -58,6 +58,7 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_frontier_context_sweep.sh",
         "run_long_context_decode_concurrency.sh",
         "run_long_context_mixed_arrival.sh",
+        "run_sm12x_very_long_context_frontier.sh",
         "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
@@ -258,11 +259,39 @@ def test_prefix_cache_probe_wrapper_records_kv_runtime_artifacts():
     assert "prefix-cache-probe" in script
     assert '--json-output "${OUT_DIR}/prefix_cache_probe.json"' in script
     assert '--markdown-output "${OUT_DIR}/prefix_cache_probe.md"' in script
+
+
+def test_very_long_context_wrapper_materializes_prompts_and_runs_latency_matrix():
+    script = (ROOT / "scripts" / "run_sm12x_very_long_context_frontier.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'VERY_LONG_CONTEXT_TARGETS="${VERY_LONG_CONTEXT_TARGETS:-524288,786432,1048576}"' in script
+    assert 'VERY_LONG_CONTEXT_MAX_TOKENS="${VERY_LONG_CONTEXT_MAX_TOKENS:-16}"' in script
+    assert "very-long-context-capacity" in script
+    assert "materialize-token-frontier-prompts" in script
+    assert "run_long_context_latency_matrix.sh" in script
+    assert 'VERY_LONG_CONTEXT_RUN_LATENCY="${VERY_LONG_CONTEXT_RUN_LATENCY:-1}"' in script
+    assert 'LONG_CONTEXT_LATENCY_EVALUATION_MODE="${VERY_LONG_CONTEXT_EVALUATION_MODE}"' in script
+    assert 'LONG_CONTEXT_LATENCY_CONCURRENCY=1' in script
+    assert 'LONG_CONTEXT_LATENCY_CACHE_MODES="${VERY_LONG_CONTEXT_CACHE_MODES}"' in script
+    assert "very_long_context_frontier_summary.json" in script
+    assert "FULL_AND_PIECEWISE" in script
     assert 'source "${SCRIPT_DIR}/gpu_stats.sh"' in script
     assert "start_gpu_stats" in script
     assert 'source "${SCRIPT_DIR}/runtime_stats.sh"' in script
     assert "start_runtime_stats" in script
     assert 'SERVE_LOG="${SERVE_LOG:-}"' in script
+
+
+def test_b200_baseline_knows_very_long_context_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
+
+    assert "very_long_context_capacity" in script
+    assert "RUN_VERY_LONG_CONTEXT_CAPACITY" in script
+    assert 'VERY_LONG_CONTEXT_TARGETS="${VERY_LONG_CONTEXT_TARGETS:-524288,786432,1048576}"' in script
+    assert 'very_long_context_capacity) printf' in script
+    assert "run_sm12x_very_long_context_frontier.sh" in script
 
 
 def test_kv_lifecycle_probe_wrapper_records_idle_kv_gate_artifacts():

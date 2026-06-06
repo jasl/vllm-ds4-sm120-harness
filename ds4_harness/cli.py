@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.error
@@ -168,6 +169,18 @@ from ds4_harness.run_environment import (
     write_run_environment_markdown,
 )
 from ds4_harness.toolcall15 import run_suite
+from ds4_harness.very_long_context import (
+    DEFAULT_CASE_NAME as DEFAULT_VERY_LONG_CONTEXT_CASE_NAME,
+    DEFAULT_MAX_TOKENS as DEFAULT_VERY_LONG_CONTEXT_MAX_TOKENS,
+    DEFAULT_SALT_RESERVATION_TOKENS as DEFAULT_VERY_LONG_CONTEXT_SALT_RESERVATION,
+    DEFAULT_TARGETS as DEFAULT_VERY_LONG_CONTEXT_TARGETS,
+    build_capacity_from_serve_log,
+    materialize_token_frontier_prompts,
+    parse_targets as parse_very_long_context_targets,
+    write_capacity_markdown,
+    write_json as write_very_long_context_json,
+    write_prompt_manifest_markdown,
+)
 
 
 DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Flash"
@@ -1159,6 +1172,65 @@ def _cmd_frontier_context_sweep(args: argparse.Namespace) -> int:
     print(
         f"{status} {row.get('case')} variant={args.variant}: "
         f"groups={len(summary)} failures={failures}"
+    )
+    return 0 if row.get("ok") else 1
+
+
+def _cmd_very_long_context_capacity(args: argparse.Namespace) -> int:
+    try:
+        targets = parse_very_long_context_targets(args.targets)
+        row = build_capacity_from_serve_log(
+            serve_log=args.serve_log,
+            targets=targets,
+            case_name=args.case_name,
+            variant=args.variant,
+        )
+    except (ValueError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        write_very_long_context_json(args.json_output, row)
+    if args.markdown_output is not None:
+        write_capacity_markdown(args.markdown_output, row)
+
+    status = "PASS" if row.get("ok") else "FAIL"
+    capacity = row.get("capacity") if isinstance(row.get("capacity"), dict) else {}
+    print(
+        f"{status} {row.get('case')} variant={args.variant}: "
+        f"kv_tokens={capacity.get('gpu_kv_cache_size_tokens', 'n/a')} "
+        f"bytes_per_token={capacity.get('bytes_per_token', 'n/a')}"
+    )
+    return 0 if row.get("ok") else 1
+
+
+def _cmd_materialize_token_frontier_prompts(args: argparse.Namespace) -> int:
+    try:
+        targets = parse_very_long_context_targets(args.targets)
+        row = materialize_token_frontier_prompts(
+            target_python=args.target_python,
+            model=args.model,
+            tokenizer_mode=args.tokenizer_mode,
+            output_dir=args.output_dir,
+            targets=targets,
+            max_tokens=args.max_tokens,
+            salt_reservation_tokens=args.salt_reservation_tokens,
+            timeout=args.timeout,
+        )
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        write_very_long_context_json(args.json_output, row)
+    if args.markdown_output is not None:
+        write_prompt_manifest_markdown(args.markdown_output, row)
+
+    status = "PASS" if row.get("ok") else "FAIL"
+    prompts = row.get("prompts") if isinstance(row.get("prompts"), list) else []
+    print(
+        f"{status} token_frontier_prompts model={args.model}: "
+        f"prompts={len(prompts)}"
     )
     return 0 if row.get("ok") else 1
 
@@ -2393,6 +2465,43 @@ def build_parser() -> argparse.ArgumentParser:
     frontier.add_argument("--json-output", type=Path)
     frontier.add_argument("--markdown-output", type=Path)
     frontier.set_defaults(func=_cmd_frontier_context_sweep)
+
+    very_long_capacity = subparsers.add_parser("very-long-context-capacity")
+    very_long_capacity.add_argument("--serve-log", type=Path, required=True)
+    very_long_capacity.add_argument("--variant", default="manual")
+    very_long_capacity.add_argument(
+        "--case-name", default=DEFAULT_VERY_LONG_CONTEXT_CASE_NAME
+    )
+    very_long_capacity.add_argument(
+        "--targets",
+        default=",".join(str(value) for value in DEFAULT_VERY_LONG_CONTEXT_TARGETS),
+        help="comma-separated target context lengths such as 524288,786432,1048576",
+    )
+    very_long_capacity.add_argument("--json-output", type=Path)
+    very_long_capacity.add_argument("--markdown-output", type=Path)
+    very_long_capacity.set_defaults(func=_cmd_very_long_context_capacity)
+
+    token_frontier = subparsers.add_parser("materialize-token-frontier-prompts")
+    token_frontier.add_argument("--target-python", required=True)
+    token_frontier.add_argument("--model", default=DEFAULT_MODEL)
+    token_frontier.add_argument("--tokenizer-mode", default="deepseek_v4")
+    token_frontier.add_argument("--output-dir", type=Path, required=True)
+    token_frontier.add_argument(
+        "--targets",
+        default=",".join(str(value) for value in DEFAULT_VERY_LONG_CONTEXT_TARGETS),
+    )
+    token_frontier.add_argument(
+        "--max-tokens", type=int, default=DEFAULT_VERY_LONG_CONTEXT_MAX_TOKENS
+    )
+    token_frontier.add_argument(
+        "--salt-reservation-tokens",
+        type=int,
+        default=DEFAULT_VERY_LONG_CONTEXT_SALT_RESERVATION,
+    )
+    token_frontier.add_argument("--timeout", type=float, default=1800.0)
+    token_frontier.add_argument("--json-output", type=Path)
+    token_frontier.add_argument("--markdown-output", type=Path)
+    token_frontier.set_defaults(func=_cmd_materialize_token_frontier_prompts)
 
     mixed_arrival = subparsers.add_parser("long-context-mixed-arrival")
     mixed_arrival.add_argument("--base-url", default="http://127.0.0.1:8000")

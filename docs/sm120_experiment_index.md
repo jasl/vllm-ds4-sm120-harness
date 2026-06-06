@@ -37,6 +37,13 @@ with `docs/sm120_current_state.md` for the live decision state.
 - GB10 reduced long-C2 gate:
   open `docs/dgx_spark_bare_metal_cluster.md` and search
   `GB10_LONG_C2_VARIANTS`.
+- 512K / 768K / 1M context frontier gate:
+  open `docs/sm120_current_state.md` and search
+  `512K / 768K / 1M context frontier baseline`; for GB10 setup details, open
+  `docs/dgx_spark_bare_metal_cluster.md` and search
+  `512K / 768K / 1M frontier work`. For the first measured baseline, open
+  `docs/sm120_optimization_notes.md` and search
+  `First baseline artifacts`.
 
 ## Prefill And Sparse MLA
 

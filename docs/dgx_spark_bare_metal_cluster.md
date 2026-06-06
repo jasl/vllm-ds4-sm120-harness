@@ -435,6 +435,51 @@ as `LONG_CONTEXT_LATENCY_MAX_TOKENS=1`. This mode records TTFT without turning
 the intentionally truncated answer into a semantic failure. Keep the default
 `semantic` mode for correctness gates and for all prompt-file semantic checks.
 
+For 512K / 768K / 1M frontier work, use the dedicated very-long-context wrapper
+instead of extending the routine 131K gate:
+
+```bash
+TP_SIZE=2 \
+PP_SIZE=1 \
+MAX_MODEL_LEN=1048576 \
+MAX_NUM_SEQS=1 \
+MAX_NUM_BATCHED_TOKENS=4096 \
+SERVE_PREFIX_CACHE_MODE=disabled \
+SERVE_ENABLE_EXPERT_PARALLEL=1 \
+SERVE_COMPILATION_CONFIG='{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
+scripts/dgx_spark_start_mp_serve.sh
+
+PYTHON="$VLLM_VENV/bin/python" \
+TARGET_PYTHON="$VLLM_VENV/bin/python" \
+BASE_URL=http://127.0.0.1:8000 \
+MODEL="$MODEL_ID" \
+SERVE_LOG="$RUN_DIR/head.log" \
+VERY_LONG_CONTEXT_TARGETS=524288,786432,1048576 \
+VERY_LONG_CONTEXT_MAX_TOKENS=16 \
+VERY_LONG_CONTEXT_EVALUATION_MODE=ttft-only \
+scripts/run_sm12x_very_long_context_frontier.sh
+```
+
+On GB10, first treat this as an availability and speed-meaningfulness probe:
+startup capacity must log enough KV tokens for the target, then 512K C=1 should
+complete before trying 1M C=1. Keep `drop_caches` enabled through the startup
+helper, record `MemAvailable` and current-boot NVIDIA driver health, and keep
+partial artifacts when a 1M run is too slow or times out. If TTFT scales roughly
+linearly with prompt tokens and driver/runtime health stays clean, the result is
+probably exposing the GB10 hardware/interconnect envelope. If the curve becomes
+super-linear, the server shows high-SM/no-token-progress, or CUDA/NCCL/NVRM/UVM
+signals appear, treat it as an implementation or runtime problem before making
+customer-facing 1M claims.
+
+The first 1M frontier run on the current GB10 / SM121 cluster showed that
+`gpu_memory_utilization=0.70` is too low for MTP=2 1M startup: vLLM estimated
+`980,992` as the maximum model length. Retrying with
+`gpu_memory_utilization=0.75` admitted 1M C=1/C=2 by capacity
+(`2,176,643` KV tokens, estimated 1M concurrency `2.08`) and completed a cold
+512K/1M latency probe. The measured TTFT was about `1,083s` at 512K and
+`3,504s` at 1M, so 1M is a valid availability probe but not an interactive
+latency claim under this profile.
+
 For generation quality gates, keep `GENERATION_MAX_CASE_TOKENS=32768` or
 higher on GB10. The checked-in frontend and code prompts can legitimately need
 more than 4096 completion tokens; a 4096 cap is useful only for quick smoke and
