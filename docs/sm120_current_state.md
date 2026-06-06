@@ -232,6 +232,13 @@ remove the 512K-scale MQA logits write/read by themselves. Do not start a new
 optimization by swapping only the selector. A useful MQA route must fuse FP8
 MQA score generation with indexed top-k selection, or use an official backend
 that does the equivalent for the DS4 sparse metadata shape.
+A scratch no-store MQA logits probe also limits this route: keeping the same
+QK/ReLU/weighted score work but replacing the full logits store with per-tile
+checksums was only about `0.8%` faster at 32K KV and `2.3%` faster at 131K KV
+on the endpoint-like 256-query, 32-head, topk-512 shape. Avoiding the logits
+matrix write/read is not enough by itself. A useful fused MQA producer must
+reduce real score work, candidate/value visits, live state, or dependency
+depth, not merely move the same score work into a different output format.
 
 The first follow-up grouped-combined microbench did not win. It removed the
 old separate compressed/SWA state merge by writing grouped-compressed and SWA

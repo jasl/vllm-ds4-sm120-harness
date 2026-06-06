@@ -8490,6 +8490,36 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   2. wait for an official FlashInfer / TRTLLM-gen DS4 sparse-MLA backend that
      passes a direct SM120 / SM121 API smoke before any endpoint test.
 
+- Rejected logits-store-only fused MQA route, 2026-06-07:
+  ran a scratch Triton no-store probe to estimate the upper bound from removing
+  the full FP8 MQA logits matrix store/read while keeping the same score work.
+  The probe duplicated the current FP8 MQA logits kernel shape, kept
+  QK/ReLU/weighted accumulation live, and wrote one per-row checksum per KV tile
+  instead of the full `[query, kv]` logits tile. It does not implement top-k; it
+  is a lower-level bound for "same compute, less logits materialization."
+
+  Shape: one GPU, `num_q=256`, `num_heads=32`, `head_dim=128`, full valid KV
+  span, random FP8 Q/K, FP32 weights, current `BLOCK_M=64`, `BLOCK_N=128`,
+  `num_warps=4`.
+
+  | KV tokens | Full logits min | Checksum/no-store min | Relative |
+  | ---: | ---: | ---: | ---: |
+  | `32,768` | `0.3767 ms` | `0.3735 ms` | `0.9915x` |
+  | `131,072` | `1.3148 ms` | `1.2840 ms` | `0.9766x` |
+
+  Interpretation:
+  - Removing the logits store while keeping identical score work saves only
+    about `0.8%` at 32K KV and `2.3%` at 131K KV on this endpoint-like shape.
+  - This explains why selector-only and split/chunked MQA routes keep losing:
+    they do not reduce the dominant QK/ReLU/weighted score work and often add
+    merge or live-state pressure.
+  - A production fused MQA top-k kernel is still only worth pursuing if it
+    reduces real score work, candidate/value visits, live state, or dependency
+    depth while preserving exact candidates. A kernel that only changes the
+    output from "full logits matrix" to "top-k indices" after doing the same
+    score work is unlikely to move endpoint TTFT enough to justify the
+    correctness and CUDA-graph risk.
+
   Useful reported configuration details:
 
   - TP=2, EP enabled in the throughput report, MTP=2, FP8 KV, block size 256,
