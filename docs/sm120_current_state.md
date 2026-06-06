@@ -117,6 +117,15 @@ production code is added:
    profile from `gpu_memory_utilization=0.70` to `0.75`, and measured 1M cold
    TTFT is about `3504s`, so GB10 1M is currently an availability probe rather
    than an interactive-latency claim.
+   The first RTX 512K/1M Nsys attribution pass confirms the very-long TTFT
+   problem is prefill kernel work rather than host/scheduler idle: 512K had max
+   CUDA idle gap `0.103s`, and the partial 1M trace had max idle gap `0.018s`.
+   `_accumulate_indexed_attention_chunk_multihead_kernel` and
+   `_fp8_mqa_logits_kernel` dominated the trace, reaching about `75%` of 512K
+   CUDA kernel time and about `83%` of the partial 1M trace. The 1M Nsys run
+   failed before first token in the FP8 MQA logits/top-k path with CUDA OOM
+   under profiler memory pressure, so use it as attribution evidence, not as a
+   completed 1M latency sample.
 2. Continue the GB10 long-prefill performance gap work, measured before more
    production code is added:
 
@@ -134,8 +143,11 @@ production code is added:
 If a maintainable upstream or official backend wins and passes the promotion
 matrix, prefer that route over carrying fork-specific kernel code. If no public
 backend wins, the next production-worthy experiment must reduce real
-sparse-MLA candidate/value work, live state, or dependency depth for the DS4
-mixed compressed-plus-SWA metadata shape.
+sparse-MLA candidate/value/logits work, live state, memory pressure, or
+dependency depth for the DS4 mixed compressed-plus-SWA metadata shape. Do not
+prioritize scheduler-idle fixes or `_combine_topk_swa_indices_kernel` for the
+512K-to-1M TTFT nonlinearity unless future profiling contradicts the current
+Nsys attribution.
 
 Upstream DeepSeek backlog triage should run before adding more local sparse-MLA
 code. The current order is:
@@ -175,6 +187,12 @@ DS4 sparse-MLA metadata layout. Harness stats reporting now derives
 can first prove reusable candidate mass before any endpoint code is added. Treat
 that field as an upper-bound signal only: it is not a performance claim until a
 microbench and then the endpoint promotion matrix show an actual win.
+
+Persistent TODO: the next production-class prefill improvement must reduce
+long-prefill sparse-MLA real work or memory pressure, especially in
+`_accumulate_indexed_attention_chunk_multihead_kernel` and the FP8 MQA
+logits/top-k path. Scheduler shaping and chunk-size tuning remain fallback
+controls, not the main route to close the 512K/1M TTFT and GB10 prefill gap.
 
 The first follow-up grouped-combined microbench did not win. It removed the
 old separate compressed/SWA state merge by writing grouped-compressed and SWA

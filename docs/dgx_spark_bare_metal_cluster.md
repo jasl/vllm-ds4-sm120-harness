@@ -294,6 +294,21 @@ safe `max_model_len` must be established with a Docker-specific ceiling sweep
 after cache reclaim. Do not reuse a bare-metal 64K/128K claim for Docker unless
 the containerized run logs enough KV-cache headroom for that exact shape.
 
+External Docker field reports on the current PR head found that
+`gpu_memory_utilization=0.975` is too aggressive for some GB10 container
+profiles even when the same model can run on bare metal. A 131K TP=2 / MTP=2 /
+FP8-KV Docker profile started cleanly at `gpu_memory_utilization=0.85` after
+cache hygiene. Treat `0.85` as a Docker-specific starting point, then raise only
+after recording `MemAvailable`, KV-cache capacity lines, and driver health for
+that container.
+
+First-time GB10 Docker startup can be much slower than routine bare-metal
+startup because aarch64 Torch/Triton caches are populated from scratch. If a
+fresh image is expected to JIT, use a much larger startup timeout for that first
+run, preserve the cache, and rerun the same command before classifying the
+serve profile as slow or broken. Later cached starts should use the normal
+bounded startup timeout again.
+
 For a reusable guarded startup, run the harness helper from the control machine
 after exporting the placeholders above. Use the no-Ray helper for the standard
 GB10 path:

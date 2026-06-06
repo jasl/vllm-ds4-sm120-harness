@@ -7865,3 +7865,127 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   systems show super-linear TTFT growth from 512K to 1M, so future work should
   focus on very-long sparse-MLA prefill work and KV accounting first, then add
   NIAH/story correctness only after the capacity/latency baseline is stable.
+
+- 512K / 1M very-long TTFT Nsys attribution, 2026-06-06:
+  ran the first targeted Nsight Systems pass for the 512K-to-1M TTFT
+  nonlinearity question. This was an attribution sprint only; no vLLM inference
+  code was changed. The serve profile matched the 1M frontier baseline:
+  TP=2, EP enabled, MTP=2, FP8 KV, prefix cache disabled,
+  `max_num_seqs=1`, `max_num_batched_tokens=4096`,
+  `gpu_memory_utilization=0.975`, and `FULL_AND_PIECEWISE` CUDA graphs.
+
+  Artifacts:
+  `20260606_very_long_nsys_attribution/512k_cold` and
+  `20260606_very_long_nsys_attribution/1m_cold`.
+
+  The 512K capture completed and returned first token normally:
+  `523,706` prompt tokens, TTFT `234.100s`, elapsed `234.294s`, and
+  `8` completion tokens. The 1M capture was the only 1M profile attempted in
+  this sprint. It did not return first token: after `655.268s`, the worker
+  failed in `sparse_attn_indexer -> fp8_fp4_mqa_topk_indices ->
+  fp8_mqa_logits_triton -> _fp8_mqa_logits_kernel` with
+  `RuntimeError: Triton Error [CUDA]: out of memory`. Treat the 1M profile as
+  a partial prefill trace plus a memory-pressure failure signal, not as a
+  completed 1M latency sample.
+
+  Kernel-time summary below is summed CUDA kernel duration across the two GPUs;
+  wall-clock spans are shown separately.
+
+  | Shape | Trace span | Total CUDA duration | Max CUDA idle gap | Completed first token |
+  | --- | ---: | ---: | ---: | --- |
+  | 512K | `233.167s` | `464.716s` | `0.103s` | yes |
+  | 1M partial | `652.972s` | `1304.228s` | `0.018s` | no, FP8 MQA logits path OOM |
+
+  The near-zero idle gaps mean the long wall time is not explained by a host
+  scheduler stall or CUDA idle window in these traces. The GPU is continuously
+  occupied by prefill kernels.
+
+  | Kernel family | 512K duration | 512K share | 512K instances | 1M partial duration | 1M partial share | 1M partial instances |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `_accumulate_indexed_attention_chunk_multihead_kernel` | `227.260s` | `48.93%` | `750,180` | `681.680s` | `52.28%` | `1,319,072` |
+  | `_fp8_mqa_logits_kernel` | `122.595s` | `26.39%` | `24,318` | `396.609s` | `30.42%` | `71,648` |
+  | `ncclDevKernel_AllReduce_Sum_bf16_RING_LL` | `25.123s` | `5.41%` | `23,832` | `54.236s` | `4.16%` | `41,870` |
+  | Marlin MoE | `25.704s` | `5.53%` | `22,528` | `47.038s` | `3.61%` | `39,616` |
+  | `_w8a8_triton_block_scaled_mm` | `13.182s` | `2.84%` | `62,480` | `24.050s` | `1.84%` | `109,848` |
+  | `_indexed_d512_split_score_kernel` | `4.985s` | `1.07%` | `85,260` | `8.975s` | `0.69%` | `150,528` |
+  | `_indexed_d512_split_value_kernel` | `3.620s` | `0.78%` | `85,260` | `6.585s` | `0.51%` | `150,528` |
+  | `_combine_topk_swa_indices_kernel` | `0.399s` | `0.09%` | `11,264` | `1.024s` | `0.08%` | `19,808` |
+
+  Scaling readout:
+
+  | Kernel family | 1M/512K duration ratio | 1M/512K instance ratio | 1M/512K avg-kernel-time ratio |
+  | --- | ---: | ---: | ---: |
+  | sparse accumulate chunk | `3.00x` | `1.76x` | `1.71x` |
+  | FP8 MQA logits | `3.23x` | `2.95x` | `1.10x` |
+  | NCCL all-reduce | `2.16x` | `1.76x` | `1.23x` |
+  | Marlin MoE | `1.83x` | `1.76x` | `1.04x` |
+  | D512 score | `1.80x` | `1.77x` | `1.02x` |
+  | D512 value | `1.82x` | `1.77x` | `1.03x` |
+
+  Attribution:
+
+  - Confirmed stage: the 512K-to-1M problem is very-long prefill, not decode
+    cadence. The 512K request completed with normal low-output decode, while
+    the 1M trace failed before first token.
+  - Confirmed top kernels: sparse accumulate is the largest single cost, and
+    FP8 MQA logits is the second largest cost. Together they were about
+    `75.3%` of 512K CUDA kernel time and `82.7%` of the partial 1M CUDA kernel
+    time.
+  - Likely source of nonlinearity: sparse accumulate per-launch time grows
+    sharply as context length grows, while FP8 MQA logits grows through a much
+    larger launch-count increase and is also the observed 1M failure point
+    under profiler memory pressure.
+  - Not supported by this trace: blaming `_combine_topk_swa_indices_kernel`,
+    D512 score/value kernels, MoE, NCCL, or CUDA idle/scheduler gaps as the
+    primary 512K-to-1M nonlinear driver. They are measurable costs, but their
+    shares are smaller and their scaling is closer to the prompt-length
+    increase than the two sparse-MLA top kernels.
+
+  Next direction: focus the next optimization sprint on reducing real sparse
+  MLA prefill work and memory pressure in the FP8 MQA logits/top-k path and the
+  sparse accumulate chunk path. The most useful next measurements are targeted
+  NCU on `_accumulate_indexed_attention_chunk_multihead_kernel` and
+  `_fp8_mqa_logits_kernel` at 512K-class shapes, plus code-level accounting of
+  FP8 MQA logits launch count, candidate/page count, and temporary allocation
+  size by prefill chunk. Do not spend the next round on scheduler-idle fixes or
+  `_combine_topk_swa_indices_kernel` unless new evidence contradicts this
+  attribution.
+
+- Persistent TODO recorded after the 512K/1M attribution pass:
+  solve the long-prefill bottleneck by reducing real sparse-MLA work or memory
+  pressure, not by adding more scheduler knobs. The concrete surfaces to
+  inspect first are `_accumulate_indexed_attention_chunk_multihead_kernel` and
+  the FP8 MQA logits/top-k path. Success criteria for any later vLLM code
+  experiment remain endpoint-visible TTFT/input-tok/s improvement plus the
+  normal promotion matrix: GSM8K, FULL_AND_PIECEWISE, prefix/KV lifecycle,
+  short throughput, 59K/124K C=1/C=2, mixed arrival/fairness, and GB10 reduced
+  long-C2.
+
+- GB10 field reports on PR head `8725eb974`, 2026-06-06:
+  two independent dual-node GB10 / SM121 reports tested the current PR head and
+  reported stable CUDA graphs plus MTP, contrasting with earlier May builds
+  that crashed or wedged under similar concurrency. These are external field
+  reports, not local reproduction artifacts, but they materially lower the
+  priority of treating current GB10 MTP startup as an unresolved crash by
+  default.
+
+  Useful reported configuration details:
+
+  - TP=2, EP enabled in the throughput report, MTP=2, FP8 KV, block size 256,
+    FULL_AND_PIECEWISE CUDA graphs, and prefix cache enabled in one report.
+  - GB10 `gpu_memory_utilization=0.975` failed in Docker because host and
+    container memory pressure left only roughly 110 GiB free before vLLM
+    startup. The successful Docker report used `0.85` for a 131K profile.
+  - First-time GB10 Docker startup on aarch64 can take far longer than the
+    routine harness timeout because Torch/Triton compile caches are populated
+    from scratch. Treat `STARTUP_TIMEOUT=900` as insufficient for first-run
+    Docker images; subsequent starts should reuse caches.
+  - Patching PR 41834 onto upstream with a Docker helper can fail because the
+    helper may apply unrelated reverts or use a torch pin that resolves to the
+    wrong wheel on aarch64. Building from the fork branch directly and keeping
+    compile-time and runtime torch aligned was the reported working route.
+
+  The reports also reinforce that GB10 and RTX PRO 6000 capacity defaults must
+  remain separate. Use local GB10 gates for correctness and liveness, but do
+  not convert external Docker throughput numbers into a local bare-metal
+  baseline without replaying the same profile.

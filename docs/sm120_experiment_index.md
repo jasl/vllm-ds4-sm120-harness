@@ -44,6 +44,9 @@ with `docs/sm120_current_state.md` for the live decision state.
   `512K / 768K / 1M frontier work`. For the first measured baseline, open
   `docs/sm120_optimization_notes.md` and search
   `First baseline artifacts`.
+- 512K-to-1M TTFT Nsys attribution:
+  open `docs/sm120_optimization_notes.md` and search
+  `512K / 1M very-long TTFT Nsys attribution`.
 
 ## Prefill And Sparse MLA
 

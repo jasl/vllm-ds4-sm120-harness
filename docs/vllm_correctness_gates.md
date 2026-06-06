@@ -385,6 +385,17 @@ reported four-card or 512K/1M shapes:
   `max_num_batched_tokens`, `max_num_seqs`, prefix-cache mode, sampler/all-reduce
   flags, and NCCL/network environment before treating a 20-40% delta as a vLLM
   kernel regression.
+- TP=2 dual-GB10 PR-head field-report replay from the 2026-06-06 PR comments:
+  preserve a reduced version of the reported profiles when validating GB10
+  regressions. The useful shapes are short-context C=1/2/4 with `max_tokens=512`
+  and a 120K-class C=1/C=2 long-context probe under TP=2, MTP=2, FP8 KV, block
+  size 256, FULL_AND_PIECEWISE CUDA graphs, EP enabled when comparing the
+  throughput report, and prefix-cache mode recorded explicitly. For Docker,
+  record `gpu_memory_utilization`, `MemAvailable`, first-run versus cached-start
+  status, torch version, and whether the build came from the fork branch
+  directly rather than a patch-on-upstream helper. Treat these as user-feedback
+  stability and packaging gates; they do not replace the local GB10 reduced
+  long-C2 gate or the 512K/1M frontier baseline.
 - GB10 reduced long-C2 companion gate: for scheduler or sparse-MLA experiments
   that could affect prefill/decode interaction, run
   `scripts/run_sm12x_prefill_decode_promotion_gate.sh` with
