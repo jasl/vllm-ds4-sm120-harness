@@ -110,6 +110,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - vLLM top-k selector audit:
   open `docs/sm120_optimization_notes.md` and search
   `Existing vLLM top-k primitives audit`.
+- MQA weight-sign diagnostic / pruning boundary:
+  open `docs/sm120_optimization_notes.md` and search
+  `MQA weight-sign diagnostic and pruning boundary`.
 
 ## Rejected Or Blocked Prefill Routes
 

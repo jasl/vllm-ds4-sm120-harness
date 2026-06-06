@@ -8520,6 +8520,47 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
     score work is unlikely to move endpoint TTFT enough to justify the
     correctness and CUDA-graph risk.
 
+- MQA weight-sign diagnostic and pruning boundary, 2026-06-07:
+  added diagnostic-only `weight_sign` accounting to the MQA top-k work stats.
+  The field records positive / negative / zero counts and min / max / abs-max
+  for the `indexer_weights` tensor passed into the C4A FP8 MQA top-k path. It
+  is emitted only when `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH` is enabled and
+  the current stream is not being captured, so it is attribution-only and does
+  not change the normal serving path or CUDA graph behavior.
+
+  Real RTX PRO 6000 smoke:
+  `artifacts/main/weight_sign_smoke/20260607004749/isl4096`.
+  Profile: 4K input, C=1, MTP=2, FP8 KV, prefix cache disabled,
+  `FULL_AND_PIECEWISE`, stats overlap sampling disabled.
+
+  | Field | Value |
+  | --- | ---: |
+  | MQA top-k paths | `triton_full`=168 |
+  | MQA query tokens | `516,768` |
+  | MQA valid KV visits | `440,274,240` |
+  | MQA logits elements | `704,645,760` |
+  | Weight count | `33,073,152` |
+  | Positive weights | `18,488,762` (`0.559026`) |
+  | Negative weights | `14,584,220` (`0.440969`) |
+  | Zero weights | `170` (`0.000005`) |
+  | Weight min / max / abs max | `-0.001683` / `0.002633` / `0.002633` |
+
+  Interpretation:
+  - The C4A MQA score formula is `sum_h ReLU(q_h*k) * weight_h`; the
+    `weight_h` values come from `weights_proj(hidden_states)` and are folded
+    with q-scale, softmax scale, and head scale in
+    `fused_indexer_q_rope_quant`. There is no softmax or non-negative clamp on
+    these weights.
+  - The real-model smoke found a large negative-weight fraction. Therefore a
+    head-wise early-stop, monotonic threshold, or upper-bound pruning scheme
+    that assumes remaining heads can only increase a candidate score is not
+    correctness-safe.
+  - Do not implement positive-weight-only MQA score pruning. Any exact score
+    work reduction must either prove a signed upper/lower bound that preserves
+    top-k for this weighted ReLU sum, reduce work through an official backend
+    with DS4 metadata support, or target live-state/dependency depth rather
+    than dropping score terms.
+
   Useful reported configuration details:
 
   - TP=2, EP enabled in the throughput report, MTP=2, FP8 KV, block size 256,

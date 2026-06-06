@@ -129,6 +129,18 @@ def _stats_row(**overrides):
                 "mqa_logits_launches": 1,
                 "topk_merge_count": 1,
                 "elapsed_ms": 1.25,
+                "weight_sign": {
+                    "count": 512,
+                    "positive": 300,
+                    "negative": 200,
+                    "zero": 12,
+                    "positive_ratio": 0.5859375,
+                    "negative_ratio": 0.390625,
+                    "zero_ratio": 0.0234375,
+                    "min": -3.5,
+                    "max": 4.0,
+                    "abs_max": 4.0,
+                },
                 "kv_span": {
                     "count": 256,
                     "min": 32768,
@@ -360,6 +372,18 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert mqa_topk["mqa_logits_launches"] == 2
     assert mqa_topk["counts_by_path"] == {"triton_full": 2}
     assert mqa_topk["elapsed_ms"] == 2.5
+    assert mqa_topk["weight_sign"] == {
+        "count": 1024,
+        "positive": 600,
+        "negative": 400,
+        "zero": 24,
+        "positive_ratio": 0.585938,
+        "negative_ratio": 0.390625,
+        "zero_ratio": 0.023438,
+        "min": -3.5,
+        "max": 4.0,
+        "abs_max": 4.0,
+    }
     assert report["groups"][0]["mqa_topk_work"]["valid_kv_visits"] == 8_388_608
 
 
@@ -414,6 +438,14 @@ def test_sparse_mla_stats_markdown_does_not_leak_absolute_paths(tmp_path):
     assert "- MQA top-k KV span count / mean / max: `256` / `32768` / `32768`" in text
     assert "- MQA top-k materialized logits bytes: `33554432`" in text
     assert "- MQA top-k elapsed ms: `1.25`" in text
+    assert (
+        "- MQA top-k weight signs positive / negative / zero: "
+        "`300` / `200` / `12`"
+    ) in text
+    assert (
+        "- MQA top-k weight sign ratios positive / negative / zero: "
+        "`0.585938` / `0.390625` / `0.023438`"
+    ) in text
     assert "| compressed | `32768` | `8192` | `24576` | `0.75` |" in text
     assert "| swa | `262144` | `188416` | `73728` | `0.28125` |" in text
     assert "| all | 2 |" in text

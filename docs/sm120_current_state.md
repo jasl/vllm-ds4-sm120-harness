@@ -239,6 +239,12 @@ on the endpoint-like 256-query, 32-head, topk-512 shape. Avoiding the logits
 matrix write/read is not enough by itself. A useful fused MQA producer must
 reduce real score work, candidate/value visits, live state, or dependency
 depth, not merely move the same score work into a different output format.
+The first real-model weight-sign diagnostic also rules out a tempting exact
+pruning shortcut: C4A MQA scores accumulate `ReLU(q*k)*weight_h`, and
+`weight_h` is an unconstrained linear projection output folded with q-scale and
+softmax/head scales. A 4K RTX attribution smoke found about `44.1%` negative
+MQA top-k weights, so head-wise early-stop or monotonic upper-bound pruning
+that assumes non-negative weights is not correctness-safe.
 
 The first follow-up grouped-combined microbench did not win. It removed the
 old separate compressed/SWA state merge by writing grouped-compressed and SWA

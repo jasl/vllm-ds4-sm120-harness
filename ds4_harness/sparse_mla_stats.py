@@ -345,6 +345,17 @@ def _row_mqa_topk_work(row: Json) -> list[Json]:
             item["kv_span_sum"] = _int_value(kv_span.get("sum")) or 0
             item["kv_span_min"] = _int_value(kv_span.get("min"))
             item["kv_span_max"] = _int_value(kv_span.get("max"))
+        weight_sign = values.get("weight_sign")
+        if isinstance(weight_sign, dict):
+            item["weight_sign"] = {
+                "count": _int_value(weight_sign.get("count")) or 0,
+                "positive": _int_value(weight_sign.get("positive")) or 0,
+                "negative": _int_value(weight_sign.get("negative")) or 0,
+                "zero": _int_value(weight_sign.get("zero")) or 0,
+                "min": _float_value(weight_sign.get("min")),
+                "max": _float_value(weight_sign.get("max")),
+                "abs_max": _float_value(weight_sign.get("abs_max")),
+            }
         chunk_size = _int_value(values.get("chunk_size"))
         if chunk_size is not None:
             item["chunk_size"] = chunk_size
@@ -353,6 +364,50 @@ def _row_mqa_topk_work(row: Json) -> list[Json]:
             item["torch_matmul_tiles"] = torch_matmul_tiles
         items.append(item)
     return items
+
+
+def _summarize_mqa_weight_signs(items: list[Json]) -> Json:
+    count = 0
+    positive = 0
+    negative = 0
+    zero = 0
+    mins: list[float] = []
+    maxes: list[float] = []
+    abs_maxes: list[float] = []
+    for item in items:
+        weight_sign = item.get("weight_sign")
+        if not isinstance(weight_sign, dict):
+            continue
+        item_count = _int_value(weight_sign.get("count")) or 0
+        if item_count <= 0:
+            continue
+        count += item_count
+        positive += _int_value(weight_sign.get("positive")) or 0
+        negative += _int_value(weight_sign.get("negative")) or 0
+        zero += _int_value(weight_sign.get("zero")) or 0
+        item_min = _float_value(weight_sign.get("min"))
+        item_max = _float_value(weight_sign.get("max"))
+        item_abs_max = _float_value(weight_sign.get("abs_max"))
+        if item_min is not None:
+            mins.append(item_min)
+        if item_max is not None:
+            maxes.append(item_max)
+        if item_abs_max is not None:
+            abs_maxes.append(item_abs_max)
+    if count == 0:
+        return {}
+    return {
+        "count": count,
+        "positive": positive,
+        "negative": negative,
+        "zero": zero,
+        "positive_ratio": _round_float(positive / count),
+        "negative_ratio": _round_float(negative / count),
+        "zero_ratio": _round_float(zero / count),
+        "min": min(mins) if mins else None,
+        "max": max(maxes) if maxes else None,
+        "abs_max": max(abs_maxes) if abs_maxes else None,
+    }
 
 
 def _summarize_mqa_topk_work(rows: list[Json]) -> Json:
@@ -431,6 +486,9 @@ def _summarize_mqa_topk_work(rows: list[Json]) -> Json:
     elapsed_ms = sum(float(item.get("elapsed_ms", 0.0)) for item in items)
     if elapsed_ms:
         summary["elapsed_ms"] = _round_float(elapsed_ms)
+    weight_sign = _summarize_mqa_weight_signs(items)
+    if weight_sign:
+        summary["weight_sign"] = weight_sign
     return summary
 
 
@@ -980,6 +1038,9 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
     region_work = report.get("candidate_region_work", {})
     accumulate_work = report.get("accumulate_work", {})
     mqa_topk_work = report.get("mqa_topk_work", {})
+    mqa_weight_sign = mqa_topk_work.get("weight_sign", {})
+    if not isinstance(mqa_weight_sign, dict):
+        mqa_weight_sign = {}
     lines = [
         "# Sparse MLA Prefill Stats Report",
         "",
@@ -1230,6 +1291,24 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
             (
                 "- MQA top-k elapsed ms: "
                 f"`{_format_number(mqa_topk_work.get('elapsed_ms'))}`"
+            ),
+            (
+                "- MQA top-k weight signs positive / negative / zero: "
+                f"`{_format_number(mqa_weight_sign.get('positive'))}` / "
+                f"`{_format_number(mqa_weight_sign.get('negative'))}` / "
+                f"`{_format_number(mqa_weight_sign.get('zero'))}`"
+            ),
+            (
+                "- MQA top-k weight sign ratios positive / negative / zero: "
+                f"`{_format_number(mqa_weight_sign.get('positive_ratio'))}` / "
+                f"`{_format_number(mqa_weight_sign.get('negative_ratio'))}` / "
+                f"`{_format_number(mqa_weight_sign.get('zero_ratio'))}`"
+            ),
+            (
+                "- MQA top-k weight min / max / abs max: "
+                f"`{_format_number(mqa_weight_sign.get('min'))}` / "
+                f"`{_format_number(mqa_weight_sign.get('max'))}` / "
+                f"`{_format_number(mqa_weight_sign.get('abs_max'))}`"
             ),
         ]
     )
