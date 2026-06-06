@@ -8297,6 +8297,62 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   it should not be promoted for 512K-class endpoint performance without a new
   streaming top-k implementation that also improves or preserves latency.
 
+- No-cap MQA/sparse-work scaling after rejecting C128 cap, 2026-06-06:
+  after removing the `VLLM_DEEPSEEK_V4_C128_PREFILL_TOPK_CAP` behavior path,
+  ran a lower-distortion attribution pass with stage timing disabled. This
+  records endpoint TTFT/input tok/s plus sparse-MLA and MQA work counters
+  without CUDA event synchronization in the hot path.
+
+  Artifacts:
+  - `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_mqa_work_59k124k/20260606_mqa_work_59k124k_234854`
+  - `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_mqa_work_512k/20260606_mqa_attribution_512k_234220`
+
+  Profile: C=1, one prompt per input length, output length `1`, MTP=2, expert
+  parallel enabled, FP8 KV, prefix cache disabled, `max_num_seqs=1`,
+  `max_num_batched_tokens=4096`, `FULL_AND_PIECEWISE`, and no C128 cap.
+  59K/124K used `max_model_len=131072`; 512K used `max_model_len=1048576`.
+
+  | Input tokens | TTFT | Input tok/s | Sparse visits / token | Est. sparse value-read bytes | MQA logits / token | MQA materialized logits bytes | SWA share | Padding ratio |
+  | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `58,957` | `12.537s` | `4,701.52` | `41,574` | `2.510TB` | `339,635` | `0.080TB` | `0.2706` | `0.4361` |
+  | `124,000` | `30.937s` | `4,007.76` | `51,940` | `6.595TB` | `676,625` | `0.336TB` | `0.2168` | `0.2955` |
+  | `524,288` | `263.306s` | `1,991.14` | `114,625` | `61.539TB` | `2,775,024` | `5.820TB` | `0.0983` | `0.6820` |
+
+  Interpretation:
+  - Prompt tokens from 124K to 512K increase by about `4.23x`, but sparse
+    effective candidate visits and estimated value-read bytes increase by about
+    `9.33x`, and MQA logits elements increase by about `17.34x`.
+  - The residual long-prefill problem is therefore a real-work/memory-pressure
+    scaling problem: C4A MQA scans/logits and sparse-accumulate value traffic
+    both grow much faster than prompt length in the 512K range.
+  - The `swa` share of sparse visits falls as context grows, so the dominant
+    512K pressure is not the SWA tail alone. Optimizing only SWA is unlikely to
+    close the very-long gap unless it also reduces compressed-region or MQA
+    work.
+  - Use the 124K stage-timing artifact
+    `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_mqa_attribution_124k/20260606_mqa_attribution_124k_233936`
+    only for attribution. It reported MQA elapsed `7.528s` and sparse
+    accumulate stage timing `30.866s`, but stage timing synchronizes CUDA
+    events and distorted endpoint TTFT.
+
+  Follow-up microbench, endpoint-like MQA top-k call shape:
+  compared the existing full Triton logits path against the existing chunked
+  Triton top-k path with `256` query tokens, `32` heads, `D=128`, and
+  `topk=512`.
+
+  | KV tokens | Full-logits min | Chunked min | Chunked / full |
+  | ---: | ---: | ---: | ---: |
+  | `32,768` | `0.408 ms` | `0.574 ms` | `1.41x` |
+  | `65,536` | `0.719 ms` | `1.094 ms` | `1.52x` |
+  | `131,072` | `1.442 ms` | `2.116 ms` | `1.47x` |
+
+  Decision: do not re-enter simple MQA chunk-size or threshold experiments for
+  endpoint latency. Lowering peak logits memory with the existing chunked path
+  adds extra top-k merge work and loses. A viable MQA route must be a genuinely
+  fused/streaming top-k implementation that avoids materializing the logits
+  matrix without adding split launches, or an official backend that provides
+  equivalent behavior for the DS4 metadata shape.
+
 - GB10 field reports on PR head `8725eb974`, 2026-06-06:
   two independent dual-node GB10 / SM121 reports tested the current PR head and
   reported stable CUDA graphs plus MTP, contrasting with earlier May builds

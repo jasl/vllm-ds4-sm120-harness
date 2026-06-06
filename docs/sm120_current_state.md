@@ -197,8 +197,21 @@ The rejected 2026-06-06 C128 metadata-stage cap confirms this boundary: C128
 sparse accumulate improves, but 512K/1M MQA top-k work remains in the C4A
 indexed D512 path. The cap deliberately drops C128 candidates, does not reduce
 MQA top-k, and has been removed from the code path. The next attribution target
-is C4A MQA/logits/top-k wall time and work reduction rather than more C128
-metadata slicing.
+is C4A MQA/logits/top-k and sparse-accumulate value traffic reduction rather
+than more C128 metadata slicing.
+
+The first no-cap work-only attribution after removing the C128 cap keeps that
+direction. On RTX PRO 6000, 59K / 124K / 512K C=1 showed effective sparse
+visits per prompt token rising from about `41.6K` to `51.9K` to `114.6K`,
+while MQA logits elements per prompt token rose from about `340K` to `677K`
+to `2.78M`. The 512K run materialized about `5.82TB` of MQA logits and
+estimated about `61.5TB` of sparse-accumulate value reads. That means the
+512K/1M problem is real work growth, not a scheduler-idle artifact. A quick
+full-logits versus chunked-MQA microbench also showed the existing chunked path
+is slower (`1.4-1.5x` at 32K-131K KV for the endpoint-like 256-query,
+32-head, topk-512 shape), so do not re-enter simple MQA chunking. A useful MQA
+experiment must fuse logits generation with top-k selection or otherwise
+avoid writing/reading the logits matrix without adding extra merge launches.
 
 The first follow-up grouped-combined microbench did not win. It removed the
 old separate compressed/SWA state merge by writing grouped-compressed and SWA
