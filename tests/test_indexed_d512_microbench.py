@@ -61,6 +61,27 @@ def test_mixed_c128_swa_index_pattern_validates_compressed_split():
             raise AssertionError("expected mixed C128/SWA validation to fail")
 
 
+def test_candidate_chunks_split_wide_candidate_lists():
+    module = _load_microbench_module()
+
+    assert module._candidate_chunks(4224, 1152) == [
+        (0, 1152),
+        (1152, 2304),
+        (2304, 3456),
+        (3456, 4224),
+    ]
+    assert module._candidate_chunks(1152, 1152) == [(0, 1152)]
+    assert module._candidate_chunks(1153, 1152) == [(0, 1152), (1152, 1153)]
+
+    for chunk_size in (0, -1):
+        try:
+            module._candidate_chunks(128, chunk_size)
+        except ValueError as exc:
+            assert "chunk_size" in str(exc)
+        else:
+            raise AssertionError("expected candidate chunk validation to fail")
+
+
 def test_indexed_d512_microbench_exposes_sliding_window_pattern():
     script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
         encoding="utf-8"
@@ -72,3 +93,14 @@ def test_indexed_d512_microbench_exposes_sliding_window_pattern():
     assert 'elif args.index_pattern == "mixed-c128-swa":' in script
     assert 'elif args.index_pattern == "c128a-current":' in script
     assert "compressed_indices.repeat(args.num_tokens, 1)" in script
+
+
+def test_indexed_d512_microbench_exposes_wide_chunked_split_mode():
+    script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--wide-split-chunk-candidates" in script
+    assert "_indexed_merge_normalized_chunk_kernel" in script
+    assert "wide_split_speedup" in script
+    assert "wide_score_workspace_mib" in script

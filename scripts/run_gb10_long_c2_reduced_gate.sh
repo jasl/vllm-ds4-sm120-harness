@@ -28,6 +28,22 @@ shell_quote() {
   printf '%q' "$1"
 }
 
+append_env_allowlist() {
+  local current="$1"
+  local var="$2"
+  local normalized=" ${current//,/ } "
+
+  if [[ -z "${!var:-}" || "${normalized}" == *" ${var} "* ]]; then
+    printf '%s' "${current}"
+    return
+  fi
+  if [[ -n "${current}" ]]; then
+    printf '%s,%s' "${current}" "${var}"
+  else
+    printf '%s' "${var}"
+  fi
+}
+
 run_remote() {
   local host="$1"
   shift
@@ -143,6 +159,11 @@ for variant in "${variants[@]}"; do
   speculative_config="$(variant_speculative_config "${variant}")" || exit 2
   scheduler_trace_path="${remote_serve_dir}/scheduler_trace.jsonl"
   serve_remote_env_vars="${SERVE_REMOTE_ENV_VARS:-}"
+  serve_remote_env_vars="$(
+    append_env_allowlist \
+      "${serve_remote_env_vars}" \
+      VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL
+  )"
   if [[ "${GB10_LONG_C2_SCHEDULER_TRACE}" == "1" || "${GB10_LONG_C2_SCHEDULER_TRACE}" == "true" ]]; then
     if [[ -n "${serve_remote_env_vars}" ]]; then
       serve_remote_env_vars="${serve_remote_env_vars},VLLM_SCHEDULER_TRACE_PATH"

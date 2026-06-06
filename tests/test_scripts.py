@@ -1507,6 +1507,19 @@ def test_prefill_decode_promotion_gate_can_run_gb10_reduced_long_c2_companion():
     assert "companion GB10 reduced long-C2 gate exit" in script
 
 
+def test_gb10_long_c2_gate_forwards_chunked_d512_env_when_set():
+    script = (
+        ROOT / "scripts" / "run_gb10_long_c2_reduced_gate.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "append_env_allowlist" in script
+    assert (
+        "VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL"
+        in script
+    )
+    assert 'SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}"' in script
+
+
 def test_sparse_mla_accumulate_microbench_targets_indexed_kernel_shapes():
     script = (
         ROOT / "scripts" / "run_sparse_mla_accumulate_microbench.py"
@@ -1545,6 +1558,15 @@ def test_indexed_d512_split_microbench_can_probe_score_workspace_dtype():
     assert 'choices=("float32", "bfloat16")' in script
     assert "score_dtype" in script
     assert "score_workspace_mib" in script
+
+
+def test_b200_baseline_preserves_chunked_d512_prefill_env():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL" in script
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL" in script
 
 
 def test_vllm_correctness_gate_docs_use_public_gsm8k_slice():

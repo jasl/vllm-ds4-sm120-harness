@@ -8755,3 +8755,125 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   signals in the decode-concurrency, mixed-arrival, and streaming-pressure
   phases. The latency-matrix phase reported JIT warnings only; CUDA/NCCL/driver
   and worker-crash counts remained `0`.
+
+- Exact chunked D512 online-merge prototype, 2026-06-07:
+  implemented an env-gated route for wide indexed D512 sparse-MLA prefill
+  shapes where `combined_topk > 1152`. The route preserves the existing D512
+  split primitive and processes the candidate list in exact chunks, then merges
+  unnormalized softmax state with an online merge. It is controlled by
+  `VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL=1`; default remains off until
+  the full promotion matrix, including GB10, is complete.
+
+  Why this route is different from the rejected chunk/tile sweeps:
+
+  - It does not drop candidates or change sparse metadata semantics.
+  - It avoids the old production fallback for `combined_topk > 1152`, where
+    high-candidate C4A/C128A shapes had to use the generic chunk accumulator.
+  - It keeps the score scratch width bounded at `1152` candidates and merges
+    exact softmax state across candidate chunks.
+  - It is still a five-launch-per-candidate-chunk route, so it is not the final
+    answer for C=2 fairness or GB10; it is a concrete reduction of the worst
+    wide-candidate fallback work on very long C=1 prefill.
+
+  Microbench evidence:
+
+  - Artifact label
+    `20260607_wide_c128_chunked_d512_microbench_fix/20260607032856`.
+  - 1024-token target shape, mixed C128/SWA candidate widths:
+
+  | Candidates | Current chunk | Wide chunked-D512 | Speedup | Max diff |
+  | ---: | ---: | ---: | ---: | ---: |
+  | 1152 | `8.539 ms` | `2.021 ms` | `4.226x` | `0.001568` |
+  | 2048 | `14.977 ms` | `3.639 ms` | `4.115x` | `0.000875` |
+  | 4096 | `29.988 ms` | `7.275 ms` | `4.122x` | `0.000528` |
+  | 4224 | `31.037 ms` | `7.478 ms` | `4.151x` | `0.000490` |
+
+  - 4096-token target shape,
+    `20260607_wide_c128_chunked_d512_microbench_4096t/20260607032917`:
+    candidates `4096` improved from `119.698 ms` to `34.823 ms`
+    (`3.437x`), and candidates `4224` improved from `123.631 ms` to
+    `35.614 ms` (`3.471x`).
+
+  Endpoint evidence on dual RTX PRO 6000:
+
+  - Profile: TP=2, MTP=2, EP enabled, FP8 KV, prefix cache disabled,
+    `FULL_AND_PIECEWISE`, `max_model_len=1048576`,
+    `max_num_batched_tokens=4096`, `max_num_seqs=1`, and
+    `gpu_memory_utilization=0.975`.
+
+  | Shape | Control TTFT | Candidate TTFT | TTFT change | Control input tok/s | Candidate input tok/s |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | 512K C=1 | `237.183s` | `147.144s` | `-38.0%` | `2210.51` | `3563.19` |
+  | 768K C=1 | `490.869s` | `315.884s` | `-35.6%` | `1602.12` | `2489.65` |
+  | 1.04M C=1 | n/a | `496.200s` | n/a | n/a | `2095.93` |
+
+  The 512K candidate also beats the earlier same-profile D512-on run
+  `20260607_d512_on_512k_attribution/20260607024640`, which measured
+  `227.558s` TTFT and `2303.96 tok/s`. The 1.04M candidate run completed the
+  real request; a same-protocol control was not run in this pass because the
+  control cost is high and 512K/768K already established the endpoint signal.
+
+  Correctness and regression evidence collected so far:
+
+  | Gate | Result |
+  | --- | --- |
+  | Focused CUDA helper tests | `tests/v1/attention/test_sparse_mla_indexed_d512.py` passed |
+  | Sparse-MLA stats test | chunked D512 summary test passed |
+  | Reduced prefill/decode promotion subset | zero regressions across 59K/124K latency, decode-concurrency, mixed-arrival, and streaming-pressure phases |
+  | GSM8K limit-50 smoke | flexible `0.940`, strict `0.900`; treated as noisy and not promotion evidence |
+  | GSM8K limit-200 | flexible `0.955`, strict `0.935`; passed floors `0.940` / `0.925` |
+  | Story recall semantic | all 16 assignments matched; TTFT `4.157s` for the 30.5K-token prompt |
+  | Prefix-cache stress | passed; solo hit-rate mean `77.8%`, concurrent hit-rate mean `83.5%` |
+  | KV lifecycle, prefix disabled | passed; idle KV stayed `0.0%` through three complete requests plus one abort |
+  | 8K/1K throughput, C=1/2/4 | `105.88` / `147.53` / `204.42 tok/s`; all requests succeeded |
+  | 256/256 throughput, C=1/4/16 | `127.99` / `322.62` / `322.47 tok/s`; all requests succeeded |
+
+  One compact promotion run with prefix cache enabled failed the absolute
+  `KV_LIFECYCLE_MAX_IDLE_KV_PERCENT=5` threshold after a preceding
+  prefix-cache stress phase. The requests themselves succeeded,
+  CUDA/NCCL/driver/worker-crash counts were zero, and the initial idle KV was
+  already `5.448%`. Treat this as an invalid threshold composition for
+  prefix-cache retention, not as evidence that the chunked D512 path leaks KV.
+  The fresh prefix-disabled lifecycle gate is the relevant leak check for this
+  prototype.
+
+  GB10 reduced long-C2 evidence, 2026-06-07:
+
+  The first GB10 gate after reinstall was valid for the current branch but did
+  not prove the opt-in chunked route because the wrapper did not forward
+  `VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL` into the remote serve
+  environment. The wrapper now explicitly allowlists that variable when set.
+  The aligned env-forward run confirmed the variable in the head and worker
+  vLLM process environments and completed both variants cleanly:
+
+  | Run | Variant | Requests | Failures | Max TTFT | ITL p99 |
+  | --- | --- | ---: | ---: | ---: | ---: |
+  | 2026-06-01 wrapper reference | MTP=2 | `4` | `0` | `229.923s` | `0.479s` |
+  | 2026-06-01 wrapper reference | no-MTP | `4` | `0` | `229.434s` | `0.596s` |
+  | 2026-06-07 default branch | MTP=2 | `4` | `0` | `154.714s` | `0.173s` |
+  | 2026-06-07 default branch | no-MTP | `4` | `0` | `149.512s` | `0.053s` |
+  | 2026-06-07 chunked env-forward | MTP=2 | `4` | `0` | `155.023s` | `0.074s` |
+  | 2026-06-07 chunked env-forward | no-MTP | `4` | `0` | `149.993s` | `0.053s` |
+  | 2026-06-07 final default-on after reservation/merge fix | MTP=2 | `4` | `0` | `154.555s` | `0.075s` |
+  | 2026-06-07 final default-on after reservation/merge fix | no-MTP | `4` | `0` | `149.155s` | `0.052s` |
+
+  The env-forward and default-on runs also reported zero prefix-cache hits,
+  zero preemptions, and clean phase exits. This validates availability and
+  token cadence on the reduced GB10 long-C2 gate. It is not a 256K/512K/1M GB10
+  throughput claim.
+
+  Current decision:
+
+  - Promote exact chunked D512 as the default path for wide indexed sparse-MLA
+    prefill after the RTX promotion subset, GSM8K limit-200, story recall,
+    prefix-disabled KV lifecycle, prefix-cache stress, and GB10 reduced long-C2
+    gates all passed.
+  - Keep `VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL=0` as an emergency
+    rollback switch. This is a rollback guard, not a user-facing tuning knob.
+  - Require future sparse-MLA changes to keep passing short throughput,
+    prefix/KV lifecycle, long C=2 fairness, and GB10 reduced long-C2 gates
+    before they can be promoted.
+  - The next optimization target remains reducing true candidate/value work,
+    FP8 MQA top-k work, value traffic, live state, or dependency depth. Do not
+    restart simple chunk-size, warp-size, or selector-only sweeps without new
+    evidence.

@@ -61,6 +61,7 @@ def _summarize_ms(samples_ms: list[float]) -> dict[str, float]:
 
 
 def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
+    wide_enabled = bool(payload.get("wide_split_chunk_candidates"))
     lines = [
         "# SM12x indexed D512 split microbench",
         "",
@@ -73,24 +74,61 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         f"- block_c / block_d: `{payload['block_c']} / {payload['block_d']}`",
         f"- score_dtype: `{payload['score_dtype']}`",
         f"- score_workspace_mib: `{payload['score_workspace_mib']:.2f}`",
+        f"- wide_score_workspace_mib: `{payload['wide_score_workspace_mib']:.2f}`",
+        (
+            "- wide_split_chunk_candidates: "
+            f"`{payload['wide_split_chunk_candidates']}`"
+        ),
         f"- index_pattern: `{payload['index_pattern']}`",
         f"- warmup / iterations: `{payload['warmup']} / {payload['iterations']}`",
         "",
-        (
-            "| candidates | current chunk ms | split total ms | split speedup | "
-            "score ms | stats ms | value ms | max abs diff |"
-        ),
-        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
-    for row in payload["rows"]:
-        lines.append(
-            (
-                "| {num_candidates} | {current_chunk_mean_ms:.3f} | "
-                "{split_total_mean_ms:.3f} | {split_speedup:.3f}x | "
-                "{score_mean_ms:.3f} | {stats_mean_ms:.3f} | "
-                "{value_mean_ms:.3f} | {max_abs_diff:.6f} |"
-            ).format(**row)
+    if wide_enabled:
+        lines.extend(
+            [
+                (
+                    "| candidates | current chunk ms | split total ms | "
+                    "split speedup | wide split ms | wide speedup | score ms | "
+                    "stats ms | value ms | max abs diff | wide max abs diff |"
+                ),
+                (
+                    "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+                    "---: | ---: | ---: | ---: |"
+                ),
+            ]
         )
+    else:
+        lines.extend(
+            [
+                (
+                    "| candidates | current chunk ms | split total ms | "
+                    "split speedup | score ms | stats ms | value ms | "
+                    "max abs diff |"
+                ),
+                "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+    for row in payload["rows"]:
+        if wide_enabled:
+            lines.append(
+                (
+                    "| {num_candidates} | {current_chunk_mean_ms:.3f} | "
+                    "{split_total_mean_ms:.3f} | {split_speedup:.3f}x | "
+                    "{wide_split_total_mean_ms:.3f} | "
+                    "{wide_split_speedup:.3f}x | {score_mean_ms:.3f} | "
+                    "{stats_mean_ms:.3f} | {value_mean_ms:.3f} | "
+                    "{max_abs_diff:.6f} | {wide_max_abs_diff:.6f} |"
+                ).format(**row)
+            )
+        else:
+            lines.append(
+                (
+                    "| {num_candidates} | {current_chunk_mean_ms:.3f} | "
+                    "{split_total_mean_ms:.3f} | {split_speedup:.3f}x | "
+                    "{score_mean_ms:.3f} | {stats_mean_ms:.3f} | "
+                    "{value_mean_ms:.3f} | {max_abs_diff:.6f} |"
+                ).format(**row)
+            )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -132,6 +170,15 @@ def _validate_mixed_c128_swa_index_shape(
     )
 
 
+def _candidate_chunks(num_candidates: int, chunk_size: int) -> list[tuple[int, int]]:
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    return [
+        (start, min(start + chunk_size, num_candidates))
+        for start in range(0, num_candidates, chunk_size)
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Benchmark an indexed split D=512 sparse MLA path."
@@ -146,6 +193,15 @@ def main() -> int:
     parser.add_argument("--block-c", type=int, default=64)
     parser.add_argument("--block-d", type=int, default=64)
     parser.add_argument("--compressed-candidates", type=int, default=128)
+    parser.add_argument(
+        "--wide-split-chunk-candidates",
+        type=int,
+        default=0,
+        help=(
+            "If positive, also benchmark an experimental exact online merge "
+            "that processes wide candidate lists as multiple D512 split chunks."
+        ),
+    )
     parser.add_argument(
         "--score-dtype",
         choices=("float32", "bfloat16"),
@@ -182,6 +238,8 @@ def main() -> int:
         parser.error("--kv-tokens must cover the largest candidate length")
     if args.warmup < 0 or args.iterations <= 0:
         parser.error("--warmup must be >= 0 and --iterations must be > 0")
+    if args.wide_split_chunk_candidates < 0:
+        parser.error("--wide-split-chunk-candidates must be >= 0")
 
     import torch
     import triton
@@ -373,6 +431,154 @@ def main() -> int:
             mask=head_mask[:, None] & dim_mask[None, :],
         )
 
+    @triton.jit
+    def _indexed_merge_normalized_chunk_kernel(
+        running_max_ptr,
+        running_denom_ptr,
+        running_out_ptr,
+        chunk_max_ptr,
+        chunk_denom_ptr,
+        chunk_out_ptr,
+        stride_state_t: tl.constexpr,
+        stride_state_h: tl.constexpr,
+        stride_out_t: tl.constexpr,
+        stride_out_h: tl.constexpr,
+        stride_out_d: tl.constexpr,
+        num_heads: tl.constexpr,
+        head_dim: tl.constexpr,
+        HEAD_BLOCK: tl.constexpr,
+        BLOCK_D: tl.constexpr,
+    ):
+        token_idx = tl.program_id(0)
+        head_block_idx = tl.program_id(1)
+        dim_block = tl.program_id(2)
+        head_offsets = head_block_idx * HEAD_BLOCK + tl.arange(0, HEAD_BLOCK)
+        dim_offsets = dim_block * BLOCK_D + tl.arange(0, BLOCK_D)
+        head_mask = head_offsets < num_heads
+        dim_mask = dim_offsets < head_dim
+
+        running_max = tl.load(
+            running_max_ptr
+            + token_idx * stride_state_t
+            + head_offsets * stride_state_h,
+            mask=head_mask,
+            other=-float("inf"),
+        ).to(tl.float32)
+        running_denom = tl.load(
+            running_denom_ptr
+            + token_idx * stride_state_t
+            + head_offsets * stride_state_h,
+            mask=head_mask,
+            other=0.0,
+        ).to(tl.float32)
+        chunk_max = tl.load(
+            chunk_max_ptr + token_idx * stride_state_t + head_offsets * stride_state_h,
+            mask=head_mask,
+            other=-float("inf"),
+        ).to(tl.float32)
+        chunk_denom = tl.load(
+            chunk_denom_ptr
+            + token_idx * stride_state_t
+            + head_offsets * stride_state_h,
+            mask=head_mask,
+            other=0.0,
+        ).to(tl.float32)
+
+        next_max = tl.maximum(running_max, chunk_max)
+        running_scale = tl.exp(running_max - next_max)
+        chunk_scale = tl.exp(chunk_max - next_max)
+        next_denom = running_denom * running_scale + chunk_denom * chunk_scale
+        safe_next_denom = tl.where(next_denom > 0.0, next_denom, 1.0)
+        running_weight = running_denom * running_scale / safe_next_denom
+        chunk_weight = chunk_denom * chunk_scale / safe_next_denom
+
+        running_out = tl.load(
+            running_out_ptr
+            + token_idx * stride_out_t
+            + head_offsets[:, None] * stride_out_h
+            + dim_offsets[None, :] * stride_out_d,
+            mask=head_mask[:, None] & dim_mask[None, :],
+            other=0.0,
+        ).to(tl.float32)
+        chunk_out = tl.load(
+            chunk_out_ptr
+            + token_idx * stride_out_t
+            + head_offsets[:, None] * stride_out_h
+            + dim_offsets[None, :] * stride_out_d,
+            mask=head_mask[:, None] & dim_mask[None, :],
+            other=0.0,
+        ).to(tl.float32)
+        next_out = (
+            running_out * running_weight[:, None]
+            + chunk_out * chunk_weight[:, None]
+        )
+
+        tl.store(
+            running_out_ptr
+            + token_idx * stride_out_t
+            + head_offsets[:, None] * stride_out_h
+            + dim_offsets[None, :] * stride_out_d,
+            next_out,
+            mask=head_mask[:, None] & dim_mask[None, :],
+        )
+
+    @triton.jit
+    def _indexed_merge_chunk_state_kernel(
+        running_max_ptr,
+        running_denom_ptr,
+        chunk_max_ptr,
+        chunk_denom_ptr,
+        stride_state_t: tl.constexpr,
+        stride_state_h: tl.constexpr,
+        num_heads: tl.constexpr,
+    ):
+        token_idx = tl.program_id(0)
+        head_idx = tl.program_id(1)
+        head_mask = head_idx < num_heads
+
+        running_max = tl.load(
+            running_max_ptr + token_idx * stride_state_t + head_idx * stride_state_h,
+            mask=head_mask,
+            other=-float("inf"),
+        ).to(tl.float32)
+        running_denom = tl.load(
+            running_denom_ptr
+            + token_idx * stride_state_t
+            + head_idx * stride_state_h,
+            mask=head_mask,
+            other=0.0,
+        ).to(tl.float32)
+        chunk_max = tl.load(
+            chunk_max_ptr + token_idx * stride_state_t + head_idx * stride_state_h,
+            mask=head_mask,
+            other=-float("inf"),
+        ).to(tl.float32)
+        chunk_denom = tl.load(
+            chunk_denom_ptr + token_idx * stride_state_t + head_idx * stride_state_h,
+            mask=head_mask,
+            other=0.0,
+        ).to(tl.float32)
+
+        next_max = tl.maximum(running_max, chunk_max)
+        running_scale = tl.exp(running_max - next_max)
+        chunk_scale = tl.exp(chunk_max - next_max)
+        next_denom = running_denom * running_scale + chunk_denom * chunk_scale
+
+        tl.store(
+            running_max_ptr
+            + token_idx * stride_state_t
+            + head_idx * stride_state_h,
+            next_max,
+            mask=head_mask,
+        )
+        tl.store(
+            running_denom_ptr
+            + token_idx * stride_state_t
+            + head_idx * stride_state_h,
+            next_denom,
+            mask=head_mask,
+        )
+
     from vllm.v1.attention.backends.mla.sparse_mla_kernels import (
         accumulate_indexed_sparse_mla_attention_chunk,
     )
@@ -518,38 +724,42 @@ def main() -> int:
                 acc=current_chunk_acc,
             )
 
-        score_grid = (
-            args.num_tokens,
-            triton.cdiv(args.num_heads, args.head_block),
-            triton.cdiv(num_candidates, args.block_c),
-        )
         stats_grid = (args.num_tokens, args.num_heads)
         value_grid = (
             args.num_tokens,
             triton.cdiv(args.num_heads, args.head_block),
             triton.cdiv(args.head_dim, args.block_d),
         )
-        stats_block_c = _next_power_of_2(num_candidates)
 
-        def run_score() -> None:
+        def launch_score(
+            *,
+            indices_tensor,
+            scores_tensor,
+            candidate_count: int,
+        ) -> None:
+            score_grid = (
+                args.num_tokens,
+                triton.cdiv(args.num_heads, args.head_block),
+                triton.cdiv(candidate_count, args.block_c),
+            )
             _indexed_score_kernel[score_grid](
                 q,
                 kv_flat,
-                indices,
-                scores,
+                indices_tensor,
+                scores_tensor,
                 q.stride(0),
                 q.stride(1),
                 q.stride(2),
                 kv_flat.stride(0),
                 kv_flat.stride(1),
-                indices.stride(0),
-                indices.stride(1),
-                scores.stride(0),
-                scores.stride(1),
-                scores.stride(2),
+                indices_tensor.stride(0),
+                indices_tensor.stride(1),
+                scores_tensor.stride(0),
+                scores_tensor.stride(1),
+                scores_tensor.stride(2),
                 args.num_tokens,
                 args.num_heads,
-                num_candidates,
+                candidate_count,
                 args.scale,
                 HEAD_BLOCK=args.head_block,
                 BLOCK_C=args.block_c,
@@ -558,44 +768,58 @@ def main() -> int:
                 num_stages=3,
             )
 
-        def run_stats() -> None:
+        def launch_stats(
+            *,
+            scores_tensor,
+            max_tensor,
+            denom_tensor,
+            candidate_count: int,
+        ) -> None:
             _indexed_stats_kernel[stats_grid](
-                scores,
-                split_max,
-                split_denom,
-                scores.stride(0),
-                scores.stride(1),
-                scores.stride(2),
-                split_max.stride(0),
-                split_max.stride(1),
-                num_candidates,
-                BLOCK_C=stats_block_c,
+                scores_tensor,
+                max_tensor,
+                denom_tensor,
+                scores_tensor.stride(0),
+                scores_tensor.stride(1),
+                scores_tensor.stride(2),
+                max_tensor.stride(0),
+                max_tensor.stride(1),
+                candidate_count,
+                BLOCK_C=_next_power_of_2(candidate_count),
                 num_warps=4,
                 num_stages=3,
             )
 
-        def run_value() -> None:
+        def launch_value(
+            *,
+            scores_tensor,
+            indices_tensor,
+            max_tensor,
+            denom_tensor,
+            out_tensor,
+            candidate_count: int,
+        ) -> None:
             _indexed_value_kernel[value_grid](
-                scores,
+                scores_tensor,
                 kv_flat,
-                indices,
-                split_max,
-                split_denom,
-                split_out,
-                scores.stride(0),
-                scores.stride(1),
-                scores.stride(2),
+                indices_tensor,
+                max_tensor,
+                denom_tensor,
+                out_tensor,
+                scores_tensor.stride(0),
+                scores_tensor.stride(1),
+                scores_tensor.stride(2),
                 kv_flat.stride(0),
                 kv_flat.stride(1),
-                indices.stride(0),
-                indices.stride(1),
-                split_max.stride(0),
-                split_max.stride(1),
-                split_out.stride(0),
-                split_out.stride(1),
-                split_out.stride(2),
+                indices_tensor.stride(0),
+                indices_tensor.stride(1),
+                max_tensor.stride(0),
+                max_tensor.stride(1),
+                out_tensor.stride(0),
+                out_tensor.stride(1),
+                out_tensor.stride(2),
                 args.num_heads,
-                num_candidates,
+                candidate_count,
                 args.head_dim,
                 HEAD_BLOCK=args.head_block,
                 BLOCK_C=args.block_c,
@@ -604,10 +828,121 @@ def main() -> int:
                 num_stages=3,
             )
 
+        def run_score() -> None:
+            launch_score(
+                indices_tensor=indices,
+                scores_tensor=scores,
+                candidate_count=num_candidates,
+            )
+
+        def run_stats() -> None:
+            launch_stats(
+                scores_tensor=scores,
+                max_tensor=split_max,
+                denom_tensor=split_denom,
+                candidate_count=num_candidates,
+            )
+
+        def run_value() -> None:
+            launch_value(
+                scores_tensor=scores,
+                indices_tensor=indices,
+                max_tensor=split_max,
+                denom_tensor=split_denom,
+                out_tensor=split_out,
+                candidate_count=num_candidates,
+            )
+
         def run_split() -> None:
             run_score()
             run_stats()
             run_value()
+
+        wide_split_enabled = args.wide_split_chunk_candidates > 0
+        wide_split_samples_ms: list[float] = []
+        if wide_split_enabled:
+            wide_chunk_candidates = min(
+                args.wide_split_chunk_candidates,
+                num_candidates,
+            )
+            wide_chunks = _candidate_chunks(num_candidates, wide_chunk_candidates)
+            wide_scores = torch.empty(
+                args.num_tokens,
+                args.num_heads,
+                wide_chunk_candidates,
+                device=device,
+                dtype=score_dtype,
+            )
+            wide_chunk_max = torch.empty_like(split_max)
+            wide_chunk_denom = torch.empty_like(split_denom)
+            wide_chunk_out = torch.empty_like(split_out)
+            wide_max = torch.empty_like(split_max)
+            wide_denom = torch.empty_like(split_denom)
+            wide_out = torch.empty_like(split_out)
+
+            def merge_wide_chunk() -> None:
+                _indexed_merge_normalized_chunk_kernel[value_grid](
+                    wide_max,
+                    wide_denom,
+                    wide_out,
+                    wide_chunk_max,
+                    wide_chunk_denom,
+                    wide_chunk_out,
+                    wide_max.stride(0),
+                    wide_max.stride(1),
+                    wide_out.stride(0),
+                    wide_out.stride(1),
+                    wide_out.stride(2),
+                    args.num_heads,
+                    args.head_dim,
+                    HEAD_BLOCK=args.head_block,
+                    BLOCK_D=args.block_d,
+                    num_warps=4,
+                    num_stages=3,
+                )
+                _indexed_merge_chunk_state_kernel[stats_grid](
+                    wide_max,
+                    wide_denom,
+                    wide_chunk_max,
+                    wide_chunk_denom,
+                    wide_max.stride(0),
+                    wide_max.stride(1),
+                    args.num_heads,
+                    num_warps=4,
+                    num_stages=3,
+                )
+
+            def run_wide_split() -> None:
+                wide_max.fill_(float("-inf"))
+                wide_denom.zero_()
+                wide_out.zero_()
+                for candidate_start, candidate_end in wide_chunks:
+                    chunk_indices = indices[:, candidate_start:candidate_end]
+                    chunk_candidates = candidate_end - candidate_start
+                    launch_score(
+                        indices_tensor=chunk_indices,
+                        scores_tensor=wide_scores,
+                        candidate_count=chunk_candidates,
+                    )
+                    launch_stats(
+                        scores_tensor=wide_scores,
+                        max_tensor=wide_chunk_max,
+                        denom_tensor=wide_chunk_denom,
+                        candidate_count=chunk_candidates,
+                    )
+                    launch_value(
+                        scores_tensor=wide_scores,
+                        indices_tensor=chunk_indices,
+                        max_tensor=wide_chunk_max,
+                        denom_tensor=wide_chunk_denom,
+                        out_tensor=wide_chunk_out,
+                        candidate_count=chunk_candidates,
+                    )
+                    merge_wide_chunk()
+
+        else:
+            wide_chunk_candidates = 0
+            wide_out = None
 
         def time_call(fn) -> float:
             torch.cuda.synchronize()
@@ -622,6 +957,8 @@ def main() -> int:
         for _ in range(args.warmup):
             run_current_chunk()
             run_split()
+            if wide_split_enabled:
+                run_wide_split()
         torch.cuda.synchronize()
 
         current_chunk_samples_ms: list[float] = []
@@ -638,6 +975,8 @@ def main() -> int:
             stats_samples_ms.append(stats_ms)
             value_samples_ms.append(value_ms)
             split_samples_ms.append(score_ms + stats_ms + value_ms)
+            if wide_split_enabled:
+                wide_split_samples_ms.append(time_call(run_wide_split))
 
         current_chunk_out = current_chunk_acc / current_chunk_denom[:, :, None]
         diff = (current_chunk_out - split_out).abs()
@@ -661,16 +1000,41 @@ def main() -> int:
             "max_abs_diff": float(diff.max().item()),
             "mean_abs_diff": float(diff.mean().item()),
         }
+        if wide_split_enabled:
+            assert wide_out is not None
+            wide_diff = (current_chunk_out - wide_out).abs()
+            wide_summary = _summarize_ms(wide_split_samples_ms)
+            row.update(
+                {
+                    "wide_split_total": wide_summary,
+                    "wide_split_total_mean_ms": wide_summary["mean_ms"],
+                    "wide_split_speedup": (
+                        current_chunk_summary["mean_ms"] / wide_summary["mean_ms"]
+                    ),
+                    "wide_split_chunk_candidates": wide_chunk_candidates,
+                    "wide_split_chunks": len(wide_chunks),
+                    "wide_max_abs_diff": float(wide_diff.max().item()),
+                    "wide_mean_abs_diff": float(wide_diff.mean().item()),
+                }
+            )
         rows.append(row)
-        print(
-            "candidates={num_candidates} current_chunk={current_chunk_mean_ms:.3f}ms "
+        line = (
+            "candidates={num_candidates} "
+            "current_chunk={current_chunk_mean_ms:.3f}ms "
             "split={split_total_mean_ms:.3f}ms "
             "split_speedup={split_speedup:.3f}x "
             "score={score_mean_ms:.3f} stats={stats_mean_ms:.3f} "
-            "value={value_mean_ms:.3f} max_diff={max_abs_diff:.6f}".format(
+            "value={value_mean_ms:.3f} max_diff={max_abs_diff:.6f}"
+        ).format(**row)
+        if wide_split_enabled:
+            line += (
+                " wide_split={wide_split_total_mean_ms:.3f}ms "
+                "wide_split_speedup={wide_split_speedup:.3f}x "
+                "wide_max_diff={wide_max_abs_diff:.6f}"
+            ).format(
                 **row
             )
-        )
+        print(line)
 
     payload = {
         "device_name": torch.cuda.get_device_name(args.gpu_id),
@@ -694,6 +1058,19 @@ def main() -> int:
             * torch.empty((), dtype=score_dtype).element_size()
             / (1024 * 1024)
         ),
+        "wide_score_workspace_mib": (
+            args.num_tokens
+            * args.num_heads
+            * min(
+                max(args.candidate_lens),
+                args.wide_split_chunk_candidates,
+            )
+            * torch.empty((), dtype=score_dtype).element_size()
+            / (1024 * 1024)
+            if args.wide_split_chunk_candidates > 0
+            else 0.0
+        ),
+        "wide_split_chunk_candidates": args.wide_split_chunk_candidates,
         "index_pattern": args.index_pattern,
         "warmup": args.warmup,
         "iterations": args.iterations,

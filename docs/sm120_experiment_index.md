@@ -95,6 +95,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - C128A active-width metadata narrowing:
   open `docs/sm120_optimization_notes.md` and search
   `C128A active-width metadata narrowing`.
+- Exact chunked D512 online merge:
+  open `docs/sm120_optimization_notes.md` and search
+  `Exact chunked D512 online-merge prototype`.
 - Rejected grouped-combined C128A reuse microbench:
   open `docs/sm120_optimization_notes.md` and search
   `Rejected grouped-combined C128A reuse microbench`.

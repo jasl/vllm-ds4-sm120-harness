@@ -23,6 +23,11 @@ Last updated: 2026-06-07.
   scheduling, workspace warmup, prefix/KV lifecycle, and correctness fixes that
   already passed promotion gates. This is the current defensible customer
   baseline for dual RTX PRO 6000 / SM120 and the reduced GB10 / SM121 envelope.
+- Newly promoted work: exact chunked D512 online merge for
+  `combined_topk > 1152`. It is now default-on because the RTX promotion subset,
+  GSM8K limit-200, prefix/KV lifecycle checks, and GB10 reduced long-C2 gate are
+  green. `VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL=0` remains available as
+  an emergency rollback switch.
 - Dev-only work: D512 empty-tail skip, exact C128A active-width metadata
   narrowing, and sparse MLA candidate-region attribution. Empty-tail skip has
   small endpoint gains, but it must keep GSM8K limit-200 and the full promotion
@@ -203,6 +208,47 @@ width. The first RTX prefill/decode promotion subset passed with zero
 regressions across 59K/124K C=1/C=2, decode concurrency, mixed arrival, and
 streaming pressure. Keep it behind the full promotion matrix until short
 throughput, prefix/KV lifecycle, GSM8K, and GB10 reduced long-C2 are rechecked.
+
+Latest promoted exact chunked D512 result: for wide indexed D512 sparse-MLA
+prefill shapes with `combined_topk > 1152`,
+`VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL=1` is now the default. It chunks
+candidate lists through the existing D512 split primitive and performs exact
+online softmax-state merge. On dual RTX PRO 6000, with TP=2, MTP=2, EP enabled,
+FP8 KV, prefix cache disabled, `FULL_AND_PIECEWISE`,
+`max_model_len=1048576`, and `max_num_batched_tokens=4096`, it improved:
+
+- 512K C=1 cold TTFT from `237.183s` to `147.144s`
+  (`-38.0%`), input throughput from `2210.51` to `3563.19 tok/s`.
+- 768K C=1 cold TTFT from `490.869s` to `315.884s`
+  (`-35.6%`), input throughput from `1602.12` to `2489.65 tok/s`.
+- 1.04M C=1 completed at `496.200s` TTFT and `2095.93 tok/s`; same-protocol
+  control was not rerun in this pass.
+
+The reduced RTX promotion evidence is encouraging: GSM8K limit-200 passed
+with flexible/strict `0.955` / `0.935`, story recall matched all 16 semantic
+assignments, prefix-cache stress passed, prefix-disabled KV lifecycle returned
+to `0.0%` idle KV after complete and aborted requests, and reduced
+59K/124K/mixed-arrival/streaming gates reported zero regressions. A
+prefix-cache-enabled lifecycle run failed an absolute `5%` idle-KV threshold
+after a prior prefix-stress phase; treat that as a threshold composition issue
+for retained prefix-cache blocks, not as a leak signal.
+
+GB10 / SM121 reduced long-C2 passed on an aligned checkout. The first aligned
+run explicitly forwarded the chunked D512 env into both vLLM processes, and the
+follow-up default-on run confirmed the same route works without setting the env:
+
+- `mtp2`: 4/4 requests, max TTFT `155.023s`, ITL p99 `0.073877s`,
+  zero failures, zero preemptions, prefix hits `0`.
+- `nomtp`: 4/4 requests, max TTFT `149.993s`, ITL p99 `0.052599s`,
+  zero failures, zero preemptions, prefix hits `0`.
+- Final default-on rerun after workspace reservation and zero-lens merge
+  guard: `mtp2` 4/4 requests, max TTFT `154.555s`, ITL p99 `0.075123s`;
+  `nomtp` 4/4 requests, max TTFT `149.155s`, ITL p99 `0.052108s`; zero
+  failures, zero preemptions, prefix hits `0`.
+
+This is also materially better than the 2026-06-01 GB10 wrapper reference
+(`mtp2` `229.923s` / `0.479s`, `nomtp` `229.434s` / `0.596s`). Continue to keep
+GB10 reduced long-C2 in the promotion matrix for future sparse-MLA changes.
 
 Persistent TODO: the next production-class prefill improvement must reduce
 long-prefill sparse-MLA real work or memory pressure, especially in
