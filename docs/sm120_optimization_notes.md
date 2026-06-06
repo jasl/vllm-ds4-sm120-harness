@@ -7961,6 +7961,342 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   short throughput, 59K/124K C=1/C=2, mixed arrival/fairness, and GB10 reduced
   long-C2.
 
+- 512K sparse-MLA work-accounting refresh, 2026-06-06:
+  added opt-in sparse accumulate work accounting to the sparse-MLA prefill
+  stats path. This records candidate score elements, estimated KV value-read
+  bytes, q-read/output-write estimates, state/score workspace size, query/top-k
+  chunk counts, and accumulate launch counts. The instrumentation is gated by
+  `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH` and skips CUDA graph capture, so it
+  is diagnostic-only and does not change normal inference behavior.
+
+  Artifact:
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_accumulate_stats_512k_default_d512/20260606204002`.
+  Profile: one 512K C=1 prefill request, output length `1`, MTP=2, expert
+  parallel enabled, FP8 KV, prefix cache disabled, `max_num_seqs=1`,
+  `max_num_batched_tokens=4096`, `gpu_memory_utilization=0.975`, and
+  `FULL_AND_PIECEWISE`.
+
+  Endpoint result: `524,288` input tokens completed with TTFT/duration
+  `234.965s` and input throughput `2,231.30 tok/s`.
+
+  Overall sparse-MLA stats:
+
+  | Metric | Value |
+  | --- | ---: |
+  | stats rows | `11,264` |
+  | sparse accumulate stage time | `240.270s` (`99.44%` of recorded sparse stages) |
+  | effective candidate visits | `60.096B` |
+  | candidate score elements | `1.923T` |
+  | estimated KV value-read bytes | `61.539TB` |
+  | accumulate kernel launches | `1,006,944` |
+  | MQA top-k logits elements | `1.455T` |
+  | MQA materialized logits bytes | `5.820TB` |
+
+  Group breakdown:
+
+  | Group | Effective visits | Est. value-read bytes | Sparse stage time | Path |
+  | --- | ---: | ---: | ---: | --- |
+  | C1 SWA-only chunk | `0.403B` | `0.412TB` | `2.244s` | `triton_chunked` |
+  | C128 chunk | `45.623B` | `46.718TB` | `226.523s` | `triton_chunked` |
+  | C4 chunk | `0.088B` | `0.090TB` | `0.418s` | `triton_chunked` |
+  | C4 indexed D512 | `13.983B` | `14.318TB` | `11.085s` | `triton_d512_split` |
+
+  Interpretation:
+  - The largest endpoint cost is now clearly C128 compressed sparse accumulate:
+    about `90%` of all effective candidate visits and about `94%` of recorded
+    sparse accumulate time come from the C128 chunk path.
+  - The retained C4 D512 split is not the next bottleneck; it accounts for much
+    less time despite large visit counts and already uses the faster split path.
+  - At this 512K shape, C128 compressed candidates dominate SWA tail work:
+    C128 had `42.939B` compressed effective visits versus `2.684B` SWA visits.
+  - Do not spend the next iteration on more D512 C4 tuning, combine-index
+    tuning, or scheduler knobs. The next viable candidate must reduce C128
+    compressed effective score/value work, reduce C128 value traffic inside the
+    existing head-reuse structure, or switch to a maintainable backend that
+    directly supports this DS4 metadata shape.
+
+- Rejected C128 prefill top-k cap prototype, 2026-06-06:
+  tested an env-gated prototype that caps the C128 prefill top-k index width
+  before sparse-MLA accumulate. This is not an exact-preserving optimization:
+  it deliberately reduces the C128 candidate set, so it must be treated as a
+  correctness-risking candidate until broader semantic and regression gates pass.
+
+  The prototype was gated by `VLLM_DEEPSEEK_V4_C128_PREFILL_TOPK_CAP`, defaulted
+  to disabled during the experiment, kept prefix cache disabled in the benchmark
+  runs, and kept `FULL_AND_PIECEWISE` CUDA graphs enabled. The code path has
+  since been removed because the metadata-stage follow-up showed it does not
+  satisfy the goal of reducing both sparse accumulate and MQA top-k work.
+
+  Endpoint A/B, one 512K C=1 cold request, output length `1`, MTP=2, expert
+  parallel enabled, FP8 KV, `max_num_batched_tokens=4096`,
+  `max_num_seqs=1`, and `FULL_AND_PIECEWISE`:
+
+  | Variant | TTFT | Input tok/s | Effective visits | Est. value-read bytes | Sparse accumulate time |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | default C128 top-k | `234.965s` | `2,231.30` | `60.096B` | `61.539TB` | `240.270s` |
+  | C128 cap `2048` | `206.804s` | `2,535.24` | `49.364B` | `50.549TB` | `183.470s` |
+  | C128 cap `1024` | `130.902s` | `4,005.26` | `35.945B` | `36.808TB` | `29.101s` |
+
+  Artifact paths:
+
+  - default:
+    `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_accumulate_stats_512k_default_d512/20260606204002`
+  - cap `2048`:
+    `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_c128_topk_cap2048_512k/20260606205037`
+  - cap `1024`:
+    `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_c128_topk_cap1024_512k/20260606205603`
+
+  RTX C128 endpoint-like accumulate microbench:
+
+  Artifact:
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_c128_candidate_width_microbench/20260606221511`.
+  Shape: `512` query tokens, `64` local heads, `D=512`, endpoint-like C128
+  lens distribution, chunk path only.
+
+  | Candidate width | Mean ms | P95 ms | Effective visits/s |
+  | ---: | ---: | ---: | ---: |
+  | `1152` | `2.401` | `2.428` | `8.284e9` |
+  | `2176` | `4.341` | `4.535` | `8.188e9` |
+  | `4224` | `7.990` | `8.130` | `8.307e9` |
+
+  This supports the endpoint interpretation: the kernel rate is roughly stable
+  across the width sweep, while elapsed time scales with candidate width. The
+  cap wins by removing real candidate/value work, not by only changing launch
+  shape or run order.
+
+  Why this has stronger signal than prior chunk/width sweeps:
+
+  - It reduces real candidate/value work rather than only changing launch
+    structure. At 512K, cap `1024` lowered effective visits by about `40%` and
+    estimated value-read bytes by about `40%`.
+  - It moves the dominant C128 path from mostly `triton_chunked` to mostly
+    `triton_d512_split`, which explains the large sparse-accumulate stage
+    reduction.
+  - The remaining endpoint TTFT is still much larger than the recorded sparse
+    stage, so this does not finish the long-prefill problem. After this
+    candidate, the next investigation must re-attribute the non-sparse
+    long-prefill cost rather than assuming sparse accumulate is still dominant.
+
+  Correctness and regression subset with cap `1024`:
+
+  | Gate | Result |
+  | --- | --- |
+  | 59K/124K-style long-context latency matrix, C=1/C=2 | exit `0`, semantic checks passed |
+  | `ds4_story_recall_semantic` | exit `0`, all `16/16` assignments matched |
+  | GSM8K 5-shot limit-50 | exit `0`, flexible EM `0.96`, strict EM `0.94` |
+  | random 256x256 C=1/C=4/C=16 | exit `0`, `80/80` successful at each concurrency |
+  | 476K needle positions `92%` and `100%` | exit `0`, `2/2` matched |
+  | 526K tail needle position `100%` | exit `0`, `1/1` matched, TTFT `131.521s` |
+
+  Subset artifacts:
+
+  - correctness subset:
+    `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_c128_cap1024_correctness_subset_tp2_cuda133/20260606210542`
+  - 476K needle:
+    `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_c128_cap1024_512k_needle/20260606211727`
+  - 526K tail needle:
+    `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_c128_cap1024_524k_tail_needle/20260606212319`
+
+  RTX promotion subset with cap `1024`:
+
+  Artifact:
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_c128_cap1024_promotion_subset_rtx/20260606213015`.
+
+  | Gate | Result |
+  | --- | --- |
+  | long-context latency matrix | exit `0`; 62K C=1 TTFT `7.663s`, C=2 TTFT mean `11.695s`, C=2 decode min/max `0.967`, p99 ITL `0.026s` |
+  | mixed arrival | exit `0`; `decode_then_long` decode min/max `0.976`, `long_then_short` decode min/max `0.614` |
+  | prefix-cache stress | exit `0`; failure count `0` |
+  | streaming pressure soak | exit `0`; `8/8` requests completed, p99 inter-chunk `2.005s` |
+  | GSM8K 5-shot limit-200 | exit `0`; flexible EM `0.960`, strict EM `0.945` |
+  | random 256x256 C=1/C=4/C=16 | exit `0`; C1/C4/C16 output `139.60` / `344.96` / `710.30 tok/s` |
+
+  The combined promotion run reported one `kv_lifecycle_probe` failure because
+  the same server had already accumulated nonzero idle KV usage after prior
+  phases. A fresh-server isolated rerun passed:
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_c128_cap1024_kv_lifecycle_fresh_rtx/20260606214221`.
+  Initial, final, and max idle KV usage were all `0.0%`, with `4/4` requests
+  completing or aborting as expected.
+
+  GB10 reduced long-C2 with cap `1024`:
+
+  Artifact:
+  `artifacts/main/2x_gb10_sm121/20260606_c128_cap1024_gb10_long_c2_reduced_retry/20260606220324`.
+
+  | Gate | Result |
+  | --- | --- |
+  | reduced long-C2 MTP=2 | OK `true`; `4/4` requests completed; failures `0` |
+  | max TTFT / elapsed | `149.755s` / `151.015s` |
+  | ITL p95 / p99 / max | `0.086s` / `0.088s` / `0.088s` |
+  | runtime summary | prefill tokens delta `400,412`, decode tokens delta `107`, preemptions `0`, prefix cache hits/queries `0` |
+  | GPU summary | utilization avg `94.96%`, max `96%`, power avg `76.36W`, max `81.97W` |
+
+  Interpretation: the cap does not break the conservative GB10 reduced long-C2
+  availability/cadence gate. It still does not solve GB10 long-prefill
+  throughput; this profile remains a slow availability gate, not a throughput
+  claim.
+
+  Interim decision before the metadata-stage follow-up: this had the first
+  clear endpoint win in this line of work and passed the current RTX promotion
+  subset plus GB10 reduced long-C2 availability gate, but was not suitable for
+  PR/default because it deliberately dropped C128 candidates. The next technical
+  step was to re-attribute the remaining 512K TTFT after cap `1024`, including
+  FP8 MQA top-k, metadata build, MTP preparation, and non-sparse model work.
+
+  Follow-up, metadata-stage cap, 2026-06-06:
+  moved the env-gated C128 cap from a `flashmla.py` pre-accumulate tensor slice
+  into the C128A metadata builder. The builder now returns the capped prefill
+  top-k view directly and only fills/writes that prefill width; decode C128A
+  metadata keeps its full-width semantics. This proves the cap can be applied
+  before `combine_topk_swa_indices` and sparse accumulate rather than only at
+  the final consumer.
+
+  Artifact:
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_c128_metadata_cap1024_512k/20260606223834`.
+  Same profile as the cap `1024` slice run: one 512K C=1 request, output length
+  `1`, MTP=2, expert parallel enabled, FP8 KV, prefix cache disabled,
+  `max_model_len=1048576`, `max_num_seqs=1`, `max_num_batched_tokens=4096`,
+  and `FULL_AND_PIECEWISE`.
+
+  | Variant | TTFT | Input tok/s | Effective visits | Est. value-read bytes | Sparse accumulate time | MQA logits elements |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | cap `1024`, pre-accumulate slice | `130.902s` | `4,005.26` | `35.945B` | `36.808TB` | `29.101s` | `1.455T` |
+  | cap `1024`, metadata-stage cap | `129.347s` | `4,053.25` | `35.945B` | `36.808TB` | `28.905s` | `1.455T` |
+
+  1M-class probe with the metadata-stage cap:
+
+  Artifact:
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_c128_metadata_cap1024_1m_probe/20260606224527`.
+  Profile: one C=1 random prefill request, input length `1,040,000`, output
+  length `1`, MTP=2, expert parallel enabled, FP8 KV, prefix cache disabled,
+  `max_model_len=1048576`, `max_num_seqs=1`, `max_num_batched_tokens=4096`,
+  and `FULL_AND_PIECEWISE`.
+
+  | Input tokens | TTFT | Input tok/s | Effective visits | Est. value-read bytes | Sparse accumulate time | MQA logits elements | MQA materialized logits bytes |
+  | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `524,288` | `129.347s` | `4,053.25` | `35.945B` | `36.808TB` | `28.905s` | `1.455T` | `5.820TB` |
+  | `1,040,000` | `406.930s` | `2,555.72` | `73.967B` | `75.743TB` | `59.554s` | `5.701T` | `22.805TB` |
+
+  Interpretation:
+  - The metadata-stage cap preserves the previous endpoint/accumulate win and
+    is marginally faster in this single 512K run, but the delta is small enough
+    to treat as roughly flat until repeated.
+  - It does not reduce the recorded MQA top-k work. That is expected: C128A
+    prefill indices are deterministic metadata, while the recorded MQA top-k
+    work in this profile comes from C4A indexer layers (`topk_tokens_max=512`).
+  - The 1M-class probe confirms the residual long-prefill cost is no longer
+    explained by sparse accumulate alone. Sparse accumulate was about `59.6s`
+    of `406.9s` TTFT, while recorded MQA top-k work reached `5.701T` logits
+    elements and `22.805TB` materialized logits bytes.
+  - The probe completed without CUDA/NCCL/driver/engine errors. The serve log
+    did contain TCPStore/NCCL heartbeat warnings during intentional shutdown;
+    treat those as shutdown noise for this artifact, not as a runtime failure.
+  - Therefore this route is useful as a cleaner implementation of the C128
+    candidate cap, but it is not the requested "reduce MQA top-k and sparse
+    accumulate together" solution. Keep it dev-only and do not promote/default
+    it without broader semantic gates. The next optimization target should be
+    C4A MQA/top-k or a broader non-sparse prefill attribution pass, not more
+    C128 metadata slicing.
+
+  Follow-up, MQA top-k elapsed attribution, 2026-06-06:
+  added optional CUDA-event elapsed timing to the MQA top-k work stats path.
+  The field is emitted only when both
+  `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH` and
+  `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING=1` are enabled. Normal
+  serving does not create timing events, and diagnostic stage timing can
+  synchronize, so elapsed numbers must be used for attribution only, not as
+  endpoint performance baselines.
+
+  Remote RTX smoke artifact:
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_mqa_elapsed_smoke/20260606_mqa_elapsed_smoke_230811`.
+  Profile: 8K C=1 random prefill, output length `1`, MTP=2, expert parallel
+  enabled, FP8 KV, prefix cache disabled, C128 cap `1024`,
+  `max_model_len=131072`, `max_num_seqs=1`, `max_num_batched_tokens=4096`,
+  stage timing enabled, and `FULL_AND_PIECEWISE`.
+
+  | Field | Value |
+  | --- | ---: |
+  | benchmark ok | `true` |
+  | TTFT | `1.445s` |
+  | input tok/s | `5,649.66` |
+  | MQA top-k elapsed | `198.213 ms` |
+  | MQA logits elements | `1.057B` |
+  | MQA materialized logits bytes | `4.228GB` |
+  | runtime CUDA / NCCL / driver / engine errors | `0 / 0 / 0 / 0` |
+
+  Group breakdown:
+
+  | compress ratio | layer type | elapsed | logits elements | path |
+  | ---: | --- | ---: | ---: | --- |
+  | `1` | `mla_prefill_chunk` | `139.329 ms` | `528.485M` | `triton_full` |
+  | `4` | `mla_prefill_chunk` | `58.885 ms` | `528.482M` | `triton_full` |
+
+  Final decision:
+  - The artifact proves the stats pipeline now carries MQA top-k elapsed timing
+    from vLLM to harness summaries.
+  - This changes the C128 cap decision from dev-only candidate to rejected
+    route. It is a sparse-accumulate-only optimization, deliberately drops C128
+    candidates, and does not reduce C4A MQA top-k work.
+  - The `VLLM_DEEPSEEK_V4_C128_PREFILL_TOPK_CAP` code path and harness wrapper
+    plumbing were removed after this result. Do not reintroduce this route
+    unless a future design can reduce MQA top-k work as well and pass the full
+    promotion matrix.
+  - Follow-up guard smoke after removing the cap and moving summary
+    construction behind the stats-enabled guard:
+    `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260606_mqa_elapsed_guard_smoke/20260606_mqa_elapsed_guard_232421`.
+    The 8K C=1 run completed with TTFT `1.440s`, input throughput
+    `5,688.89 tok/s`, MQA top-k elapsed `198.109 ms`, and CUDA/NCCL/driver/
+    engine/worker/OOM errors all `0`. The serve command and child logs had no
+    C128-cap environment variable.
+  - Use the new elapsed field for the next attribution pass on C4A MQA
+    logits/top-k. Do not use stage-timing runs as user-facing latency numbers.
+
+- Rejected candidate-width slicing for D512 sparse MLA prefill, 2026-06-06:
+  tested an internal prototype that used CPU-side prefill metadata to slice
+  `combined_indices` to the current request chunk's maximum combined lens before
+  sparse accumulate. This avoided GPU synchronization and preserved exact
+  candidate semantics, but it did not pass endpoint evidence.
+
+  Microbench signal was mixed. At a 512K-class synthetic D512 shape with
+  `512` query tokens, `64` heads, `D=512`, full width `1152`, and endpoint-like
+  staggered lens, slicing to `640` candidates gave `1.17x`, slicing to `768`
+  gave `1.03x`, slicing to `896` was effectively flat, and slicing to `1096`
+  regressed to `0.97x`. Aligning widths to `128` avoids the `1096` shape, but
+  the endpoint still did not improve.
+
+  Endpoint A/B, one 512K C=1 cold request, output length `1`, prefix cache
+  disabled, MTP=2, EP enabled, FP8 KV, `max_num_batched_tokens=4096`,
+  `max_num_seqs=1`, and `FULL_AND_PIECEWISE`:
+
+  | Variant | TTFT / duration | Input tok/s | Status |
+  | --- | ---: | ---: | --- |
+  | baseline | `233.203s` | `2248.23` | pass |
+  | width-slicing prototype | `234.560s` | `2235.20` | pass, with shutdown EngineDead noise |
+
+  Decision: reject and remove the width-slicing prototype. It reduces some
+  early empty candidate blocks in isolation but does not produce 512K endpoint
+  gain and introduces extra shape variance. Do not re-enter this route unless a
+  future implementation also reduces effective score/value visits or proves a
+  clear endpoint win under the promotion matrix.
+
+- Rejected early chunked FP8 MQA top-k threshold, 2026-06-06:
+  tested forcing the direct FP8 MQA top-k path to switch from full Triton logits
+  to chunked Triton top-k at `64 MiB` instead of the current larger full-logits
+  threshold. The intent was to lower peak logits memory before the 1M profiler
+  OOM shape, without adding a user-visible switch.
+
+  Microbench at `512` query tokens, `64` heads, `D=128`, `topk=512`:
+
+  | KV tokens | Default full-logits mean | Forced chunked mean | Relative |
+  | ---: | ---: | ---: | ---: |
+  | `32768` | `1.416 ms` | `1.412 ms` | flat |
+  | `131072` | `5.519 ms` | `6.211 ms` | `0.89x` |
+
+  Decision: reject as a performance optimization. Chunked top-k remains useful
+  as a possible memory-pressure fallback for very-long OOM investigation, but
+  it should not be promoted for 512K-class endpoint performance without a new
+  streaming top-k implementation that also improves or preserves latency.
+
 - GB10 field reports on PR head `8725eb974`, 2026-06-06:
   two independent dual-node GB10 / SM121 reports tested the current PR head and
   reported stable CUDA graphs plus MTP, contrasting with earlier May builds

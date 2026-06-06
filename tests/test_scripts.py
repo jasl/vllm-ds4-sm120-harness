@@ -210,6 +210,8 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert 'SERVE_REMOTE_ENV_VARS="${SERVE_REMOTE_ENV_VARS:+${SERVE_REMOTE_ENV_VARS},}${_prefill_gap_remote_envs}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH="${stats_dir}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING="${SM12X_PREFILL_GAP_STAGE_TIMING}"' in script
+    assert "SM12X_PREFILL_GAP_C128_TOPK_CAP" not in script
+    assert "VLLM_DEEPSEEK_V4_C128_PREFILL_TOPK_CAP" not in script
     assert 'RANDOM_PREFILL_INPUT_LENS="${input_len}"' in script
     assert 'RANDOM_PREFILL_CONCURRENCY="${SM12X_PREFILL_GAP_CONCURRENCY}"' in script
     assert 'RANDOM_PREFILL_NUM_PROMPTS="${SM12X_PREFILL_GAP_NUM_PROMPTS}"' in script

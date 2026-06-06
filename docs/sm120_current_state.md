@@ -26,8 +26,8 @@ Last updated: 2026-06-06.
 - Dev-only work: D512 empty-tail skip and sparse MLA candidate-region
   attribution. Empty-tail skip has small endpoint gains, but it must keep
   GSM8K limit-200 and the full promotion matrix green before becoming PR-branch
-  behavior. Candidate-region reporting is diagnostic infrastructure, not a
-  claimed performance optimization.
+  behavior. Candidate-region reporting and MQA top-k elapsed/work reporting are
+  diagnostic infrastructure, not claimed performance optimizations.
 - Upstream comparison point: upstream now exposes an optional
   `FLASHINFER_MLA_SPARSE_DSV4` backend, but the current official FlashInfer
   `0.6.12` wheel is not a runnable SM120/SM121 backend in this setup. The
@@ -193,6 +193,12 @@ long-prefill sparse-MLA real work or memory pressure, especially in
 `_accumulate_indexed_attention_chunk_multihead_kernel` and the FP8 MQA
 logits/top-k path. Scheduler shaping and chunk-size tuning remain fallback
 controls, not the main route to close the 512K/1M TTFT and GB10 prefill gap.
+The rejected 2026-06-06 C128 metadata-stage cap confirms this boundary: C128
+sparse accumulate improves, but 512K/1M MQA top-k work remains in the C4A
+indexed D512 path. The cap deliberately drops C128 candidates, does not reduce
+MQA top-k, and has been removed from the code path. The next attribution target
+is C4A MQA/logits/top-k wall time and work reduction rather than more C128
+metadata slicing.
 
 The first follow-up grouped-combined microbench did not win. It removed the
 old separate compressed/SWA state merge by writing grouped-compressed and SWA

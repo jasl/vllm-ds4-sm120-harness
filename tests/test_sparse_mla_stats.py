@@ -94,6 +94,40 @@ def _stats_row(**overrides):
                 "padding_ratio": 0.28125,
             },
         },
+        "accumulate_work": {
+            "path": "triton_chunked",
+            "query_tokens": 256,
+            "effective_candidate_visits": 196608,
+            "head_dim": 512,
+            "local_heads": 64,
+            "query_chunk_size": 128,
+            "topk_chunk_size": 384,
+            "query_chunk_count": 2,
+            "topk_chunk_count": 3,
+            "accumulate_kernel_launches": 6,
+            "candidate_score_elements": 12582912,
+            "candidate_value_read_bytes_estimate": 201326592,
+            "q_read_bytes_estimate": 50331648,
+            "output_write_bytes_estimate": 16777216,
+            "state_workspace_bytes": 16842752,
+            "score_workspace_bytes": 0,
+        },
+        "mqa_topk_work": [
+            {
+                "path": "triton_full",
+                "query_tokens": 256,
+                "kv_tokens": 32768,
+                "topk_tokens": 1152,
+                "valid_kv_visits": 8_388_608,
+                "logits_elements": 8_388_608,
+                "materialized_logits_bytes": 33_554_432,
+                "peak_logits_bytes": 33_554_432,
+                "estimated_temp_bytes": 34_734_080,
+                "mqa_logits_launches": 1,
+                "topk_merge_count": 1,
+                "elapsed_ms": 1.25,
+            }
+        ],
         "candidate_row_duplicates": {
             "sample_rows": 4,
             "valid_candidates": 20,
@@ -158,6 +192,24 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
                     "gather_swa_kv": 1.5,
                     "combine_indices": 2.0,
                     "sparse_accumulate": 8.0,
+                },
+                accumulate_work={
+                    "path": "triton_chunked",
+                    "query_tokens": 128,
+                    "effective_candidate_visits": 40960,
+                    "head_dim": 512,
+                    "local_heads": 64,
+                    "query_chunk_size": 128,
+                    "topk_chunk_size": 320,
+                    "query_chunk_count": 1,
+                    "topk_chunk_count": 2,
+                    "accumulate_kernel_launches": 2,
+                    "candidate_score_elements": 2621440,
+                    "candidate_value_read_bytes_estimate": 41943040,
+                    "q_read_bytes_estimate": 16777216,
+                    "output_write_bytes_estimate": 8388608,
+                    "state_workspace_bytes": 16842752,
+                    "score_workspace_bytes": 0,
                 },
             ),
         ],
@@ -261,6 +313,34 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert report["groups"][0]["candidate_row_duplicates"][
         "duplicate_candidate_visits"
     ] == 2
+    accumulate_work = report["accumulate_work"]
+    assert accumulate_work["query_tokens"] == 384
+    assert accumulate_work["effective_candidate_visits"] == 237568
+    assert accumulate_work["candidate_score_elements"] == 15204352
+    assert accumulate_work["candidate_value_read_bytes_estimate"] == 243269632
+    assert accumulate_work["q_read_bytes_estimate"] == 67108864
+    assert accumulate_work["output_write_bytes_estimate"] == 25165824
+    assert accumulate_work["state_workspace_bytes"] == 16842752
+    assert accumulate_work["score_workspace_bytes"] == 0
+    assert accumulate_work["accumulate_kernel_launches"] == 8
+    assert accumulate_work["query_chunk_count"] == 3
+    assert accumulate_work["topk_chunk_count"] == 5
+    assert accumulate_work["query_chunk_size_max"] == 128
+    assert accumulate_work["topk_chunk_sizes"] == [320, 384]
+    assert accumulate_work["counts_by_path"] == {"triton_chunked": 2}
+    assert report["groups"][0]["accumulate_work"][
+        "candidate_value_read_bytes_estimate"
+    ] == 201326592
+    mqa_topk = report["mqa_topk_work"]
+    assert mqa_topk["query_tokens"] == 512
+    assert mqa_topk["valid_kv_visits"] == 16_777_216
+    assert mqa_topk["materialized_logits_bytes"] == 67_108_864
+    assert mqa_topk["peak_logits_bytes"] == 33_554_432
+    assert mqa_topk["estimated_temp_bytes"] == 34_734_080
+    assert mqa_topk["mqa_logits_launches"] == 2
+    assert mqa_topk["counts_by_path"] == {"triton_full": 2}
+    assert mqa_topk["elapsed_ms"] == 2.5
+    assert report["groups"][0]["mqa_topk_work"]["valid_kv_visits"] == 8_388_608
 
 
 def test_sparse_mla_stats_report_skips_invalid_lines_and_unknown_kinds(tmp_path):
@@ -302,6 +382,13 @@ def test_sparse_mla_stats_markdown_does_not_leak_absolute_paths(tmp_path):
     assert "## Cross-Query Reuse Potential" in text
     assert "## Candidate Row Duplicates" in text
     assert "## Candidate Region Work" in text
+    assert "## Sparse Accumulate Work" in text
+    assert "- Accumulate paths: `triton_chunked`=1" in text
+    assert "- Accumulate value-read bytes estimate: `201326592`" in text
+    assert "## MQA Top-K Work" in text
+    assert "- MQA top-k paths: `triton_full`=1" in text
+    assert "- MQA top-k materialized logits bytes: `33554432`" in text
+    assert "- MQA top-k elapsed ms: `1.25`" in text
     assert "| compressed | `32768` | `8192` | `24576` | `0.75` |" in text
     assert "| swa | `262144` | `188416` | `73728` | `0.28125` |" in text
     assert "| all | 2 |" in text

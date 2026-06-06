@@ -278,6 +278,186 @@ def _summarize_stage_efficiency(work: Json, timings: Json) -> Json:
     }
 
 
+def _row_mqa_topk_work(row: Json) -> list[Json]:
+    work = row.get("mqa_topk_work")
+    if isinstance(work, dict):
+        work = [work]
+    if not isinstance(work, list):
+        return []
+
+    items: list[Json] = []
+    for values in work:
+        if not isinstance(values, dict):
+            continue
+        item: Json = {
+            "path": _str_key(values.get("path")) or "unknown",
+            "query_tokens": _int_value(values.get("query_tokens")) or 0,
+            "kv_tokens": _int_value(values.get("kv_tokens")) or 0,
+            "topk_tokens": _int_value(values.get("topk_tokens")) or 0,
+            "valid_kv_visits": _int_value(values.get("valid_kv_visits")) or 0,
+            "logits_elements": _int_value(values.get("logits_elements")) or 0,
+            "materialized_logits_bytes": (
+                _int_value(values.get("materialized_logits_bytes")) or 0
+            ),
+            "peak_logits_bytes": _int_value(values.get("peak_logits_bytes")) or 0,
+            "estimated_temp_bytes": (
+                _int_value(values.get("estimated_temp_bytes")) or 0
+            ),
+            "mqa_logits_launches": (
+                _int_value(values.get("mqa_logits_launches")) or 0
+            ),
+            "topk_merge_count": _int_value(values.get("topk_merge_count")) or 0,
+        }
+        elapsed_ms = _float_value(values.get("elapsed_ms"))
+        if elapsed_ms is not None:
+            item["elapsed_ms"] = elapsed_ms
+        chunk_size = _int_value(values.get("chunk_size"))
+        if chunk_size is not None:
+            item["chunk_size"] = chunk_size
+        torch_matmul_tiles = _int_value(values.get("torch_matmul_tiles"))
+        if torch_matmul_tiles is not None:
+            item["torch_matmul_tiles"] = torch_matmul_tiles
+        items.append(item)
+    return items
+
+
+def _summarize_mqa_topk_work(rows: list[Json]) -> Json:
+    items: list[Json] = []
+    for row in rows:
+        items.extend(_row_mqa_topk_work(row))
+    if not items:
+        return {}
+
+    path_counts: Counter[str] = Counter(str(item["path"]) for item in items)
+    summary: Json = {
+        "query_tokens": sum(int(item["query_tokens"]) for item in items),
+        "valid_kv_visits": sum(int(item["valid_kv_visits"]) for item in items),
+        "logits_elements": sum(int(item["logits_elements"]) for item in items),
+        "materialized_logits_bytes": sum(
+            int(item["materialized_logits_bytes"]) for item in items
+        ),
+        "peak_logits_bytes": max(int(item["peak_logits_bytes"]) for item in items),
+        "estimated_temp_bytes": max(
+            int(item["estimated_temp_bytes"]) for item in items
+        ),
+        "mqa_logits_launches": sum(
+            int(item["mqa_logits_launches"]) for item in items
+        ),
+        "topk_merge_count": sum(int(item["topk_merge_count"]) for item in items),
+        "kv_tokens_max": max(int(item["kv_tokens"]) for item in items),
+        "topk_tokens_max": max(int(item["topk_tokens"]) for item in items),
+        "counts_by_path": dict(sorted(path_counts.items())),
+    }
+    torch_tiles = sum(int(item.get("torch_matmul_tiles", 0)) for item in items)
+    if torch_tiles:
+        summary["torch_matmul_tiles"] = torch_tiles
+    chunk_sizes = sorted(
+        {
+            int(item["chunk_size"])
+            for item in items
+            if item.get("chunk_size") is not None
+        }
+    )
+    if chunk_sizes:
+        summary["chunk_sizes"] = chunk_sizes
+    elapsed_ms = sum(float(item.get("elapsed_ms", 0.0)) for item in items)
+    if elapsed_ms:
+        summary["elapsed_ms"] = _round_float(elapsed_ms)
+    return summary
+
+
+def _row_accumulate_work(row: Json) -> Json | None:
+    work = row.get("accumulate_work")
+    if not isinstance(work, dict):
+        return None
+
+    return {
+        "path": _str_key(work.get("path")) or "unknown",
+        "query_tokens": _int_value(work.get("query_tokens")) or 0,
+        "effective_candidate_visits": (
+            _int_value(work.get("effective_candidate_visits")) or 0
+        ),
+        "head_dim": _int_value(work.get("head_dim")) or 0,
+        "local_heads": _int_value(work.get("local_heads")) or 0,
+        "query_chunk_size": _int_value(work.get("query_chunk_size")) or 0,
+        "topk_chunk_size": _int_value(work.get("topk_chunk_size")) or 0,
+        "query_chunk_count": _int_value(work.get("query_chunk_count")) or 0,
+        "topk_chunk_count": _int_value(work.get("topk_chunk_count")) or 0,
+        "accumulate_kernel_launches": (
+            _int_value(work.get("accumulate_kernel_launches")) or 0
+        ),
+        "candidate_score_elements": (
+            _int_value(work.get("candidate_score_elements")) or 0
+        ),
+        "candidate_value_read_bytes_estimate": (
+            _int_value(work.get("candidate_value_read_bytes_estimate")) or 0
+        ),
+        "q_read_bytes_estimate": (
+            _int_value(work.get("q_read_bytes_estimate")) or 0
+        ),
+        "output_write_bytes_estimate": (
+            _int_value(work.get("output_write_bytes_estimate")) or 0
+        ),
+        "state_workspace_bytes": (
+            _int_value(work.get("state_workspace_bytes")) or 0
+        ),
+        "score_workspace_bytes": (
+            _int_value(work.get("score_workspace_bytes")) or 0
+        ),
+    }
+
+
+def _summarize_accumulate_work(rows: list[Json]) -> Json:
+    items = [item for row in rows if (item := _row_accumulate_work(row))]
+    if not items:
+        return {}
+
+    path_counts: Counter[str] = Counter(str(item["path"]) for item in items)
+    topk_chunk_sizes = sorted(
+        {
+            int(item["topk_chunk_size"])
+            for item in items
+            if int(item["topk_chunk_size"]) > 0
+        }
+    )
+    return {
+        "query_tokens": sum(int(item["query_tokens"]) for item in items),
+        "effective_candidate_visits": sum(
+            int(item["effective_candidate_visits"]) for item in items
+        ),
+        "candidate_score_elements": sum(
+            int(item["candidate_score_elements"]) for item in items
+        ),
+        "candidate_value_read_bytes_estimate": sum(
+            int(item["candidate_value_read_bytes_estimate"]) for item in items
+        ),
+        "q_read_bytes_estimate": sum(
+            int(item["q_read_bytes_estimate"]) for item in items
+        ),
+        "output_write_bytes_estimate": sum(
+            int(item["output_write_bytes_estimate"]) for item in items
+        ),
+        "state_workspace_bytes": max(
+            int(item["state_workspace_bytes"]) for item in items
+        ),
+        "score_workspace_bytes": max(
+            int(item["score_workspace_bytes"]) for item in items
+        ),
+        "accumulate_kernel_launches": sum(
+            int(item["accumulate_kernel_launches"]) for item in items
+        ),
+        "query_chunk_count": sum(int(item["query_chunk_count"]) for item in items),
+        "topk_chunk_count": sum(int(item["topk_chunk_count"]) for item in items),
+        "query_chunk_size_max": max(
+            int(item["query_chunk_size"]) for item in items
+        ),
+        "topk_chunk_sizes": topk_chunk_sizes,
+        "head_dim_max": max(int(item["head_dim"]) for item in items),
+        "local_heads_max": max(int(item["local_heads"]) for item in items),
+        "counts_by_path": dict(sorted(path_counts.items())),
+    }
+
+
 def _summarize_overlap_group_values(group_values: list[Json]) -> Json:
     groups = 0
     valid_candidates = 0
@@ -521,6 +701,8 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
         overlap = _summarize_candidate_overlap(group_rows)
         region_work = _summarize_candidate_region_work(group_rows)
         row_duplicates = _summarize_candidate_row_duplicates(group_rows)
+        accumulate_work = _summarize_accumulate_work(group_rows)
+        mqa_topk_work = _summarize_mqa_topk_work(group_rows)
         groups.append(
             {
                 "layer_type": layer_type,
@@ -536,6 +718,8 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
                 "stage_efficiency": _summarize_stage_efficiency(work, timings),
                 "candidate_overlap": overlap,
                 "candidate_row_duplicates": row_duplicates,
+                "accumulate_work": accumulate_work,
+                "mqa_topk_work": mqa_topk_work,
                 "cross_query_reuse_potential": (
                     _summarize_cross_query_reuse_potential(
                         overlap,
@@ -587,6 +771,8 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
     overlap = _summarize_candidate_overlap(rows)
     region_work = _summarize_candidate_region_work(rows)
     row_duplicates = _summarize_candidate_row_duplicates(rows)
+    accumulate_work = _summarize_accumulate_work(rows)
+    mqa_topk_work = _summarize_mqa_topk_work(rows)
     return {
         "stats_path": stats_path.name,
         "row_count": len(rows),
@@ -601,6 +787,8 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
         "stage_efficiency": _summarize_stage_efficiency(work, timings),
         "candidate_overlap": overlap,
         "candidate_row_duplicates": row_duplicates,
+        "accumulate_work": accumulate_work,
+        "mqa_topk_work": mqa_topk_work,
         "cross_query_reuse_potential": _summarize_cross_query_reuse_potential(
             overlap,
             region_work,
@@ -722,6 +910,8 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
     reuse = report.get("cross_query_reuse_potential", {})
     row_duplicates = report.get("candidate_row_duplicates", {})
     region_work = report.get("candidate_region_work", {})
+    accumulate_work = report.get("accumulate_work", {})
+    mqa_topk_work = report.get("mqa_topk_work", {})
     lines = [
         "# Sparse MLA Prefill Stats Report",
         "",
@@ -878,6 +1068,91 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
         )
     if not region_work_rows:
         lines.append("| n/a | n/a | n/a | n/a | n/a |")
+    lines.extend(
+        [
+            "",
+            "## Sparse Accumulate Work",
+            "",
+            (
+                "- Accumulate paths: "
+                f"{_format_counts(accumulate_work.get('counts_by_path', {}))}"
+            ),
+            (
+                "- Accumulate query tokens / effective visits: "
+                f"`{_format_number(accumulate_work.get('query_tokens'))}` / "
+                f"`{_format_number(accumulate_work.get('effective_candidate_visits'))}`"
+            ),
+            (
+                "- Accumulate score elements: "
+                f"`{_format_number(accumulate_work.get('candidate_score_elements'))}`"
+            ),
+            (
+                "- Accumulate value-read bytes estimate: "
+                f"`{_format_number(accumulate_work.get('candidate_value_read_bytes_estimate'))}`"
+            ),
+            (
+                "- Accumulate q-read / output-write bytes estimate: "
+                f"`{_format_number(accumulate_work.get('q_read_bytes_estimate'))}` / "
+                f"`{_format_number(accumulate_work.get('output_write_bytes_estimate'))}`"
+            ),
+            (
+                "- Accumulate state / score workspace bytes: "
+                f"`{_format_number(accumulate_work.get('state_workspace_bytes'))}` / "
+                f"`{_format_number(accumulate_work.get('score_workspace_bytes'))}`"
+            ),
+            (
+                "- Accumulate launches / query chunks / top-k chunks: "
+                f"`{_format_number(accumulate_work.get('accumulate_kernel_launches'))}` / "
+                f"`{_format_number(accumulate_work.get('query_chunk_count'))}` / "
+                f"`{_format_number(accumulate_work.get('topk_chunk_count'))}`"
+            ),
+            (
+                "- Accumulate max query chunk / top-k chunk sizes: "
+                f"`{_format_number(accumulate_work.get('query_chunk_size_max'))}` / "
+                f"`{_format_number(accumulate_work.get('topk_chunk_sizes'))}`"
+            ),
+        ]
+    )
+    lines.extend(
+        [
+            "",
+            "## MQA Top-K Work",
+            "",
+            (
+                "- MQA top-k paths: "
+                f"{_format_counts(mqa_topk_work.get('counts_by_path', {}))}"
+            ),
+            (
+                "- MQA top-k query tokens / max KV tokens / max top-k: "
+                f"`{_format_number(mqa_topk_work.get('query_tokens'))}` / "
+                f"`{_format_number(mqa_topk_work.get('kv_tokens_max'))}` / "
+                f"`{_format_number(mqa_topk_work.get('topk_tokens_max'))}`"
+            ),
+            (
+                "- MQA top-k valid KV visits / logits elements: "
+                f"`{_format_number(mqa_topk_work.get('valid_kv_visits'))}` / "
+                f"`{_format_number(mqa_topk_work.get('logits_elements'))}`"
+            ),
+            (
+                "- MQA top-k materialized logits bytes: "
+                f"`{_format_number(mqa_topk_work.get('materialized_logits_bytes'))}`"
+            ),
+            (
+                "- MQA top-k peak logits / estimated temp bytes: "
+                f"`{_format_number(mqa_topk_work.get('peak_logits_bytes'))}` / "
+                f"`{_format_number(mqa_topk_work.get('estimated_temp_bytes'))}`"
+            ),
+            (
+                "- MQA logits launches / top-k merge count: "
+                f"`{_format_number(mqa_topk_work.get('mqa_logits_launches'))}` / "
+                f"`{_format_number(mqa_topk_work.get('topk_merge_count'))}`"
+            ),
+            (
+                "- MQA top-k elapsed ms: "
+                f"`{_format_number(mqa_topk_work.get('elapsed_ms'))}`"
+            ),
+        ]
+    )
     lines.extend(
         [
             "",
