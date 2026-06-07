@@ -42,15 +42,17 @@ Last updated: 2026-06-07.
   backend marker is selected, but both a GB10 endpoint startup smoke and a
   direct minimal FlashInfer DSV4 API call on SM120/SM121 fail in
   `TllmGenFmhaRunner` with `Unsupported architecture`.
-- Blocked or rejected as current endpoint backends: public b12x compressed MLA
-  as a direct DS4 endpoint backend, upstream
-  `FLASHINFER_MLA_SPARSE_DSV4` with the current official wheel, standalone C128
-  grouped-compressed prefill, generic D512 selector/tile/chunk sweeps, BF16
-  score workspace, SWA-only routing through the current D512 helper, and
-  grouped-query local-SWA tiling that keeps the same candidate work. A
-  fused-stats/value D512 prototype and a lower-live-state value-tile prototype
-  were also rejected because they did not improve GB10 and did not reduce real
-  candidate/value visits.
+- Blocked or rejected as current endpoint backends, in the specific forms that
+  were tested: public b12x / FlashInfer wheels as a direct DS4 endpoint
+  backend, upstream `FLASHINFER_MLA_SPARSE_DSV4` with the current official
+  wheel, standalone C128 grouped-compressed prefill, generic D512
+  selector/tile/chunk sweeps, BF16 score workspace, SWA-only routing through
+  the current D512 helper, and grouped-query local-SWA tiling that keeps the
+  same candidate work. A fused-stats/value D512 prototype and a
+  lower-live-state value-tile prototype were also rejected because they did not
+  improve GB10 and did not reduce real candidate/value visits. This is not a
+  rejection of the newer local-inference-lab B12X backend stack; that line must
+  be tested as a separate backend/dataflow candidate.
 
 ## Promotion Matrix
 
@@ -107,6 +109,14 @@ official `FLASHINFER_MLA_SPARSE_DSV4` route is blocked on the current
 FlashInfer wheel, and both SM120 and SM121 direct API calls show the same
 `Unsupported architecture` failure.
 
+External feedback on 2026-06-07 strengthens the GB10 prefill-gap concern: a
+NVIDIA Developer Forums report for the local-inference-lab / unholy-fusion
+line lists C=1/C=2/C=4 prefill around `1.9k tok/s` and decode sweet spot around
+`52 tok/s`, while calling the B12X FP8 variant the winner. Treat that as an
+external target, not as locally reproduced evidence. The current local finding
+is that the gap is backend/dataflow-shaped, not explained by serving flags
+alone.
+
 The current-default versus Reddit-style GB10 matrix covered 4K, 16K, 32K, 64K,
 and 128K cold prefill with prefix cache disabled, MTP=2, EP enabled, FP8 KV,
 and `FULL_AND_PIECEWISE`. `max_num_batched_tokens=8192` is a narrow latency
@@ -153,6 +163,18 @@ production code is added:
   `FLASHINFER_MLA_SPARSE_DSV4` until the public FlashInfer stack advertises and
   passes an SM120/SM121 DS4 sparse MLA direct-API smoke first, then an endpoint
   startup smoke.
+- Re-audit and A/B the latest local-inference-lab `main` and
+  `dev/unholy-fusion` before the next GB10 backend experiment. The promising
+  pieces are B12X sparse MLA, B12X sparse indexer / compressed-indexer copy
+  avoidance, native B12X MoE and mHC routing, plus the inherited PR 43477
+  scratch fixes. The Model Runner V2 enablement alone is unlikely to explain
+  the prefill gap, but it may be required for that stack's warmup/scratch
+  compatibility.
+- Revisit older rejected-note wording when using it to guide new work. The
+  prior negative results remain valid for public-wheel direct API probes,
+  simple serving-flag changes, selector-only swaps, and local split-launch
+  grouped-query prototypes. They do not prove that local-inference-lab's custom
+  B12X sparse MLA/indexer/MoE/mHC dataflow cannot win.
 - Keep prefix-cache-on and prefix-cache-off results separate.
 - Record backend selection, MoE path, NCCL/all-reduce path, sparse candidate /
   value attribution, TTFT, input tok/s, decode tok/s, and ITL p95/p99.

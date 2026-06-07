@@ -18,6 +18,9 @@ build/
 # Claude
 .claude/
 
+# Codex local transfer scratch
+.codex-transfer/
+
 # vLLM repo
 /vllm
 

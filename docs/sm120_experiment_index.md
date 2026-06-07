@@ -131,6 +131,10 @@ with `docs/sm120_current_state.md` for the live decision state.
 
 ## Rejected Or Blocked Prefill Routes
 
+These entries are specific to the tested route shape. They should not be read
+as a blanket rejection of local-inference-lab's newer B12X backend stack; for
+that thread, search `External unholy-fusion feedback refresh`.
+
 - Official b12x compressed MLA endpoint route:
   open `docs/sm120_optimization_notes.md` and search
   `Official FlashInfer 0.6.12 DS4 sparse-MLA API recheck`.
@@ -208,6 +212,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 
 - GB10 Reddit / unholy-fusion performance comparison:
   `docs/sm120_current_state.md`.
+- NVIDIA forum #59 / local-inference-lab latest B12X feedback:
+  open `docs/sm120_optimization_notes.md` and search
+  `External unholy-fusion feedback refresh`.
 - GB10 current-default versus Reddit-style prefill matrix:
   open `docs/sm120_optimization_notes.md` and search
   `GB10 current-default versus Reddit-style long matrix`.

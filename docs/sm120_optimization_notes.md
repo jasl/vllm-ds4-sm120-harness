@@ -7450,6 +7450,57 @@ Interpretation:
   should reduce sparse-MLA candidate/value work or integrate a public backend
   that is both SM121-compatible and DS4-metadata-compatible.
 
+External unholy-fusion feedback refresh, 2026-06-07:
+
+- New external report:
+  <https://forums.developer.nvidia.com/t/deepseek-v4-flash-on-2-nodes/368916/59>
+  lists the local-inference-lab / unholy-fusion line at roughly `1,905`,
+  `1,913`, and `1,932` prompt tok/s for C=1/C=2/C=4, with decode around
+  `38.4`, `52.1`, and `49.6 tok/s`. It also labels the FP8 B12X variant the
+  winner versus local NVFP4 CUTLASS/B12X and FP8 Marlin variants. This is
+  external evidence and has not yet been reproduced in this harness.
+- Code audit after fetching `local-inference-lab/vllm` on 2026-06-07:
+  `dev/unholy-fusion` layers PR 43477-derived SM120 FlashInfer sparse fixes
+  (`map prefill topk indices to KV slots`, shared sparse decode scratch, small
+  prefill scratch) with B12X DeepSeek V4 integrations, B12X mHC, B12X sparse
+  MLA backend, and a serve script. The fork's `main` has moved further and now
+  contains a larger B12X stack: B12X sparse MLA backend, B12X sparse indexer
+  path, native B12X FP4 experts, B12X FP8 linear backend, MTP loading/warmup
+  hardening, DSV4 DCP KV accounting, and spec-decode hardening.
+- `local-inference-lab/vllm@2d07cc6897e95b880f16b51dd7c98eddc223b6e7`
+  (`Allow V2 model runner`) changes only `arg_utils`, B12X MoE scratch
+  planning, and DeepSeek V4 warmup compatibility with runner-v2 block tables.
+  Treat it as an enablement / scratch-sizing / warmup compatibility change,
+  not as the likely root cause of the reported GB10 prefill win.
+- The updated hypothesis is stronger than the earlier "serving flags may be
+  enough" theory: the gap is backend/dataflow-shaped. The most relevant pieces
+  to test are B12X sparse MLA plus B12X sparse indexer copy avoidance, with the
+  PR 43477 scratch fixes as prerequisites. Continue to keep public
+  `FLASHINFER_MLA_SPARSE_DSV4` blocked until the public wheel passes direct
+  SM120/SM121 DS4 sparse-MLA API smoke and endpoint startup.
+- Reinterpret the older rejected-route notes narrowly:
+  - `FLASHINFER_MLA_SPARSE_DSV4` is blocked for the tested official wheel/API
+    path, not for every B12X-derived implementation.
+  - "public b12x install is not enough" remains true for a standalone package
+    install, but does not invalidate local-inference-lab's vLLM bindings and
+    backend registration.
+  - The rejected grouped C128/SWA and D512 microbench routes were local
+    split-launch or score-only formulations. They do not rule out a native
+    backend that changes indexer/KV layout and reduces K copies or value
+    traffic.
+  - The PR 43477 startup failures were observed on that exact dependency and
+    backend mix. They are useful risk evidence, but must be refreshed against
+    local-inference-lab `main` and `dev/unholy-fusion`.
+- Next experiment contract: run a GB10 A/B using identical model, tokenizer,
+  serve profile, CUDA graph mode, prefix-cache mode, and workload shapes across
+  current Dev, local-inference-lab `main`, and
+  local-inference-lab `dev/unholy-fusion`. Record backend markers, B12X path
+  selection, MTP/spec decode settings, MoE backend, sparse-indexer backend,
+  TTFT, input tok/s, decode tok/s, ITL p95/p99, driver health, and whether the
+  result depends on Model Runner V2. Do not promote or port any code until the
+  same shape wins under this controlled protocol and survives the existing
+  promotion matrix.
+
 GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
 
 - Goal: restart the raw sparse-MLA work-reduction line after GB10 reboot and

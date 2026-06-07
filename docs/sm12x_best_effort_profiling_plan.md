@@ -341,8 +341,10 @@ artifact to debug.
    `sparse_mla_sm120_decode_dsv4_autotune`; released b12x imports
    `b12x.integration.mla` but not the fork's older
    `b12x.integration.compressed_indexer` API. Do not plan a Dev/PR sparse-MLA
-   port around the Reddit/unholy-fusion wrapper until the required public
-   FlashInfer API passes an explicit SM120/SM121 q-len>1 smoke.
+   port around a standalone public-wheel install until the required public
+   FlashInfer API passes an explicit SM120/SM121 q-len>1 smoke. Treat the newer
+   local-inference-lab B12X vLLM bindings separately: they are a custom backend
+   and dataflow candidate that needs controlled GB10 A/B before any conclusion.
 
    The retained Milestone-1 entrypoint is now
    `scripts/run_sm12x_prefill_gap_attribution.sh`. It keeps the serve profile
