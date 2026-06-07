@@ -150,9 +150,10 @@ selected MoE, attention, indexer, and all-reduce backends.
 As of the 2026-06-08 optional-dependency recheck, public `b12x==0.20.0` exposes
 the DS4 compressed MLA, compressed indexer, native FP4 MoE, FP8 block-linear,
 and PCIe all-reduce API surfaces that were missing from `0.15.2`. Import
-success is still not enough for promotion. Treat b12x MLA as research-only
-until the actual GB10 vLLM runtime venv imports `0.20.0`, the microbench
-compiles, and the end-to-end GB10 promotion matrix passes.
+success is still not enough for promotion. The public `0.20.0` package has
+compiled and run the single-GPU compressed-MLA microbench on both GB10 nodes,
+but treat b12x MLA as research-only until a real vLLM endpoint adapter selects
+that path and the end-to-end GB10 promotion matrix passes.
 
 For one-off kernel/configuration experiments, `scripts/dgx_spark_start_mp_serve.sh`
 can forward explicitly named environment variables to the remote vLLM processes

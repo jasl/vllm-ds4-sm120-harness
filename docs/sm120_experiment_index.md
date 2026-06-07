@@ -20,6 +20,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Direction reset after b12x and D512 decomposition:
   open `docs/sm120_optimization_notes.md` and search
   `Direction reset after the b12x and D512 decomposition rechecks`.
+- Public b12x 0.20 dependency/API and microbench recheck:
+  open `docs/sm120_optimization_notes.md` and search
+  `Public b12x recheck, 2026-06-08`.
 
 ## Promotion Gates
 

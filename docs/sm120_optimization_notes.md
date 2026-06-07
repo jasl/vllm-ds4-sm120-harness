@@ -3850,9 +3850,32 @@ Public b12x recheck, 2026-06-08:
   `plan_compressed_indexer_scratch`, `plan_tp_moe_scratch`,
   `block_fp8_linear_mxfp8`, and `PCIeOneshotAllReducePool`.
 - This removes the older "Aiden-only private API" blocker. It does not prove
-  endpoint performance: GB10 currently had no reusable vLLM venv for the same
-  import probe, and no end-to-end vLLM adapter has been tested against public
-  `b12x==0.20.0`.
+  endpoint performance: no end-to-end vLLM adapter has been tested against
+  public `b12x==0.20.0`.
+- The b12x MLA microbench needed one compatibility update for the public
+  `0.20.0` package: workspace and top-level MLA entrypoints now come from
+  `b12x.integration`, while DSV4 compressed-page constants come from
+  `b12x.attention.mla.compressed_reference`. The main/SWA compressed page is
+  the real DSV4 `256`-token page; C128 extra pages remain `2` tokens.
+- Direct compressed-MLA microbench results with public `b12x==0.20.0`:
+
+| Hardware | Shape | b12x compressed MLA | vLLM online packed | b12x vs online | current D512 split+finish | b12x / D512 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 SM120 | tiny, 32 rows, 128 SWA, 128 indexed | `0.282 ms` | `0.217 ms` | `0.77x` | `0.046 ms` | `6.13x` |
+| RTX PRO 6000 SM120 | real-C128, 256 rows, 1024 SWA, 128 indexed | `0.498 ms` | `5.820 ms` | `11.70x` | `0.205 ms` | `2.43x` |
+| GB10 SM121, head node | tiny, 32 rows, 128 SWA, 128 indexed | `0.265 ms` | `0.745 ms` | `2.81x` | `0.052 ms` | `5.10x` |
+| GB10 SM121, head node | real-C128, 256 rows, 1024 SWA, 128 indexed | `3.912 ms` | `25.194 ms` | `6.44x` | `1.496 ms` | `2.61x` |
+| GB10 SM121, worker node | tiny, 32 rows, 128 SWA, 128 indexed | `0.408 ms` | `0.749 ms` | `1.84x` | `0.053 ms` | `7.70x` |
+| GB10 SM121, worker node | real-C128, 256 rows, 1024 SWA, 128 indexed | `3.860 ms` | `25.027 ms` | `6.48x` | `1.482 ms` | `2.60x` |
+
+- Interpretation: public b12x `0.20.0` clearly fixes the older GB10 compile
+  blocker and is much faster than the older packed online path on endpoint-like
+  real-C128 shapes. It is still slower than the current D512 split+finish
+  kernel-only timing, but that D512 number starts after gather/dequant and does
+  not include the full endpoint dataflow. The only high-value next step is an
+  end-to-end Dev-only adapter/probe that can replace enough gather/value
+  traffic to win the real request path; a standalone sub-kernel comparison is
+  no longer decisive.
 - Next route: build a narrow Dev-only DS4 endpoint adapter/probe against public
   b12x `0.20.0`, starting from direct API smoke and microbench, then endpoint
   startup, then the promotion matrix. Keep it optional and env-gated until it

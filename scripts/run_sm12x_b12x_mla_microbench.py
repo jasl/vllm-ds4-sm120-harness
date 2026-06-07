@@ -183,14 +183,14 @@ def main() -> int:
 
     try:
         from b12x.attention.mla.compressed_reference import (
-            pack_compressed_mla_kv_cache_reference,
-        )
-        from b12x.integration.mla import (
-            B12XAttentionWorkspace,
             COMPRESSED_MLA_C128_PAGE_SIZE,
+            COMPRESSED_MLA_DSV4_PAGE_SIZE,
             COMPRESSED_MLA_HEAD_DIM,
             COMPRESSED_MLA_LOCAL_Q_HEADS_TP2,
-            COMPRESSED_MLA_SWA_PAGE_SIZE,
+            pack_compressed_mla_kv_cache_reference,
+        )
+        from b12x.integration import (
+            B12XAttentionWorkspace,
             compressed_mla_decode_forward,
         )
         from vllm.v1.attention.backends.mla.sparse_mla_kernels import (
@@ -208,6 +208,7 @@ def main() -> int:
     torch.cuda.manual_seed_all(args.seed)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
+    compressed_mla_swa_page_size = int(COMPRESSED_MLA_DSV4_PAGE_SIZE)
     num_heads = int(COMPRESSED_MLA_LOCAL_Q_HEADS_TP2)
     head_dim = int(COMPRESSED_MLA_HEAD_DIM)
     scale = 1.0 / math.sqrt(head_dim)
@@ -233,7 +234,7 @@ def main() -> int:
         swa_cache = pack_compressed_mla_kv_cache_reference(
             swa_nope,
             swa_rope,
-            page_size=COMPRESSED_MLA_SWA_PAGE_SIZE,
+            page_size=compressed_mla_swa_page_size,
         )
         indexed_cache = pack_compressed_mla_kv_cache_reference(
             indexed_nope,
@@ -276,7 +277,7 @@ def main() -> int:
             max_page_table_width=spec.total_width,
             max_paged_q_rows=spec.rows,
             max_kv_rows=max(swa_tokens, indexed_tokens),
-            page_size=COMPRESSED_MLA_SWA_PAGE_SIZE,
+            page_size=compressed_mla_swa_page_size,
             use_cuda_graph=False,
             max_chunks_per_row=64,
         )
@@ -300,8 +301,8 @@ def main() -> int:
         )
         gather_lens = torch.full_like(seq_lens, spec.swa_width)
         num_swa_blocks = max(
-            (spec.swa_width + COMPRESSED_MLA_SWA_PAGE_SIZE - 1)
-            // COMPRESSED_MLA_SWA_PAGE_SIZE,
+            (spec.swa_width + compressed_mla_swa_page_size - 1)
+            // compressed_mla_swa_page_size,
             1,
         )
         block_table = torch.arange(
@@ -325,7 +326,7 @@ def main() -> int:
                 seq_lens,
                 gather_lens,
                 block_table,
-                COMPRESSED_MLA_SWA_PAGE_SIZE,
+                compressed_mla_swa_page_size,
                 spec.indexed_width,
                 spec.swa_width,
                 scale,

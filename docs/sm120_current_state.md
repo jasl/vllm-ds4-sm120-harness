@@ -132,6 +132,15 @@ worsening p99 ITL. It also cut 131K KV-cache concurrency from roughly
 `3.0x` to roughly `1.35-1.46x`. This does not explain the public
 Reddit-scale prefill gap.
 
+The latest public b12x recheck changes the dependency picture: `b12x==0.20.0`
+now exposes DS4 compressed-MLA/indexer/native FP4 MoE helper APIs and compiles
+the compressed-MLA microbench on RTX PRO 6000 SM120 and both GB10 nodes. In the
+endpoint-like real-C128 microbench, b12x is much faster than the older packed
+online helper, but still slower than the current D512 split+finish kernel-only
+timing. The remaining question is therefore end-to-end dataflow: whether a
+Dev-only adapter can remove enough gather/dequant/value traffic to beat the
+current endpoint without correctness or promotion-matrix regressions.
+
 ## Active Direction
 
 The next high-value target is split into two measurement tracks before more

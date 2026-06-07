@@ -2327,6 +2327,8 @@ def test_sm12x_b12x_mla_microbench_compares_official_route_with_dev_paths():
         ROOT / "scripts" / "run_sm12x_b12x_mla_microbench.py"
     ).read_text(encoding="utf-8")
 
+    assert "from b12x.integration import (" in script
+    assert "COMPRESSED_MLA_DSV4_PAGE_SIZE" in script
     assert "compressed_mla_decode_forward" in script
     assert "fp8ds_global_paged_sparse_mla_attention_with_sink_multihead" in script
     assert "accumulate_indexed_d512_split_sparse_mla_attention" in script
