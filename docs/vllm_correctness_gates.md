@@ -398,6 +398,15 @@ reported four-card or 512K/1M shapes:
   `max_num_batched_tokens`, `max_num_seqs`, prefix-cache mode, sampler/all-reduce
   flags, and NCCL/network environment before treating a 20-40% delta as a vLLM
   kernel regression.
+- External Aiden / unholy-fusion Docker image parity: use
+  `scripts/run_gb10_aiden_image_parity.sh` only as an external-backend
+  observation gate. It is not a PR promotion gate for this vLLM branch by
+  itself. Before using its numbers, confirm that serve logs show the expected
+  B12X / FlashInfer / sparse-MLA / MoE backend markers, the benchmark client
+  used the served model alias while tokenizing with the real DS4 model
+  repository, and post-run driver health is clean. A run with current-boot
+  `NV_ERR_NO_MEMORY`, Xid, UVM, or GPU-lost signals is diagnostic evidence, not
+  performance evidence.
 - TP=2 dual-GB10 PR-head field-report replay from the 2026-06-06 PR comments:
   preserve a reduced version of the reported profiles when validating GB10
   regressions. The useful shapes are short-context C=1/2/4 with `max_tokens=512`

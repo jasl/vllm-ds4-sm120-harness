@@ -227,6 +227,11 @@ that thread, search `External unholy-fusion feedback refresh`.
 - NVIDIA Developer Forums GB10 recipe tracking:
   open `docs/vllm_correctness_gates.md` and search
   `NVIDIA Developer Forums thread`.
+- Aiden image recipe and parity harness:
+  open `docs/dgx_spark_bare_metal_cluster.md` and search
+  `Aiden Image Parity`; for the latest diagnostic notes, open
+  `docs/sm120_optimization_notes.md` and search
+  `Aiden image parity harness update`.
 
 ## Correctness
 

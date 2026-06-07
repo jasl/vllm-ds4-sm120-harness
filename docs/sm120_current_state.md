@@ -5,7 +5,7 @@ working entrypoint for DeepSeek V4 SM12x optimization status, current gates, and
 next-step decisions. Treat `docs/sm120_optimization_notes.md` as the append-only
 evidence archive.
 
-Last updated: 2026-06-07.
+Last updated: 2026-06-08.
 
 ## Read Order
 
@@ -196,6 +196,11 @@ production code is added:
   external-backend comparison, not a promotion gate for our vLLM branch. The
   helper keeps the request model alias separate from the real DS4 tokenizer so
   a valid server is not misclassified by a client-side tokenizer lookup.
+  The latest helper diagnostic fixed that alias/tokenizer split and reached the
+  benchmark client, but the boot already contained new NVRM `NV_ERR_NO_MEMORY`
+  signals during startup/warmup. Treat that as a dirty-driver diagnostic only;
+  rerun after a clean reboot before comparing Aiden image performance with the
+  current Dev branch.
 - Revisit older rejected-note wording when using it to guide new work. The
   prior negative results remain valid for public-wheel direct API probes,
   simple serving-flag changes, selector-only swaps, and local split-launch

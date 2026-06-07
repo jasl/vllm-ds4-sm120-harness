@@ -344,6 +344,15 @@ both nodes. Any NVRM/Xid/UVM/GPU-lost signal makes the run fail by default;
 only set `GB10_AIDEN_ALLOW_DRIVER_SIGNALS=1` for an explicitly marked
 diagnostic rerun.
 
+If the client fails before sending requests, first check whether the benchmark
+model alias and tokenizer source were accidentally coupled. The request model
+must match the external server's served model name, while tokenizer lookup
+should use the real DeepSeek V4 model repository. A successful client-side
+diagnostic is still not performance evidence unless the current boot has clean
+post-run driver health. A startup or warmup run that records
+`NV_ERR_NO_MEMORY` should be kept as a dirty-driver artifact and rerun after a
+clean reboot before comparing against bare-metal Dev numbers.
+
 For a reusable guarded startup, run the harness helper from the control machine
 after exporting the placeholders above. Use the no-Ray helper for the standard
 GB10 path:

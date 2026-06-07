@@ -2651,8 +2651,8 @@ Immediate vLLM experiment plan once the workstation is available:
    pressure, prefix-cache stress, issue10 proxy, GSM8K limit-200, random
    8000/1000, and the new 256/256 MTP observation.
 5. Create a separate vLLM experiment branch for PR 43477 / FlashInfer sparse
-   MLA. Start no-MTP only, because PR 43477 does not currently cover this
-   branch's MTP path.
+   MLA. In this historical plan, start with no-MTP because PR 43477 did not
+   cover this branch's MTP path at the time.
 6. On that branch, run `bench_random_8000x1000` first. Continue to 59K/124K,
    mixed-arrival, prefix-cache, crash-proxy, and GSM8K only if the 8000/1000
    shape is stable and meaningfully better.
@@ -2949,7 +2949,7 @@ Use two layers of evidence:
 
 | Layer | Purpose | SM120 Default | SM121 / GB10 Default |
 | --- | --- | --- | --- |
-| End-to-end gate | User-visible acceptance and no-regression result | `run_sm120_user_feedback_matrix.sh`, repeat fixed 59K/124K C=1/C=2, mixed arrival, decode-concurrency, GSM8K | GB10 no-MTP 128K sentinel, KV lifecycle, decode-concurrency, then MTP as exploratory |
+| End-to-end gate | User-visible acceptance and no-regression result | `run_sm120_user_feedback_matrix.sh`, repeat fixed 59K/124K C=1/C=2, mixed arrival, decode-concurrency, GSM8K | Current GB10 reduced gates from `docs/vllm_correctness_gates.md`, including reduced long-C2, MTP2 MoE TP liveness, and relevant user-feedback wrappers |
 | Timeline trace | Explain whether prefill kernels interrupt decode cadence | `run_mixed_arrival_nsys_profile_launch.sh`, one mixed case per trace | Same tool only after startup/KV lifecycle is stable |
 | Kernel microprofile | Decide whether kernel work is justified | NCU on `_accumulate_indexed_attention_chunk_multihead_kernel` and `_fp8_mqa_logits_kernel` | Optional only after crash risk is controlled; expect bandwidth/power limits sooner |
 | Deployment probe | Decide whether single-instance best effort is enough | Simulate PD-style isolation only if C=2 ITL remains unacceptable after scheduler work | Consider PD/disagg earlier for long-context concurrent user testing, but do not claim throughput gains from it |
@@ -3505,7 +3505,8 @@ capacity, 256-bit LPDDR5x interface, 273 GB/s bandwidth, and 140 W SoC TDP. For
 this target, the same vLLM changes need an additional stability and bandwidth
 lens:
 
-- run no-MTP 128K startup/KV lifecycle first, then MTP as exploratory;
+- run no-MTP startup/KV lifecycle first, then the dedicated MTP2 reduced gates
+  when the touched path can affect SM121 or distributed liveness;
 - treat prefix-cache reclaimability and idle KV release as correctness gates,
   because unified memory pressure can hide as slowly rising KV usage;
 - record driver/GPU health after each high-risk 128K+ probe, including Xid,
@@ -8794,9 +8795,9 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   Artifacts:
 
   - 4K C=1:
-    `/home/jasl/Workspace/vllm-ds4-sm120-harness/artifacts/main/mqa_prune_bound_diag/20260607010759/mqa_prune_bound_diag.jsonl`
+    `artifacts/main/mqa_prune_bound_diag/20260607010759/mqa_prune_bound_diag.jsonl`
   - 32K C=1:
-    `/home/jasl/Workspace/vllm-ds4-sm120-harness/artifacts/main/mqa_prune_bound_diag/20260607010940/mqa_prune_bound_diag.jsonl`
+    `artifacts/main/mqa_prune_bound_diag/20260607010940/mqa_prune_bound_diag.jsonl`
 
   | Input | KV tokens per call | Sample rows | Sampled KV | Keep ratio | Optimistic work ratio |
   | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -8831,7 +8832,7 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   mask. It does not change the top-k selector or drop candidates.
 
   Artifact:
-  `/home/jasl/Workspace/vllm-ds4-sm120-harness/artifacts/main/mqa_headsplit_probe/20260607005738/summary.json`.
+  `artifacts/main/mqa_headsplit_probe/20260607005738/summary.json`.
   Shape: one RTX PRO 6000 GPU, `num_q=256`, `num_heads=64`, `head_dim=128`,
   full valid KV span, random FP8 Q/K, signed FP32 weights, current
   `BLOCK_M=64`, `BLOCK_N=128`, `BLOCK_D=64`, `num_warps=4`.

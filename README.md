@@ -46,17 +46,17 @@ source configs/sm120_tp2_serve.env.example
 source configs/gb10_sm121_serve.env.example
 ```
 
-The GB10 profile records the current SM121 shape: one `NVIDIA GB10` device,
+The GB10 profile records per-node SM121 defaults: one `NVIDIA GB10` device,
 the active CUDA toolkit symlink under `/usr/local/cuda`,
-`CUDA_ARCH_LIST=121a`, and `TORCH_CUDA_ARCH_LIST=12.1a`. It also narrows
-required GB10 acceptance to the
-no-MTP `non-thinking` matrix with a 128K-class long-context sentinel. Treat
-`think-high` and MTP as exploratory on GB10, and do not use `think-max` as a
-GB10 gate until a 384K+ prompt is reliable. It sets
-`GENERATION_MAX_CASE_TOKENS=32768` so the required generation gate can complete
-the checked-in code and HTML prompts; smaller caps such as 4096 are quick-smoke
-diagnostics, not quality-baseline settings. Keep private SSH targets and
-checkout paths in ignored local files, not in these public profile snippets.
+`CUDA_ARCH_LIST=121a`, and `TORCH_CUDA_ARCH_LIST=12.1a`. Two-node GB10
+cluster workflows, cache reclaim, driver-health gates, and Docker/Aiden parity
+notes live in
+[`docs/dgx_spark_bare_metal_cluster.md`](docs/dgx_spark_bare_metal_cluster.md).
+The profile keeps routine generation gates conservative and sets
+`GENERATION_MAX_CASE_TOKENS=32768` so checked-in code and HTML prompts can
+complete; smaller caps such as 4096 are quick-smoke diagnostics, not
+quality-baseline settings. Keep private SSH targets and checkout paths in
+ignored local files, not in these public profile snippets.
 
 ## DeepSeek Official API Notes
 
@@ -1250,13 +1250,13 @@ Before promoting an optimization:
   distinguish OOM/KV-cache/CUDA-graph reservation failures from correctness or
   scheduler bugs before treating them as regressions.
 - On two-node GB10, use `TP=2 PP=1` as the default DeepSeek V4 bring-up shape.
-  Keep MTP as exploratory until longer generation survives without
-  `sample_tokens` RPC timeouts. Preserve responsiveness artifacts if that path
-  stalls or makes the server unresponsive.
-- The GB10 required acceptance path is `non-thinking` only. `think-high` can be
-  recorded as an allowed-failure exploratory run, MTP is also exploratory, and
-  `think-max` is disabled as a GB10 gate until the platform reliably satisfies
-  the 384K+ context premise.
+  Preserve responsiveness artifacts if MTP, NCCL, or CUDA graph paths stall or
+  make the server unresponsive.
+- The routine GB10 generation profile remains conservative and avoids
+  `think-max` until the platform reliably satisfies the 384K+ context premise.
+  This does not replace dedicated GB10 user-feedback gates: reduced long-C2,
+  MTP=2 MoE TP liveness, forum53 prefix-cache admission, and Aiden image parity
+  each have their own wrapper and pass/fail criteria in the docs.
   Keep `GENERATION_MAX_CASE_TOKENS=32768` or higher for quality runs so long
   code/HTML prompts are not truncated.
 - Keep the server responsiveness guard enabled for MTP C>1 benchmark and eval
