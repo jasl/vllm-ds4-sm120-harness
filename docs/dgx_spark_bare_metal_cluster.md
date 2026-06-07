@@ -337,6 +337,12 @@ logs show B12X/FlashInfer/sparse-MLA/MoE markers. If the image starts but those
 markers are absent, treat the result as a recipe mismatch rather than a kernel
 performance result.
 
+Use `GB10_AIDEN_PREFIX_CACHE_MODE=disabled` for raw-prefill attribution. The
+default `enabled` mode follows the public recipe and is valid as an endpoint
+recipe comparison, but prefix-cache hits can materially inflate 32K/64K random
+prefill throughput. Keep prefix-on and prefix-off Aiden results in separate
+labels and compare kernel/dataflow changes only against the prefix-off rows.
+
 The benchmark client intentionally keeps the served model name and tokenizer
 source separate: requests use the served alias while `vllm bench` tokenizes
 with the real DS4 model ID. The gate also captures post-run driver health from

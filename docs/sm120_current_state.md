@@ -196,14 +196,24 @@ production code is added:
   external-backend comparison, not a promotion gate for our vLLM branch. The
   helper keeps the request model alias separate from the real DS4 tokenizer so
   a valid server is not misclassified by a client-side tokenizer lookup.
-  The clean-reboot GB10 smoke after the alias/tokenizer fix is now valid:
-  the Aiden image completed a reduced `4096 -> 16` random-prefill request with
-  driver signal count `0`, selected B12X MXFP4 MoE plus FlashInfer sparse-MLA
-  decode autotune markers, and measured about `1086 tok/s` input throughput
-  with `3.04s` TTFT. The same reduced current-Dev bare-metal shape selected
-  MARLIN MXFP4 MoE and measured about `803 tok/s` input throughput with
-  `4.29s` TTFT. Treat this as a small diagnostic that proves a real backend
-  difference, not as a full Reddit-scale reproduction.
+  The clean-reboot GB10 Aiden image parity runs after the alias/tokenizer fix
+  are now valid. They selected B12X MXFP4 MoE plus FlashInfer sparse-MLA decode
+  autotune markers, kept driver signal count `0`, and completed the reduced
+  random-prefill curve at `4096`, `16384`, `32768`, and `65536` input tokens.
+  Keep the two Aiden modes separate:
+
+  | ISL | Current Dev prefix-off tok/s | Aiden prefix-off tok/s | Prefix-off speedup | Aiden recipe prefix-on tok/s | Prefix-on speedup |
+  | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `4096` | `842.80` | `1128.37` | `1.34x` | `1018.91` | `1.21x` |
+  | `16384` | `1301.35` | `1874.60` | `1.44x` | `2275.56` | `1.75x` |
+  | `32768` | `1354.05` | `1919.63` | `1.42x` | `3449.26` | `2.55x` |
+  | `65536` | `1313.08` | `1913.46` | `1.46x` | `3458.36` | `2.63x` |
+
+  The prefix-off result is the useful raw-prefill comparison: Aiden is still
+  about `1.3-1.5x` faster, so there is a real backend/dataflow gap. The
+  prefix-on public recipe widens the observed 32K/64K gap to about `2.6x`, but
+  that path had prefix-cache hits and should not be treated as pure kernel
+  evidence.
 - Public/official b12x MoE is still not a direct current-Dev solution for
   DeepSeek V4 Flash. `VLLM_USE_B12X_MOE=1` is not a recognized vLLM env on the
   current branch, and explicit `--moe-backend flashinfer_b12x` fails closed
@@ -215,6 +225,11 @@ production code is added:
   scales, while public `b12x==0.15.2` only exposes `modelopt` /
   `compressed_tensors` W4A16 preparation with a group-16 E4M3 scale contract.
   Treat this as blocked on dependency/API support, not as a serving-flag issue.
+  Future NVIDIA NVFP4 support should stay a separate quantization route: do not
+  make MXFP4 DS4 Flash code depend on NVFP4 oracle assumptions, but keep the
+  MoE backend boundary explicit enough that a later NVFP4 backend can share
+  scheduling, warmup, graph, and quality gates without reworking the DS4 MXFP4
+  path.
 - Revisit older rejected-note wording when using it to guide new work. The
   prior negative results remain valid for public-wheel direct API probes,
   simple serving-flag changes, selector-only swaps, and local split-launch

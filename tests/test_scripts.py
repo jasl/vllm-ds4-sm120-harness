@@ -1652,6 +1652,9 @@ def test_gb10_aiden_image_parity_gate_matches_public_recipe():
     assert "RANDOM_PREFILL_BENCH_TOKENIZER" in script
     assert "fetch_remote_tree" in script
     assert "remote_prefill_sweep" in script
+    assert "container_is_running" in script
+    assert "Aiden image container exited before server became ready" in script
+    assert "container_status" in script
     assert "--enable-prefix-caching" in script
     assert "--speculative-config" in script
     assert "--distributed-executor-backend mp" in script
@@ -2686,12 +2689,8 @@ def test_sm12x_env_examples_use_requested_cuda_arch_family():
         encoding="utf-8"
     )
 
-    assert "12.0f" in handoff
-    assert "120f" in handoff
-    assert "12.0a" in handoff
-    assert "120a" in handoff
-    assert "12.1a" in handoff
-    assert "121a" in handoff
+    assert "SM120: `CUDA_ARCH_LIST=120a`, `TORCH_CUDA_ARCH_LIST=12.0a`" in handoff
+    assert "SM121: `CUDA_ARCH_LIST=121a`, `TORCH_CUDA_ARCH_LIST=12.1a`" in handoff
     assert 'CUDA_ARCH_LIST="120a"' in env_example
     assert 'TORCH_CUDA_ARCH_LIST="12.0a"' in env_example
 

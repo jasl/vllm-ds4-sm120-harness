@@ -274,7 +274,6 @@ fi
 docker_args=(
   run
   -d
-  --rm
   --name "${GB10_AIDEN_CONTAINER_NAME}"
   --network host
   --ipc host
@@ -342,6 +341,20 @@ REMOTE
   return "${code}"
 }
 
+container_is_running() {
+  local host="$1"
+  run_remote "${host}" \
+    "test \"\$(docker inspect -f '{{.State.Running}}' $(shell_quote "${GB10_AIDEN_CONTAINER_NAME}") 2>/dev/null || true)\" = true"
+}
+
+capture_container_status() {
+  local host="$1"
+  local label="$2"
+  run_remote "${host}" \
+    "docker ps -a --filter name=$(shell_quote "${GB10_AIDEN_CONTAINER_NAME}") --format '{{.Names}}\t{{.Status}}\t{{.Image}}' || true" \
+    > "${OUT_DIR}/${label}_container_status.log" 2>&1 || true
+}
+
 wait_for_container_server() {
   local started now elapsed
   started="$(date +%s)"
@@ -352,6 +365,16 @@ wait_for_container_server() {
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(( $(date +%s) - started ))" \
         >> "${OUT_DIR}/server_wait.log"
       return 0
+    fi
+
+    if ! container_is_running "${HEAD_HOST}" || ! container_is_running "${WORKER_HOST}"; then
+      printf '[%s] Aiden image container exited before server became ready\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        >> "${OUT_DIR}/server_wait.log"
+      capture_container_status "${HEAD_HOST}" head
+      capture_container_status "${WORKER_HOST}" worker
+      capture_logs
+      return 1
     fi
 
     now="$(date +%s)"

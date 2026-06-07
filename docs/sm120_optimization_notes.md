@@ -9153,3 +9153,41 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
     FP8 MQA top-k work, value traffic, live state, or dependency depth. Do not
     restart simple chunk-size, warp-size, or selector-only sweeps without new
     evidence.
+
+### 2026-06-08 Aiden Image Parity Recheck
+
+- **Status:** useful external baseline; not a vLLM promotion result.
+- **Scope:** GB10, TP=2, MTP=2, FP8 KV, `max_model_len=131072`,
+  `max_num_seqs=2`, `max_num_batched_tokens=4096`, C=1 random prefill,
+  `output_len=32`.
+- **Backend evidence:** the public Aiden image selected B12X MXFP4 MoE,
+  DeepSeek fp8_ds_mla KV cache, FP8 indexer cache for Lightning Indexer,
+  FlashInfer sparse-MLA decode autotune, NCCL `2.30.4`, and
+  `FULL_AND_PIECEWISE` CUDA graph capture. Post-run driver signal count was
+  `0` in both prefix-cache modes.
+- **Raw prefix-off comparison:** Aiden prefix-off was consistently faster than
+  current Dev prefix-off:
+
+  | ISL | Current Dev input tok/s | Aiden prefix-off input tok/s | Speedup | Current Dev TTFT | Aiden prefix-off TTFT |
+  | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `4096` | `842.80` | `1128.37` | `1.34x` | `3.90s` | `2.88s` |
+  | `16384` | `1301.35` | `1874.60` | `1.44x` | `11.81s` | `8.12s` |
+  | `32768` | `1354.05` | `1919.63` | `1.42x` | `23.26s` | `16.27s` |
+  | `65536` | `1313.08` | `1913.46` | `1.46x` | `49.04s` | `33.46s` |
+
+- **Public recipe prefix-on comparison:** with Aiden's default prefix-cache-on
+  recipe, the same curve measured `1018.91`, `2275.56`, `3449.26`, and
+  `3458.36` input tok/s for 4K/16K/32K/64K. This widens the observed 32K/64K
+  gap to about `2.6x`, but the run had prefix-cache hits, so it is endpoint
+  recipe evidence rather than raw kernel evidence.
+- **Conclusion:** the public Aiden/unholy path is not just a serving-flag
+  difference. Even with prefix cache disabled, it has a real `1.3-1.5x`
+  GB10 long-prefill advantage. The next porting work should focus on the
+  bundled B12X sparse indexer / compressed-indexer copy avoidance, sparse MLA
+  dataflow, mHC routing, and native MXFP4 MoE boundary, while keeping prefix-on
+  effects separated from raw-prefill claims.
+- **NVFP4 preparation note:** keep DS4 MXFP4 and future NVIDIA NVFP4 backends
+  separated by explicit quantization format and scale-layout checks. Do not
+  force the current DS4 MXFP4 group-32 UE8M0 path through an NVFP4 oracle
+  backend, but design MoE dispatch so a later NVFP4 model can reuse the same
+  warmup, CUDA graph, promotion, and correctness gates.
