@@ -134,8 +134,9 @@ Reddit-scale prefill gap.
 
 The latest public b12x recheck changes the dependency picture but not the
 endpoint decision yet. `b12x==0.20.0` now exposes DS4 compressed-MLA, compressed
-indexer, native FP4 MoE, FP8 block-linear, and PCIe all-reduce APIs, and the
-compressed-MLA microbench compiles on RTX PRO 6000 SM120 and both GB10 nodes.
+indexer, sparse-indexer extend top-k, native FP4 MoE, FP8 block-linear, and
+PCIe all-reduce APIs, and the compressed-MLA microbench compiles on RTX PRO
+6000 SM120 and both GB10 nodes.
 In endpoint-like real-C128 microbench shapes, b12x is much faster than the
 older packed online helper, but still slower than the current D512
 split+finish kernel-only timing. A follow-up runtime probe separates package
@@ -254,9 +255,10 @@ production code is added:
   Aiden/unholy bundled b12x, FlashInfer-b12x NVFP4, or missing. Public
   `b12x==0.15.2` historically exposed only the generic MLA front door, but
   public `b12x==0.20.0` now exposes the DS4-relevant compressed MLA scratch,
-  compressed indexer, native FP4 MoE preparation, FP8 block-linear, and PCIe
-  all-reduce APIs in an RTX PRO 6000 import-only probe. This removes the old
-  "private/bundled API only" blocker. It does not prove endpoint readiness:
+  compressed indexer, sparse-indexer extend top-k, native FP4 MoE preparation,
+  FP8 block-linear, and PCIe all-reduce APIs in RTX PRO 6000 and GB10
+  import-only probes. This removes the old "private/bundled API only" blocker.
+  It does not prove endpoint readiness:
   vLLM still needs explicit DS4 metadata wiring, GB10 runtime import
   confirmation in the actual vLLM venv, and promotion-matrix performance /
   correctness gates before any default route change.

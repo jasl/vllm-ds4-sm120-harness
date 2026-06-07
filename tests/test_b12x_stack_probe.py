@@ -128,6 +128,10 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
         "b12x.integration.compressed_indexer": types.SimpleNamespace(
             plan_compressed_indexer_scratch=object(),
         ),
+        "b12x.integration.indexer": types.SimpleNamespace(
+            extend_tiled_topk=object(),
+            IndexerExtendMetadata=object(),
+        ),
         "b12x.integration.sparse_mla_scratch": types.SimpleNamespace(),
         "b12x.integration.tp_moe": types.SimpleNamespace(
             TPMoEScratchCaps=object(),
@@ -161,6 +165,7 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
     assert result["routes"]["public_b12x_mla"]["ok"] is True
     assert result["routes"]["aiden_ds4_compressed_mla"]["ok"] is True
     assert result["routes"]["aiden_native_mxfp4_moe"]["ok"] is True
+    assert result["routes"]["public_b12x_sparse_indexer_extend"]["ok"] is True
     assert result["routes"]["b12x_fp8_linear"]["ok"] is True
     assert result["routes"]["pcie_oneshot_allreduce"]["ok"] is True
     assert result["layouts"]["b12x_compressed_mla"]["ok"] is True
@@ -284,7 +289,11 @@ def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
             "aiden_ds4_compressed_mla": {
                 "ok": False,
                 "note": "missing compressed scratch",
-            }
+            },
+            "public_b12x_sparse_indexer_extend": {
+                "ok": True,
+                "note": "b12x extend_tiled_topk is available",
+            },
         },
         "vllm_modules": {
             "vllm.model_executor.layers.sparse_attn_indexer": {
@@ -306,6 +315,8 @@ def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
     text = output.read_text(encoding="utf-8")
     assert "# B12X Stack Probe" in text
     assert "`aiden_ds4_compressed_mla`" in text
+    assert "`public_b12x_sparse_indexer_extend`" in text
+    assert "b12x extend_tiled_topk is available" in text
     assert "`runtime_b12x_sparse_indexer`" in text
     assert "vLLM runtime can select b12x sparse indexer" in text
     assert "missing compressed scratch" in text

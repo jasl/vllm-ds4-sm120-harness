@@ -9512,6 +9512,24 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   small import/API smoke. If the bundled b12x APIs are unavailable, keep the
   route blocked rather than writing another generic adapter.
 
+- **Runtime-path correction after the 2026-06-08 probe:** the DS4-specific
+  `vllm/models/deepseek_v4/nvidia/b12x.py` source exists in the extracted
+  Aiden/apostolic source tree, but it is not runtime-importable from the
+  installed vLLM package in the public production-ready image. The image's
+  active package exposes the B12X sparse-indexer hook and native MXFP4 B12X MoE
+  plumbing, but not a DS4 compressed-MLA runtime adapter. Do not treat that
+  source file as a proven active backend without an import probe or serve log
+  proving selection.
+- **Public b12x indexer API update:** public `b12x==0.20.0` exposes
+  `b12x.integration.indexer.extend_tiled_topk` and `IndexerExtendMetadata` on
+  both RTX PRO 6000 SM120 and GB10 SM121. That makes the Aiden/unholy prefill
+  indexer algorithm technically reproducible as an experiment, but the
+  component A/B above already showed that forcing the image's exposed sparse
+  indexer env is not the missing raw-prefill win by itself. Any future port
+  should first isolate the broader sparse-MLA/indexer dataflow and avoid
+  replacing current Dev's existing direct top-k and short-row decode safeguards
+  unless an endpoint A/B proves a gain.
+
 ### 2026-06-08 Public b12x 0.20 KV-layout probe
 
 - **Trigger:** public `b12x==0.20.0` now exposes DS4 compressed MLA APIs and

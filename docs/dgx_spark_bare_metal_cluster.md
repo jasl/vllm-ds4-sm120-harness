@@ -166,13 +166,13 @@ only. For serving decisions, require the corresponding `runtime_*` route to be
 true or prove through serve logs that vLLM selected the intended backend.
 
 As of the 2026-06-08 optional-dependency recheck, public `b12x==0.20.0` exposes
-the DS4 compressed MLA, compressed indexer, native FP4 MoE, FP8 block-linear,
-and PCIe all-reduce API surfaces that were missing from `0.15.2`. Import
-success is still not enough for promotion. The public `0.20.0` package has
-compiled and run the single-GPU compressed-MLA microbench on both GB10 nodes,
-but treat b12x MLA as research-only until a real vLLM endpoint adapter selects
-that path and the end-to-end GB10 promotion matrix passes. The public b12x
-compressed-MLA high-level cache layout is page-packed:
+the DS4 compressed MLA, compressed indexer, sparse-indexer extend top-k, native
+FP4 MoE, FP8 block-linear, and PCIe all-reduce API surfaces that were missing
+from `0.15.2`. Import success is still not enough for promotion. The public
+`0.20.0` package has compiled and run the single-GPU compressed-MLA microbench
+on both GB10 nodes, but treat b12x MLA as research-only until a real vLLM
+endpoint adapter selects that path and the end-to-end GB10 promotion matrix
+passes. The public b12x compressed-MLA high-level cache layout is page-packed:
 `[page_size * 576 payload bytes][page_size * 8 scale bytes][padding]`. Current
 vLLM `fp8_ds_mla` cache rows are token-interleaved `584` byte records. Do not
 assume a zero-copy b12x endpoint adapter is possible without a layout-specific

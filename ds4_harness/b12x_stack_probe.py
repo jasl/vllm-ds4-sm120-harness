@@ -56,6 +56,13 @@ MODULES = (
         ),
     ),
     ModuleProbe("b12x.integration.compressed_indexer"),
+    ModuleProbe(
+        "b12x.integration.indexer",
+        (
+            "extend_tiled_topk",
+            "IndexerExtendMetadata",
+        ),
+    ),
     ModuleProbe("b12x.integration.sparse_mla_scratch"),
     ModuleProbe(
         "b12x.integration.tp_moe",
@@ -209,6 +216,24 @@ def _classify_routes(result: Json) -> Json:
             )
         ),
         "note": "Needed by the native DS4 MXFP4/W4A16 B12X MoE backend; distinct from FlashInfer NVFP4 MoE.",
+    }
+    routes["public_b12x_sparse_indexer_extend"] = {
+        "ok": (
+            _has_attr(
+                result,
+                "b12x.integration.indexer",
+                "extend_tiled_topk",
+            )
+            and _has_attr(
+                result,
+                "b12x.integration.indexer",
+                "IndexerExtendMetadata",
+            )
+        ),
+        "note": (
+            "Released b12x sparse-indexer extend top-k API used by the "
+            "Aiden/unholy prefill indexer path."
+        ),
     }
     routes["b12x_fp8_linear"] = {
         "ok": _module_ok(result, "b12x.gemm.block_fp8_linear"),
