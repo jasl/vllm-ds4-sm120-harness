@@ -3949,6 +3949,17 @@ Rejected native-MXFP4 B12X MoE port attempt, 2026-06-02:
   integration yet. The unholy-fusion result likely depends on an unreleased or
   different b12x API/layout contract, or on additional scale-conversion code
   not present in the released package.
+- 2026-06-08 recheck against the public `b12x==0.15.2` API made the mismatch
+  more specific. The local-inference-lab native-MXFP4 MoE wrapper passes
+  `source_format="fp4_e8m0_k32"` and `w13_layout="w31"`, while the public
+  integration only accepts `modelopt` / `compressed_tensors`. The public
+  W4A16 prepare path unswizzles scales with `cols // 16` and views scale bytes
+  as `torch.float8_e4m3fn`; DeepSeek V4 Flash MXFP4 scales loaded by vLLM are
+  OCP/UE8M0 group-32 bytes. Therefore duplicating or reshaping the current
+  scale tensor is not a correctness-safe fix. Re-enter this route only if a
+  public b12x/FlashInfer API exposes DS4 OCP MXFP4 group-32 UE8M0 weights
+  directly, or if a separately verified conversion proves bitwise/semantic
+  equivalence against the current DS4 MoE output.
 - Code status: prototype code was removed. Keep only the optional dependency
   install/import probe and this rejected note until a released b12x API can
   consume DS4 MXFP4/UE8M0 scales directly or a separately verified conversion

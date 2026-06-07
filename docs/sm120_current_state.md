@@ -210,7 +210,11 @@ production code is added:
   because that backend is wired through the NVFP4 oracle, while DS4 Flash uses
   MXFP4 experts. The Aiden/unholy route therefore depends on a native MXFP4
   B12X integration that is not the same as the current upstream
-  `flashinfer_b12x` NVFP4 path.
+  `flashinfer_b12x` NVFP4 path. A later public-b12x recheck confirms that
+  local-inference-lab's native-MXFP4 MoE expects `fp4_e8m0_k32` group-32 UE8M0
+  scales, while public `b12x==0.15.2` only exposes `modelopt` /
+  `compressed_tensors` W4A16 preparation with a group-16 E4M3 scale contract.
+  Treat this as blocked on dependency/API support, not as a serving-flag issue.
 - Revisit older rejected-note wording when using it to guide new work. The
   prior negative results remain valid for public-wheel direct API probes,
   simple serving-flag changes, selector-only swaps, and local split-launch
