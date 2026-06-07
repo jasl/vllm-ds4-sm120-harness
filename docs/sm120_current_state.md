@@ -190,7 +190,12 @@ production code is added:
   b12x source tree that includes the compressed indexer / sparse MLA / FP8
   linear modules missing from earlier public-wheel probes. Treat this as a
   separate "Aiden image parity" route. Before any port, first reproduce the
-  image recipe on GB10 and diff the overlay against upstream/current Dev.
+  image recipe on GB10 with `scripts/run_gb10_aiden_image_parity.sh`, record
+  backend evidence, post-run driver health, and the same random-prefill subset,
+  then diff the overlay against upstream/current Dev. This is an
+  external-backend comparison, not a promotion gate for our vLLM branch. The
+  helper keeps the request model alias separate from the real DS4 tokenizer so
+  a valid server is not misclassified by a client-side tokenizer lookup.
 - Revisit older rejected-note wording when using it to guide new work. The
   prior negative results remain valid for public-wheel direct API probes,
   simple serving-flag changes, selector-only swaps, and local split-launch

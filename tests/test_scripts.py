@@ -231,7 +231,11 @@ def test_random_prefill_sweep_wrapper_covers_short_prefill_regression_shapes():
     assert 'RANDOM_PREFILL_INPUT_LENS="${RANDOM_PREFILL_INPUT_LENS:-1024,4096,16384,65536}"' in script
     assert 'RANDOM_PREFILL_OUTPUT_LEN="${RANDOM_PREFILL_OUTPUT_LEN:-1}"' in script
     assert 'RANDOM_PREFILL_CONCURRENCY="${RANDOM_PREFILL_CONCURRENCY:-1}"' in script
+    assert 'RANDOM_PREFILL_BENCH_MODEL="${RANDOM_PREFILL_BENCH_MODEL:-${MODEL}}"' in script
+    assert 'RANDOM_PREFILL_BENCH_TOKENIZER="${RANDOM_PREFILL_BENCH_TOKENIZER:-}"' in script
     assert 'DATASET_NAME=random' in script
+    assert 'BENCH_MODEL="${RANDOM_PREFILL_BENCH_MODEL}"' in script
+    assert 'BENCH_TOKENIZER="${RANDOM_PREFILL_BENCH_TOKENIZER}"' in script
     assert 'RANDOM_INPUT_LEN="${input_len}"' in script
     assert 'RANDOM_OUTPUT_LEN="${RANDOM_PREFILL_OUTPUT_LEN}"' in script
     assert "prefill_sweep_summary.json" in script
@@ -1589,6 +1593,105 @@ def test_gb10_b12x_backend_ab_matrix_wraps_prefill_gap_gate():
     assert "/home/" not in script
     assert "/Users/" not in script
     assert "run_gb10_b12x_backend_ab_matrix.sh" in current_state
+
+
+def test_gb10_aiden_image_parity_gate_matches_public_recipe():
+    script = (
+        ROOT / "scripts" / "run_gb10_aiden_image_parity.sh"
+    ).read_text(encoding="utf-8")
+    current_state = (ROOT / "docs" / "sm120_current_state.md").read_text(
+        encoding="utf-8"
+    )
+    spark_docs = (
+        ROOT / "docs" / "dgx_spark_bare_metal_cluster.md"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        "HEAD_HOST",
+        "WORKER_HOST",
+        "HEAD_ROCE_IP",
+        "WORKER_ROCE_IP",
+        "ROCE_IFACE",
+        "NCCL_IB_HCA",
+        "GB10_AIDEN_HF_CACHE_REMOTE",
+        "GB10_AIDEN_REMOTE_HARNESS_ROOT",
+        "GB10_AIDEN_BENCH_PYTHON",
+        "GB10_AIDEN_BENCH_VLLM_BIN",
+    ):
+        assert required in script
+
+    assert (
+        'GB10_AIDEN_IMAGE="${GB10_AIDEN_IMAGE:-aidendle94/sparkrun-vllm-ds4-gb10:production-ready}"'
+        in script
+    )
+    assert 'GB10_AIDEN_MAX_MODEL_LEN="${GB10_AIDEN_MAX_MODEL_LEN:-1000000}"' in script
+    assert 'GB10_AIDEN_MAX_NUM_SEQS="${GB10_AIDEN_MAX_NUM_SEQS:-6}"' in script
+    assert (
+        'GB10_AIDEN_MAX_NUM_BATCHED_TOKENS="${GB10_AIDEN_MAX_NUM_BATCHED_TOKENS:-8192}"'
+        in script
+    )
+    assert (
+        'GB10_AIDEN_GPU_MEMORY_UTILIZATION="${GB10_AIDEN_GPU_MEMORY_UTILIZATION:-0.82}"'
+        in script
+    )
+    assert 'GB10_AIDEN_PREFIX_CACHE_MODE="${GB10_AIDEN_PREFIX_CACHE_MODE:-enabled}"' in script
+    assert 'GB10_AIDEN_SPECULATIVE_CONFIG="${GB10_AIDEN_SPECULATIVE_CONFIG:-{\\"method\\":\\"mtp\\",\\"num_speculative_tokens\\":2}}"' in script
+    assert 'GB10_AIDEN_INPUT_LENS="${GB10_AIDEN_INPUT_LENS:-4096,16384,32768,65536,128000}"' in script
+    assert 'GB10_AIDEN_OUTPUT_LEN="${GB10_AIDEN_OUTPUT_LEN:-128}"' in script
+    assert 'GB10_AIDEN_CONCURRENCY="${GB10_AIDEN_CONCURRENCY:-1}"' in script
+    assert 'GB10_AIDEN_SHM_SIZE="${GB10_AIDEN_SHM_SIZE:-64g}"' in script
+    assert 'GB10_AIDEN_MASTER_PORT="${GB10_AIDEN_MASTER_PORT:-25000}"' in script
+    assert 'GB10_AIDEN_REQUIRE_DROP_CACHES="${GB10_AIDEN_REQUIRE_DROP_CACHES:-1}"' in script
+    assert "drop_caches" in script
+    assert "NV_ERR_NO_MEMORY" in script
+    assert 'GB10_AIDEN_ALLOW_DRIVER_SIGNALS="${GB10_AIDEN_ALLOW_DRIVER_SIGNALS:-0}"' in script
+    assert "capture_remote_driver_health" in script
+    assert "driver_health_summary.json" in script
+    assert "kernel_gpu_signals.log" in script
+    assert "driver_health.get(\"ok\", True)" in script
+    assert "RANDOM_PREFILL_BENCH_TOKENIZER" in script
+    assert "fetch_remote_tree" in script
+    assert "remote_prefill_sweep" in script
+    assert "--enable-prefix-caching" in script
+    assert "--speculative-config" in script
+    assert "--distributed-executor-backend mp" in script
+    assert "--tool-call-parser deepseek_v4" in script
+    assert "--reasoning-parser deepseek_v4" in script
+    assert "--default-chat-template-kwargs.thinking=true" in script
+    assert "--default-chat-template-kwargs.reasoning_effort=high" in script
+    assert "--enable-flashinfer-autotune" in script
+    assert "--nnodes 2" in script
+    assert "--headless" in script
+    assert "--shm-size" in script
+    assert "--ulimit memlock=-1" in script
+    assert "--device=/dev/infiniband:/dev/infiniband" in script
+    assert "VLLM_USE_B12X_MOE" in script
+    assert "VLLM_SPARSE_INDEXER_MAX_LOGITS_MB" in script
+    assert "VLLM_CACHE_ROOT" in script
+    assert "VLLM_NCCL_SO_PATH" in script
+    assert "FLASHINFER_CUDA_ARCH_LIST" in script
+    assert "TORCH_CUDA_ARCH_LIST" in script
+    assert "NCCL_NET" in script
+    assert "NCCL_IB_GID_INDEX" in script
+    assert "NCCL_CROSS_NIC" in script
+    assert "NCCL_IGNORE_CPU_AFFINITY" in script
+    assert "NCCL_CUMEM_ENABLE" in script
+    assert "run_random_prefill_sweep.sh" in script
+    assert "gb10_aiden_image_parity_summary.json" in script
+    assert "gb10_aiden_image_parity_summary.md" in script
+    assert "extract_backend_evidence" in script
+    assert "B12X" in script
+    assert "compressed_indexer" in script
+    assert "FLASHINFER" in script
+    assert '"<ip>"' in script
+    assert '"<path>"' in script
+    assert "10.0.0." not in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+
+    assert "run_gb10_aiden_image_parity.sh" in current_state
+    assert "Aiden image parity" in current_state
+    assert "Aiden image parity" in spark_docs
 
 
 def test_sm12x_dp_ep_oom_reduced_gate_tracks_user_report_shape():

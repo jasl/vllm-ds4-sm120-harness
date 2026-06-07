@@ -7592,6 +7592,31 @@ Aiden image recipe / Docker layer inspection, 2026-06-07:
   then diff its vLLM overlay and b12x tree against current Dev to decide which
   pieces are maintainable.
 
+Aiden image parity harness update, 2026-06-08:
+
+- Added `scripts/run_gb10_aiden_image_parity.sh` as an external-backend
+  observation gate for the public Aiden / unholy-fusion Docker image. This is
+  not a vLLM PR promotion gate. It starts the two-node Docker recipe, captures
+  backend evidence, runs the random-prefill subset, fetches the nested sweep
+  artifact tree, and writes parity JSON/Markdown summaries.
+- The first live smoke proved the image does select the expected stack:
+  B12X MXFP4 MoE, FlashInfer top-k/top-p, FlashInfer sparse-MLA decode
+  autotune, DeepGEMM FP8, FP8 sparse indexer, NCCL 2.30.x, and
+  `FULL_AND_PIECEWISE`. It failed before producing benchmark metrics because
+  the benchmark client used the served alias as a tokenizer repo and hit a
+  Hugging Face 404. The harness now keeps the request model alias and tokenizer
+  source separate by passing the real DS4 model ID as
+  `RANDOM_PREFILL_BENCH_TOKENIZER`.
+- A reduced diagnostic smoke after that fix completed one 256-token / 4-output
+  request successfully. This validates the wrapper and tokenizer split, but it
+  is not a performance datapoint: the run explicitly allowed driver signals on
+  a boot that already had NVRM OOM records, and the run produced additional
+  NVRM `NV_ERR_NO_MEMORY` lines during startup/warmup.
+- Decision: before comparing Aiden-image performance against current Dev,
+  reboot to a clean driver log and run the parity helper with the default
+  driver-health gate. If any NVRM/Xid/UVM/GPU-lost signal appears, classify the
+  result as a driver-health failure, not as a valid throughput comparison.
+
 GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
 
 - Goal: restart the raw sparse-MLA work-reduction line after GB10 reboot and

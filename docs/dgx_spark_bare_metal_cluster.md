@@ -309,6 +309,41 @@ run, preserve the cache, and rerun the same command before classifying the
 serve profile as slow or broken. Later cached starts should use the normal
 bounded startup timeout again.
 
+### Aiden Image Parity
+
+Use `scripts/run_gb10_aiden_image_parity.sh` only for the public Aiden /
+unholy-fusion Docker image comparison. This route starts the external two-node
+Docker image, keeps prefix cache enabled, uses MTP=2, `max_model_len=1000000`,
+`max_num_seqs=6`, `max_num_batched_tokens=8192`, and
+`gpu_memory_utilization=0.82` by default, then runs the same random-prefill
+subset used by the GB10 prefill-gap attribution gate. Treat Aiden image parity
+as an external recipe check, not as a vLLM promotion result by itself.
+
+Required local environment variables intentionally name only abstract roles:
+
+- `HEAD_HOST`, `WORKER_HOST`, `HEAD_ROCE_IP`, `WORKER_ROCE_IP`, `ROCE_IFACE`,
+  and `NCCL_IB_HCA`.
+- `GB10_AIDEN_HF_CACHE_REMOTE`: remote Hugging Face cache path to mount into
+  the container.
+- `GB10_AIDEN_REMOTE_HARNESS_ROOT`: remote harness checkout used for the
+  benchmark client.
+- `GB10_AIDEN_BENCH_PYTHON` and `GB10_AIDEN_BENCH_VLLM_BIN`: benchmark-side
+  Python and `vllm` CLI paths.
+
+The summary files are `gb10_aiden_image_parity_summary.json` and
+`gb10_aiden_image_parity_summary.md`. Inspect the backend evidence sections
+before comparing speed: the run is only comparable to the public report if the
+logs show B12X/FlashInfer/sparse-MLA/MoE markers. If the image starts but those
+markers are absent, treat the result as a recipe mismatch rather than a kernel
+performance result.
+
+The benchmark client intentionally keeps the served model name and tokenizer
+source separate: requests use the served alias while `vllm bench` tokenizes
+with the real DS4 model ID. The gate also captures post-run driver health from
+both nodes. Any NVRM/Xid/UVM/GPU-lost signal makes the run fail by default;
+only set `GB10_AIDEN_ALLOW_DRIVER_SIGNALS=1` for an explicitly marked
+diagnostic rerun.
+
 For a reusable guarded startup, run the harness helper from the control machine
 after exporting the placeholders above. Use the no-Ray helper for the standard
 GB10 path:
