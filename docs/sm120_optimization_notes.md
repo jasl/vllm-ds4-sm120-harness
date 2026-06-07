@@ -7541,6 +7541,57 @@ GB10 local-inference-lab B12X endpoint smoke recheck, 2026-06-07:
   current vLLM-side split/merge work. Keep older rejected notes scoped to the
   exact public direct-API probes and local endpoint adapters that were tested.
 
+Aiden image recipe / Docker layer inspection, 2026-06-07:
+
+- Source: NVIDIA forum thread "DeepSeek V4 Flash at 1M Context on Dual DGX
+  Spark/Atom AI Top -- Working Recipe" reports the prebuilt
+  `aidendle94/sparkrun-vllm-ds4-gb10:production-ready` image, TP=2, mp
+  backend, prefix cache enabled, MTP=2, `--max-model-len 1000000`,
+  `--max-num-seqs 6`, `--max-num-batched-tokens 8192`, and
+  `--gpu-memory-utilization 0.82`. It also lists standard spark-vllm-docker
+  and manual PR 40082 builds as dead ends because they lacked the full B12X
+  support or hit FlashInfer/CUTLASS mismatches.
+- The thread title says "CUDA 12.1", but the image metadata indicates this is
+  best interpreted as SM/CUDA arch `12.1a`, not CUDA Toolkit 12.1. The extracted
+  provenance lists cu13 packages such as `torch==2.11.0+cu130`,
+  `triton==3.6.0`, `nvidia-nccl-cu13==2.30.4`,
+  `nvidia-nvshmem-cu13==3.4.5`, `flashinfer-python==0.6.12`, and
+  `flashinfer-cubin==0.6.11.post3`.
+- Build-shape finding: this is not a plain upstream vLLM plus public PyPI b12x
+  environment. The image is based on micromamba, installs from an offline
+  wheelhouse, uses a conda CUDA toolkit rooted under the image environment,
+  forces conda's host compiler through `NVCC_PREPEND_FLAGS`, installs a local
+  FlashInfer wheel, then overlays vLLM files into site-packages and installs a
+  bundled local b12x source tree.
+- Provenance from the image records vLLM at commit
+  `1967a5627bc3710b680bbec24ecb99aaddedf22b`, FlashInfer at
+  `9ad3567d85e46abcda8ba5140a5e6125b18c91f0`, DeepGEMM at
+  `1f2f161dba747b7c12671d017f7c88e1249c3d3e`, and a sanitized-source build
+  patch for vLLM CUDA arch support.
+- The small image layers include an entrypoint that sets cache roots for
+  FlashInfer, DeepGEMM JIT, TileLang, Triton, TorchInductor, and Torch
+  extensions, then execs `vllm`. They also include `overlay/vllm` files and a
+  bundled b12x source tree. The bundled b12x tree includes modules that earlier
+  public-wheel probes lacked or did not expose in a compatible way, including
+  `b12x.integration.compressed_indexer`,
+  `b12x.integration.sparse_mla_scratch`,
+  `b12x.gemm.block_fp8_linear`, and `b12x.gemm.wo_projection`.
+- The overlay is substantial but narrow enough to audit. It touches vLLM
+  kernel config/envs, sparse indexer, B12X scaled-mm, B12X MoE, FP8/MXFP4
+  quantization, DeepSeek V4 attention/model code, warmup, and distributed
+  communicator paths. Notable guarded behavior: the DeepSeek V4 attention
+  overlay auto-disables the B12X WO projection if
+  `cutlass.cute.nvgpu.warp.MmaMXF8Op` is unavailable, which directly addresses
+  the public `nvidia-cutlass-dsl==4.5.2` failure seen in our prior smoke.
+- Decision update: the public-dependency local-inference smoke remains blocked,
+  but it no longer represents the Aiden image recipe. Do not conclude the
+  Aiden/unholy-fusion results are unreproducible until the actual image recipe
+  is run or its overlay plus bundled b12x tree is ported into an isolated GB10
+  experiment. The next evidence-gathering route is: run the Aiden image recipe
+  unchanged on GB10, collect backend markers and the same prefill-gap matrix,
+  then diff its vLLM overlay and b12x tree against current Dev to decide which
+  pieces are maintainable.
+
 GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
 
 - Goal: restart the raw sparse-MLA work-reduction line after GB10 reboot and

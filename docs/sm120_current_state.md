@@ -184,6 +184,13 @@ production code is added:
   public `4.5.2`, and the tested fallback scaled-mm paths were not usable on
   GB10. Keep this route as blocked/recheck, not rejected, until the dependency
   stack can pass a small endpoint smoke.
+- A later public recipe for the Aiden image explains why the above smoke is not
+  equivalent to the reported working stack. The image is an offline micromamba
+  build with a local FlashInfer wheel, an installed vLLM overlay, and a bundled
+  b12x source tree that includes the compressed indexer / sparse MLA / FP8
+  linear modules missing from earlier public-wheel probes. Treat this as a
+  separate "Aiden image parity" route. Before any port, first reproduce the
+  image recipe on GB10 and diff the overlay against upstream/current Dev.
 - Revisit older rejected-note wording when using it to guide new work. The
   prior negative results remain valid for public-wheel direct API probes,
   simple serving-flag changes, selector-only swaps, and local split-launch
