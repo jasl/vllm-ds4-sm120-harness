@@ -99,6 +99,66 @@ def test_b12x_stack_probe_classifies_aiden_bundle_apis(monkeypatch):
     assert result["routes"]["pcie_oneshot_allreduce"]["ok"] is True
 
 
+def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
+    versions = {
+        "b12x": "0.20.0",
+        "flashinfer-python": "0.6.12",
+        "flashinfer-cubin": "0.6.12",
+    }
+
+    def fake_version(name):
+        if name not in versions:
+            raise b12x_stack_probe.importlib.metadata.PackageNotFoundError
+        return versions[name]
+
+    modules = {
+        "b12x.integration": types.SimpleNamespace(
+            prepare_b12x_fp4_moe_weights=object(),
+            prepare_b12x_w4a16_packed_weights=object(),
+        ),
+        "b12x.integration.mla": types.SimpleNamespace(
+            compressed_mla_decode_forward=object(),
+            sparse_mla_decode_forward=object(),
+            sparse_mla_extend_forward=object(),
+        ),
+        "b12x.integration.compressed_scratch": types.SimpleNamespace(
+            B12XCompressedMLAScratchCaps=object(),
+            plan_compressed_mla_scratch=object(),
+        ),
+        "b12x.integration.compressed_indexer": types.SimpleNamespace(
+            plan_compressed_indexer_scratch=object(),
+        ),
+        "b12x.integration.sparse_mla_scratch": types.SimpleNamespace(),
+        "b12x.integration.tp_moe": types.SimpleNamespace(
+            TPMoEScratchCaps=object(),
+            plan_tp_moe_scratch=object(),
+            b12x_moe_fp4=object(),
+        ),
+        "b12x.gemm.block_fp8_linear": types.SimpleNamespace(
+            block_fp8_linear_mxfp8=object(),
+        ),
+        "b12x.distributed": types.SimpleNamespace(PCIeOneshotAllReducePool=object()),
+        "flashinfer.fused_moe": types.SimpleNamespace(b12x_fused_moe=object()),
+    }
+
+    def fake_import_module(name):
+        if name not in modules:
+            raise ModuleNotFoundError(name)
+        return modules[name]
+
+    monkeypatch.setattr(b12x_stack_probe.importlib.metadata, "version", fake_version)
+    monkeypatch.setattr(b12x_stack_probe.importlib, "import_module", fake_import_module)
+
+    result = b12x_stack_probe.probe_b12x_stack()
+
+    assert result["distributions"]["b12x"]["version"] == "0.20.0"
+    assert result["routes"]["public_b12x_mla"]["ok"] is True
+    assert result["routes"]["aiden_ds4_compressed_mla"]["ok"] is True
+    assert result["routes"]["aiden_native_mxfp4_moe"]["ok"] is True
+    assert result["routes"]["b12x_fp8_linear"]["ok"] is True
+    assert result["routes"]["pcie_oneshot_allreduce"]["ok"] is True
+
+
 def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
     result = {
         "distributions": {"b12x": {"ok": True, "version": "0.15.2"}},

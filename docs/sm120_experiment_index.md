@@ -238,7 +238,11 @@ that thread, search `External unholy-fusion feedback refresh`.
   `Public image control-plane correction`.
 - B12X optional stack capability probe:
   `scripts/run_b12x_stack_probe.sh`; open `docs/sm120_optimization_notes.md`
-  and search `B12X stack capability probe and route split`.
+  and search `B12X stack capability probe and route split` plus
+  `Public b12x recheck, 2026-06-08`. Public `b12x==0.20.0` now exposes the
+  DS4 compressed MLA / compressed-indexer / native FP4 MoE helper APIs that
+  were missing from the older `0.15.2` notes; endpoint validation is still
+  pending.
 
 ## Correctness
 

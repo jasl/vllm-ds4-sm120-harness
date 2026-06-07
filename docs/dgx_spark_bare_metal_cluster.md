@@ -116,15 +116,18 @@ different Torch, CUDA, CUTLASS DSL, or NCCL stack:
 
 ```bash
 cd ~/tmp/ds4-sm120-harness/vllm
-.venv/bin/python -m pip install --no-deps b12x==0.15.2
+.venv/bin/python -m pip install --no-deps b12x==0.20.0
 .venv/bin/python - <<'PY'
 import importlib.util
 
 for name in (
     "b12x",
-    "b12x.integration.tp_moe",
     "b12x.integration.mla",
-    "b12x.integration.nsa_indexer",
+    "b12x.integration.compressed_scratch",
+    "b12x.integration.compressed_indexer",
+    "b12x.integration.sparse_mla_scratch",
+    "b12x.integration.tp_moe",
+    "b12x.gemm.block_fp8_linear",
     "b12x.distributed",
 ):
     spec = importlib.util.find_spec(name)
@@ -136,7 +139,7 @@ If the target venv was created without the `pip` module, install through `uv`
 while still pointing at the vLLM Python executable:
 
 ```bash
-uv pip install --python .venv/bin/python --no-deps b12x==0.15.2
+uv pip install --python .venv/bin/python --no-deps b12x==0.20.0
 ```
 
 This is analogous to the NCCL override above: document the exact package
@@ -144,11 +147,12 @@ version and verify imports on every GB10 node before running experiments. A
 successful import does not mean b12x is active; serve logs must still show the
 selected MoE, attention, indexer, and all-reduce backends.
 
-As of the 2026-06-04 optional-dependency recheck, import success is not enough
-for b12x MLA promotion. `b12x.integration.mla` imports on GB10, but the current
-CUDA 13.0 toolkit fails while JIT-compiling the compressed MLA microbench for
-SM121 with NVPTX/ptxas `cvt` instruction errors. Treat b12x MLA as research-only
-until the microbench compiles and the end-to-end GB10 promotion matrix passes.
+As of the 2026-06-08 optional-dependency recheck, public `b12x==0.20.0` exposes
+the DS4 compressed MLA, compressed indexer, native FP4 MoE, FP8 block-linear,
+and PCIe all-reduce API surfaces that were missing from `0.15.2`. Import
+success is still not enough for promotion. Treat b12x MLA as research-only
+until the actual GB10 vLLM runtime venv imports `0.20.0`, the microbench
+compiles, and the end-to-end GB10 promotion matrix passes.
 
 For one-off kernel/configuration experiments, `scripts/dgx_spark_start_mp_serve.sh`
 can forward explicitly named environment variables to the remote vLLM processes

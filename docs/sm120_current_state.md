@@ -227,11 +227,14 @@ production code is added:
 - Use `scripts/run_b12x_stack_probe.sh` before any new B12X endpoint
   experiment to classify the target venv/image as public b12x,
   Aiden/unholy bundled b12x, FlashInfer-b12x NVFP4, or missing. Public
-  `b12x==0.15.2` exposes the generic MLA front door but does not expose the
-  DS4-specific Aiden APIs (`compressed_scratch`, `compressed_indexer`,
-  `block_fp8_linear`, or `prepare_b12x_fp4_moe_weights`). Do not treat a
-  public-b12x import pass as evidence that the Aiden/unholy DS4 compressed-MLA
-  or native-MXFP4 MoE routes are runnable.
+  `b12x==0.15.2` historically exposed only the generic MLA front door, but
+  public `b12x==0.20.0` now exposes the DS4-relevant compressed MLA scratch,
+  compressed indexer, native FP4 MoE preparation, FP8 block-linear, and PCIe
+  all-reduce APIs in an RTX PRO 6000 import-only probe. This removes the old
+  "private/bundled API only" blocker. It does not prove endpoint readiness:
+  vLLM still needs explicit DS4 metadata wiring, GB10 runtime import
+  confirmation in the actual vLLM venv, and promotion-matrix performance /
+  correctness gates before any default route change.
 - A follow-up Aiden image A/B disabled B12X MoE with
   `VLLM_USE_B12X_MOE=0`, leaving the same prefix-cache-off profile, FP8
   indexer cache, FlashInfer sparse-MLA decode autotune, NCCL version, and
@@ -272,11 +275,10 @@ production code is added:
   because that backend is wired through the NVFP4 oracle, while DS4 Flash uses
   MXFP4 experts. The Aiden/unholy route therefore depends on a native MXFP4
   B12X integration that is not the same as the current upstream
-  `flashinfer_b12x` NVFP4 path. A later public-b12x recheck confirms that
-  local-inference-lab's native-MXFP4 MoE expects `fp4_e8m0_k32` group-32 UE8M0
-  scales, while public `b12x==0.15.2` only exposes `modelopt` /
-  `compressed_tensors` W4A16 preparation with a group-16 E4M3 scale contract.
-  Treat this as blocked on dependency/API support, not as a serving-flag issue.
+  `flashinfer_b12x` NVFP4 path. Public `b12x==0.20.0` now exposes
+  `prepare_b12x_fp4_moe_weights`, so the dependency/API blocker has moved from
+  "not public" to "not integrated or endpoint-validated in current Dev". Treat
+  this as an explicit vLLM backend integration task, not a serving-flag issue.
   Future NVIDIA NVFP4 support should stay a separate quantization route: do not
   make MXFP4 DS4 Flash code depend on NVFP4 oracle assumptions, but keep the
   MoE backend boundary explicit enough that a later NVFP4 backend can share
@@ -311,9 +313,11 @@ code. The current order is:
    DeepSeek V4 attention refactors, NVIDIA-only cleanup, model-specific
    KV-cache planning, and contiguous KV packing. Prefer aligning with these
    designs over preserving local compatibility shims.
-3. Treat upstream official FlashInfer / TRTLLM sparse-MLA work as blocked for
-   SM120 / SM121 until a direct DS4 sparse-MLA FlashInfer API smoke passes on
-   the target architecture. Do not re-enter endpoint tests first.
+3. Recheck official FlashInfer / TRTLLM sparse-MLA and public b12x routes after
+   dependency updates. FlashInfer `#3395` is still unmerged, but public
+   `b12x==0.20.0` now exposes the previously missing DS4 helper APIs. Start
+   with direct import/API smokes, then endpoint tests only after the dependency
+   route is proven in the target vLLM runtime.
 4. Keep PCP / DCP / context-parallel prefill as a four-card or larger-topology
    research track, not a dual-card default-optimization path.
 5. Only after the above checks are clean, return to new candidate/value-work

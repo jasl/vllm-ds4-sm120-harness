@@ -117,9 +117,12 @@ Performance research tracks:
 
 - `vllm-project/vllm#43827` is merged and provides the official TRTLLM-gen /
   FlashInfer sparse-MLA route plus C128A metadata caching ideas. Current
-  FlashInfer `0.6.12` direct API and endpoint startup probes fail on SM120 /
-  SM121 with `Unsupported architecture`, so endpoint work on this route is
-  blocked until a direct FlashInfer DS4 sparse-MLA API smoke passes first.
+  released FlashInfer `0.6.12` direct API and endpoint startup probes failed on
+  SM120 / SM121 with `Unsupported architecture`. FlashInfer
+  `flashinfer-ai/flashinfer#3395` is the relevant unmerged SM120 sparse-MLA
+  backend. Separately, public `b12x==0.20.0` now exposes DS4 compressed MLA /
+  indexer / native FP4 MoE helper APIs, so b12x should be rechecked as a
+  dependency-unblocked endpoint-adapter route.
 - `vllm-project/vllm#43809` context-parallel prefill reports strong 128K-1M
   TTFT improvements on larger topology. Keep it as a four-card / larger-cluster
   research item, not a dual-card default path.
@@ -3822,27 +3825,50 @@ Official FlashInfer/b12x interface recheck, 2026-06-04:
   `20260604_b12x_mla_microbench_gb10_compile_fail`. The failure did not crash
   the GPUs.
 
-Decision update: keep released b12x MLA as a research-only route for now.
-FlashInfer `0.6.12` does not yet provide the missing public sparse-prefill
-wrapper, b12x compressed MLA does not beat the current D512 split+finish
-synthetic baseline on RTX, and the same b12x compressed path does not compile on
-the current GB10 CUDA 13.0 stack. Do not add a vLLM endpoint adapter or make
-b12x a default dependency until either the official FlashInfer wrapper becomes
-available or a GB10-compatible b12x path beats current Dev under the full
-promotion matrix.
+Decision update, 2026-06-04: keep released b12x MLA as a research-only route
+for that snapshot. FlashInfer `0.6.12` did not yet provide the missing public
+sparse-prefill wrapper, b12x compressed MLA did not beat the current D512
+split+finish synthetic baseline on RTX, and the same b12x compressed path did
+not compile on the then-current GB10 CUDA 13.0 stack. Do not use that result as
+a blanket rejection of newer b12x releases.
+
+Public b12x recheck, 2026-06-08:
+
+- `b12x==0.20.0` is available from PyPI. Its source history includes
+  `1ae078c` (`Support odd 16-head DSV4 prefill shapes`) before the `0.20.0`
+  release. That commit routes odd 16-head DS4 BF16-QK topk=128 prefill shapes
+  through the MG prefill path as a paired-head prefix plus single-group tail.
+- A non-mutating install into a temporary target directory, imported through
+  the existing RTX PRO 6000 vLLM Python, succeeds for
+  `b12x.integration.mla`, `b12x.integration.compressed_scratch`,
+  `b12x.integration.compressed_indexer`, `b12x.integration.sparse_mla_scratch`,
+  `b12x.integration.tp_moe`, `b12x.gemm.block_fp8_linear`, and
+  `b12x.distributed`.
+- The same probe confirms the key attributes
+  `prepare_b12x_fp4_moe_weights`, `compressed_mla_decode_forward`,
+  `sparse_mla_extend_forward`, `plan_compressed_mla_scratch`,
+  `plan_compressed_indexer_scratch`, `plan_tp_moe_scratch`,
+  `block_fp8_linear_mxfp8`, and `PCIeOneshotAllReducePool`.
+- This removes the older "Aiden-only private API" blocker. It does not prove
+  endpoint performance: GB10 currently had no reusable vLLM venv for the same
+  import probe, and no end-to-end vLLM adapter has been tested against public
+  `b12x==0.20.0`.
+- Next route: build a narrow Dev-only DS4 endpoint adapter/probe against public
+  b12x `0.20.0`, starting from direct API smoke and microbench, then endpoint
+  startup, then the promotion matrix. Keep it optional and env-gated until it
+  beats current Dev without GSM8K, FULL_AND_PIECEWISE, prefix/KV lifecycle,
+  short throughput, long-C2, or GB10 reduced long-C2 regressions.
 
 The currently installed optional stack exposes official FlashInfer b12x probes:
 `has_flashinfer_b12x_moe=True` and `has_flashinfer_b12x_gemm=True`. Those are
 not enough for DeepSeek V4 Flash because the upstream b12x MoE path is an
 NVFP4 backend, while this model's expert weights are native MXFP4. The installed
 `b12x` package exposes `b12x.integration.tp_moe`, `b12x.integration.mla`,
-`b12x.integration.nsa_indexer`, and `b12x.distributed`; the forked
-`unholy-fusion` sparse-indexer path also imports
-`b12x.integration.compressed_indexer`, which is not present in this tested
-`b12x==0.15.2` install. As of the 2026-06-02 GB10 pip index probe,
-`flashinfer-python==0.6.12`, `flashinfer-cubin==0.6.12`, and `b12x==0.15.2`
-are the latest public stable packages, so the current dependency gap is not
-resolved by a normal stable wheel upgrade.
+and `b12x.distributed`; the forked `unholy-fusion` sparse-indexer path also
+imports `b12x.integration.compressed_indexer`. The older tested
+`b12x==0.15.2` install lacked that compressed-indexer module, but public
+`b12x==0.20.0` now exposes it and the other DS4 helper APIs listed above.
+Re-run the stack probe before using any old rejected note to rule out b12x.
 
 After the optional `b12x` install, a config-only GB10 A/B tested whether opting
 out of the current DeepSeek V4 breakable-cudagraph path could explain the C=1

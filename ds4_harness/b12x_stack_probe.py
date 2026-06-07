@@ -122,7 +122,7 @@ def _classify_routes(result: Json) -> Json:
                 "compressed_mla_decode_forward",
             )
         ),
-        "note": "Released b12x MLA front door; not sufficient by itself for Aiden DS4 overlay parity.",
+        "note": "Released b12x MLA front door; endpoint parity still requires matching DS4 metadata wiring.",
     }
     routes["aiden_ds4_compressed_mla"] = {
         "ok": (
@@ -138,7 +138,7 @@ def _classify_routes(result: Json) -> Json:
                 "compressed_mla_decode_forward",
             )
         ),
-        "note": "Needed by the DS4-specific Aiden/unholy compressed MLA adapter.",
+        "note": "Needed by the DS4-specific compressed MLA adapter; public b12x>=0.20 may satisfy this.",
     }
     routes["aiden_native_mxfp4_moe"] = {
         "ok": (
@@ -154,7 +154,7 @@ def _classify_routes(result: Json) -> Json:
                 "plan_tp_moe_scratch",
             )
         ),
-        "note": "Needed by the native DS4 MXFP4/W4A16 B12X MoE backend.",
+        "note": "Needed by the native DS4 MXFP4/W4A16 B12X MoE backend; distinct from FlashInfer NVFP4 MoE.",
     }
     routes["b12x_fp8_linear"] = {
         "ok": _module_ok(result, "b12x.gemm.block_fp8_linear"),
