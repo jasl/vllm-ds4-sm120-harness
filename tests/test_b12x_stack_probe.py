@@ -141,6 +141,19 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
         "b12x.gemm.block_fp8_linear": types.SimpleNamespace(
             block_fp8_linear_mxfp8=object(),
         ),
+        "b12x.gemm.wo_projection": types.SimpleNamespace(
+            pack_wo_projection_fp8_block_scaled_weights_mxfp8=object(),
+            plan_wo_projection_scratch=object(),
+            wo_projection_inv_rope_mxfp8=object(),
+        ),
+        "b12x.integration.residual": types.SimpleNamespace(
+            B12XMHCScratchCaps=object(),
+            MHC_DEFAULT_BLOCK_K=object(),
+            MHC_MULT=object(),
+            b12x_mhc_post=object(),
+            b12x_mhc_pre=object(),
+            plan_mhc_scratch=object(),
+        ),
         "b12x.distributed": types.SimpleNamespace(PCIeOneshotAllReducePool=object()),
         "b12x.attention.mla.compressed_reference": types.SimpleNamespace(
             compressed_mla_page_nbytes=lambda page_size: 37440
@@ -167,6 +180,8 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
     assert result["routes"]["aiden_native_mxfp4_moe"]["ok"] is True
     assert result["routes"]["public_b12x_sparse_indexer_extend"]["ok"] is True
     assert result["routes"]["b12x_fp8_linear"]["ok"] is True
+    assert result["routes"]["aiden_b12x_wo_projection"]["ok"] is True
+    assert result["routes"]["aiden_b12x_mhc_residual"]["ok"] is True
     assert result["routes"]["pcie_oneshot_allreduce"]["ok"] is True
     assert result["layouts"]["b12x_compressed_mla"]["ok"] is True
     assert result["layouts"]["b12x_compressed_mla"]["vllm_zero_copy_compatible"] is False
@@ -197,6 +212,15 @@ def test_b12x_stack_probe_classifies_aiden_runtime_paths(monkeypatch):
         "vllm.envs": types.SimpleNamespace(
             VLLM_USE_B12X_SPARSE_INDEXER=False,
             VLLM_USE_B12X_MOE=False,
+            VLLM_USE_B12X_MHC=False,
+            VLLM_USE_B12X_WO_PROJECTION=False,
+        ),
+        "vllm.models.deepseek_v4.attention": types.SimpleNamespace(
+            deepseek_v4_b12x_wo_projection=object(),
+        ),
+        "vllm.models.deepseek_v4.nvidia.model": types.SimpleNamespace(
+            _deepseek_v4_b12x_mhc_pre_op=object(),
+            _deepseek_v4_b12x_mhc_post_op=object(),
         ),
         "vllm.model_executor.layers.sparse_attn_indexer": types.SimpleNamespace(
             _use_b12x_sparse_indexer=lambda: True,
@@ -223,6 +247,8 @@ def test_b12x_stack_probe_classifies_aiden_runtime_paths(monkeypatch):
     assert result["runtime_routes"]["runtime_ds4_b12x_compressed_mla_adapter"][
         "ok"
     ] is False
+    assert result["runtime_routes"]["runtime_ds4_b12x_wo_projection"]["ok"] is True
+    assert result["runtime_routes"]["runtime_ds4_b12x_mhc"]["ok"] is True
     assert result["runtime_routes"]["runtime_v32_b12x_mla_sparse"]["ok"] is False
 
 

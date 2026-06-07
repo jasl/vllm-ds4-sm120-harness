@@ -73,6 +73,25 @@ MODULES = (
         ),
     ),
     ModuleProbe("b12x.gemm.block_fp8_linear"),
+    ModuleProbe(
+        "b12x.gemm.wo_projection",
+        (
+            "pack_wo_projection_fp8_block_scaled_weights_mxfp8",
+            "plan_wo_projection_scratch",
+            "wo_projection_inv_rope_mxfp8",
+        ),
+    ),
+    ModuleProbe(
+        "b12x.integration.residual",
+        (
+            "B12XMHCScratchCaps",
+            "MHC_DEFAULT_BLOCK_K",
+            "MHC_MULT",
+            "b12x_mhc_post",
+            "b12x_mhc_pre",
+            "plan_mhc_scratch",
+        ),
+    ),
     ModuleProbe("b12x.distributed", ("PCIeOneshotAllReducePool",)),
     ModuleProbe("flashinfer.fused_moe", ("b12x_fused_moe",)),
 )
@@ -97,6 +116,17 @@ VLLM_MODULES = (
     ModuleProbe(
         "vllm.v1.attention.backends.mla.b12x_mla_sparse",
         ("B12xMLASparseBackend", "B12xMLASparseImpl"),
+    ),
+    ModuleProbe(
+        "vllm.models.deepseek_v4.attention",
+        ("deepseek_v4_b12x_wo_projection",),
+    ),
+    ModuleProbe(
+        "vllm.models.deepseek_v4.nvidia.model",
+        (
+            "_deepseek_v4_b12x_mhc_pre_op",
+            "_deepseek_v4_b12x_mhc_post_op",
+        ),
     ),
     ModuleProbe(
         "vllm.model_executor.layers.sparse_attn_indexer",
@@ -239,6 +269,43 @@ def _classify_routes(result: Json) -> Json:
         "ok": _module_ok(result, "b12x.gemm.block_fp8_linear"),
         "note": "Needed by unholy B12X FP8 block-scaled linear integration.",
     }
+    routes["aiden_b12x_wo_projection"] = {
+        "ok": (
+            _has_attr(
+                result,
+                "b12x.gemm.wo_projection",
+                "pack_wo_projection_fp8_block_scaled_weights_mxfp8",
+            )
+            and _has_attr(
+                result,
+                "b12x.gemm.wo_projection",
+                "plan_wo_projection_scratch",
+            )
+            and _has_attr(
+                result,
+                "b12x.gemm.wo_projection",
+                "wo_projection_inv_rope_mxfp8",
+            )
+        ),
+        "note": "Needed by Aiden/unholy fused DS4 WO-A/WO-B projection path.",
+    }
+    routes["aiden_b12x_mhc_residual"] = {
+        "ok": (
+            _has_attr(
+                result,
+                "b12x.integration.residual",
+                "B12XMHCScratchCaps",
+            )
+            and _has_attr(
+                result,
+                "b12x.integration.residual",
+                "plan_mhc_scratch",
+            )
+            and _has_attr(result, "b12x.integration.residual", "b12x_mhc_pre")
+            and _has_attr(result, "b12x.integration.residual", "b12x_mhc_post")
+        ),
+        "note": "Needed by Aiden/unholy B12X mHC pre/post residual mixing path.",
+    }
     routes["pcie_oneshot_allreduce"] = {
         "ok": _has_attr(result, "b12x.distributed", "PCIeOneshotAllReducePool"),
         "note": "Needed by unholy's b12x PCIe all-reduce path.",
@@ -292,6 +359,37 @@ def _classify_runtime_routes(result: Json) -> Json:
             )
         ),
         "note": "vLLM runtime exposes the non-DS4 B12X MLA sparse backend.",
+    }
+    runtime_routes["runtime_ds4_b12x_wo_projection"] = {
+        "ok": (
+            _vllm_has_attr(
+                result,
+                "vllm.envs",
+                "VLLM_USE_B12X_WO_PROJECTION",
+            )
+            and _vllm_has_attr(
+                result,
+                "vllm.models.deepseek_v4.attention",
+                "deepseek_v4_b12x_wo_projection",
+            )
+        ),
+        "note": "vLLM runtime exposes the DS4 B12X WO projection switch and op.",
+    }
+    runtime_routes["runtime_ds4_b12x_mhc"] = {
+        "ok": (
+            _vllm_has_attr(result, "vllm.envs", "VLLM_USE_B12X_MHC")
+            and _vllm_has_attr(
+                result,
+                "vllm.models.deepseek_v4.nvidia.model",
+                "_deepseek_v4_b12x_mhc_pre_op",
+            )
+            and _vllm_has_attr(
+                result,
+                "vllm.models.deepseek_v4.nvidia.model",
+                "_deepseek_v4_b12x_mhc_post_op",
+            )
+        ),
+        "note": "vLLM runtime exposes the DS4 B12X mHC switch and custom ops.",
     }
     runtime_routes["runtime_b12x_sparse_indexer"] = {
         "ok": _vllm_has_attr(

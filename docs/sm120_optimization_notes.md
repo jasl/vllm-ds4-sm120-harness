@@ -9529,6 +9529,13 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   should first isolate the broader sparse-MLA/indexer dataflow and avoid
   replacing current Dev's existing direct top-k and short-row decode safeguards
   unless an endpoint A/B proves a gain.
+- **WO/MHC route update:** the stack probe now also separates Aiden/unholy
+  fused DS4 WO projection (`b12x.gemm.wo_projection`) and B12X mHC residual
+  mixing (`b12x.integration.residual`) from the other b12x surfaces. These are
+  not proof of an endpoint backend by themselves: vLLM must also expose the
+  matching DS4 runtime hooks (`runtime_ds4_b12x_wo_projection` and
+  `runtime_ds4_b12x_mhc`). Keep WO/MHC as separately measurable components
+  rather than folding their effects into the sparse-MLA or MoE attribution.
 
 ### 2026-06-08 Public b12x 0.20 KV-layout probe
 
