@@ -170,6 +170,11 @@ production code is added:
   scratch fixes. The Model Runner V2 enablement alone is unlikely to explain
   the prefill gap, but it may be required for that stack's warmup/scratch
   compatibility.
+- Use `scripts/run_gb10_b12x_backend_ab_matrix.sh` for that comparison. It
+  wraps the existing GB10 prefill-gap gate and takes semicolon-separated
+  `GB10_B12X_AB_TARGETS` entries in
+  `label|vllm_root|vllm_venv|profiles|variants|env_file` form, so fork-specific
+  backend flags can live in ignored local env files instead of tracked docs.
 - Revisit older rejected-note wording when using it to guide new work. The
   prior negative results remain valid for public-wheel direct API probes,
   simple serving-flag changes, selector-only swaps, and local split-launch

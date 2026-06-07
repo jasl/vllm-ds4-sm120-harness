@@ -1559,6 +1559,33 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     assert "/Users/" not in script
 
 
+def test_gb10_b12x_backend_ab_matrix_wraps_prefill_gap_gate():
+    script = (
+        ROOT / "scripts" / "run_gb10_b12x_backend_ab_matrix.sh"
+    ).read_text(encoding="utf-8")
+    current_state = (ROOT / "docs" / "sm120_current_state.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "GB10_B12X_AB_TARGETS" in script
+    assert "label|vllm_root|vllm_venv|profiles|variants|env_file" in script
+    assert "run_gb10_prefill_gap_attribution.sh" in script
+    assert 'GB10_PREFILL_GAP_PROFILES="${profiles}"' in script
+    assert 'GB10_PREFILL_GAP_VARIANTS="${variants}"' in script
+    assert 'GB10_PREFILL_GAP_INPUT_LENS="${GB10_B12X_AB_INPUT_LENS}"' in script
+    assert (
+        'GB10_PREFILL_GAP_PREFIX_CACHE_MODES="${GB10_B12X_AB_PREFIX_CACHE_MODES}"'
+        in script
+    )
+    assert 'GB10_PREFILL_GAP_CONCURRENCY="${GB10_B12X_AB_CONCURRENCY}"' in script
+    assert "gb10_b12x_backend_ab_matrix_summary.json" in script
+    assert "gb10_b12x_backend_ab_matrix_summary.md" in script
+    assert "10.0.0." not in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+    assert "run_gb10_b12x_backend_ab_matrix.sh" in current_state
+
+
 def test_sm12x_dp_ep_oom_reduced_gate_tracks_user_report_shape():
     script = (
         ROOT / "scripts" / "run_sm12x_dp_ep_oom_reduced_gate.sh"
