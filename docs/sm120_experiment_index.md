@@ -236,6 +236,9 @@ that thread, search `External unholy-fusion feedback refresh`.
   `docs/sm120_optimization_notes.md` and search
   `Aiden Image Parity Recheck`, `Sparse-indexer-only A/B`, or
   `Public image control-plane correction`.
+- B12X optional stack capability probe:
+  `scripts/run_b12x_stack_probe.sh`; open `docs/sm120_optimization_notes.md`
+  and search `B12X stack capability probe and route split`.
 
 ## Correctness
 

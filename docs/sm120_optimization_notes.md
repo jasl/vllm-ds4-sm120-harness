@@ -9375,3 +9375,62 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   changes: DeepGEMM provides a fused logits+top-k / sparse-indexer primitive,
   vLLM/custom-all-reduce graph profiling changes, or a same-work endpoint A/B
   can pass startup plus the promotion matrix.
+
+### 2026-06-08 B12X stack capability probe and route split
+
+- **Trigger:** the Aiden/unholy GB10 target is still ahead of current Dev on
+  raw prefix-off prefill, but earlier analysis mixed several separate B12X
+  surfaces: public released `b12x`, upstream FlashInfer-b12x NVFP4 kernels,
+  local-inference-lab's generic `B12X_MLA_SPARSE`, and the public Aiden image's
+  bundled DS4-specific compressed-MLA / native-MXFP4 overlay.
+- **Harness update:** added `scripts/run_b12x_stack_probe.sh` and
+  `ds4_harness.b12x_stack_probe`. The probe is import-only and writes JSON/MD
+  route readiness for:
+  - released/public b12x MLA front door;
+  - Aiden DS4-specific compressed MLA (`compressed_scratch` plus
+    `compressed_mla_decode_forward`);
+  - native DS4 MXFP4/W4A16 B12X MoE (`prepare_b12x_fp4_moe_weights` plus
+    `tp_moe` runtime);
+  - B12X FP8 block-scaled linear;
+  - B12X PCIe oneshot all-reduce;
+  - upstream FlashInfer-b12x NVFP4 MoE.
+- **RTX probe result:** the current dual-RTX target venv reports
+  `b12x==0.15.2`, `flashinfer-python==0.6.12`, `flashinfer-cubin==0.6.12`,
+  and `flashinfer-jit-cache==0.6.12+cu130`. It imports
+  `b12x.integration.mla` and `b12x.integration.tp_moe`, but it does **not**
+  provide `b12x.integration.compressed_scratch`,
+  `b12x.integration.compressed_indexer`,
+  `b12x.integration.sparse_mla_scratch`, or `b12x.gemm.block_fp8_linear`.
+  `b12x.integration` exposes `prepare_b12x_w4a16_packed_weights`, not
+  `prepare_b12x_fp4_moe_weights`.
+- **Aiden image import probe:** the public Aiden GB10 image reports
+  `b12x==0.15.3`, `flashinfer-python==0.6.12`,
+  `flashinfer-cubin==0.6.11.post3`, no `flashinfer-jit-cache` package
+  metadata, and `nvidia-cutlass-dsl==4.5.1`. Unlike the public venv, it imports
+  `b12x.integration.compressed_scratch`,
+  `b12x.integration.compressed_indexer`,
+  `b12x.integration.sparse_mla_scratch`, `b12x.gemm.block_fp8_linear`, and
+  exposes `prepare_b12x_fp4_moe_weights`, `b12x_moe_fp4`,
+  `plan_tp_moe_scratch`, and `PCIeOneshotAllReducePool`. This confirms the
+  image carries a different bundled/API-compatible B12X stack, not merely the
+  public dependency set with serving flags.
+- **Code audit split:**
+  - `local-inference-lab`'s generic `B12X_MLA_SPARSE` backend targets a
+    V32/GLM-NSA-style head-576 / 656B-token layout. It is not the direct DS4
+    compressed-MLA path to port into this branch.
+  - The Aiden image overlay's `vllm/models/deepseek_v4/nvidia/b12x.py` is the
+    DS4-specific path: it uses 512-dim Q/V, 584B `fp8_ds_mla` pages, SWA plus
+    indexed compressed cache, and `compressed_mla_decode_forward` with a fresh
+    plan/bind scratch.
+  - The native B12X MXFP4 MoE file is a separate DS4 W4A16 path, not the
+    upstream FlashInfer-b12x NVFP4 backend now present in vLLM. Aiden MoE-off
+    A/B showed it is a small positive component, not the main raw-prefill gap.
+  - unholy also carries a B12X PCIe oneshot all-reduce path and a CUDA graph
+    capture stream fix. Treat that as a stability/throughput candidate for
+    two-node GB10, not as the first explanation for long-prefill speed.
+- **Decision:** next implementation experiments should not retry public-b12x
+  env-only switches. The next viable code path is to reproduce or minimally
+  adapt the **DS4-specific Aiden compressed-MLA dataflow** against current
+  `flashmla.py` metadata/cache layout, gated first by the stack probe and a
+  small import/API smoke. If the bundled b12x APIs are unavailable, keep the
+  route blocked rather than writing another generic adapter.

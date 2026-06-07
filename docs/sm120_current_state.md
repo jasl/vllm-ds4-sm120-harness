@@ -224,6 +224,14 @@ production code is added:
   prefix-on public recipe widens the observed 32K/64K gap to about `2.6x`, but
   that path had prefix-cache hits and should not be treated as pure kernel
   evidence.
+- Use `scripts/run_b12x_stack_probe.sh` before any new B12X endpoint
+  experiment to classify the target venv/image as public b12x,
+  Aiden/unholy bundled b12x, FlashInfer-b12x NVFP4, or missing. Public
+  `b12x==0.15.2` exposes the generic MLA front door but does not expose the
+  DS4-specific Aiden APIs (`compressed_scratch`, `compressed_indexer`,
+  `block_fp8_linear`, or `prepare_b12x_fp4_moe_weights`). Do not treat a
+  public-b12x import pass as evidence that the Aiden/unholy DS4 compressed-MLA
+  or native-MXFP4 MoE routes are runnable.
 - A follow-up Aiden image A/B disabled B12X MoE with
   `VLLM_USE_B12X_MOE=0`, leaving the same prefix-cache-off profile, FP8
   indexer cache, FlashInfer sparse-MLA decode autotune, NCCL version, and
