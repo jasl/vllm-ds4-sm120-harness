@@ -138,6 +138,12 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
             block_fp8_linear_mxfp8=object(),
         ),
         "b12x.distributed": types.SimpleNamespace(PCIeOneshotAllReducePool=object()),
+        "b12x.attention.mla.compressed_reference": types.SimpleNamespace(
+            compressed_mla_page_nbytes=lambda page_size: 37440
+            if page_size == 64
+            else page_size * 584,
+            compressed_mla_scale_region_offset=lambda page_size: page_size * 576,
+        ),
         "flashinfer.fused_moe": types.SimpleNamespace(b12x_fused_moe=object()),
     }
 
@@ -157,6 +163,9 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
     assert result["routes"]["aiden_native_mxfp4_moe"]["ok"] is True
     assert result["routes"]["b12x_fp8_linear"]["ok"] is True
     assert result["routes"]["pcie_oneshot_allreduce"]["ok"] is True
+    assert result["layouts"]["b12x_compressed_mla"]["ok"] is True
+    assert result["layouts"]["b12x_compressed_mla"]["vllm_zero_copy_compatible"] is False
+    assert result["routes"]["public_b12x_vllm_fp8_ds_mla_zero_copy"]["ok"] is False
 
 
 def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
@@ -166,6 +175,13 @@ def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
             "b12x.integration.mla": {
                 "ok": True,
                 "attributes": {"compressed_mla_decode_forward": True},
+            }
+        },
+        "layouts": {
+            "b12x_compressed_mla": {
+                "ok": True,
+                "vllm_zero_copy_compatible": False,
+                "reason": "page-packed layout does not match vLLM rows",
             }
         },
         "routes": {
@@ -183,6 +199,7 @@ def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
     assert "# B12X Stack Probe" in text
     assert "`aiden_ds4_compressed_mla`" in text
     assert "missing compressed scratch" in text
+    assert "page-packed layout does not match vLLM rows" in text
 
 
 def test_b12x_stack_probe_cli_writes_json_and_markdown(monkeypatch, tmp_path: Path):

@@ -38,6 +38,13 @@ Install `ray[cgraph,default]` in the same venv only when validating Ray compiled
 graph or pipeline-parallel test paths. Avoid a standalone Ray venv unless the
 vLLM venv imports that same site-packages tree explicitly.
 
+For dependency-route experiments, keep a clean local base venv on each host and
+copy it into route-specific venvs before installing optional stacks such as
+FlashInfer PR wheels, b12x, or DeepGEMM. This keeps failed experiments from
+polluting the routine vLLM venv and makes it cheap to compare multiple backend
+routes. Record the derived venv path in an ignored local handoff note; do not
+put site-specific absolute paths in tracked docs.
+
 Before using a fresh GB10/DGX Spark environment for DeepSeek V4, upgrade NCCL to
 the latest NVIDIA build that matches the CUDA runtime. Do this as part of
 environment bootstrap, before debugging vLLM scheduler, CUDA graph, or sparse MLA
@@ -153,7 +160,12 @@ and PCIe all-reduce API surfaces that were missing from `0.15.2`. Import
 success is still not enough for promotion. The public `0.20.0` package has
 compiled and run the single-GPU compressed-MLA microbench on both GB10 nodes,
 but treat b12x MLA as research-only until a real vLLM endpoint adapter selects
-that path and the end-to-end GB10 promotion matrix passes.
+that path and the end-to-end GB10 promotion matrix passes. The public b12x
+compressed-MLA high-level cache layout is page-packed:
+`[page_size * 576 payload bytes][page_size * 8 scale bytes][padding]`. Current
+vLLM `fp8_ds_mla` cache rows are token-interleaved `584` byte records. Do not
+assume a zero-copy b12x endpoint adapter is possible without a layout-specific
+lower-level API, a repack step, or a cache-layout change.
 
 For one-off kernel/configuration experiments, `scripts/dgx_spark_start_mp_serve.sh`
 can forward explicitly named environment variables to the remote vLLM processes

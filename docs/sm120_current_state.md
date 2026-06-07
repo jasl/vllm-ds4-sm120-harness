@@ -137,9 +137,15 @@ now exposes DS4 compressed-MLA/indexer/native FP4 MoE helper APIs and compiles
 the compressed-MLA microbench on RTX PRO 6000 SM120 and both GB10 nodes. In the
 endpoint-like real-C128 microbench, b12x is much faster than the older packed
 online helper, but still slower than the current D512 split+finish kernel-only
-timing. The remaining question is therefore end-to-end dataflow: whether a
-Dev-only adapter can remove enough gather/dequant/value traffic to beat the
-current endpoint without correctness or promotion-matrix regressions.
+timing. A follow-up layout probe shows that the public b12x compressed-MLA API
+does not zero-copy match the current vLLM `fp8_ds_mla` KV cache: b12x expects
+page-packed payload followed by page-packed scale bytes, while vLLM stores
+584B token-interleaved records. The remaining question is therefore narrower
+than "install b12x and call it": either find a lower-level b12x / FlashInfer
+entrypoint that truly supports the vLLM layout, add a measured repack prototype
+as a diagnostic only, or change / mirror cache layout behind a guarded backend.
+Do not add a production endpoint adapter until that dataflow question is
+resolved and the promotion matrix stays green.
 
 ## Active Direction
 

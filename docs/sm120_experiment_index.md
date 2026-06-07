@@ -246,6 +246,12 @@ that thread, search `External unholy-fusion feedback refresh`.
   DS4 compressed MLA / compressed-indexer / native FP4 MoE helper APIs that
   were missing from the older `0.15.2` notes; endpoint validation is still
   pending.
+- Public b12x 0.20 KV-layout compatibility:
+  open `docs/sm120_optimization_notes.md` and search
+  `Public b12x 0.20 KV-layout probe`. Current conclusion: public b12x's
+  compressed MLA API uses page-packed payload-then-scale bytes, while vLLM's
+  `fp8_ds_mla` cache is 584B token-interleaved. Do not retry env-only b12x or
+  a naive zero-copy adapter unless the backend layout contract changes.
 
 ## Correctness
 

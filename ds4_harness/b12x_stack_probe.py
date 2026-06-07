@@ -70,6 +70,10 @@ MODULES = (
     ModuleProbe("flashinfer.fused_moe", ("b12x_fused_moe",)),
 )
 
+VLLM_FP8_DS_MLA_TOKEN_BYTES = 584
+B12X_DSV4_PAYLOAD_BYTES = 576
+LAYOUT_PROBE_PAGE_SIZE = 64
+
 
 def _module_ok(result: Json, name: str) -> bool:
     module = result["modules"].get(name, {})
@@ -112,6 +116,7 @@ def _probe_module(probe: ModuleProbe) -> Json:
 
 def _classify_routes(result: Json) -> Json:
     routes: Json = {}
+    b12x_layout = result.get("layouts", {}).get("b12x_compressed_mla", {})
 
     routes["public_b12x_mla"] = {
         "ok": (
@@ -168,7 +173,75 @@ def _classify_routes(result: Json) -> Json:
         "ok": _has_attr(result, "flashinfer.fused_moe", "b12x_fused_moe"),
         "note": "Current upstream NVFP4 FlashInfer B12X MoE path, not native DS4 MXFP4.",
     }
+    routes["public_b12x_vllm_fp8_ds_mla_zero_copy"] = {
+        "ok": (
+            routes["public_b12x_mla"]["ok"]
+            and bool(b12x_layout.get("vllm_zero_copy_compatible"))
+        ),
+        "note": (
+            "Whether public b12x compressed-MLA can consume current vLLM "
+            "fp8_ds_mla cache without repack or alternate layout."
+        ),
+    }
     return routes
+
+
+def _probe_b12x_compressed_mla_layout() -> Json:
+    try:
+        module = importlib.import_module(
+            "b12x.attention.mla.compressed_reference"
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": type(exc).__name__,
+            "detail": str(exc),
+        }
+
+    try:
+        page_nbytes = int(module.compressed_mla_page_nbytes(LAYOUT_PROBE_PAGE_SIZE))
+        scale_offset = int(
+            module.compressed_mla_scale_region_offset(LAYOUT_PROBE_PAGE_SIZE)
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": type(exc).__name__,
+            "detail": str(exc),
+        }
+
+    vllm_page_nbytes = LAYOUT_PROBE_PAGE_SIZE * VLLM_FP8_DS_MLA_TOKEN_BYTES
+    b12x_token0_scale_offset = scale_offset
+    b12x_token1_payload_offset = B12X_DSV4_PAYLOAD_BYTES
+    vllm_token0_scale_offset = B12X_DSV4_PAYLOAD_BYTES
+    vllm_token1_payload_offset = VLLM_FP8_DS_MLA_TOKEN_BYTES
+    compatible = (
+        page_nbytes == vllm_page_nbytes
+        and b12x_token0_scale_offset == vllm_token0_scale_offset
+        and b12x_token1_payload_offset == vllm_token1_payload_offset
+    )
+    reason = (
+        "layout offsets match current vLLM fp8_ds_mla rows"
+        if compatible
+        else (
+            "page-packed layout does not match vLLM 584B token-interleaved "
+            "fp8_ds_mla rows"
+        )
+    )
+
+    return {
+        "ok": True,
+        "page_size": LAYOUT_PROBE_PAGE_SIZE,
+        "b12x_page_nbytes": page_nbytes,
+        "b12x_scale_region_offset": scale_offset,
+        "b12x_token0_scale_offset": b12x_token0_scale_offset,
+        "b12x_token1_payload_offset": b12x_token1_payload_offset,
+        "vllm_page_nbytes": vllm_page_nbytes,
+        "vllm_token0_scale_offset": vllm_token0_scale_offset,
+        "vllm_token1_payload_offset": vllm_token1_payload_offset,
+        "vllm_zero_copy_compatible": compatible,
+        "reason": reason,
+    }
 
 
 def probe_b12x_stack() -> Json:
@@ -178,6 +251,9 @@ def probe_b12x_stack() -> Json:
             name: _probe_distribution(name) for name in DISTRIBUTIONS
         },
         "modules": {probe.name: _probe_module(probe) for probe in MODULES},
+    }
+    result["layouts"] = {
+        "b12x_compressed_mla": _probe_b12x_compressed_mla_layout(),
     }
     result["routes"] = _classify_routes(result)
     return result
@@ -212,6 +288,23 @@ def write_b12x_stack_probe_markdown(path: Path, result: Json) -> None:
         ) or "-"
         status = "ok" if row.get("ok") else row.get("error", "fail")
         lines.append(f"| `{name}` | `{status}` | `{attr_text}` |")
+
+    lines.extend(
+        [
+            "",
+            "## Layout Compatibility",
+            "",
+            "| layout | probe | vLLM zero-copy compatible | reason |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    for name, row in result.get("layouts", {}).items():
+        status = "ok" if row.get("ok") else row.get("error", "fail")
+        lines.append(
+            f"| `{name}` | `{status}` | "
+            f"`{bool(row.get('vllm_zero_copy_compatible'))}` | "
+            f"{row.get('reason', row.get('detail', ''))} |"
+        )
 
     lines.extend(
         [
