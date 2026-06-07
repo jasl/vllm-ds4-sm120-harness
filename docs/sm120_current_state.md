@@ -196,11 +196,21 @@ production code is added:
   external-backend comparison, not a promotion gate for our vLLM branch. The
   helper keeps the request model alias separate from the real DS4 tokenizer so
   a valid server is not misclassified by a client-side tokenizer lookup.
-  The latest helper diagnostic fixed that alias/tokenizer split and reached the
-  benchmark client, but the boot already contained new NVRM `NV_ERR_NO_MEMORY`
-  signals during startup/warmup. Treat that as a dirty-driver diagnostic only;
-  rerun after a clean reboot before comparing Aiden image performance with the
-  current Dev branch.
+  The clean-reboot GB10 smoke after the alias/tokenizer fix is now valid:
+  the Aiden image completed a reduced `4096 -> 16` random-prefill request with
+  driver signal count `0`, selected B12X MXFP4 MoE plus FlashInfer sparse-MLA
+  decode autotune markers, and measured about `1086 tok/s` input throughput
+  with `3.04s` TTFT. The same reduced current-Dev bare-metal shape selected
+  MARLIN MXFP4 MoE and measured about `803 tok/s` input throughput with
+  `4.29s` TTFT. Treat this as a small diagnostic that proves a real backend
+  difference, not as a full Reddit-scale reproduction.
+- Public/official b12x MoE is still not a direct current-Dev solution for
+  DeepSeek V4 Flash. `VLLM_USE_B12X_MOE=1` is not a recognized vLLM env on the
+  current branch, and explicit `--moe-backend flashinfer_b12x` fails closed
+  because that backend is wired through the NVFP4 oracle, while DS4 Flash uses
+  MXFP4 experts. The Aiden/unholy route therefore depends on a native MXFP4
+  B12X integration that is not the same as the current upstream
+  `flashinfer_b12x` NVFP4 path.
 - Revisit older rejected-note wording when using it to guide new work. The
   prior negative results remain valid for public-wheel direct API probes,
   simple serving-flag changes, selector-only swaps, and local split-launch

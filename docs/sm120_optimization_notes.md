@@ -7618,6 +7618,55 @@ Aiden image parity harness update, 2026-06-08:
   driver-health gate. If any NVRM/Xid/UVM/GPU-lost signal appears, classify the
   result as a driver-health failure, not as a valid throughput comparison.
 
+Clean-reboot Aiden image parity and current-Dev reduced comparison,
+2026-06-08:
+
+- After reboot, both GB10 nodes had clean current-boot GPU driver-health
+  signals for the harness gate: no Xid/UVM/lost-GPU/`NV_ERR_NO_MEMORY` lines.
+  The harness checkout was synced to the current control-machine commit before
+  running the smoke.
+- Aiden image reduced smoke:
+  `artifacts/main/2x_gb10_sm121/gb10_aiden_image_parity_smoke_131k/20260608010224`.
+  Profile: two-node GB10, Docker image
+  `aidendle94/sparkrun-vllm-ds4-gb10:production-ready`,
+  `max_model_len=131072`, `max_num_seqs=2`,
+  `max_num_batched_tokens=4096`, `gpu_memory_utilization=0.70`,
+  prefix cache enabled, MTP=2, FP8 KV, `FULL_AND_PIECEWISE`, one
+  `4096 -> 16` random-prefill request.
+- Result: startup exit `0`, benchmark exit `0`, post-run driver signal count
+  `0`. Backend evidence showed B12X MXFP4 MoE, FlashInfer top-k/top-p,
+  FlashInfer sparse-MLA decode autotune cache, fp8_ds_mla KV, FP8 indexer
+  cache, DeepGEMM FP8, NCCL `2.30.x`, and MTP. The single request measured
+  `1086.47 input tok/s`, `4.25 decode tok/s`, mean TTFT `3040.58 ms`, and
+  p99 ITL `255.55 ms`.
+- Current-Dev same-shape bare-metal control:
+  `artifacts/main/2x_gb10_sm121/gb10_prefill_gap_dev_smoke_4096/20260608010914`.
+  Same reduced request shape and serving envelope, but using the current dev
+  checkout. Result: benchmark exit `0`; backend evidence showed fp8_ds_mla KV
+  and FP8 indexer cache, but MoE selected `MARLIN` MXFP4. The single request
+  measured `803.14 input tok/s`, `3.14 decode tok/s`, mean TTFT `4292.11 ms`,
+  and p99 ITL `365.13 ms`.
+- Interpretation: this small clean smoke does not reproduce the full Reddit
+  1M/C=6-style numbers, but it proves the Aiden image is not just serving-flag
+  tuning. It activates a real backend stack difference and is about `35%`
+  higher input throughput than current Dev on the reduced 4K smoke. Because the
+  run is a single small request, use it as direction-setting evidence, not as a
+  promotion benchmark.
+- Rejected config-only b12x attempts on current Dev:
+  - `VLLM_USE_B12X_MOE=1` is not a recognized vLLM environment variable in the
+    current branch. The reduced run still selected `MARLIN` MXFP4 MoE:
+    `artifacts/main/2x_gb10_sm121/gb10_prefill_gap_dev_b12x_moe_smoke_4096/20260608011617`.
+    It measured `939.45 input tok/s` and TTFT `3842.52 ms`, but that is a
+    MARLIN/noisy rerun, not a b12x result.
+  - Explicit `--moe-backend flashinfer_b12x` fails closed during startup:
+    `moe_backend='flashinfer_b12x' is not supported for MXFP4 MoE`. This is
+    expected from the code: upstream/current `flashinfer_b12x` is wired through
+    the NVFP4 oracle, while DeepSeek V4 Flash uses MXFP4 experts.
+- Next useful route: compare or port the native MXFP4 B12X MoE integration
+  from the Aiden/unholy stack separately from the existing upstream NVFP4
+  `flashinfer_b12x` backend. Do not retry the env-only switch or NVFP4 backend
+  path unless upstream adds MXFP4 support or the dependency stack changes.
+
 GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
 
 - Goal: restart the raw sparse-MLA work-reduction line after GB10 reboot and
