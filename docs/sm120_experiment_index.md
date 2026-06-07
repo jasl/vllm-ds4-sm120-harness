@@ -98,6 +98,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Exact chunked D512 online merge:
   open `docs/sm120_optimization_notes.md` and search
   `Exact chunked D512 online-merge prototype`.
+- Forum #53 GB10 multi-user prefix-cache gate:
+  open `docs/sm120_current_state.md` and search
+  `Forum #53 GB10 multi-user prefix-cache smoke`.
 - Rejected grouped-combined C128A reuse microbench:
   open `docs/sm120_optimization_notes.md` and search
   `Rejected grouped-combined C128A reuse microbench`.

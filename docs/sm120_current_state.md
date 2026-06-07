@@ -250,6 +250,33 @@ This is also materially better than the 2026-06-01 GB10 wrapper reference
 (`mtp2` `229.923s` / `0.479s`, `nomtp` `229.434s` / `0.596s`). Continue to keep
 GB10 reduced long-C2 in the promotion matrix for future sparse-MLA changes.
 
+Forum #53 GB10 multi-user prefix-cache smoke, 2026-06-07: the reported
+multi-user admission/fairness problem is reproducible on the current PR branch.
+With TP=2, no-MTP, prefix cache enabled, `max_model_len=262144`,
+`max_num_seqs=8`, `max_num_batched_tokens=6144`, and a C=6 streaming-pressure
+shape, all six requests completed, but runtime metrics showed
+`running_requests_max=1`, `waiting_requests_max=5`, max TTFT `356.230s`, and
+ITL p99 `0.052558s`. That points at scheduler/KV admission and long-prefill
+queueing rather than decode cadence. The dedicated harness entry is
+`scripts/run_gb10_forum53_multi_user_gate.sh`; use it to sweep
+`max_num_batched_tokens=2048,3072,4096,6144,8192` and compare C=6/C=8 before
+changing vLLM scheduling behavior.
+
+The first C=6 no-MTP sweep completed after rebooting once to clear a driver OOM
+log left by an earlier combined sweep attempt. Final clean-boot C=6 data:
+
+| max_num_batched_tokens | Requests | Failures | Max TTFT | ITL p99 | running max | waiting max | KV max |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `2048` | `6` | `0` | `370.940s` | `0.052921s` | `1.0` | `5.0` | `8.58%` |
+| `3072` | `6` | `0` | `361.843s` | `0.042915s` | `1.0` | `5.0` | `9.99%` |
+| `4096` | `6` | `0` | `350.376s` | `0.051967s` | `1.0` | `5.0` | `11.20%` |
+| `6144` | `6` | `0` | `356.230s` | `0.052558s` | `1.0` | `5.0` | `14.12%` |
+| `8192` | `6` | `0` | `352.118s` | `0.051635s` | `1.0` | `5.0` | `17.18%` |
+
+Lowering `max_num_batched_tokens` did not restore active concurrency. Treat
+this as a scheduler/admission or KV-budgeting investigation, not as another
+chunk-size tuning problem.
+
 Persistent TODO: the next production-class prefill improvement must reduce
 long-prefill sparse-MLA real work or memory pressure, especially in
 `_accumulate_indexed_attention_chunk_multihead_kernel` and the FP8 MQA

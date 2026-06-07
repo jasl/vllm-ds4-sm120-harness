@@ -660,6 +660,35 @@ semantics. For MTP, also run a guarded C>1 streaming pressure probe so the
 report captures scheduler or CUDA graph replay stalls instead of relying on a
 single smoke request.
 
+## Forum #53 Multi-User Prefix-Cache Gate
+
+Use `scripts/run_gb10_forum53_multi_user_gate.sh` for the
+forum53 multi-user prefix-cache gate. This is a user-feedback reproduction gate
+for the report where a newer image improved single-user prefill but collapsed
+6-8 concurrent workers into one active request.
+
+Default shape:
+
+- `TP=2`, `PP=1`, expert parallel enabled.
+- Prefix cache enabled.
+- `max_model_len=262144`.
+- `max_num_seqs=8`.
+- `gpu_memory_utilization=0.90`.
+- `FULL_AND_PIECEWISE` CUDA graph mode.
+- no-MTP first; set `GB10_FORUM53_OPTIONAL_MTP2=1` to append the MTP=2
+  stability comparison.
+- `max_num_batched_tokens` sweep:
+  `2048,3072,4096,6144,8192`.
+- Streaming matrix cases:
+  `forum53_c6:6:1:3200:128,forum53_c8:8:1:3200:128`.
+
+The summary files are
+`gb10_forum53_multi_user_gate_summary.json` and
+`gb10_forum53_multi_user_gate_summary.md`. Inspect `running_requests_max`,
+`waiting_requests_max`, `gpu_kv_cache_usage_percent_max`, TTFT, ITL p99,
+prefix-cache hits, and preemptions before deciding whether a regression is in
+scheduler admission, KV capacity, prefix-cache retention, or MTP stability.
+
 ## Common Failure Modes
 
 - CUDA memory guard fails immediately after file copies or failed launches:

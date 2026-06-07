@@ -1380,6 +1380,53 @@ def test_gb10_long_c2_reduced_gate_runs_nomtp_and_mtp2_variants():
     assert "20260601_gb10_longc2_guard_mtp2" in docs
 
 
+def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
+    script = (
+        ROOT / "scripts" / "run_gb10_forum53_multi_user_gate.sh"
+    ).read_text(encoding="utf-8")
+    docs = (
+        ROOT / "docs" / "dgx_spark_bare_metal_cluster.md"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        "HEAD_HOST",
+        "WORKER_HOST",
+        "HEAD_ROCE_IP",
+        "WORKER_ROCE_IP",
+        "ROCE_IFACE",
+        "NCCL_IB_HCA",
+        "VLLM_ROOT",
+        "VLLM_VENV",
+    ):
+        assert required in script
+
+    assert 'GB10_FORUM53_VARIANTS="${GB10_FORUM53_VARIANTS:-nomtp}"' in script
+    assert 'GB10_FORUM53_OPTIONAL_MTP2="${GB10_FORUM53_OPTIONAL_MTP2:-0}"' in script
+    assert 'MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-262144}"' in script
+    assert 'MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-8}"' in script
+    assert (
+        'GB10_FORUM53_BATCHED_TOKEN_SWEEP="${GB10_FORUM53_BATCHED_TOKEN_SWEEP:-2048,3072,4096,6144,8192}"'
+        in script
+    )
+    assert 'SERVE_PREFIX_CACHE_MODE=enabled' in script
+    assert 'SERVE_ENABLE_EXPERT_PARALLEL=1' in script
+    assert 'GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c6:6:1:3200:128,forum53_c8:8:1:3200:128}"' in script
+    assert 'FULL_AND_PIECEWISE' in script
+    assert '{"method":"mtp","num_speculative_tokens":2}' in script
+    assert '"${REMOTE_HARNESS_ROOT}/scripts/run_streaming_pressure_matrix.sh"' in script
+    assert "gb10_forum53_multi_user_gate_summary.json" in script
+    assert "gb10_forum53_multi_user_gate_summary.md" in script
+    assert "running_requests_max" in script
+    assert "waiting_requests_max" in script
+    assert "gpu_kv_cache_usage_percent_max" in script
+    assert "10.0.0." not in script
+    assert "/home/" not in script
+    assert "/Users/" not in script
+
+    assert "scripts/run_gb10_forum53_multi_user_gate.sh" in docs
+    assert "forum53 multi-user prefix-cache gate" in docs
+
+
 def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     script = (
         ROOT / "scripts" / "run_gb10_prefill_gap_attribution.sh"
