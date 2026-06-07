@@ -1506,6 +1506,10 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     assert 'GB10_PREFILL_GAP_CONCURRENCY="${GB10_PREFILL_GAP_CONCURRENCY:-1}"' in script
     assert 'GB10_PREFILL_GAP_OUTPUT_LEN="${GB10_PREFILL_GAP_OUTPUT_LEN:-128}"' in script
     assert (
+        'GB10_PREFILL_GAP_ENABLE_EXPERT_PARALLEL="${GB10_PREFILL_GAP_ENABLE_EXPERT_PARALLEL:-1}"'
+        in script
+    )
+    assert (
         'GB10_PREFILL_GAP_REDDIT_MAX_NUM_BATCHED_TOKENS="${GB10_PREFILL_GAP_REDDIT_MAX_NUM_BATCHED_TOKENS:-8192}"'
         in script
     )
@@ -1520,6 +1524,7 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     assert 'CASE_EXPECTED_ATTENTION_MARKER="${expected_attention_marker}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH="${remote_stats_dir}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING}"' in script
+    assert 'SERVE_ENABLE_EXPERT_PARALLEL="${GB10_PREFILL_GAP_ENABLE_EXPERT_PARALLEL}"' in script
     assert 'SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}"' in script
     assert '"${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh"' in script
     assert '"${REMOTE_HARNESS_ROOT}/scripts/run_random_prefill_sweep.sh"' in script

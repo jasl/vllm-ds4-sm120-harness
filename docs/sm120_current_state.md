@@ -175,6 +175,15 @@ production code is added:
   `GB10_B12X_AB_TARGETS` entries in
   `label|vllm_root|vllm_venv|profiles|variants|env_file` form, so fork-specific
   backend flags can live in ignored local env files instead of tracked docs.
+- The first controlled GB10 smoke against the refreshed local-inference-lab
+  stack did not complete a request with public dependencies. It progressed far
+  enough to prove that B12X FP8 linear, B12X MoE, the sparse indexer, and
+  `B12X_MLA_SPARSE` can be selected, but failed on public dependency/backend
+  gaps: released b12x before `0.20.0` lacks the expected FP8 linear module,
+  the full B12X FP8 linear path needs a CUTLASS DSL MMA symbol not present in
+  public `4.5.2`, and the tested fallback scaled-mm paths were not usable on
+  GB10. Keep this route as blocked/recheck, not rejected, until the dependency
+  stack can pass a small endpoint smoke.
 - Revisit older rejected-note wording when using it to guide new work. The
   prior negative results remain valid for public-wheel direct API probes,
   simple serving-flag changes, selector-only swaps, and local split-launch

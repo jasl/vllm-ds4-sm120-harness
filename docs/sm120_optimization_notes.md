@@ -7501,6 +7501,46 @@ External unholy-fusion feedback refresh, 2026-06-07:
   same shape wins under this controlled protocol and survives the existing
   promotion matrix.
 
+GB10 local-inference-lab B12X endpoint smoke recheck, 2026-06-07:
+
+- Harness change: the GB10 prefill-gap attribution wrapper now exposes
+  `GB10_PREFILL_GAP_ENABLE_EXPERT_PARALLEL`. The default remains EP on for our
+  production profile, but external forks can be tested with EP off because the
+  local-inference-lab serve recipe does not enable expert parallelism.
+- Dependency refresh finding: the local-inference-lab `main` checkout expects
+  `b12x.gemm.block_fp8_linear`, which is absent from the earlier public
+  `b12x==0.15.2` probe. Upgrading the isolated fork venv to public
+  `b12x==0.20.0` makes that module importable. This did not change the main
+  Dev vLLM environment.
+- Smoke progression on GB10 with public dependencies:
+  - Full B12X profile selected the B12X FP8 linear path, then failed under the
+    harness default EP-on profile because the B12X MXFP4 MoE backend rejected
+    expert parallelism. This is a profile mismatch, not a proof that the fork
+    path is invalid.
+  - With EP off and the architecture adjusted for GB10, startup selected B12X
+    FP8 linear, B12X MXFP4 MoE, and the FP8 sparse indexer, then failed while
+    compiling B12X dense GEMM because public `nvidia-cutlass-dsl==4.5.2` does
+    not expose the expected `MmaMXF8Op` symbol.
+  - Disabling B12X FP8 linear allowed the run to select the normal CUTLASS FP8
+    block-scaled linear path plus B12X MoE / sparse-indexer /
+    `B12X_MLA_SPARSE`, but the tested scaled-mm fallback failed during memory
+    profiling before any request completed.
+  - Switching the linear backend to the tested FlashInfer CUTLASS route also
+    failed early for this FP8 block-scaled layer shape.
+- Current decision: do not claim the Reddit / local-inference-lab numbers are
+  wrong, but do not use this route as a production or PR backend candidate yet.
+  With public dependencies available in this environment, local-inference-lab
+  `main` cannot complete even a small endpoint smoke. Re-enter this route only
+  after one of these changes is true: public CUTLASS DSL exposes the required
+  B12X FP8 MMA symbol, local-inference-lab pins a dependency stack that does,
+  or the fork changes its FP8 linear fallback to a public path that completes a
+  GB10 endpoint smoke.
+- What remains worth studying: sparse-indexer copy avoidance, sparse MLA
+  backend organization, scratch sharing inherited from PR 43477, and whether a
+  future public B12X/FlashInfer path can express DS4 metadata without the
+  current vLLM-side split/merge work. Keep older rejected notes scoped to the
+  exact public direct-API probes and local endpoint adapters that were tested.
+
 GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
 
 - Goal: restart the raw sparse-MLA work-reduction line after GB10 reboot and
