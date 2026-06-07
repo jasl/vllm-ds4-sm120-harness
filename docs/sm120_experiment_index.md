@@ -138,6 +138,9 @@ that thread, search `External unholy-fusion feedback refresh`.
 - Official b12x compressed MLA endpoint route:
   open `docs/sm120_optimization_notes.md` and search
   `Official FlashInfer 0.6.12 DS4 sparse-MLA API recheck`.
+- leavelet DeepGEMM SM120 MQA route:
+  open `docs/sm120_optimization_notes.md` and search
+  `leavelet DeepGEMM SM120 MQA route recheck`.
 - Standalone C128 grouped-compressed route:
   open `docs/sm120_optimization_notes.md` and search
   `Standalone C128 grouped-compressed prefill should not be promoted`.

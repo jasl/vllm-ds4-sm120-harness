@@ -53,6 +53,12 @@ Last updated: 2026-06-08.
   improve GB10 and did not reduce real candidate/value visits. This is not a
   rejection of the newer local-inference-lab B12X backend stack; that line must
   be tested as a separate backend/dataflow candidate.
+- A separate leavelet DeepGEMM `sm120` recheck found strong isolated FP8 MQA
+  logits speedups, but the vLLM endpoint route is not viable in the current
+  production profile: full top-k microbench was flat, and enabling the route
+  caused startup failure during FULL_AND_PIECEWISE CUDA graph memory profiling
+  with custom all-reduce. Do not add a DeepGEMM MQA env switch to Dev/PR unless
+  that startup failure and full top-k cost are solved.
 
 ## Promotion Matrix
 

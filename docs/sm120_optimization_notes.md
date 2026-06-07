@@ -9314,3 +9314,64 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   workspace policy can be made capacity-neutral. Do not re-enter this route
   during routine vLLM tests unless upstream DeepGEMM, FlashInfer, or vLLM
   changes the SM120 grouped MoE memory model.
+
+### 2026-06-08 leavelet DeepGEMM SM120 MQA route recheck
+
+- **Trigger:** the community `leavelet/DeepGEMM` `sm120` branch was updated and
+  the corresponding DeepGEMM PR was reported as feature-complete. This recheck
+  is narrower than the rejected DeepGEMM SM120 MoE route above: it only studies
+  FP8 MQA logits / paged MQA logits / top-k usage in the sparse indexer path.
+- **External candidate:** `leavelet/DeepGEMM` `sm120` at `aced12c`, installed as
+  `deep-gemm==2.5.0+aced12c` in the RTX PRO 6000 vLLM venv. Import and direct
+  CUDA probes confirmed the new SM120 MQA entrypoints are present and callable.
+- **Isolated kernel signal:** FP8 MQA logits is much faster than the existing
+  SM120 fallback when only logits are measured. Representative dense shapes:
+
+  | Shape `(M,N,H,D)` | DeepGEMM logits | Existing fallback | Speedup |
+  | --- | ---: | ---: | ---: |
+  | `(256,1024,32,128)` | `0.012 ms` | `0.035 ms` | `2.84x` |
+  | `(1024,4096,32,128)` | `0.074 ms` | `0.218 ms` | `2.95x` |
+  | `(2048,4096,32,128)` | `0.115 ms` | `0.426 ms` | `3.69x` |
+  | `(4096,8192,32,128)` | `0.472 ms` | `1.779 ms` | `3.77x` |
+
+  Paged MQA logits also showed about `2.7-2.9x` speedup on reduced decode-like
+  shapes when called with `context_lens.dim() == 2` and `clean_logits=False`.
+- **Full top-k result:** the end-to-end MQA top-k path is not a clear winner
+  because top-k selection and materialized logits traffic dominate after the
+  faster logits kernel. With `num_q=256`, `num_heads=64`, `topk=512`, and
+  `seq_len_kv=4096,32768`, env-off and env-on were effectively flat:
+
+  | KV width | Existing path mean | DeepGEMM logits + top-k mean | Result |
+  | ---: | ---: | ---: | --- |
+  | `4096` | `0.165 ms` | `0.165 ms` | flat |
+  | `32768` | `0.763 ms` | `0.762 ms` | flat |
+
+  A wider `topk=2048` run was also not stable-positive: `4096` KV improved by
+  about `8%`, while `32768` KV regressed by about `1%`.
+- **Endpoint experiment:** a default-off vLLM prototype was briefly wired with
+  `VLLM_SM12X_USE_DEEP_GEMM_MQA=1`, using DeepGEMM for SM12x dense MQA logits,
+  paged MQA logits where compatible, and materialized-logits top-k for bounded
+  prefill shapes. A targeted test caught and fixed one local-index bug before
+  endpoint validation: the new top-k path initially failed to add
+  `cu_seqlen_ks` after `top_k_per_row_prefill`.
+- **Endpoint result:** production-profile RTX startup with TP=2, EP on, MTP=2,
+  FP8 KV, prefix cache disabled, max model len 131K, `max_num_batched_tokens=4096`,
+  and FULL_AND_PIECEWISE failed before serving any request when the DeepGEMM MQA
+  env was enabled. The control run completed the narrow 2000/4000-line C=1 cold
+  latency smoke (`9.93s` and `19.62s` TTFT). The env-on run failed during CUDA
+  graph memory profiling with:
+
+  ```text
+  custom_all_reduce.cuh:455 'an illegal memory access was encountered'
+  ```
+
+  Driver health remained clean after the failure, but the route fails the
+  startup availability gate.
+- **Decision:** reject and remove the vLLM DeepGEMM MQA env-gated prototype for
+  now. The isolated MQA kernels are promising, but this route does not yet
+  reduce full sparse-indexer work, does not beat the existing top-k path in the
+  representative microbench, and is not startup-safe under the required
+  FULL_AND_PIECEWISE production profile. Do not re-enter it unless one of these
+  changes: DeepGEMM provides a fused logits+top-k / sparse-indexer primitive,
+  vLLM/custom-all-reduce graph profiling changes, or a same-work endpoint A/B
+  can pass startup plus the promotion matrix.
