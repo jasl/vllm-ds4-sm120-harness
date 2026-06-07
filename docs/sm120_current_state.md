@@ -166,10 +166,14 @@ production code is added:
 - Re-audit and A/B the latest local-inference-lab `main` and
   `dev/unholy-fusion` before the next GB10 backend experiment. The promising
   pieces are B12X sparse MLA, B12X sparse indexer / compressed-indexer copy
-  avoidance, native B12X MoE and mHC routing, plus the inherited PR 43477
-  scratch fixes. The Model Runner V2 enablement alone is unlikely to explain
-  the prefill gap, but it may be required for that stack's warmup/scratch
-  compatibility.
+  avoidance, native B12X MoE, plus the inherited PR 43477 scratch fixes. The
+  public Aiden image currently exposes the older unholy-style B12X switches;
+  it does not recognize the Aiden repository's newer
+  `VLLM_USE_B12X_DEEPSEEK_V4*` switches. Treat mHC routing as a recheck-only
+  candidate until the tested image/fork visibly recognizes `VLLM_USE_B12X_MHC`
+  and imports the required b12x mHC symbols. The Model Runner V2 enablement
+  alone is unlikely to explain the prefill gap, but it may be required for that
+  stack's warmup/scratch compatibility.
 - Use `scripts/run_gb10_b12x_backend_ab_matrix.sh` for that comparison. It
   wraps the existing GB10 prefill-gap gate and takes semicolon-separated
   `GB10_B12X_AB_TARGETS` entries in
@@ -229,8 +233,10 @@ production code is added:
 
   This shifts the immediate investigation away from "B12X MoE alone" and
   toward the wider Aiden/unholy overlay: sparse indexer / compressed-indexer
-  movement, mHC routing, model-runner integration, all-reduce path, and
-  sparse-MLA dataflow.
+  movement, model-runner integration, all-reduce path, and sparse-MLA
+  dataflow. A later diagnostic run proved that the public image ignores the
+  Aiden repository's `VLLM_USE_B12X_DEEPSEEK_V4*` knobs, so do not use those
+  envs for public-image component attribution.
 - A sparse-indexer-only follow-up forced
   `VLLM_USE_B12X_SPARSE_INDEXER=1` while keeping prefix cache disabled and B12X
   MoE enabled. The valid CLI benchmark run completed with driver signal count
@@ -266,7 +272,7 @@ production code is added:
   prior negative results remain valid for public-wheel direct API probes,
   simple serving-flag changes, selector-only swaps, and local split-launch
   grouped-query prototypes. They do not prove that local-inference-lab's custom
-  B12X sparse MLA/indexer/MoE/mHC dataflow cannot win.
+  B12X sparse MLA/indexer/MoE dataflow cannot win.
 - Keep prefix-cache-on and prefix-cache-off results separate.
 - Record backend selection, MoE path, NCCL/all-reduce path, sparse candidate /
   value attribution, TTFT, input tok/s, decode tok/s, and ITL p95/p99.

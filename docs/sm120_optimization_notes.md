@@ -9234,12 +9234,32 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   the image could not import `b12x_mhc_pre` from `b12x.integration.residual`.
   Do not rerun those switches as performance candidates until the serve config
   and bundled b12x API visibly change.
+- **Public image control-plane correction:** a later component probe tried the
+  Aiden repository's newer `VLLM_USE_B12X_DEEPSEEK_V4*` environment switches
+  against the public `aidendle94/sparkrun-vllm-ds4-gb10:production-ready`
+  image. The image logged all four as unknown vLLM environment variables.
+  Static inspection of the image showed the active checkout is
+  `/opt/vllm-apostolic`, exposes the older unholy-style switches
+  `VLLM_USE_B12X_MOE`, `VLLM_USE_B12X_SPARSE_INDEXER`,
+  `VLLM_USE_B12X_MHC`, `VLLM_USE_B12X_FP8_GEMM`, and
+  `VLLM_USE_B12X_WO_PROJECTION`, and has no
+  `v1/attention/backends/mla/b12x_integration.py` file. The container env only
+  forced `VLLM_USE_B12X_MOE=1`; the Aiden-specific DS4 switches were ignored.
+  Artifact:
+  `artifacts/main/2x_gb10_sm121/gb10_aiden_component_mhc_off_prefixoff_4k16k_20260608_rerun/20260608055305`.
+  The 4K/16K benchmark rows completed (`1134.63` and `1934.36` input tok/s),
+  but the worker logged one current-boot `NV_ERR_NO_MEMORY`, so treat this
+  artifact as diagnostic-only and reboot before collecting publishable GB10
+  performance data. The probe does not prove an mHC-off effect because the
+  public image ignored the Aiden-specific mHC env.
 - **Conclusion:** the public Aiden/unholy path is not just a serving-flag
   difference. Even with prefix cache disabled, it has a real `1.3-1.5x`
   GB10 long-prefill advantage. The next porting work should focus on the
-  bundled B12X sparse indexer / compressed-indexer copy avoidance, sparse MLA
-  dataflow, mHC routing, and native MXFP4 MoE boundary, while keeping prefix-on
-  effects separated from raw-prefill claims.
+  `/opt/vllm-apostolic` sparse indexer / compressed-indexer copy avoidance,
+  sparse MLA dataflow, and native MXFP4 MoE boundary, while keeping prefix-on
+  effects separated from raw-prefill claims. Do not use the Aiden repository's
+  `VLLM_USE_B12X_DEEPSEEK_V4*` switches for the public image unless the image
+  tag visibly changes to a checkout that recognizes them.
 - **NVFP4 preparation note:** keep DS4 MXFP4 and future NVIDIA NVFP4 backends
   separated by explicit quantization format and scale-layout checks. Do not
   force the current DS4 MXFP4 group-32 UE8M0 path through an NVFP4 oracle

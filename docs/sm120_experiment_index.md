@@ -231,7 +231,8 @@ that thread, search `External unholy-fusion feedback refresh`.
   open `docs/dgx_spark_bare_metal_cluster.md` and search
   `Aiden Image Parity`; for the latest diagnostic notes, open
   `docs/sm120_optimization_notes.md` and search
-  `Aiden Image Parity Recheck` or `Sparse-indexer-only A/B`.
+  `Aiden Image Parity Recheck`, `Sparse-indexer-only A/B`, or
+  `Public image control-plane correction`.
 
 ## Correctness
 
