@@ -174,6 +174,52 @@ def test_sm12x_sparse_mla_ncu_microbench_targets_chunk_and_partial_paths():
     assert "sm12x_sparse_mla_ncu_microbench_summary.md" in script
 
 
+def test_gb10_mtp2_moe_deadlock_gate_matches_user_report_shape():
+    script = (ROOT / "scripts" / "run_gb10_mtp2_moe_tp_deadlock_gate.sh").read_text(
+        encoding="utf-8"
+    )
+    spark_docs = (ROOT / "docs" / "dgx_spark_bare_metal_cluster.md").read_text(
+        encoding="utf-8"
+    )
+    correctness_docs = (ROOT / "docs" / "vllm_correctness_gates.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'GB10_MTP2_MOE_VARIANT="${GB10_MTP2_MOE_VARIANT:-mtp2}"' in script
+    assert 'MAX_MODEL_LEN="${GB10_MTP2_MOE_MAX_MODEL_LEN:-200000}"' in script
+    assert 'MAX_NUM_SEQS="${GB10_MTP2_MOE_MAX_NUM_SEQS:-8}"' in script
+    assert 'MAX_NUM_BATCHED_TOKENS="${GB10_MTP2_MOE_MAX_NUM_BATCHED_TOKENS:-4096}"' in script
+    assert 'GPU_MEMORY_UTILIZATION="${GB10_MTP2_MOE_GPU_MEMORY_UTILIZATION:-0.92}"' in script
+    assert 'GB10_MTP2_MOE_SPEC_METHOD="${GB10_MTP2_MOE_SPEC_METHOD:-deepseek_mtp}"' in script
+    assert 'SERVE_PREFIX_CACHE_MODE=enabled' in script
+    assert 'SERVE_ENABLE_EXPERT_PARALLEL=1' in script
+    assert 'SERVE_SPECULATIVE_CONFIG="${MTP2_SPECULATIVE_CONFIG}"' in script
+    assert 'MTP2_SPECULATIVE_CONFIG="{\\"method\\":\\"${GB10_MTP2_MOE_SPEC_METHOD}\\",\\"num_speculative_tokens\\":2}"' in script
+    assert 'FULL_AND_PIECEWISE' in script
+    assert 'VLLM_SCHEDULER_TRACE_PATH="${SCHEDULER_TRACE_PATH}"' in script
+    assert 'append_env_allowlist "${serve_remote_env_vars}" VLLM_SCHEDULER_TRACE_PATH' in script
+    assert "watchdog_no_progress_loop" in script
+    assert "capture_remote_debug_bundle" in script
+    assert "capture_remote_driver_health" in script
+    assert "driver_health_summary.json" in script
+    assert "GB10_MTP2_MOE_ALLOW_DRIVER_SIGNALS" in script
+    assert "Driver health OK" in script
+    assert "driver_health.get(\"ok\", True)" in script
+    assert "kernel_gpu_signals.log" in script
+    assert "no_progress_detected.txt" in script
+    assert "py-spy dump" in script
+    assert '"${REMOTE_HARNESS_ROOT}/scripts/run_streaming_pressure_soak.sh"' in script
+    assert 'SUMMARY_MAX_MODEL_LEN="${MAX_MODEL_LEN}"' in script
+    assert 'SUMMARY_MAX_NUM_SEQS="${MAX_NUM_SEQS}"' in script
+    assert 'SUMMARY_MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS}"' in script
+    assert 'SUMMARY_MTP_METHOD="${GB10_MTP2_MOE_SPEC_METHOD}"' in script
+    assert "gb10_mtp2_moe_tp_deadlock_gate_summary.json" in script
+    assert "gb10_mtp2_moe_tp_deadlock_gate_summary.md" in script
+    assert "scripts/run_gb10_mtp2_moe_tp_deadlock_gate.sh" in spark_docs
+    assert "MTP=2 MoE TP deadlock" in spark_docs
+    assert "issuecomment-4641514454" in correctness_docs
+
+
 def test_random_prefill_sweep_wrapper_covers_short_prefill_regression_shapes():
     script = (ROOT / "scripts" / "run_random_prefill_sweep.sh").read_text(
         encoding="utf-8"

@@ -179,6 +179,19 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   probe. Treat any trial exception, `/metrics` disconnect, or post-probe
   server unresponsiveness as a regression; do not fail this gate only because
   the prefix-cache hit rate differs from the reporter's machine.
+- GB10 MTP=2 MoE TP deadlock sustained gate for
+  [issuecomment-4641514454](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4641514454):
+  run `scripts/run_gb10_mtp2_moe_tp_deadlock_gate.sh` on the two-node GB10
+  cluster with prefix cache enabled, FP8 KV, `max_model_len=200000`,
+  `max_num_seqs=8`, `max_num_batched_tokens=4096`, expert parallel enabled,
+  MTP=2, and `FULL_AND_PIECEWISE`. This gate is not satisfied by the existing
+  no-MTP forum53 admission/fairness gate or by the prefix-cache MTP=1 proxy.
+  Treat no-token-progress watchdog hits, py-spy rank divergence, NCCL/CUDA
+  errors, current-boot GPU driver signals, or server unresponsiveness as
+  regressions. The current locally clean diagnostic profile uses
+  `gpu_memory_utilization=0.80`; `0.90+` startup probes have produced
+  `NV_ERR_NO_MEMORY` around CUDA graph profiling and must not be counted as
+  clean passes.
 - Multi-session decode pressure proxy for
   [issuecomment-4505504798](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4505504798):
   run `streaming_pressure_matrix` on the local TP=2 server with at least

@@ -71,6 +71,15 @@ behavior must preserve:
   DP/EP long-context JIT/OOM/worker-crash shape with reduced local defaults.
   A local pass is useful regression evidence, not proof that the full
   DP=3/256K external topology is solved.
+- GB10 MTP=2 MoE TP deadlock sustained gate for the latest two-node GB10
+  report. This is separate from forum53: use
+  `scripts/run_gb10_mtp2_moe_tp_deadlock_gate.sh` to cover prefix cache enabled,
+  MTP=2, FP8 KV, `max_model_len=200000`, `max_num_seqs=8`, and
+  `FULL_AND_PIECEWISE`, with a no-token-progress watchdog and rank stack
+  capture. Current clean sustained evidence uses `gpu_memory_utilization=0.80`;
+  higher `0.90+` GB10 startup probes have produced current-boot NVIDIA driver
+  OOM signals around CUDA graph profiling, so driver health is a first-class
+  gate result rather than a post-hoc note.
 
 Prefix-cache hits must be reported separately from cold-prefill performance.
 Do not use prefix-cache-enabled numbers as cold-prefill gains.

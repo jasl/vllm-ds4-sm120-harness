@@ -139,6 +139,54 @@ Current execution order:
    architecture support changes.
 4. Only then return to sparse-MLA candidate/value work reduction.
 
+### GB10 MTP=2 MoE TP Deadlock Gate
+
+External PR feedback reported an intermittent two-node GB10 / SM121 hang with
+TP=2, expert parallel, prefix cache enabled, FP8 KV, `max_model_len=200000`,
+`max_num_seqs=8`, `max_num_batched_tokens=4096`,
+`gpu_memory_utilization=0.92`, `FULL_AND_PIECEWISE`, and
+`deepseek_mtp` / MTP=2. The reporter's rank stacks showed one TP rank waiting
+in the MoE final all-reduce while the other was still earlier in MoE gate
+work.
+
+Harness response:
+
+- Added `scripts/run_gb10_mtp2_moe_tp_deadlock_gate.sh`. It starts the
+  two-node MP serve profile, runs a streaming-pressure soak, polls `/metrics`
+  for no-token-progress, captures `py-spy` / `gdb` / GPU debug bundles on a
+  watchdog hit, and now treats current-boot GPU driver signals as failures.
+- The script defaults the user-facing speculative method to `deepseek_mtp` to
+  match the report. Current vLLM normalizes that deprecated alias to the
+  internal `mtp` path during config validation.
+
+Validation and current interpretation:
+
+| Run | Result | Interpretation |
+| --- | --- | --- |
+| Reduced startup smoke, `gpu_memory_utilization=0.92` | request completed, but the head node logged `NV_ERR_NO_MEMORY` around CUDA graph profiling | not a clean pass; treat the boot as contaminated |
+| Reduced startup smoke, `gpu_memory_utilization=0.90` | request completed, but the head node again logged `NV_ERR_NO_MEMORY` around CUDA graph profiling | still not a clean pass; do not use this profile for sustained evidence on the current GB10 setup |
+| Sustained soak, `gpu_memory_utilization=0.80`, artifact label `local_gb10_mtp2_moe_sustained_gmem080_20260607175107` | `128/128` requests completed, failures `0`, max TTFT `255.512 s`, average TTFT `15.163 s`, inter-chunk p99 `0.0696 s`, no no-token-progress watchdog hit, driver signal count `0`, preemptions `0`, prefix-cache hit-rate delta `91.18%` | did not reproduce the reported MoE TP deadlock under the conservative memory profile |
+| Default-method smoke, `deepseek_mtp`, `gpu_memory_utilization=0.80`, artifact label `local_gb10_mtp2_moe_deepseekmethod_smoke_gmem080_20260607180652` | vLLM accepted `deepseek_mtp` and normalized it to `mtp`, but the head node logged `NV_ERR_NO_MEMORY`; summary `OK=False` | confirms method alias equivalence, but also shows repeated startup / CUDA graph profiling can still hit driver OOM in the same boot |
+
+Important scheduling observation from the sustained run: runtime metrics showed
+`running_requests_max=1`, `waiting_requests_max=7`, and scheduler trace had
+zero prefill/decode overlap. The workload completed without deadlock, but the
+current path serialized admission instead of running eight long requests
+concurrently. Keep this separate from the MoE all-reduce hang report: it is an
+availability / cadence result, not a throughput or fairness solution.
+
+Next steps for this lane:
+
+- Keep `gpu_memory_utilization=0.80` as the current clean GB10 MTP=2 sustained
+  diagnostic profile until repeated `0.90+` startup probes stop producing
+  driver OOM signals.
+- Do not classify the external MoE all-reduce hang as reproduced locally yet.
+  If a future run hits the watchdog, use the captured rank stacks to compare
+  against the reporter's MoE gate / final all-reduce divergence.
+- Treat any current-boot `NV_ERR_NO_MEMORY`, Xid, UVM, lost-GPU, illegal-access,
+  device-assert, or global-fatal signal as a failed baseline even when the
+  request-level soak completed.
+
 ### Runtime-M TF32 MHC Prenorm GEMM
 
 User feedback on the PR reported a DP=2 + EP + MTP=2 + prefix-cache-enabled

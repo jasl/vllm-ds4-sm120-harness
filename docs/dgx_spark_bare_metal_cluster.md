@@ -689,6 +689,43 @@ The summary files are
 prefix-cache hits, and preemptions before deciding whether a regression is in
 scheduler admission, KV capacity, prefix-cache retention, or MTP stability.
 
+Use `scripts/run_gb10_mtp2_moe_tp_deadlock_gate.sh` for the MTP=2 MoE TP deadlock
+sustained gate. This is a user-feedback reproduction gate for the
+report where a two-node GB10 TP=2 server with MTP enabled can silently stop
+emitting tokens while one rank waits in a MoE final all-reduce and the other
+rank is still earlier in the MoE path.
+
+Default shape:
+
+- `TP=2`, `PP=1`, expert parallel enabled.
+- Prefix cache enabled.
+- `MTP=2`, FP8 KV. The gate defaults the user-facing speculative method to
+  `deepseek_mtp` to match the external report; current vLLM normalizes that
+  deprecated method alias to the internal `mtp` path during config validation.
+- `max_model_len=200000`.
+- `max_num_seqs=8`.
+- `max_num_batched_tokens=4096`.
+- `gpu_memory_utilization=0.92`.
+- `FULL_AND_PIECEWISE` CUDA graph mode.
+- Streaming-pressure soak with `concurrency=8`, `round_count=16`,
+  `line_count=1600`, and `max_tokens=128`.
+- Watchdog polls `/metrics`; if requests are running and decode tokens do not
+  advance for `GB10_MTP2_MOE_NO_PROGRESS_SECONDS` seconds, it writes
+  `no_progress_detected.txt` and captures process lists, `nvidia-smi`, kernel
+  GPU logs, `py-spy dump`, and `gdb` backtraces for both nodes.
+- After the run, the gate captures current-boot GPU driver health on both
+  nodes. `NV_ERR_NO_MEMORY`, Xid, UVM, lost-GPU, illegal-access,
+  device-assert, or global-fatal signals are written to
+  `driver_health_summary.json` and make the gate fail by default. Use
+  `GB10_MTP2_MOE_ALLOW_DRIVER_SIGNALS=1` only for an explicitly recorded
+  diagnostic run; do not treat that as a clean baseline.
+
+The summary files are
+`gb10_mtp2_moe_tp_deadlock_gate_summary.json` and
+`gb10_mtp2_moe_tp_deadlock_gate_summary.md`. Treat any no-progress watchdog
+hit, server unresponsiveness, CUDA/NCCL/NVRM/UVM error, or soak timeout as
+reproduction evidence until the captured rank stacks show otherwise.
+
 ## Common Failure Modes
 
 - CUDA memory guard fails immediately after file copies or failed launches:
