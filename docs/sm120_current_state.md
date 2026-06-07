@@ -132,20 +132,30 @@ worsening p99 ITL. It also cut 131K KV-cache concurrency from roughly
 `3.0x` to roughly `1.35-1.46x`. This does not explain the public
 Reddit-scale prefill gap.
 
-The latest public b12x recheck changes the dependency picture: `b12x==0.20.0`
-now exposes DS4 compressed-MLA/indexer/native FP4 MoE helper APIs and compiles
-the compressed-MLA microbench on RTX PRO 6000 SM120 and both GB10 nodes. In the
-endpoint-like real-C128 microbench, b12x is much faster than the older packed
-online helper, but still slower than the current D512 split+finish kernel-only
-timing. A follow-up layout probe shows that the public b12x compressed-MLA API
-does not zero-copy match the current vLLM `fp8_ds_mla` KV cache: b12x expects
-page-packed payload followed by page-packed scale bytes, while vLLM stores
-584B token-interleaved records. The remaining question is therefore narrower
-than "install b12x and call it": either find a lower-level b12x / FlashInfer
-entrypoint that truly supports the vLLM layout, add a measured repack prototype
-as a diagnostic only, or change / mirror cache layout behind a guarded backend.
-Do not add a production endpoint adapter until that dataflow question is
-resolved and the promotion matrix stays green.
+The latest public b12x recheck changes the dependency picture but not the
+endpoint decision yet. `b12x==0.20.0` now exposes DS4 compressed-MLA, compressed
+indexer, native FP4 MoE, FP8 block-linear, and PCIe all-reduce APIs, and the
+compressed-MLA microbench compiles on RTX PRO 6000 SM120 and both GB10 nodes.
+In endpoint-like real-C128 microbench shapes, b12x is much faster than the
+older packed online helper, but still slower than the current D512
+split+finish kernel-only timing. A follow-up runtime probe separates package
+availability from vLLM integration: current Dev exposes the upstream
+FlashInfer B12X MoE runtime path, but not Aiden's B12X sparse indexer, native
+MXFP4 B12X MoE runtime plumbing, or a DS4-specific compressed-MLA runtime
+adapter. The Aiden production image does expose the sparse indexer and native
+MXFP4 B12X MoE runtime hooks, but still not a runtime-importable DS4
+compressed-MLA adapter in its installed vLLM package.
+
+The same probe shows public b12x compressed MLA does not zero-copy match the
+current vLLM `fp8_ds_mla` KV cache: b12x expects page-packed payload followed
+by page-packed scale bytes, while vLLM stores `584` byte token-interleaved
+records. The remaining question is therefore narrower than "install b12x and
+call it": study the sparse indexer and native MXFP4 MoE runtime deltas first,
+or find a lower-level b12x / FlashInfer entrypoint that truly supports the vLLM
+layout, add a measured repack/mirror-cache prototype as a diagnostic only, or
+change cache layout behind a guarded backend. Do not add a production endpoint
+adapter until that dataflow question is resolved and the promotion matrix stays
+green.
 
 ## Active Direction
 

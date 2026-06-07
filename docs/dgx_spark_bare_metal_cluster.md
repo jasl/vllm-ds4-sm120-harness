@@ -154,6 +154,17 @@ version and verify imports on every GB10 node before running experiments. A
 successful import does not mean b12x is active; serve logs must still show the
 selected MoE, attention, indexer, and all-reduce backends.
 
+For b12x route triage, run the harness stack probe in the target vLLM Python
+and inspect both package routes and vLLM runtime routes:
+
+```bash
+PYTHON="$VLLM_VENV/bin/python" scripts/run_b12x_stack_probe.sh
+```
+
+Treat package routes such as `public_b12x_mla=True` as dependency availability
+only. For serving decisions, require the corresponding `runtime_*` route to be
+true or prove through serve logs that vLLM selected the intended backend.
+
 As of the 2026-06-08 optional-dependency recheck, public `b12x==0.20.0` exposes
 the DS4 compressed MLA, compressed indexer, native FP4 MoE, FP8 block-linear,
 and PCIe all-reduce API surfaces that were missing from `0.15.2`. Import

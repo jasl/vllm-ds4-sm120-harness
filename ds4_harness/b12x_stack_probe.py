@@ -70,6 +70,49 @@ MODULES = (
     ModuleProbe("flashinfer.fused_moe", ("b12x_fused_moe",)),
 )
 
+VLLM_MODULES = (
+    ModuleProbe(
+        "vllm.envs",
+        (
+            "VLLM_USE_B12X_SPARSE_INDEXER",
+            "VLLM_USE_B12X_MOE",
+            "VLLM_USE_B12X_MHC",
+            "VLLM_USE_B12X_WO_PROJECTION",
+        ),
+    ),
+    ModuleProbe(
+        "vllm.models.deepseek_v4.nvidia.b12x",
+        (
+            "DeepseekV4B12xMLASparseBackend",
+            "DeepseekV4B12xMLASparseImpl",
+        ),
+    ),
+    ModuleProbe(
+        "vllm.v1.attention.backends.mla.b12x_mla_sparse",
+        ("B12xMLASparseBackend", "B12xMLASparseImpl"),
+    ),
+    ModuleProbe(
+        "vllm.model_executor.layers.sparse_attn_indexer",
+        ("_use_b12x_sparse_indexer",),
+    ),
+    ModuleProbe(
+        "vllm.model_executor.layers.fused_moe.b12x_moe",
+        ("B12xExperts",),
+    ),
+    ModuleProbe(
+        "vllm.model_executor.layers.fused_moe.oracle.mxfp4",
+        ("Mxfp4MoeBackend",),
+    ),
+    ModuleProbe(
+        "vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe",
+        ("FlashInferB12xExperts",),
+    ),
+    ModuleProbe(
+        "vllm.utils.flashinfer",
+        ("has_flashinfer_b12x_moe",),
+    ),
+)
+
 VLLM_FP8_DS_MLA_TOKEN_BYTES = 584
 B12X_DSV4_PAYLOAD_BYTES = 576
 LAYOUT_PROBE_PAGE_SIZE = 64
@@ -82,6 +125,12 @@ def _module_ok(result: Json, name: str) -> bool:
 
 def _has_attr(result: Json, module_name: str, attr_name: str) -> bool:
     module = result["modules"].get(module_name, {})
+    attrs = module.get("attributes", {})
+    return bool(attrs.get(attr_name))
+
+
+def _vllm_has_attr(result: Json, module_name: str, attr_name: str) -> bool:
+    module = result.get("vllm_modules", {}).get(module_name, {})
     attrs = module.get("attributes", {})
     return bool(attrs.get(attr_name))
 
@@ -186,6 +235,73 @@ def _classify_routes(result: Json) -> Json:
     return routes
 
 
+def _classify_runtime_routes(result: Json) -> Json:
+    runtime_routes: Json = {}
+
+    runtime_routes["runtime_ds4_b12x_compressed_mla_adapter"] = {
+        "ok": (
+            _vllm_has_attr(
+                result,
+                "vllm.models.deepseek_v4.nvidia.b12x",
+                "DeepseekV4B12xMLASparseBackend",
+            )
+            or _vllm_has_attr(
+                result,
+                "vllm.models.deepseek_v4.nvidia.b12x",
+                "DeepseekV4B12xMLASparseImpl",
+            )
+        ),
+        "note": "vLLM runtime exposes a DS4-specific B12X compressed-MLA adapter.",
+    }
+    runtime_routes["runtime_v32_b12x_mla_sparse"] = {
+        "ok": (
+            _vllm_has_attr(
+                result,
+                "vllm.v1.attention.backends.mla.b12x_mla_sparse",
+                "B12xMLASparseBackend",
+            )
+            or _vllm_has_attr(
+                result,
+                "vllm.v1.attention.backends.mla.b12x_mla_sparse",
+                "B12xMLASparseImpl",
+            )
+        ),
+        "note": "vLLM runtime exposes the non-DS4 B12X MLA sparse backend.",
+    }
+    runtime_routes["runtime_b12x_sparse_indexer"] = {
+        "ok": _vllm_has_attr(
+            result,
+            "vllm.model_executor.layers.sparse_attn_indexer",
+            "_use_b12x_sparse_indexer",
+        ),
+        "note": "vLLM runtime exposes the B12X sparse indexer selection hook.",
+    }
+    runtime_routes["runtime_native_mxfp4_b12x_moe"] = {
+        "ok": (
+            _vllm_has_attr(
+                result,
+                "vllm.model_executor.layers.fused_moe.b12x_moe",
+                "B12xExperts",
+            )
+            and _vllm_has_attr(
+                result,
+                "vllm.model_executor.layers.fused_moe.oracle.mxfp4",
+                "Mxfp4MoeBackend",
+            )
+        ),
+        "note": "vLLM runtime exposes native B12X MXFP4 MoE plumbing.",
+    }
+    runtime_routes["runtime_flashinfer_b12x_moe"] = {
+        "ok": _vllm_has_attr(
+            result,
+            "vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe",
+            "FlashInferB12xExperts",
+        ),
+        "note": "vLLM runtime exposes the upstream FlashInfer B12X MoE path.",
+    }
+    return runtime_routes
+
+
 def _probe_b12x_compressed_mla_layout() -> Json:
     try:
         module = importlib.import_module(
@@ -251,11 +367,15 @@ def probe_b12x_stack() -> Json:
             name: _probe_distribution(name) for name in DISTRIBUTIONS
         },
         "modules": {probe.name: _probe_module(probe) for probe in MODULES},
+        "vllm_modules": {
+            probe.name: _probe_module(probe) for probe in VLLM_MODULES
+        },
     }
     result["layouts"] = {
         "b12x_compressed_mla": _probe_b12x_compressed_mla_layout(),
     }
     result["routes"] = _classify_routes(result)
+    result["runtime_routes"] = _classify_runtime_routes(result)
     return result
 
 
@@ -289,6 +409,24 @@ def write_b12x_stack_probe_markdown(path: Path, result: Json) -> None:
         status = "ok" if row.get("ok") else row.get("error", "fail")
         lines.append(f"| `{name}` | `{status}` | `{attr_text}` |")
 
+    if "vllm_modules" in result:
+        lines.extend(
+            [
+                "",
+                "## vLLM Runtime Modules",
+                "",
+                "| module | import | attributes |",
+                "| --- | --- | --- |",
+            ]
+        )
+        for name, row in result["vllm_modules"].items():
+            attrs = row.get("attributes", {})
+            attr_text = ", ".join(
+                f"{key}={value}" for key, value in attrs.items()
+            ) or "-"
+            status = "ok" if row.get("ok") else row.get("error", "fail")
+            lines.append(f"| `{name}` | `{status}` | `{attr_text}` |")
+
     lines.extend(
         [
             "",
@@ -319,6 +457,22 @@ def write_b12x_stack_probe_markdown(path: Path, result: Json) -> None:
         lines.append(
             f"| `{name}` | `{bool(row.get('ok'))}` | {row.get('note', '')} |"
         )
+
+    if "runtime_routes" in result:
+        lines.extend(
+            [
+                "",
+                "## vLLM Runtime Route Readiness",
+                "",
+                "| route | ready | note |",
+                "| --- | --- | --- |",
+            ]
+        )
+        for name, row in result["runtime_routes"].items():
+            lines.append(
+                f"| `{name}` | `{bool(row.get('ok'))}` | "
+                f"{row.get('note', '')} |"
+            )
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

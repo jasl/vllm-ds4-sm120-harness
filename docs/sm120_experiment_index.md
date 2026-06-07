@@ -23,6 +23,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - Public b12x 0.20 dependency/API and microbench recheck:
   open `docs/sm120_optimization_notes.md` and search
   `Public b12x recheck, 2026-06-08`.
+- B12X package/API versus vLLM runtime-path probe:
+  open `docs/sm120_optimization_notes.md` and search
+  `B12X runtime-path probe, 2026-06-08`.
 
 ## Promotion Gates
 
@@ -218,6 +221,9 @@ that thread, search `External unholy-fusion feedback refresh`.
 
 - GB10 Reddit / unholy-fusion performance comparison:
   `docs/sm120_current_state.md`.
+- Aiden/unholy runtime path comparison:
+  open `docs/sm120_optimization_notes.md` and search
+  `B12X runtime-path probe, 2026-06-08`.
 - NVIDIA forum #59 / local-inference-lab latest B12X feedback:
   open `docs/sm120_optimization_notes.md` and search
   `External unholy-fusion feedback refresh`.

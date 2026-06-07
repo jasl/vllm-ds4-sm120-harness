@@ -168,6 +168,102 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
     assert result["routes"]["public_b12x_vllm_fp8_ds_mla_zero_copy"]["ok"] is False
 
 
+def test_b12x_stack_probe_classifies_aiden_runtime_paths(monkeypatch):
+    monkeypatch.setattr(
+        b12x_stack_probe.importlib.metadata,
+        "version",
+        lambda name: "local",
+    )
+    modules = {
+        "b12x.integration": types.SimpleNamespace(
+            prepare_b12x_fp4_moe_weights=object(),
+            prepare_b12x_w4a16_packed_weights=object(),
+        ),
+        "b12x.integration.mla": types.SimpleNamespace(
+            compressed_mla_decode_forward=object(),
+        ),
+        "b12x.integration.compressed_scratch": types.SimpleNamespace(
+            plan_compressed_mla_scratch=object(),
+        ),
+        "b12x.integration.tp_moe": types.SimpleNamespace(
+            plan_tp_moe_scratch=object(),
+            b12x_moe_fp4=object(),
+        ),
+        "vllm.envs": types.SimpleNamespace(
+            VLLM_USE_B12X_SPARSE_INDEXER=False,
+            VLLM_USE_B12X_MOE=False,
+        ),
+        "vllm.model_executor.layers.sparse_attn_indexer": types.SimpleNamespace(
+            _use_b12x_sparse_indexer=lambda: True,
+        ),
+        "vllm.model_executor.layers.fused_moe.b12x_moe": types.SimpleNamespace(
+            B12xExperts=object(),
+        ),
+        "vllm.model_executor.layers.fused_moe.oracle.mxfp4": types.SimpleNamespace(
+            Mxfp4MoeBackend=object(),
+        ),
+    }
+
+    def fake_import_module(name):
+        if name not in modules:
+            raise ModuleNotFoundError(name)
+        return modules[name]
+
+    monkeypatch.setattr(b12x_stack_probe.importlib, "import_module", fake_import_module)
+
+    result = b12x_stack_probe.probe_b12x_stack()
+
+    assert result["runtime_routes"]["runtime_b12x_sparse_indexer"]["ok"] is True
+    assert result["runtime_routes"]["runtime_native_mxfp4_b12x_moe"]["ok"] is True
+    assert result["runtime_routes"]["runtime_ds4_b12x_compressed_mla_adapter"][
+        "ok"
+    ] is False
+    assert result["runtime_routes"]["runtime_v32_b12x_mla_sparse"]["ok"] is False
+
+
+def test_b12x_stack_probe_classifies_current_dev_without_aiden_runtime(monkeypatch):
+    monkeypatch.setattr(
+        b12x_stack_probe.importlib.metadata,
+        "version",
+        lambda name: "local",
+    )
+    modules = {
+        "b12x.integration": types.SimpleNamespace(
+            prepare_b12x_fp4_moe_weights=object(),
+            prepare_b12x_w4a16_packed_weights=object(),
+        ),
+        "b12x.integration.mla": types.SimpleNamespace(
+            compressed_mla_decode_forward=object(),
+        ),
+        "b12x.integration.compressed_scratch": types.SimpleNamespace(
+            plan_compressed_mla_scratch=object(),
+        ),
+        "b12x.integration.tp_moe": types.SimpleNamespace(
+            plan_tp_moe_scratch=object(),
+            b12x_moe_fp4=object(),
+        ),
+        "flashinfer.fused_moe": types.SimpleNamespace(b12x_fused_moe=object()),
+        "vllm.envs": types.SimpleNamespace(),
+        "vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe": (
+            types.SimpleNamespace(FlashInferB12xExperts=object())
+        ),
+    }
+
+    def fake_import_module(name):
+        if name not in modules:
+            raise ModuleNotFoundError(name)
+        return modules[name]
+
+    monkeypatch.setattr(b12x_stack_probe.importlib, "import_module", fake_import_module)
+
+    result = b12x_stack_probe.probe_b12x_stack()
+
+    assert result["routes"]["flashinfer_b12x_moe_nvfp4"]["ok"] is True
+    assert result["runtime_routes"]["runtime_b12x_sparse_indexer"]["ok"] is False
+    assert result["runtime_routes"]["runtime_native_mxfp4_b12x_moe"]["ok"] is False
+    assert result["runtime_routes"]["runtime_flashinfer_b12x_moe"]["ok"] is True
+
+
 def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
     result = {
         "distributions": {"b12x": {"ok": True, "version": "0.15.2"}},
@@ -190,6 +286,18 @@ def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
                 "note": "missing compressed scratch",
             }
         },
+        "vllm_modules": {
+            "vllm.model_executor.layers.sparse_attn_indexer": {
+                "ok": True,
+                "attributes": {"_use_b12x_sparse_indexer": True},
+            },
+        },
+        "runtime_routes": {
+            "runtime_b12x_sparse_indexer": {
+                "ok": True,
+                "note": "vLLM runtime can select b12x sparse indexer",
+            },
+        },
     }
     output = tmp_path / "probe.md"
 
@@ -198,6 +306,8 @@ def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
     text = output.read_text(encoding="utf-8")
     assert "# B12X Stack Probe" in text
     assert "`aiden_ds4_compressed_mla`" in text
+    assert "`runtime_b12x_sparse_indexer`" in text
+    assert "vLLM runtime can select b12x sparse indexer" in text
     assert "missing compressed scratch" in text
     assert "page-packed layout does not match vLLM rows" in text
 
