@@ -9245,3 +9245,52 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   force the current DS4 MXFP4 group-32 UE8M0 path through an NVFP4 oracle
   backend, but design MoE dispatch so a later NVFP4 model can reuse the same
   warmup, CUDA graph, promotion, and correctness gates.
+
+### 2026-06-08 leavelet DeepGEMM SM120 Prototype
+
+- **Status:** rejected for the current endpoint path; backup branch preserved.
+- **Backup branch:** vLLM local branch
+  `codex/exp-leavelet-deepgemm-sm120-20260608` at commit `b9f6aec78`.
+- **External candidate:** `leavelet/DeepGEMM` `sm120` branch installed as
+  `deep-gemm==2.5.0+aced12c` on the GB10 venvs. Import probes confirmed the
+  expected SM120 entrypoints, including grouped FP8/FP4 GEMM, FP8 grouped GEMM,
+  paged MQA logits metadata/logits, TF32 HC prenorm GEMM, and dynamic MK
+  alignment helpers.
+- **vLLM prototype changes:** allowed SM120 in `support_deep_gemm()`, added
+  DeepGEMM dynamic MK-alignment plumbing for grouped MoE, enabled expert-map
+  support, and added a DS4 o-proj compatibility path for DeepGEMM's grouped
+  `wo_a` FP8 weight plus packed UE8M0 int32 scales. The o-proj helper passed
+  CUDA graph safety tests, and both no-MTP and MTP=2 reduced startup smokes
+  could get through model load and a short request at
+  `gpu_memory_utilization=0.80`.
+- **Risk found:** MTP=2 at `gpu_memory_utilization=0.80` completed the short
+  smoke but logged current-boot NVIDIA driver `NV_ERR_NO_MEMORY` lines around
+  CUDA graph profiling. Treat that boot as dirty and do not promote the route
+  without a clean sustained matrix.
+- **Controlled no-MTP A/B after clean reboot:** two-node GB10, TP=2, EP on,
+  FP8 KV, prefix cache disabled, `max_model_len=32768`, `max_num_seqs=1`,
+  `max_num_batched_tokens=4096`, `gpu_memory_utilization=0.76`, output len 16,
+  FULL_AND_PIECEWISE. Artifacts:
+  `artifacts/main/2x_gb10_sm121/gb10_dev_deepgemm_control_nomtp_4k16k_gmem076_abs/20260608051813`
+  and
+  `artifacts/main/2x_gb10_sm121/gb10_dev_forced_marlin_control_nomtp_4k16k_gmem076_abs/20260608052936`.
+  Driver health remained clean after the forced-MARLIN comparator.
+
+  | Backend | ISL | Input tok/s | TTFT | p99 ITL | Model load memory | GPU KV cache size |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `DEEPGEMM_MXFP4` auto | `4096` | `693.06` | `3.829s` | `142.14ms` | `86.06 GiB` | `56,713` tokens |
+  | `MARLIN` forced | `4096` | `877.09` | `4.055s` | `42.54ms` | `73.97 GiB` | `316,858` tokens |
+  | `DEEPGEMM_MXFP4` auto | `16384` | `1107.03` | `12.712s` | `142.58ms` | `86.06 GiB` | `58,449` tokens |
+  | `MARLIN` forced | `16384` | `1338.56` | `11.655s` | `42.75ms` | `73.97 GiB` | `314,395` tokens |
+
+- **Decision:** do not default-enable or promote this DeepGEMM SM120 MoE route.
+  In the current vLLM integration it increases model-load memory by about
+  `12 GiB`, collapses available KV capacity on GB10 from roughly `315K` tokens
+  to roughly `57K`, worsens p99 ITL by about `3.3x`, and loses input throughput
+  against forced MARLIN in the clean no-MTP 4K/16K comparator. This does not
+  explain or close the Aiden/unholy raw-prefill gap.
+- **Follow-up only if revisited:** inspect why the DeepGEMM SM120 grouped MoE
+  path retains so much additional state and whether the dynamic alignment /
+  workspace policy can be made capacity-neutral. Do not re-enter this route
+  during routine vLLM tests unless upstream DeepGEMM, FlashInfer, or vLLM
+  changes the SM120 grouped MoE memory model.
