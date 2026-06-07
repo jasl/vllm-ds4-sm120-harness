@@ -9180,6 +9180,60 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   `3458.36` input tok/s for 4K/16K/32K/64K. This widens the observed 32K/64K
   gap to about `2.6x`, but the run had prefix-cache hits, so it is endpoint
   recipe evidence rather than raw kernel evidence.
+- **MoE-off A/B:** the Aiden image was rerun with
+  `GB10_AIDEN_PREFIX_CACHE_MODE=disabled` and
+  `GB10_AIDEN_DOCKER_EXTRA_ARGS='-e VLLM_USE_B12X_MOE=0'`. Serve logs
+  confirmed `Using 'DEEPGEMM_MXFP4' Mxfp4 MoE backend`, while still selecting
+  DeepSeek fp8_ds_mla KV cache, FP8 indexer cache, FlashInfer sparse-MLA decode
+  autotune, NCCL `2.30.4`, and `FULL_AND_PIECEWISE`. Artifact:
+  `artifacts/main/2x_gb10_sm121/gb10_aiden_image_parity_moeoff_prefixoff_curve_4k_64k/20260608024102`.
+  Driver signal count was `0`.
+
+  | ISL | Current Dev input tok/s | Aiden B12X-MoE input tok/s | Aiden MoE-off input tok/s | B12X/Dev | MoE-off/Dev | B12X/MoE-off |
+  | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `4096` | `842.80` | `1128.37` | `1063.90` | `1.34x` | `1.26x` | `1.06x` |
+  | `16384` | `1301.35` | `1874.60` | `1814.40` | `1.44x` | `1.39x` | `1.03x` |
+  | `32768` | `1354.05` | `1919.63` | `1875.67` | `1.42x` | `1.39x` | `1.02x` |
+  | `65536` | `1313.08` | `1913.46` | `1859.70` | `1.46x` | `1.42x` | `1.03x` |
+
+  Interpretation: B12X MoE is a small positive component in this profile, not
+  the main explanation for the raw prefix-off gap. The broader Aiden/unholy
+  overlay remains materially faster even when it falls back to
+  `DEEPGEMM_MXFP4`. The next A/B should isolate sparse-indexer /
+  compressed-indexer movement, mHC routing, model-runner integration,
+  all-reduce path, and sparse-MLA dataflow before attempting a vLLM port.
+- **Sparse-indexer-only A/B:** the Aiden image was rerun with prefix cache
+  disabled and
+  `GB10_AIDEN_DOCKER_EXTRA_ARGS='-e VLLM_USE_B12X_MOE=1 -e VLLM_USE_B12X_SPARSE_INDEXER=1 -e VLLM_USE_B12X_FP8_GEMM=0 -e VLLM_USE_B12X_WO_PROJECTION=0'`.
+  The first two attempts were invalid benchmark-client runs: one executed
+  `benchmark_serving.py` directly and failed with `Permission denied`; the
+  second wrapped the same deprecated shim and failed with the vLLM CLI
+  migration error. The valid retry used the target vLLM CLI and wrote
+  `artifacts/main/2x_gb10_sm121/gb10_aiden_image_parity_sparseindexer_prefixoff_curve_4k_64k_cli/20260608031629`.
+  Driver signal count was `0`; serve logs again selected B12X MXFP4 MoE,
+  DeepSeek fp8_ds_mla KV cache, FP8 indexer cache, FlashInfer sparse-MLA
+  decode autotune, NCCL `2.30.4`, and `FULL_AND_PIECEWISE`.
+
+  | ISL | Current Dev input tok/s | Aiden base input tok/s | Aiden sparse-indexer input tok/s | Sparse/base | Sparse/current |
+  | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `4096` | `842.80` | `1128.37` | `945.96` | `0.84x` | `1.12x` |
+  | `16384` | `1301.35` | `1874.60` | `446.92` | `0.24x` | `0.34x` |
+  | `32768` | `1354.05` | `1919.63` | `1845.05` | `0.96x` | `1.36x` |
+  | `65536` | `1313.08` | `1913.46` | `1800.44` | `0.94x` | `1.37x` |
+
+  Interpretation: forcing the exposed B12X sparse-indexer env is not the
+  missing raw-prefill win. It is lower than the Aiden base at every tested
+  size, has a severe `16K` outlier, and only remains faster than current Dev at
+  `32K/64K` because the wider Aiden overlay is still active. Treat this as a
+  weak/rejected route unless a future image or code diff shows a different
+  sparse-indexer API path.
+- **Rejected/blocked env switches:** a broader "unholy env" attempt with
+  `VLLM_USE_V2_MODEL_RUNNER=1` failed before server readiness because V2 model
+  runner did not support the active reasoning budget enforcement shape. An
+  mHC/indexer attempt with `VLLM_USE_B12X_MHC=1` failed during startup because
+  the image could not import `b12x_mhc_pre` from `b12x.integration.residual`.
+  Do not rerun those switches as performance candidates until the serve config
+  and bundled b12x API visibly change.
 - **Conclusion:** the public Aiden/unholy path is not just a serving-flag
   difference. Even with prefix cache disabled, it has a real `1.3-1.5x`
   GB10 long-prefill advantage. The next porting work should focus on the

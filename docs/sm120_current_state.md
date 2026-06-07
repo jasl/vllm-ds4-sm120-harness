@@ -214,6 +214,38 @@ production code is added:
   prefix-on public recipe widens the observed 32K/64K gap to about `2.6x`, but
   that path had prefix-cache hits and should not be treated as pure kernel
   evidence.
+- A follow-up Aiden image A/B disabled B12X MoE with
+  `VLLM_USE_B12X_MOE=0`, leaving the same prefix-cache-off profile, FP8
+  indexer cache, FlashInfer sparse-MLA decode autotune, NCCL version, and
+  `FULL_AND_PIECEWISE` graph mode. That run still beat current Dev by about
+  `1.26-1.42x`, while B12X-MoE-on was only `1.02-1.06x` faster than MoE-off:
+
+  | ISL | Current Dev prefix-off tok/s | Aiden B12X-MoE tok/s | Aiden MoE-off tok/s | MoE-off speedup vs Dev | B12X-MoE speedup vs MoE-off |
+  | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `4096` | `842.80` | `1128.37` | `1063.90` | `1.26x` | `1.06x` |
+  | `16384` | `1301.35` | `1874.60` | `1814.40` | `1.39x` | `1.03x` |
+  | `32768` | `1354.05` | `1919.63` | `1875.67` | `1.39x` | `1.02x` |
+  | `65536` | `1313.08` | `1913.46` | `1859.70` | `1.42x` | `1.03x` |
+
+  This shifts the immediate investigation away from "B12X MoE alone" and
+  toward the wider Aiden/unholy overlay: sparse indexer / compressed-indexer
+  movement, mHC routing, model-runner integration, all-reduce path, and
+  sparse-MLA dataflow.
+- A sparse-indexer-only follow-up forced
+  `VLLM_USE_B12X_SPARSE_INDEXER=1` while keeping prefix cache disabled and B12X
+  MoE enabled. The valid CLI benchmark run completed with driver signal count
+  `0`, but it did not beat the Aiden prefix-off base:
+
+  | ISL | Current Dev prefix-off tok/s | Aiden prefix-off tok/s | Aiden sparse-indexer tok/s | Sparse/base | Sparse/current |
+  | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `4096` | `842.80` | `1128.37` | `945.96` | `0.84x` | `1.12x` |
+  | `16384` | `1301.35` | `1874.60` | `446.92` | `0.24x` | `0.34x` |
+  | `32768` | `1354.05` | `1919.63` | `1845.05` | `0.96x` | `1.36x` |
+  | `65536` | `1313.08` | `1913.46` | `1800.44` | `0.94x` | `1.37x` |
+
+  This makes the exposed sparse-indexer env a weak/rejected route for now. It
+  does not explain Aiden's base advantage; the useful next target remains the
+  wider overlay and sparse-MLA dataflow, not this single env switch.
 - Public/official b12x MoE is still not a direct current-Dev solution for
   DeepSeek V4 Flash. `VLLM_USE_B12X_MOE=1` is not a recognized vLLM env on the
   current branch, and explicit `--moe-backend flashinfer_b12x` fails closed
