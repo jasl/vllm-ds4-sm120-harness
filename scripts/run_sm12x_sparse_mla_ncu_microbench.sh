@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # Run the fixed SM12x sparse-MLA accumulate microbench profile.
 #
-# This is the pre-endpoint gate for kernel experiments that try to improve
-# long-context C=2 fairness. It keeps the two active paths separate:
-#
-#   * chunk path: simultaneous long+long C=2 prefill pressure
-#   * partial path: staggered decode/prefill mixed-arrival pressure
+# This is the pre-endpoint gate for kernel experiments that try to reduce
+# sparse-MLA candidate/value work. Current vLLM builds expose the chunk
+# accumulate path here; older partial-state experiments were rejected and are
+# intentionally not part of this baseline wrapper.
 #
 # By default it runs a CUDA timing microbench only. Set
 # SM12X_SPARSE_MLA_RUN_NCU=1 to also collect focused Nsight Compute reports.
@@ -35,7 +34,7 @@ SM12X_SPARSE_MLA_DEVICE="${SM12X_SPARSE_MLA_DEVICE:-cuda:0}"
 SM12X_SPARSE_MLA_SEED="${SM12X_SPARSE_MLA_SEED:-1234}"
 
 # The realistic staggered-lens shape is the default because full-lens synthetic
-# inputs have repeatedly overstated two-pass/partial-state wins.
+# inputs have repeatedly overstated rejected multi-pass wins.
 SM12X_SPARSE_MLA_LENS_MODE="${SM12X_SPARSE_MLA_LENS_MODE:-staggered}"
 SM12X_SPARSE_MLA_RUN_FULL_LENS_CONTROL="${SM12X_SPARSE_MLA_RUN_FULL_LENS_CONTROL:-0}"
 
@@ -46,7 +45,6 @@ SM12X_SPARSE_MLA_NCU_WARMUPS="${SM12X_SPARSE_MLA_NCU_WARMUPS:-1}"
 SM12X_SPARSE_MLA_NCU_REPEATS="${SM12X_SPARSE_MLA_NCU_REPEATS:-1}"
 SM12X_SPARSE_MLA_NCU_SET="${SM12X_SPARSE_MLA_NCU_SET:-full}"
 SM12X_SPARSE_MLA_NCU_KERNEL_CHUNK="${SM12X_SPARSE_MLA_NCU_KERNEL_CHUNK:-regex:_accumulate_indexed_attention_chunk_multihead_kernel}"
-SM12X_SPARSE_MLA_NCU_KERNEL_PARTIAL="${SM12X_SPARSE_MLA_NCU_KERNEL_PARTIAL:-regex:_accumulate_indexed_attention_partial_states_multihead_kernel}"
 SM12X_SPARSE_MLA_NCU_EXTRA_ARGS="${SM12X_SPARSE_MLA_NCU_EXTRA_ARGS:-}"
 
 mkdir -p "${OUT_DIR}"
@@ -63,7 +61,7 @@ run_microbench() {
     --heads "${SM12X_SPARSE_MLA_HEADS}" \
     --head-dim "${SM12X_SPARSE_MLA_HEAD_DIM}" \
     --kv-rows "${SM12X_SPARSE_MLA_KV_ROWS}" \
-    --modes chunk,partial \
+    --modes chunk \
     --part-size "${SM12X_SPARSE_MLA_PART_SIZE}" \
     --lens-mode "${lens_mode}" \
     --warmups "${SM12X_SPARSE_MLA_WARMUPS}" \
@@ -201,7 +199,7 @@ full = _read_json(out_dir / "microbench_full" / "sparse_mla_accumulate_microbenc
 rows = _rows(staggered, "staggered") + _rows(full, "full")
 
 ncu_cases = []
-for case_name in ("chunk", "partial"):
+for case_name in ("chunk",):
     case_dir = out_dir / f"ncu_{case_name}"
     ncu_cases.append(
         {
@@ -288,8 +286,6 @@ if [[ "${SM12X_SPARSE_MLA_RUN_NCU}" == "1" ]]; then
   fi
   echo "running focused NCU chunk-path profile"
   run_ncu_case "chunk" "chunk" "${SM12X_SPARSE_MLA_NCU_KERNEL_CHUNK}"
-  echo "running focused NCU partial-state-path profile"
-  run_ncu_case "partial" "partial" "${SM12X_SPARSE_MLA_NCU_KERNEL_PARTIAL}"
 fi
 
 write_summary

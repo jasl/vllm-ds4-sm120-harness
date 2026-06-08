@@ -40,13 +40,11 @@ def parse_int_csv(value: str) -> list[int]:
 
 def parse_modes(value: str) -> list[str]:
     modes = [item.strip() for item in value.split(",") if item.strip()]
-    valid = {"chunk", "partial", "partial_active"}
+    valid = {"chunk"}
     invalid = sorted(set(modes) - valid)
     if invalid:
         raise argparse.ArgumentTypeError(
-            "invalid mode(s): {}; expected chunk, partial, or partial_active".format(
-                ", ".join(invalid)
-            )
+            "invalid mode(s): {}; expected chunk".format(", ".join(invalid))
         )
     if not modes:
         raise argparse.ArgumentTypeError("expected at least one mode")
@@ -114,7 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--modes",
         type=parse_modes,
         default=parse_modes("chunk"),
-        help="Comma-separated modes: chunk,partial.",
+        help="Comma-separated modes. Current vLLM builds support: chunk.",
     )
     parser.add_argument(
         "--part-size",
@@ -279,99 +277,6 @@ def run_case(
                 denom=denom,
                 acc=acc,
             )
-
-    elif mode == "partial":
-        num_parts = (candidates + part_size - 1) // part_size
-        max_score = torch.empty(
-            (num_parts, tokens, heads),
-            device=device,
-            dtype=torch.float32,
-        )
-        denom = torch.empty_like(max_score)
-        acc = torch.empty(
-            (num_parts, tokens, heads, head_dim),
-            device=device,
-            dtype=torch.float32,
-        )
-
-        def launch() -> None:
-            kernels.accumulate_indexed_sparse_mla_attention_partial_states(
-                q=inputs["q"],
-                kv_flat=inputs["kv_flat"],
-                indices=inputs["indices"],
-                lens=inputs["lens"],
-                candidate_offset=candidate_offset,
-                scale=scale,
-                part_size=part_size,
-                max_score=max_score,
-                denom=denom,
-                acc=acc,
-            )
-
-    elif mode == "partial_active":
-        part_specs = []
-        for part_idx in range(num_parts_for_stats):
-            part_start = part_idx * part_size
-            part_end = min(part_start + part_size, candidates)
-            active_tokens = torch.nonzero(
-                lens > candidate_offset + part_start,
-                as_tuple=False,
-            ).flatten()
-            if active_tokens.numel() == 0:
-                continue
-            q_part = inputs["q"].index_select(0, active_tokens).contiguous()
-            indices_part = (
-                inputs["indices"]
-                .index_select(0, active_tokens)[:, part_start:part_end]
-                .contiguous()
-            )
-            lens_part = lens.index_select(0, active_tokens).contiguous()
-            active_count = int(active_tokens.numel())
-            part_max = torch.empty(
-                (1, active_count, heads),
-                device=device,
-                dtype=torch.float32,
-            )
-            part_denom = torch.empty_like(part_max)
-            part_acc = torch.empty(
-                (1, active_count, heads, head_dim),
-                device=device,
-                dtype=torch.float32,
-            )
-            part_specs.append(
-                (
-                    q_part,
-                    indices_part,
-                    lens_part,
-                    candidate_offset + part_start,
-                    part_max,
-                    part_denom,
-                    part_acc,
-                )
-            )
-
-        def launch() -> None:
-            for (
-                q_part,
-                indices_part,
-                lens_part,
-                part_candidate_offset,
-                part_max,
-                part_denom,
-                part_acc,
-            ) in part_specs:
-                kernels.accumulate_indexed_sparse_mla_attention_partial_states(
-                    q=q_part,
-                    kv_flat=inputs["kv_flat"],
-                    indices=indices_part,
-                    lens=lens_part,
-                    candidate_offset=part_candidate_offset,
-                    scale=scale,
-                    part_size=part_size,
-                    max_score=part_max,
-                    denom=part_denom,
-                    acc=part_acc,
-                )
 
     else:
         raise AssertionError(f"unsupported mode: {mode}")
