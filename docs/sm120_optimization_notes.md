@@ -9536,6 +9536,15 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   matching DS4 runtime hooks (`runtime_ds4_b12x_wo_projection` and
   `runtime_ds4_b12x_mhc`). Keep WO/MHC as separately measurable components
   rather than folding their effects into the sparse-MLA or MoE attribution.
+- **GB10 public-b12x 0.20 route venv probe:** after upgrading an isolated GB10
+  route venv from the routine b12x `0.15.x` install to `b12x==0.20.0`, both
+  nodes report package-level readiness for Aiden/unholy sparse-indexer extend,
+  native MXFP4 MoE, fused WO projection, and mHC residual routes. The same
+  probe still reports current Dev runtime readiness only for upstream
+  FlashInfer B12X MoE; DS4 B12X WO projection, mHC, sparse-indexer, native
+  MXFP4 MoE, and compressed-MLA runtime hooks are all absent. This confirms the
+  blocker has moved from "public package APIs do not exist" to "vLLM endpoint
+  wiring and dataflow are not integrated."
 
 ### 2026-06-08 Public b12x 0.20 KV-layout probe
 
