@@ -201,11 +201,12 @@ production code is added:
   avoidance, native B12X MoE, plus the inherited PR 43477 scratch fixes. The
   public Aiden image currently exposes the older unholy-style B12X switches;
   it does not recognize the Aiden repository's newer
-  `VLLM_USE_B12X_DEEPSEEK_V4*` switches. Treat mHC routing as a recheck-only
-  candidate until the tested image/fork visibly recognizes `VLLM_USE_B12X_MHC`
-  and imports the required b12x mHC symbols. The Model Runner V2 enablement
-  alone is unlikely to explain the prefill gap, but it may be required for that
-  stack's warmup/scratch compatibility.
+  `VLLM_USE_B12X_DEEPSEEK_V4*` switches. The public-b12x `0.20.0` mHC route
+  has now been rechecked with a standalone GB10 microbench and is rejected for
+  current Dev: `b12x_mhc_post_pre` is slower than the existing TileLang fused
+  MHC path with and without fused norm. The Model Runner V2 enablement alone is
+  unlikely to explain the prefill gap, but it may be required for that stack's
+  warmup/scratch compatibility.
 - Use `scripts/run_gb10_b12x_backend_ab_matrix.sh` for that comparison. It
   wraps the existing GB10 prefill-gap gate and takes semicolon-separated
   `GB10_B12X_AB_TARGETS` entries in

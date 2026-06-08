@@ -9545,6 +9545,17 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   MXFP4 MoE, and compressed-MLA runtime hooks are all absent. This confirms the
   blocker has moved from "public package APIs do not exist" to "vLLM endpoint
   wiring and dataflow are not integrated."
+- **Rejected B12X mHC endpoint route:** added
+  `scripts/run_sm12x_b12x_mhc_microbench.py` to compare current TileLang fused
+  mHC with public b12x `b12x_mhc_post_pre` before touching vLLM. On GB10 with
+  DS4-like shape (`hidden_size=4096`, `hc_mult=4`, `sinkhorn_iters=20`), B12X
+  mHC is slower across tested token counts. With fused norm, B12X speedup vs
+  TileLang was `0.225x`, `0.461x`, and `0.452x` for `64`, `256`, and `1024`
+  tokens. Without fused norm, it was still only `0.213x`, `0.517x`, and
+  `0.498x`. The small numerical differences are acceptable for a microbench,
+  but the performance signal is negative. Do not port the Aiden/unholy mHC hook
+  into current Dev unless a future b12x release changes this result; keep the
+  script as a recheck tool.
 
 ### 2026-06-08 Public b12x 0.20 KV-layout probe
 
