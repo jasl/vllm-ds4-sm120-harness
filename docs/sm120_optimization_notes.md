@@ -9601,6 +9601,21 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   step is not another env toggle; it is a Dev-only adapter or component
   microbench that measures whether this packed backend reduces endpoint
   sparse-MLA work against the current D512 path.
+- **FlashInfer packed SM120 vLLM-layout constraint:** static inspection and
+  direct reference smokes show the unmerged packed backend is not a drop-in
+  replacement for the current vLLM packed sparse-MLA dataflow. The DSV4 decode
+  fast path requires the main cache `page_block_size=64`. The DSV4 dual prefill
+  dispatcher fixes the main cache at `page_block_size=64` and supports only
+  secondary `page_block_size=64` or `2`. A direct reference smoke passed for
+  main `pbs=64`, failed for main `pbs=2`, and an invalid main `pbs=256` probe
+  raised an illegal memory access and left a current-boot Xid 31 on the GB10
+  node. This matches the source contract and blocks a naive zero-copy endpoint
+  adapter because current vLLM uses `pbs=256` for the SWA cache, `pbs=64` for
+  C4A, and `pbs=2` for C128A. Do not repeat the `pbs=256` packed-backend smoke
+  as a performance test. Revisit only if FlashInfer adds a DSV4 path whose main
+  cache supports the SWA page shape, or if a Dev-only vLLM experiment changes
+  or mirrors the SWA cache layout and then passes correctness plus the full
+  promotion matrix.
 - **Rejected B12X mHC endpoint route:** added
   `scripts/run_sm12x_b12x_mhc_microbench.py` to compare current TileLang fused
   mHC with public b12x `b12x_mhc_post_pre` before touching vLLM. On GB10 with

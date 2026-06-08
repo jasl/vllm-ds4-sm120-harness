@@ -46,8 +46,12 @@ Last updated: 2026-06-08.
   fail in `TllmGenFmhaRunner` with `Unsupported architecture`. An isolated GB10
   build of the unmerged packed SM120 sparse-MLA backend now passes direct DSV4
   packed single-cache prefill, dual-cache prefill, and decode correctness
-  smokes, so the next question is vLLM dataflow/adapter integration rather than
-  basic backend availability.
+  smokes. The adapter question is now narrower: the tested packed backend
+  requires a main `page_block_size=64` and only supports secondary
+  `page_block_size=64` or `2`; current vLLM's SWA cache uses
+  `page_block_size=256`, so a direct zero-copy full replacement is blocked
+  unless the backend learns the SWA page shape or vLLM changes/mirrors that
+  cache layout behind a guarded experiment.
 - Blocked or rejected as current endpoint backends, in the specific forms that
   were tested: public b12x / FlashInfer wheels as a direct DS4 endpoint
   backend, upstream `FLASHINFER_MLA_SPARSE_DSV4` with the current official
