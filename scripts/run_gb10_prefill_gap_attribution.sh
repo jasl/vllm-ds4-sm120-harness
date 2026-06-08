@@ -560,6 +560,22 @@ def _overlap_ratio(sparse: dict[str, Any], region: str, group_size: str = "16") 
     return values.get("unique_to_valid_ratio", "n/a")
 
 
+def _reuse_ratio(sparse: dict[str, Any], region: str, group_size: str = "16") -> Any:
+    reuse = sparse.get("cross_query_reuse_potential", {})
+    if not isinstance(reuse, dict):
+        return "n/a"
+    regions = reuse.get("regions", {})
+    if not isinstance(regions, dict):
+        return "n/a"
+    groups = regions.get(region, {})
+    if not isinstance(groups, dict):
+        return "n/a"
+    values = groups.get(group_size)
+    if not isinstance(values, dict):
+        return "n/a"
+    return values.get("sampled_reuse_ratio", "n/a")
+
+
 rows = []
 for case_dir in case_dirs:
     metadata = _load_json(case_dir / "case_metadata.json", {})
@@ -604,6 +620,8 @@ for case_dir in case_dirs:
                 "stage_timings_ms": sparse_summary.get("stage_timings_ms", {}),
                 "stage_efficiency": sparse_summary.get("stage_efficiency", {}),
                 "candidate_overlap": sparse_summary.get("candidate_overlap", {}),
+                "cross_query_reuse_potential": sparse_summary.get("cross_query_reuse_potential", {}),
+                "candidate_row_duplicates": sparse_summary.get("candidate_row_duplicates", {}),
                 "groups": sparse_summary.get("groups", []),
             },
         }
@@ -625,8 +643,8 @@ lines = [
     "",
     f"- OK: `{summary['ok']}`",
     "",
-    "| Profile | Prefix cache | Variant | ISL | OSL | Max batched | OK | Backend marker | Backend match | C | Input tok/s | Decode tok/s | Mean TTFT ms | P95 TTFT ms | P99 TTFT ms | P95 ITL ms | P99 ITL ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Compressed effective visits | Compressed padding ratio | SWA effective visits | SWA padding ratio | All group16 unique/valid | Compressed group16 unique/valid | SWA group16 unique/valid | Stage total ms | Dominant stage | Accumulate ratio | Sparse visits/s | Sparse ms/Mvisit | Attention evidence | MoE evidence | NCCL/all-reduce evidence |",
-    "| --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- |",
+    "| Profile | Prefix cache | Variant | ISL | OSL | Max batched | OK | Backend marker | Backend match | C | Input tok/s | Decode tok/s | Mean TTFT ms | P95 TTFT ms | P99 TTFT ms | P95 ITL ms | P99 ITL ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Compressed effective visits | Compressed padding ratio | SWA effective visits | SWA padding ratio | All group16 unique/valid | Compressed group16 unique/valid | SWA group16 unique/valid | All group16 reuse | Compressed group16 reuse | SWA group16 reuse | Stage total ms | Dominant stage | Accumulate ratio | Sparse visits/s | Sparse ms/Mvisit | Attention evidence | MoE evidence | NCCL/all-reduce evidence |",
+    "| --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- |",
 ]
 for row in rows:
     sparse = row.get("sparse_mla", {})
@@ -648,7 +666,7 @@ for row in rows:
     for bench_row in bench_rows:
         evidence = row.get("backend_evidence", {})
         lines.append(
-            "| {profile} | {prefix_cache} | {variant} | {input_len} | {output_len} | {max_batched} | {ok} | {expected_attention_marker} | {attention_backend_match} | {concurrency} | {input_tps} | {decode_tps} | {mean_ttft} | {p95_ttft} | {p99_ttft} | {p95_itl} | {p99_itl} | {sparse_rows} | {slots} | {effective} | {padding} | {compressed_effective} | {compressed_padding} | {swa_effective} | {swa_padding} | {overlap_all_g16} | {overlap_compressed_g16} | {overlap_swa_g16} | {stage_total} | {dominant_stage} | {accumulate_ratio} | {sparse_visits_per_s} | {sparse_ms_per_mvisit} | {attention_evidence} | {moe_evidence} | {nccl_evidence} |".format(
+            "| {profile} | {prefix_cache} | {variant} | {input_len} | {output_len} | {max_batched} | {ok} | {expected_attention_marker} | {attention_backend_match} | {concurrency} | {input_tps} | {decode_tps} | {mean_ttft} | {p95_ttft} | {p99_ttft} | {p95_itl} | {p99_itl} | {sparse_rows} | {slots} | {effective} | {padding} | {compressed_effective} | {compressed_padding} | {swa_effective} | {swa_padding} | {overlap_all_g16} | {overlap_compressed_g16} | {overlap_swa_g16} | {reuse_all_g16} | {reuse_compressed_g16} | {reuse_swa_g16} | {stage_total} | {dominant_stage} | {accumulate_ratio} | {sparse_visits_per_s} | {sparse_ms_per_mvisit} | {attention_evidence} | {moe_evidence} | {nccl_evidence} |".format(
                 profile=f"`{row.get('profile')}`",
                 prefix_cache=f"`{row.get('prefix_cache_mode')}`",
                 variant=f"`{row.get('variant')}`",
@@ -691,6 +709,9 @@ for row in rows:
                 overlap_all_g16=_overlap_ratio(sparse, "all"),
                 overlap_compressed_g16=_overlap_ratio(sparse, "compressed"),
                 overlap_swa_g16=_overlap_ratio(sparse, "swa"),
+                reuse_all_g16=_reuse_ratio(sparse, "all"),
+                reuse_compressed_g16=_reuse_ratio(sparse, "compressed"),
+                reuse_swa_g16=_reuse_ratio(sparse, "swa"),
                 stage_total=timings.get("total", "n/a")
                 if isinstance(timings, dict)
                 else "n/a",
