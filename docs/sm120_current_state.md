@@ -136,6 +136,12 @@ line lists C=1/C=2/C=4 prefill around `1.9k tok/s` and decode sweet spot around
 external target, not as locally reproduced evidence. The current local finding
 is that the gap is backend/dataflow-shaped, not explained by serving flags
 alone.
+The latest current-Dev GB10 EP-off A/B reinforces that reading: with TP=2,
+prefix cache disabled, MTP=2, FP8 KV, `max_num_batched_tokens=4096`, and
+`FULL_AND_PIECEWISE`, disabling expert parallel produced `776/1310/1331/1290`
+input tok/s at `4K/16K/32K/64K`, still well below Aiden prefix-off
+`1128/1875/1920/1913`. Do not treat EP-off as the path to close the raw
+prefill gap.
 
 The current-default versus Reddit-style GB10 matrix covered 4K, 16K, 32K, 64K,
 and 128K cold prefill with prefix cache disabled, MTP=2, EP enabled, FP8 KV,

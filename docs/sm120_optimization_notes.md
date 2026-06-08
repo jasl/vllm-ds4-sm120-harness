@@ -9295,6 +9295,26 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   `DEEPGEMM_MXFP4`. The next A/B should isolate sparse-indexer /
   compressed-indexer movement, mHC routing, model-runner integration,
   all-reduce path, and sparse-MLA dataflow before attempting a vLLM port.
+- **Current-Dev EP-off A/B:** current Dev was rerun on GB10 with
+  `GB10_PREFILL_GAP_ENABLE_EXPERT_PARALLEL=0`, TP=2, prefix cache disabled,
+  MTP=2, FP8 KV, `max_num_batched_tokens=4096`,
+  `gpu_memory_utilization=0.70`, `FULL_AND_PIECEWISE`, and the same
+  `4K/16K/32K/64K` C=1 sweep. Artifact:
+  `artifacts/main/2x_gb10_sm121/gb10_dev_epoff_mtp2_prefixoff_4k64k_20260608/20260608103128`.
+  Driver health remained clean, serve logs selected MARLIN MXFP4 MoE and the
+  same FP8 indexer cache path, and all four cases passed:
+
+  | ISL | Current Dev EP-on input tok/s | Current Dev EP-off input tok/s | Aiden prefix-off input tok/s | EP-off vs EP-on | Aiden vs EP-off |
+  | ---: | ---: | ---: | ---: | ---: | ---: |
+  | `4096` | `827.47` | `775.76` | `1128.37` | `0.94x` | `1.45x` |
+  | `16384` | `1266.15` | `1309.67` | `1874.60` | `1.03x` | `1.43x` |
+  | `32768` | `1280.50` | `1331.49` | `1919.63` | `1.04x` | `1.44x` |
+  | `65536` | n/a in the EP-on rerun | `1289.82` | `1913.46` | n/a | `1.48x` |
+
+  Interpretation: expert parallel is not the primary GB10 raw-prefill gap
+  cause. Disabling EP does not approach the Aiden/unholy plateau and is worse
+  at 4K. The remaining gap is still shaped like sparse-MLA/indexer/backend
+  dataflow rather than an EP scheduling flag.
 - **Sparse-indexer-only A/B:** the Aiden image was rerun with prefix cache
   disabled and
   `GB10_AIDEN_DOCKER_EXTRA_ARGS='-e VLLM_USE_B12X_MOE=1 -e VLLM_USE_B12X_SPARSE_INDEXER=1 -e VLLM_USE_B12X_FP8_GEMM=0 -e VLLM_USE_B12X_WO_PROJECTION=0'`.
