@@ -312,6 +312,22 @@ production code is added:
   prefix-on public recipe widens the observed 32K/64K gap to about `2.6x`, but
   that path had prefix-cache hits and should not be treated as pure kernel
   evidence.
+- Follow-up import and component probes narrowed the most promising Aiden
+  dependency route. The public Aiden image wheelhouse contains a patched
+  `flashinfer_python-0.6.12` plus `flashinfer_cubin-0.6.11.post3` combination
+  that exposes `flashinfer.sparse_mla_sm120.BatchSparseMLAPagedAttentionWrapper`.
+  Installing only the cubin wheel into the normal official
+  `flashinfer-python==0.6.12` venv does not expose the wrapper. Installing both
+  image wheels into an isolated GB10 venv does expose it, with the same
+  `run(q, kv_cache, indices, output, sm_scale, ..., extra_kv_cache=...)`
+  signature observed inside the Aiden image. Small GB10 component smokes passed
+  for single-cache and dual-cache DSV4 prefill with `num_heads=16`,
+  `topk=128`, main `page_block_size=64`, and secondary `page_block_size=64`.
+  This makes the next route concrete: prototype a Dev-only adapter around the
+  packed FlashInfer SM120 sparse-MLA wrapper, then measure endpoint TTFT/input
+  tok/s against current D512 before any default switch. The remaining
+  integration risk is vLLM's current SWA/cache page layout, not wrapper
+  availability.
 - Use `scripts/run_b12x_stack_probe.sh` before any new B12X endpoint
   experiment to classify the target venv/image as public b12x,
   Aiden/unholy bundled b12x, FlashInfer-b12x NVFP4, or missing. Public

@@ -9618,6 +9618,33 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   step is not another env toggle; it is a Dev-only adapter or component
   microbench that measures whether this packed backend reduces endpoint
   sparse-MLA work against the current D512 path.
+- **Aiden wheelhouse FlashInfer sparse-MLA wrapper probe:** the public Aiden
+  production image carries local FlashInfer wheels in its wheelhouse. A copied
+  GB10 route venv using the normal official `flashinfer-python==0.6.12` plus
+  only the Aiden `flashinfer-cubin==0.6.11.post3` wheel still did **not**
+  expose `flashinfer.sparse_mla_sm120`. After reinstalling both Aiden
+  wheelhouse packages (`flashinfer_python-0.6.12` and
+  `flashinfer_cubin-0.6.11.post3`) into the isolated venv, the import probe
+  exposed `flashinfer.sparse_mla_sm120.BatchSparseMLAPagedAttentionWrapper`
+  with the Aiden-image signature:
+  `run(q, kv_cache, indices, output, sm_scale, ..., extra_kv_cache=...,
+  extra_indices=..., mid_out=..., mid_lse=...)`. Because the wheel versions do
+  not match FlashInfer's normal package-version guard, the import probe used
+  the same kind of version-check bypass required by this image stack; do not
+  carry that bypass into production guidance without a cleaner package version.
+  Small GB10 component smokes then passed:
+  - single-cache DSV4 prefill: `num_tokens=128`, `num_heads=16`, `topk=128`,
+    main `page_block_size=64`, zero packed KV, finite output/LSE;
+  - dual-cache DSV4 prefill: same main shape plus `extra_topk=128` and
+    secondary `page_block_size=64`, zero packed KV, finite output/LSE.
+  A deliberately too-small `topk=16` smoke failed cleanly with the wrapper's
+  unsupported-configuration check, matching the source dispatch table
+  (`topk in {128,512,1024,2048}`). This confirms the Aiden wheelhouse route is
+  not just importable: it can build and launch the packed sparse-MLA prefill
+  backend on GB10. The next useful experiment is a Dev-only vLLM adapter or
+  endpoint-shaped component microbench for this wrapper, with explicit handling
+  of current vLLM page layout and no PR/default promotion until the full
+  promotion matrix passes.
 - **FlashInfer packed SM120 vLLM-layout constraint:** static inspection and
   direct reference smokes show the unmerged packed backend is not a drop-in
   replacement for the current vLLM packed sparse-MLA dataflow. The DSV4 decode

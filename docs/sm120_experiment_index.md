@@ -244,6 +244,15 @@ that thread, search `External unholy-fusion feedback refresh`.
   while vLLM's SWA cache is `page_block_size=256`; search
   `FlashInfer packed SM120 component smoke` and
   `FlashInfer packed SM120 vLLM-layout constraint` before adapter work.
+- Aiden wheelhouse FlashInfer SM120 sparse-MLA wrapper:
+  open `docs/sm120_optimization_notes.md` and search
+  `Aiden wheelhouse FlashInfer sparse-MLA wrapper probe`. Current conclusion:
+  the public Aiden image's wheelhouse contains patched FlashInfer wheels that
+  expose `BatchSparseMLAPagedAttentionWrapper`; installing only the cubin wheel
+  over the official Python package does not. The wrapper passed small GB10
+  single-cache and dual-cache DSV4 prefill component smokes. This is now the
+  highest-signal adapter route, but it still needs vLLM page-layout integration
+  and endpoint A/B before promotion.
 - vLLM PR #43477 8K/1K comparison shape:
   open `docs/vllm_correctness_gates.md` and search
   `FlashInfer sparse-MLA comparison tracking`.
