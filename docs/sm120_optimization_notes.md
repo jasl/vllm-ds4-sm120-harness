@@ -9567,6 +9567,17 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   after CUTLASS DSL or b12x exposes a runnable SM12x MXFP8 GEMM path, or if the
   Aiden image's bundled dependency stack is reproduced and can pass a standalone
   WO smoke first.
+- **Native MXFP4 B12X MoE direct smoke:** public `b12x==0.20.0` can run the
+  W4A16 native-MXFP4 MoE path on GB10. Synthetic DS4-shaped smokes passed for
+  `hidden=4096`, `intermediate=2048`, `topk=6`, first with `E=8` and then with
+  full `E=256`; the first `b12x_moe_fp4` calls completed after first-use
+  compilation. This makes native B12X MoE a dependency-unblocked component
+  candidate, unlike WO. It is still not a direct endpoint answer: the
+  Aiden/unholy implementation supports only non-EP MoE, requires vLLM
+  `workspace2` scratch integration to avoid live forward allocations, and prior
+  Aiden MoE-off endpoint A/B showed only a small positive contribution. If this
+  route is pursued, test it first as an EP-off GB10 raw-prefill component, not
+  as the default EP-on serving profile.
 
 ### 2026-06-08 Public b12x 0.20 KV-layout probe
 

@@ -149,6 +149,10 @@ a runtime-importable DS4 compressed-MLA adapter in its installed vLLM package.
 Public b12x mHC was slower than the current TileLang fused path in standalone
 GB10 microbenching, and public b12x WO projection is blocked on the missing
 Cutlass DSL MXFP8 MMA symbol, so neither should be the next endpoint port.
+Public b12x native MXFP4 MoE is dependency-unblocked in a standalone GB10
+smoke, including a full `E=256` synthetic DS4-shaped call, but the
+Aiden/unholy implementation is non-EP only and prior MoE-off endpoint A/B says
+it is a small positive component rather than the main prefill-gap source.
 
 The same probe shows public b12x compressed MLA does not zero-copy match the
 current vLLM `fp8_ds_mla` KV cache: b12x expects page-packed payload followed
