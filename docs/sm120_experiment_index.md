@@ -263,10 +263,12 @@ that thread, search `External unholy-fusion feedback refresh`.
   DS4 compressed MLA / compressed-indexer / native FP4 MoE helper APIs that
   were missing from the older `0.15.2` notes. Endpoint validation is route
   dependent: mHC is slower than current TileLang, WO is blocked on public
-  CUTLASS DSL MXFP8 MMA support, and sparse-indexer prefill is blocked by a
-  TMA-partition failure in direct GB10 `extend_tiled_topk` smoke. The same
-  probe now reports whether the current environment has the plain FlashInfer
-  DSV4 TRTLLM-gen route versus the unmerged packed SM120 sparse-MLA route.
+  CUTLASS DSL MXFP8 MMA support, public B12X FP8 block-linear is blocked on the
+  same missing `MmaMXF8Op` symbol even with `b12x==0.20.0`, and
+  sparse-indexer prefill is blocked by a TMA-partition failure in direct GB10
+  `extend_tiled_topk` smoke. The same probe now reports whether the current
+  environment has the plain FlashInfer DSV4 TRTLLM-gen route versus the
+  unmerged packed SM120 sparse-MLA route.
 - FlashInfer #3489 MXFP8 GEMM check:
   open `docs/sm120_optimization_notes.md` and search
   `FlashInfer #3489 MXFP8 check`. Current conclusion: the local FlashInfer fork

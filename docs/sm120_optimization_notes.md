@@ -9635,6 +9635,18 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   after CUTLASS DSL or b12x exposes a runnable SM12x MXFP8 GEMM path, or if the
   Aiden image's bundled dependency stack is reproduced and can pass a standalone
   WO smoke first.
+- **Blocked B12X FP8 block-linear route:** a follow-up GB10 component smoke used
+  public `b12x==0.20.0` installed without dependency resolver churn on the
+  routine vLLM/Torch stack (`torch==2.11.0+cu130`, `triton==3.6.0`,
+  `nvidia-nccl-cu13==2.30.4`, `nvidia-cutlass-dsl==4.5.2`). The direct
+  `b12x.gemm.block_fp8_linear.block_fp8_linear_mxfp8` call for a small
+  `m16/k4096/n4096` shape still fails at first compile with the same missing
+  `cutlass.cute.nvgpu.warp.MmaMXF8Op` symbol. Artifact:
+  `artifacts/local_b12x_block_fp8_linear_probe/20260608102232_b12x020_nodeps`.
+  This means the local-inference-lab `B12X FP8 linear backend` cannot be
+  cherry-picked onto current Dev with public packages alone. Revisit only after
+  the CUTLASS DSL/B12X stack exposes `MmaMXF8Op` or after reproducing the Aiden
+  image's bundled dependency stack that guards this path correctly.
 - **FlashInfer #3489 MXFP8 check:** the local FlashInfer fork already includes
   `flashinfer-ai/flashinfer#3489` (`add_cudnn_mxfp8`). It is GEMM plumbing, not
   sparse MLA. A direct GB10 SM121 smoke against the installed
