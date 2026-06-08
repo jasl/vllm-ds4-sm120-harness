@@ -10198,3 +10198,74 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   it to the PR branch or default it on until the remaining promotion matrix is
   green: RTX 59K/124K C=1/C=2, short throughput, mixed arrival, prefix/KV
   lifecycle, GSM8K limit-200, and a full rather than reduced GB10 MTP2 soak.
+
+### 2026-06-08 Fork-independent Triton sparse-MLA rewrite baseline
+
+This is the first same-host baseline after archiving the unmerged FlashInfer
+packed endpoint route as a reference-only path. It is intended as the fixed
+comparison point for the next fork-independent Triton sparse-MLA prefill
+prototype.
+
+- **Code posture:** current dev and PR branches do not contain
+  `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL`. The packed FlashInfer endpoint
+  adapter is preserved on a local backup branch only.
+- **RTX endpoint attribution artifact:**
+  `artifacts/ds4-sm120-preview-dev/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260608_triton_rewrite_default_prefill_attribution_rtx/20260608195158`.
+  Profile: dual RTX PRO 6000 / SM120, TP=2, EP on, MTP=2, FP8 KV, prefix cache
+  disabled, `FULL_AND_PIECEWISE`, `max_model_len=131072`,
+  `max_num_batched_tokens=4096`, `max_num_seqs=4`, C=1, two prompts per ISL,
+  output length 16.
+
+| ISL | Input tok/s | Mean TTFT ms | P99 TTFT ms | Effective visits | Sparse ms/M effective visit |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| `4096` | `5088.20` | `687.68` | `705.43` | `228,003,328` | `4.929` |
+| `8192` | `5354.25` | `1415.07` | `1425.55` | `512,006,144` | `4.826` |
+| `32768` | `5128.01` | `6291.20` | `6328.49` | `2,436,224,000` | `4.765` |
+| `124000` | `3969.91` | `31138.43` | `31380.75` | `12,881,068,672` | `4.861` |
+
+- **Interpretation:** endpoint sparse attribution is stable across these C=1
+  lengths: `sparse_accumulate` dominates the sparse stage, with roughly
+  `4.76-4.93 ms` per million effective visits. A retained Triton prototype must
+  beat this same-host baseline by reducing real candidate/value work or lowering
+  per-visit cost without reducing the semantic candidate set.
+- **Runtime health:** the artifact scan found no CUDA errors, NCCL errors,
+  NVRM/Xid signals, lost-bus messages, launch failures, Python tracebacks, or
+  runtime errors. NCCL/PYNCCL matches in serve logs were normal communicator
+  backend info lines.
+- **Generic chunk component background artifact:**
+  `artifacts/ds4-sm120-preview-dev/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260608_triton_rewrite_sparse_mla_microbench_rtx/20260608200422`.
+  This records the generic `accumulate_indexed_sparse_mla_attention_chunk`
+  component for background only. It is not the current endpoint D512 split
+  component baseline. Rejected partial-state modes are no longer part of the
+  SM12x wrapper.
+
+| Tokens | Candidates | Mean ms | P95 ms | Candidate visits/s |
+| ---: | ---: | ---: | ---: | ---: |
+| `256` | `512` | `0.502` | `0.509` | `1.669e10` |
+| `256` | `1024` | `0.989` | `1.052` | `1.697e10` |
+| `256` | `1152` | `1.076` | `1.080` | `1.754e10` |
+| `1024` | `512` | `2.390` | `2.401` | `1.404e10` |
+| `1024` | `1024` | `4.715` | `4.775` | `1.423e10` |
+| `1024` | `1152` | `4.947` | `4.976` | `1.526e10` |
+| `2048` | `512` | `4.744` | `4.763` | `1.415e10` |
+| `2048` | `1024` | `9.296` | `9.334` | `1.444e10` |
+| `2048` | `1152` | `9.899` | `9.909` | `1.525e10` |
+
+- **D512 split component baseline artifact:**
+  `artifacts/ds4-sm120-preview-dev/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260608_triton_rewrite_d512_split_microbench_rtx/20260608200814`.
+  Profile: `num_tokens=1024`, `num_heads=64`, `head_dim=512`,
+  `index_pattern=c128a-current`, `wide_split_chunk_candidates=1152`,
+  3 warmups and 10 timing iterations.
+
+| Candidates | Current chunk ms | D512 split ms | Split speedup | Score ms | Stats ms | Value ms | Wide split ms |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `640` | `4.643` | `1.570` | `2.958x` | `0.546` | `0.105` | `0.919` | `1.850` |
+| `1152` | `8.299` | `2.769` | `2.998x` | `0.964` | `0.204` | `1.601` | `3.040` |
+| `2048` | `14.793` | `4.927` | `3.003x` | `1.713` | `0.354` | `2.859` | `5.442` |
+
+Next step:
+
+- Start the fork-independent Triton prototype below the endpoint. The first
+  retained component candidate must be exact against current D512 split/chunked
+  output and beat the D512 split component baseline before it is wired into
+  `flashmla.py`.
