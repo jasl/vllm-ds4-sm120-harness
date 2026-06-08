@@ -85,6 +85,7 @@ run_remote_streaming_matrix() {
       STREAMING_PRESSURE_MATRIX_CASE_NAME=$(shell_quote "${GB10_FORUM53_CASE_NAME}") \
       STREAMING_PRESSURE_MATRIX_CASE_SPECS=$(shell_quote "${GB10_FORUM53_CASE_SPECS}") \
       STREAMING_PRESSURE_MATRIX_TIMEOUT=$(shell_quote "${GB10_FORUM53_TIMEOUT}") \
+      STREAMING_PRESSURE_MATRIX_TEMPERATURE=$(shell_quote "${GB10_FORUM53_TEMPERATURE}") \
       STREAMING_PRESSURE_MATRIX_MAX_TTFT_SECONDS=$(shell_quote "${GB10_FORUM53_MAX_TTFT_SECONDS}") \
       STREAMING_PRESSURE_MATRIX_MAX_ELAPSED_SECONDS=$(shell_quote "${GB10_FORUM53_MAX_ELAPSED_SECONDS}") \
       STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW=$(shell_quote "${GB10_FORUM53_FAIL_ON_SLOW}") \
@@ -127,22 +128,26 @@ if [[ "${GB10_FORUM53_OPTIONAL_MTP2}" == "1" || "${GB10_FORUM53_OPTIONAL_MTP2}" 
     GB10_FORUM53_VARIANTS="${GB10_FORUM53_VARIANTS},mtp2"
   fi
 fi
-GB10_FORUM53_BATCHED_TOKEN_SWEEP="${GB10_FORUM53_BATCHED_TOKEN_SWEEP:-2048,3072,4096,6144,8192}"
+GB10_FORUM53_BATCHED_TOKEN_SWEEP="${GB10_FORUM53_BATCHED_TOKEN_SWEEP:-4096}"
 GB10_FORUM53_CASE_NAME="${GB10_FORUM53_CASE_NAME:-forum53_multi_user_prefix_cache}"
-GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c6:6:1:3200:128,forum53_c8:8:1:3200:128}"
+GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c2:2:2:3200:128,forum53_c4:4:2:3200:128}"
 GB10_FORUM53_TIMEOUT="${GB10_FORUM53_TIMEOUT:-1800}"
 GB10_FORUM53_MAX_TTFT_SECONDS="${GB10_FORUM53_MAX_TTFT_SECONDS:-600}"
 GB10_FORUM53_MAX_ELAPSED_SECONDS="${GB10_FORUM53_MAX_ELAPSED_SECONDS:-1800}"
 GB10_FORUM53_FAIL_ON_SLOW="${GB10_FORUM53_FAIL_ON_SLOW:-0}"
+GB10_FORUM53_TEMPERATURE="${GB10_FORUM53_TEMPERATURE:-0}"
 GB10_FORUM53_SERVER_STARTUP_TIMEOUT="${GB10_FORUM53_SERVER_STARTUP_TIMEOUT:-45}"
+GB10_FORUM53_SAFE_TOTAL_KV_TOKENS="${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS:-2048898}"
+GB10_FORUM53_CONTEXT_SAFETY_PERCENT="${GB10_FORUM53_CONTEXT_SAFETY_PERCENT:-70}"
+GB10_FORUM53_SKIP_CONTEXT_GUARD="${GB10_FORUM53_SKIP_CONTEXT_GUARD:-0}"
 
 MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash}"
 API_PORT="${API_PORT:-8000}"
 TP_SIZE="${GB10_FORUM53_TP_SIZE:-2}"
 PP_SIZE="${GB10_FORUM53_PP_SIZE:-1}"
-MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-262144}"
-GPU_MEMORY_UTILIZATION="${GB10_FORUM53_GPU_MEMORY_UTILIZATION:-0.90}"
-MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-8}"
+MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-196608}"
+GPU_MEMORY_UTILIZATION="${GB10_FORUM53_GPU_MEMORY_UTILIZATION:-0.80}"
+MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-4}"
 BLOCK_SIZE="${GB10_FORUM53_BLOCK_SIZE:-256}"
 KV_CACHE_DTYPE="${GB10_FORUM53_KV_CACHE_DTYPE:-fp8}"
 MIN_AVAILABLE_MEM_GIB="${GB10_FORUM53_MIN_AVAILABLE_MEM_GIB:-96}"
@@ -150,6 +155,59 @@ SERVE_COMPILATION_CONFIG="${GB10_FORUM53_COMPILATION_CONFIG:-{\"cudagraph_mode\"
 
 mkdir -p "${OUT_DIR}"
 printf '%s\n' "${REMOTE_RUN_ROOT}" > "${OUT_DIR}/remote_run_root.txt"
+
+positive_integer() {
+  local value="$1"
+  local name="$2"
+  if ! [[ "${value}" =~ ^[0-9]+$ ]] || (( value < 1 )); then
+    printf '%s must be a positive integer: %s\n' "${name}" "${value}" >&2
+    exit 2
+  fi
+}
+
+positive_integer "${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS}" \
+  "GB10_FORUM53_SAFE_TOTAL_KV_TOKENS"
+positive_integer "${GB10_FORUM53_CONTEXT_SAFETY_PERCENT}" \
+  "GB10_FORUM53_CONTEXT_SAFETY_PERCENT"
+positive_integer "${MAX_NUM_SEQS}" "GB10_FORUM53_MAX_NUM_SEQS"
+positive_integer "${MAX_MODEL_LEN}" "GB10_FORUM53_MAX_MODEL_LEN"
+
+safe_context_limit() {
+  local max_num_seqs="$1"
+  printf '%s\n' \
+    "$(( GB10_FORUM53_SAFE_TOTAL_KV_TOKENS * GB10_FORUM53_CONTEXT_SAFETY_PERCENT / 100 / max_num_seqs ))"
+}
+
+SAFE_CONTEXT_LIMIT="$(safe_context_limit "${MAX_NUM_SEQS}")"
+{
+  printf 'max_num_seqs,safe_max_model_len\n'
+  for seqs in 1 2 4 6 8; do
+    printf '%s,%s\n' "${seqs}" "$(safe_context_limit "${seqs}")"
+  done
+} > "${OUT_DIR}/forum53_context_safety.csv"
+{
+  printf 'safe_total_kv_tokens=%s\n' "${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS}"
+  printf 'context_safety_percent=%s\n' "${GB10_FORUM53_CONTEXT_SAFETY_PERCENT}"
+  printf 'configured_max_num_seqs=%s\n' "${MAX_NUM_SEQS}"
+  printf 'configured_max_model_len=%s\n' "${MAX_MODEL_LEN}"
+  printf 'safe_context_limit=%s\n' "${SAFE_CONTEXT_LIMIT}"
+} > "${OUT_DIR}/forum53_context_safety.txt"
+
+if [[ "${GB10_FORUM53_SKIP_CONTEXT_GUARD}" != "1" \
+    && "${GB10_FORUM53_SKIP_CONTEXT_GUARD}" != "true" \
+    && "${MAX_MODEL_LEN}" -gt "${SAFE_CONTEXT_LIMIT}" ]]; then
+  {
+    printf 'unsafe GB10 forum53 profile: max_model_len=%s exceeds safe limit %s for max_num_seqs=%s\n' \
+      "${MAX_MODEL_LEN}" "${SAFE_CONTEXT_LIMIT}" "${MAX_NUM_SEQS}"
+    printf 'safe_total_kv_tokens=%s, safety_percent=%s\n' \
+      "${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS}" \
+      "${GB10_FORUM53_CONTEXT_SAFETY_PERCENT}"
+    printf 'Override only for deliberate destructive pressure with GB10_FORUM53_SKIP_CONTEXT_GUARD=1.\n'
+    printf 'Safe context table written to %s/forum53_context_safety.csv\n' \
+      "${OUT_DIR}"
+  } >&2
+  exit 2
+fi
 
 failures=0
 IFS=',' read -r -a variants <<< "${GB10_FORUM53_VARIANTS}"
@@ -176,11 +234,18 @@ for variant in "${variants[@]}"; do
     remote_variant_root="${REMOTE_RUN_ROOT}/${sweep_name}"
     remote_serve_dir="${remote_variant_root}/serve"
     remote_matrix_dir="${remote_variant_root}/streaming_pressure_forum53"
+    scheduler_trace_path="${remote_serve_dir}/scheduler_trace.jsonl"
+    VLLM_SCHEDULER_TRACE_PATH="${scheduler_trace_path}"
     serve_remote_env_vars="${SERVE_REMOTE_ENV_VARS:-}"
     serve_remote_env_vars="$(
       append_env_allowlist \
         "${serve_remote_env_vars}" \
         VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL
+    )"
+    serve_remote_env_vars="$(
+      append_env_allowlist \
+        "${serve_remote_env_vars}" \
+        VLLM_SCHEDULER_TRACE_PATH
     )"
 
     mkdir -p "${variant_dir}"
@@ -220,6 +285,7 @@ for variant in "${variants[@]}"; do
       SERVE_SPECULATIVE_CONFIG="${speculative_config}" \
       SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG}" \
       SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}" \
+      VLLM_SCHEDULER_TRACE_PATH="${scheduler_trace_path}" \
       SSH_OPTS="${SSH_OPTS:-}" \
       "${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh" \
         > "${variant_dir}/serve_start.stdout.log" \
@@ -250,6 +316,14 @@ for variant in "${variants[@]}"; do
         server_unresponsive.json; do
       fetch_remote_file "${remote_matrix_dir}/${name}" "${variant_dir}/${name}"
     done
+    fetch_remote_file "${scheduler_trace_path}" \
+      "${variant_dir}/scheduler_trace.jsonl"
+    if [[ -s "${variant_dir}/scheduler_trace.jsonl" ]]; then
+      "${LOCAL_PYTHON:-python3}" "${SCRIPT_DIR}/analyze_scheduler_trace.py" \
+        "${variant_dir}/scheduler_trace.jsonl" \
+        --json-output "${variant_dir}/scheduler_trace_summary.json" \
+        --markdown-output "${variant_dir}/scheduler_trace_summary.md"
+    fi
 
     stop_remote_vllm "${WORKER_HOST}"
     stop_remote_vllm "${HEAD_HOST}"
@@ -260,7 +334,16 @@ for variant in "${variants[@]}"; do
   done
 done
 
-SUMMARY_ROOT="${OUT_DIR}" LOCAL_PYTHON="${LOCAL_PYTHON:-python3}" "${LOCAL_PYTHON:-python3}" - <<'PY'
+SUMMARY_ROOT="${OUT_DIR}" \
+SUMMARY_MAX_MODEL_LEN="${MAX_MODEL_LEN}" \
+SUMMARY_MAX_NUM_SEQS="${MAX_NUM_SEQS}" \
+SUMMARY_SAFE_TOTAL_KV_TOKENS="${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS}" \
+SUMMARY_CONTEXT_SAFETY_PERCENT="${GB10_FORUM53_CONTEXT_SAFETY_PERCENT}" \
+SUMMARY_SAFE_CONTEXT_LIMIT="${SAFE_CONTEXT_LIMIT}" \
+SUMMARY_PREFIX_CACHE="enabled" \
+SUMMARY_CASE_SPECS="${GB10_FORUM53_CASE_SPECS}" \
+LOCAL_PYTHON="${LOCAL_PYTHON:-python3}" \
+"${LOCAL_PYTHON:-python3}" - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -285,6 +368,7 @@ for variant_dir in sorted(path for path in root.iterdir() if path.is_dir()):
     max_batched_tokens = read_text(variant_dir / "max_num_batched_tokens.txt")
     matrix = read_json(variant_dir / "streaming_pressure_matrix.json")
     runtime = read_json(variant_dir / "runtime_stats_summary.json")
+    scheduler_trace = read_json(variant_dir / "scheduler_trace_summary.json")
     runtime_metrics = runtime.get("metrics", {}) if isinstance(runtime, dict) else {}
     summary = matrix.get("summary", {}) if isinstance(matrix, dict) else {}
     row = {
@@ -313,6 +397,7 @@ for variant_dir in sorted(path for path in root.iterdir() if path.is_dir()):
                 "preemptions_delta",
             )
         },
+        "scheduler_trace_summary": scheduler_trace,
     }
     rows.append(row)
 
@@ -324,9 +409,15 @@ payload = {
         for row in rows
     ),
     "profile": {
-        "max_model_len": 262144,
-        "max_num_seqs": 8,
-        "prefix_cache": "enabled",
+        "max_model_len": int(os.environ["SUMMARY_MAX_MODEL_LEN"]),
+        "max_num_seqs": int(os.environ["SUMMARY_MAX_NUM_SEQS"]),
+        "prefix_cache": os.environ["SUMMARY_PREFIX_CACHE"],
+        "case_specs": os.environ["SUMMARY_CASE_SPECS"],
+        "safe_total_kv_tokens": int(os.environ["SUMMARY_SAFE_TOTAL_KV_TOKENS"]),
+        "context_safety_percent": int(
+            os.environ["SUMMARY_CONTEXT_SAFETY_PERCENT"]
+        ),
+        "safe_context_limit": int(os.environ["SUMMARY_SAFE_CONTEXT_LIMIT"]),
         "batched_token_sweep": sorted(
             {
                 row["max_num_batched_tokens"]
@@ -346,16 +437,27 @@ lines = [
     "# GB10 Forum #53 Multi-User Prefix-Cache Gate",
     "",
     f"- OK: `{payload['ok']}`",
-    "- Profile: `TP=2`, `max_model_len=262144`, `max_num_seqs=8`, prefix cache enabled.",
+    "- Profile: `TP=2`, `max_model_len={}`, `max_num_seqs={}`, prefix cache `{}`.".format(
+        payload["profile"]["max_model_len"],
+        payload["profile"]["max_num_seqs"],
+        payload["profile"]["prefix_cache"],
+    ),
+    "- Safe context limit: `{}` tokens (`{}%` of `{}` observed KV tokens / `max_num_seqs`).".format(
+        payload["profile"]["safe_context_limit"],
+        payload["profile"]["context_safety_percent"],
+        payload["profile"]["safe_total_kv_tokens"],
+    ),
+    f"- Case specs: `{payload['profile']['case_specs']}`",
     "",
-    "| Variant | max_num_batched_tokens | Serve exit | Matrix exit | Requests | Failures | Max TTFT s | ITL P99 s | running max | waiting max | KV max % | Prefix hits | Preemptions | Remote artifact |",
-    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    "| Variant | max_num_batched_tokens | Serve exit | Matrix exit | Requests | Failures | Max TTFT s | ITL P99 s | running max | waiting max | Trace events | Max scheduled tokens | Prefix hits | Preemptions | Remote artifact |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
 ]
 for row in rows:
     summary = row.get("summary") or {}
     runtime_metrics = row.get("runtime_metrics") or {}
+    scheduler_trace = row.get("scheduler_trace_summary") or {}
     lines.append(
-        "| {variant} | {mbt} | {serve} | {matrix} | {requests} | {failures} | {ttft} | {p99} | {running} | {waiting} | {kv} | {prefix_hits} | {preemptions} | `{remote}` |".format(
+        "| {variant} | {mbt} | {serve} | {matrix} | {requests} | {failures} | {ttft} | {p99} | {running} | {waiting} | {trace_events} | {max_sched} | {prefix_hits} | {preemptions} | `{remote}` |".format(
             variant=row.get("variant"),
             mbt=row.get("max_num_batched_tokens"),
             serve=row.get("serve_start_exit_code"),
@@ -366,7 +468,8 @@ for row in rows:
             p99=summary.get("p99_inter_chunk_seconds", ""),
             running=runtime_metrics.get("running_requests_max", ""),
             waiting=runtime_metrics.get("waiting_requests_max", ""),
-            kv=runtime_metrics.get("gpu_kv_cache_usage_percent_max", ""),
+            trace_events=scheduler_trace.get("event_count", ""),
+            max_sched=scheduler_trace.get("total_scheduled_tokens_max", ""),
             prefix_hits=runtime_metrics.get("prefix_cache_hits_delta", ""),
             preemptions=runtime_metrics.get("preemptions_delta", ""),
             remote=row.get("remote_variant_root", ""),

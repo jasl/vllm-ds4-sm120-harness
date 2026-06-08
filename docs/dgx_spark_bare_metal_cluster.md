@@ -747,20 +747,50 @@ forum53 multi-user prefix-cache gate. This is a user-feedback reproduction gate
 for the report where a newer image improved single-user prefill but collapsed
 6-8 concurrent workers into one active request.
 
-Default shape:
+Default safe shape:
 
 - `TP=2`, `PP=1`, expert parallel enabled.
 - Prefix cache enabled.
-- `max_model_len=262144`.
-- `max_num_seqs=8`.
-- `gpu_memory_utilization=0.90`.
+- `max_model_len=196608`.
+- `max_num_seqs=4`.
+- `gpu_memory_utilization=0.80`.
 - `FULL_AND_PIECEWISE` CUDA graph mode.
 - no-MTP first; set `GB10_FORUM53_OPTIONAL_MTP2=1` to append the MTP=2
   stability comparison.
-- `max_num_batched_tokens` sweep:
-  `2048,3072,4096,6144,8192`.
+- `max_num_batched_tokens=4096`.
 - Streaming matrix cases:
-  `forum53_c6:6:1:3200:128,forum53_c8:8:1:3200:128`.
+  `forum53_c2:2:2:3200:128,forum53_c4:4:2:3200:128`.
+  The second round is intentional: the user-facing failure is about
+  multi-session behavior with prefix cache enabled, so the gate must include a
+  warm-turn prefix-cache reuse path rather than only cold first turns.
+
+Use `GB10_FORUM53_BATCHED_TOKEN_SWEEP` for explicit 2048/8192 diagnostics.
+Those shapes are useful for tuning, but the default promotion gate should stay
+on the current recommended 4096 profile unless a fresh sweep proves otherwise.
+
+GB10 forum53 safe context limits:
+
+The script uses a conservative guard before starting vLLM:
+`safe_total_kv_tokens=2048898` and `context_safety_percent=70`. This is based on
+the smallest successful no-MTP forum53 startup capacity observed in the
+`max_num_batched_tokens=8192` sweep. The preflight limit is:
+
+`safe_max_model_len = floor(2048898 * 0.70 / max_num_seqs)`.
+
+| `max_num_seqs` | Safe `max_model_len` | Recommended use |
+| ---: | ---: | --- |
+| 1 | 1,434,228 | Capacity probe only; not a multi-user gate. |
+| 2 | 717,114 | Recommended GB10 long-context envelope. |
+| 4 | 358,557 | Planned GB10 maximum concurrency envelope. |
+| 6 | 239,038 | High-risk pressure only; do not use 262K by default. |
+| 8 | 179,278 | High-risk pressure only; do not use 262K by default. |
+
+The script writes `forum53_context_safety.csv` and
+`forum53_context_safety.txt` into the artifact root before serving starts. If a
+profile exceeds the safe limit, it exits with code `2` instead of launching a
+known-risk CUDA graph/KV configuration. Only set
+`GB10_FORUM53_SKIP_CONTEXT_GUARD=1` for a deliberate destructive pressure test
+after a clean reboot and with someone ready to recover the cluster.
 
 The summary files are
 `gb10_forum53_multi_user_gate_summary.json` and
@@ -768,6 +798,16 @@ The summary files are
 `waiting_requests_max`, `gpu_kv_cache_usage_percent_max`, TTFT, ITL p99,
 prefix-cache hits, and preemptions before deciding whether a regression is in
 scheduler admission, KV capacity, prefix-cache retention, or MTP stability.
+
+For the newer real-user agent shape, keep this as a development observation
+gate rather than a normal PR hard gate: raise `GB10_FORUM53_MAX_MODEL_LEN` to
+the target envelope within the table above, use `GB10_FORUM53_MAX_NUM_SEQS=4`,
+and set
+`GB10_FORUM53_CASE_SPECS` to a C=4 two-round case with enough deterministic
+lines to approach the target shared-context length. Compare round-2 TTFT,
+`running_requests_max`, `waiting_requests_max`, prefix-cache hit deltas, and KV
+usage against the cold round before deciding whether a scheduling change helps
+agent workloads.
 
 Use `scripts/run_gb10_mtp2_moe_tp_deadlock_gate.sh` for the MTP=2 MoE TP deadlock
 sustained gate. This is a user-feedback reproduction gate for the

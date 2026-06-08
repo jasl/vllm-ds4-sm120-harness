@@ -1349,6 +1349,12 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "SERVE_REMOTE_ENV_VARS" in script
     assert "remote_env_allowlist" in script
     assert "invalid SERVE_REMOTE_ENV_VARS entry" in script
+    assert "printf 'SERVE_REMOTE_ENV_VARS=%s '" in script
+    assert "serve_env_args=()" in script
+    assert 'remote_serve_env_vars="${SERVE_REMOTE_ENV_VARS:-}"' in script
+    assert 'for var in ${remote_serve_env_vars//,/ }; do' in script
+    assert 'serve_env_args+=("${var}=${!var:-}")' in script
+    assert '"${serve_env_args[@]}"' in script
     assert "VLLM_USE_FLASHINFER_SAMPLER" in script
     assert "VLLM_TRITON_MLA_SPARSE" in script
     assert "VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE" in script
@@ -1463,22 +1469,45 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
 
     assert 'GB10_FORUM53_VARIANTS="${GB10_FORUM53_VARIANTS:-nomtp}"' in script
     assert 'GB10_FORUM53_OPTIONAL_MTP2="${GB10_FORUM53_OPTIONAL_MTP2:-0}"' in script
-    assert 'MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-262144}"' in script
-    assert 'MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-8}"' in script
+    assert 'MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-196608}"' in script
+    assert 'MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-4}"' in script
+    assert 'GPU_MEMORY_UTILIZATION="${GB10_FORUM53_GPU_MEMORY_UTILIZATION:-0.80}"' in script
     assert (
-        'GB10_FORUM53_BATCHED_TOKEN_SWEEP="${GB10_FORUM53_BATCHED_TOKEN_SWEEP:-2048,3072,4096,6144,8192}"'
+        'GB10_FORUM53_BATCHED_TOKEN_SWEEP="${GB10_FORUM53_BATCHED_TOKEN_SWEEP:-4096}"'
         in script
     )
     assert 'SERVE_PREFIX_CACHE_MODE=enabled' in script
     assert 'SERVE_ENABLE_EXPERT_PARALLEL=1' in script
-    assert 'GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c6:6:1:3200:128,forum53_c8:8:1:3200:128}"' in script
+    assert 'GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c2:2:2:3200:128,forum53_c4:4:2:3200:128}"' in script
+    assert 'GB10_FORUM53_TEMPERATURE="${GB10_FORUM53_TEMPERATURE:-0}"' in script
+    assert 'STREAMING_PRESSURE_MATRIX_TEMPERATURE=$(shell_quote "${GB10_FORUM53_TEMPERATURE}")' in script
+    assert 'GB10_FORUM53_SAFE_TOTAL_KV_TOKENS="${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS:-2048898}"' in script
+    assert 'GB10_FORUM53_CONTEXT_SAFETY_PERCENT="${GB10_FORUM53_CONTEXT_SAFETY_PERCENT:-70}"' in script
+    assert "safe_context_limit" in script
+    assert "GB10_FORUM53_SKIP_CONTEXT_GUARD" in script
     assert 'FULL_AND_PIECEWISE' in script
     assert '{"method":"mtp","num_speculative_tokens":2}' in script
     assert '"${REMOTE_HARNESS_ROOT}/scripts/run_streaming_pressure_matrix.sh"' in script
     assert "gb10_forum53_multi_user_gate_summary.json" in script
     assert "gb10_forum53_multi_user_gate_summary.md" in script
+    trace_assignment = '    VLLM_SCHEDULER_TRACE_PATH="${scheduler_trace_path}"'
+    trace_allowlist = (
+        "append_env_allowlist \\\n"
+        '        "${serve_remote_env_vars}" \\\n'
+        "        VLLM_SCHEDULER_TRACE_PATH"
+    )
+    assert trace_assignment in script
+    assert trace_allowlist in script
+    assert script.index(trace_assignment) < script.index(trace_allowlist)
+    assert "scheduler_trace.jsonl" in script
+    assert "scheduler_trace_summary.json" in script
+    assert '"${SCRIPT_DIR}/analyze_scheduler_trace.py"' in script
+    assert "SUMMARY_MAX_MODEL_LEN" in script
+    assert "SUMMARY_SAFE_CONTEXT_LIMIT" in script
+    assert "SUMMARY_CASE_SPECS" in script
     assert "running_requests_max" in script
     assert "waiting_requests_max" in script
+    assert "total_scheduled_tokens_max" in script
     assert "gpu_kv_cache_usage_percent_max" in script
     assert "10.0.0." not in script
     assert "/home/" not in script
@@ -1486,6 +1515,51 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
 
     assert "scripts/run_gb10_forum53_multi_user_gate.sh" in docs
     assert "forum53 multi-user prefix-cache gate" in docs
+    assert "GB10 forum53 safe context limits" in docs
+
+
+def test_gb10_forum53_context_guard_rejects_unsafe_profile(tmp_path):
+    script = ROOT / "scripts" / "run_gb10_forum53_multi_user_gate.sh"
+    out_dir = tmp_path / "forum53"
+    env = {
+        **os.environ,
+        "HEAD_HOST": "head.invalid",
+        "WORKER_HOST": "worker.invalid",
+        "HEAD_ROCE_IP": "192.0.2.10",
+        "WORKER_ROCE_IP": "192.0.2.11",
+        "ROCE_IFACE": "eth-test",
+        "NCCL_IB_HCA": "hca-test",
+        "VLLM_ROOT": str(tmp_path / "vllm"),
+        "VLLM_VENV": str(tmp_path / ".venv"),
+        "OUT_DIR": str(out_dir),
+        "GB10_FORUM53_MAX_NUM_SEQS": "8",
+        "GB10_FORUM53_MAX_MODEL_LEN": "262144",
+        "GB10_FORUM53_SAFE_TOTAL_KV_TOKENS": "2048898",
+        "GB10_FORUM53_CONTEXT_SAFETY_PERCENT": "70",
+    }
+
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "unsafe GB10 forum53 profile" in result.stderr
+    assert "exceeds safe limit 179278" in result.stderr
+    assert (out_dir / "forum53_context_safety.csv").read_text(
+        encoding="utf-8"
+    ).splitlines() == [
+        "max_num_seqs,safe_max_model_len",
+        "1,1434228",
+        "2,717114",
+        "4,358557",
+        "6,239038",
+        "8,179278",
+    ]
 
 
 def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():

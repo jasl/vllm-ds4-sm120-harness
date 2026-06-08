@@ -141,6 +141,7 @@ remote_env_prefix() {
   printf 'SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS=%s ' "$(shell_quote "${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS}")"
   printf 'SERVE_PREFIX_CACHE_MODE=%s ' "$(shell_quote "${SERVE_PREFIX_CACHE_MODE}")"
   printf 'SERVE_EXTRA_ARGS=%s ' "$(shell_quote "${SERVE_EXTRA_ARGS}")"
+  printf 'SERVE_REMOTE_ENV_VARS=%s ' "$(shell_quote "${SERVE_REMOTE_ENV_VARS}")"
   printf 'SERVE_NSYS_MODE=%s ' "$(shell_quote "${SERVE_NSYS_MODE}")"
   printf 'NSYS_BIN_REMOTE=%s ' "$(shell_quote "${NSYS_BIN_REMOTE}")"
   printf 'NSYS_TRACE=%s ' "$(shell_quote "${NSYS_TRACE}")"
@@ -322,6 +323,12 @@ if [[ -n "${SERVE_EXTRA_ARGS}" ]]; then
   extra_args=(${SERVE_EXTRA_ARGS})
   serve_args+=("${extra_args[@]}")
 fi
+serve_env_args=()
+remote_serve_env_vars="${SERVE_REMOTE_ENV_VARS:-}"
+for var in ${remote_serve_env_vars//,/ }; do
+  [[ -n "${var}" ]] || continue
+  serve_env_args+=("${var}=${!var:-}")
+done
 serve_cmd=(
   env \
   PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}" \
@@ -337,6 +344,7 @@ serve_cmd=(
   NCCL_DEBUG="${NCCL_DEBUG:-WARN}" \
   NCCL_DEBUG_SUBSYS="${NCCL_DEBUG_SUBSYS:-}" \
   VLLM_MARLIN_USE_ATOMIC_ADD="1" \
+  "${serve_env_args[@]}" \
   "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main "${serve_args[@]}"
 )
 if [[ "${SERVE_NSYS_MODE}" == "worker" || "${SERVE_NSYS_MODE}" == "both" ]]; then
@@ -422,6 +430,12 @@ if [[ -n "${SERVE_EXTRA_ARGS}" ]]; then
   extra_args=(${SERVE_EXTRA_ARGS})
   serve_args+=("${extra_args[@]}")
 fi
+serve_env_args=()
+remote_serve_env_vars="${SERVE_REMOTE_ENV_VARS:-}"
+for var in ${remote_serve_env_vars//,/ }; do
+  [[ -n "${var}" ]] || continue
+  serve_env_args+=("${var}=${!var:-}")
+done
 serve_cmd=(
   env \
   PATH="${VLLM_VENV}/bin:${CUDA_HOME_REMOTE}/bin:${PATH}" \
@@ -437,6 +451,7 @@ serve_cmd=(
   NCCL_DEBUG="${NCCL_DEBUG:-WARN}" \
   NCCL_DEBUG_SUBSYS="${NCCL_DEBUG_SUBSYS:-}" \
   VLLM_MARLIN_USE_ATOMIC_ADD="1" \
+  "${serve_env_args[@]}" \
   "${VLLM_VENV}/bin/python" -m vllm.entrypoints.cli.main "${serve_args[@]}"
 )
 if [[ "${SERVE_NSYS_MODE}" == "head" || "${SERVE_NSYS_MODE}" == "both" ]]; then

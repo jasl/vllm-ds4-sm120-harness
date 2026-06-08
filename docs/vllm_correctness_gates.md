@@ -192,6 +192,21 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   `gpu_memory_utilization=0.80`; `0.90+` startup probes have produced
   `NV_ERR_NO_MEMORY` around CUDA graph profiling and must not be counted as
   clean passes.
+- GB10 forum53 multi-user prefix-cache admission gate:
+  run `scripts/run_gb10_forum53_multi_user_gate.sh` when scheduler admission,
+  KV capacity, or prefix-cache behavior changes. The default shape is now a
+  guarded two-round C=2/C=4 profile with prefix cache enabled, `max_num_seqs=4`,
+  `max_model_len=196608`, `gpu_memory_utilization=0.80`, and
+  `max_num_batched_tokens=4096`; the script refuses unsafe
+  `max_model_len` values above `2048898 * 0.70 / max_num_seqs` unless
+  `GB10_FORUM53_SKIP_CONTEXT_GUARD=1` is set for deliberate destructive
+  pressure. Treat `running_requests_max=1` with a large waiting queue as an
+  admission/fairness regression to analyze, even when all requests eventually
+  complete. Use `GB10_FORUM53_BATCHED_TOKEN_SWEEP` for explicit 2048/8192
+  diagnostics; do not make them implicit promotion defaults without fresh
+  evidence. For the current real-user agent shape, also run a development-only
+  C=4 two-round long-context variant with a higher `GB10_FORUM53_MAX_MODEL_LEN`
+  before claiming prefix-cache-heavy multi-agent workloads are improved.
 - Multi-session decode pressure proxy for
   [issuecomment-4505504798](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4505504798):
   run `streaming_pressure_matrix` on the local TP=2 server with at least

@@ -10382,3 +10382,79 @@ prefill stats diagnostics (`prefill_start_position` and route counters); this
 note and the saved artifacts are the evidence record so this design is not
 re-entered unless a future upstream/backend change materially changes the C4A
 candidate split or can reduce the dominant compressed value traffic.
+
+## GB10 forum53 safety guard, 2026-06-09
+
+Two direct retries of the forum53 prefix-cache multi-user gate with
+`max_model_len=262144` and C=6-style pressure made both GB10 nodes stop
+accepting SSH while ping still worked. After reboot, the previous-boot kernel
+logs on both nodes showed repeated NVIDIA driver allocation failures:
+`Out of memory [NV_ERR_NO_MEMORY]` from `_memdescAllocInternal`. Treat those
+runs as destructive capacity pressure, not as normal scheduler evidence.
+
+The guard added to `scripts/run_gb10_forum53_multi_user_gate.sh` uses the
+smallest successful no-MTP forum53 startup capacity from the earlier
+`max_num_batched_tokens=8192` sweep, `2,048,898` KV tokens, and applies a 70%
+safety margin:
+
+`safe_max_model_len = floor(2048898 * 0.70 / max_num_seqs)`.
+
+| `max_num_seqs` | Safe `max_model_len` |
+| ---: | ---: |
+| 1 | `1,434,228` |
+| 2 | `717,114` |
+| 4 | `358,557` |
+| 6 | `239,038` |
+| 8 | `179,278` |
+
+The normal forum53 gate now defaults to `max_num_seqs=4`,
+`max_model_len=196608`, `gpu_memory_utilization=0.80`,
+`max_num_batched_tokens=4096`, and two-round C=2/C=4 prefix-cache cases.
+C=6/C=8 with 262K remains useful as a deliberate destructive pressure test, but
+it must be opt-in via `GB10_FORUM53_SKIP_CONTEXT_GUARD=1` after a clean reboot
+and with driver-health artifacts preserved.
+
+2026-06-09 promotion smoke note: a later same-profile sweep still passed at
+`max_num_batched_tokens=4096`, but the `2048` variant produced one no-MTP C=4
+cold-round sentinel miss while runtime health stayed clean. Keep `2048` as an
+explicit diagnostic/tuning profile rather than a default promotion gate until a
+fresh repeat closes that correctness signal.
+
+Safe-default retry result:
+
+- **Artifact:** `artifacts/main/2x_gb10_sm121/20260609_forum53_safe_defaults_after_oom_guard/20260609013550`.
+- **Profile:** TP=2, no-MTP, prefix cache enabled, EP enabled,
+  `FULL_AND_PIECEWISE`, `max_model_len=196608`, `max_num_seqs=4`,
+  `gpu_memory_utilization=0.80`, two-round C=2/C=4 cases.
+- **Result:** both `max_num_batched_tokens=2048` and `4096` exited `0`; 12
+  requests per variant, zero failures, zero preemptions, and no current-boot
+  NVRM/Xid/UVM/GPU-lost signal after completion.
+- **Latency:** `mbt=2048` max TTFT `136.610s`, ITL p99 `0.051s`; `mbt=4096`
+  max TTFT `130.811s`, ITL p99 `0.051s`.
+- **KV/prefix:** KV max `10.73%` / `14.51%`; prefix hits delta
+  `10,782,720` / `14,776,320`.
+- **Caveat:** runtime telemetry still reported `running_requests_max=1` and
+  `waiting_requests_max=2`, so this is a safe availability/default gate. It is
+  not evidence that GB10 C=4 prefix-cache admission/fairness is solved.
+
+Follow-up scheduler trace on the same day showed why this must not be solved by
+blindly interleaving every cold long prefill:
+
+- **Rejected variant:** admitting four uncached ~80K-token prefills together
+  changed `running_requests_max` from `1` to `4`, but made the same C=4 one-round
+  proxy slower: max TTFT rose from `261.818s` to `376.646s`. Trace showed long
+  two-request prefill segments taking about `151s` per pair. This confirms that
+  GB10 cold long-prefill concurrency is not a free fairness win.
+- **Kept fix:** compute waiting-request very-long status from remaining prefill
+  work after a prefix-cache peek, without recording prefix-cache stats for the
+  peek. Uncached long requests still defer behind an active very-long prefill;
+  cached-tail requests whose remaining prefill is short can enter the batch.
+- **Validated gate:** artifact
+  `artifacts/main/2x_gb10_sm121/20260609_forum53_c4_round2_cached_tail_fix_temp0/20260609032956`.
+  Profile TP=2, no-MTP, EP, prefix cache enabled, `FULL_AND_PIECEWISE`,
+  `max_model_len=196608`, `max_num_seqs=4`, `max_num_batched_tokens=2048`,
+  `temperature=0`, C=4 two rounds. Result: exit `0`, 8/8 requests successful,
+  no driver errors, no preemptions, max TTFT `269.494s`, ITL p99 `0.075s`,
+  `running_requests_max=3`, `waiting_requests_max=3`, prefix-cache hit delta
+  `2,875,392`. The warm second round had only `255` scheduled prefill tokens per
+  request and TTFT `1.36-4.14s`.

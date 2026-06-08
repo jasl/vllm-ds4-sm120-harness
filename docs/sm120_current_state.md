@@ -119,6 +119,17 @@ behavior must preserve:
   higher `0.90+` GB10 startup probes have produced current-boot NVIDIA driver
   OOM signals around CUDA graph profiling, so driver health is a first-class
   gate result rather than a post-hoc note.
+- GB10 forum53 multi-user prefix-cache admission gate for scheduler/KV changes:
+  use `scripts/run_gb10_forum53_multi_user_gate.sh`. The default gate is now a
+  guarded two-round C=2/C=4 profile with prefix cache enabled,
+  `max_num_seqs=4`, `max_model_len=196608`, `gpu_memory_utilization=0.80`, and
+  `max_num_batched_tokens=4096`. The script computes a preflight safe
+  context limit from `2048898 * 0.70 / max_num_seqs` and refuses larger
+  `max_model_len` values unless `GB10_FORUM53_SKIP_CONTEXT_GUARD=1` is set.
+  Use explicit `GB10_FORUM53_BATCHED_TOKEN_SWEEP` runs for 2048/8192 tuning.
+  Real-user C=4+ long-context agent shapes remain development observation gates
+  because they are too costly for every PR refresh, but they should be run
+  before claiming improvement for prefix-cache-heavy multi-agent workloads.
 
 Prefix-cache hits must be reported separately from cold-prefill performance.
 Do not use prefix-cache-enabled numbers as cold-prefill gains.
@@ -565,6 +576,61 @@ log left by an earlier combined sweep attempt. Final clean-boot C=6 data:
 Lowering `max_num_batched_tokens` did not restore active concurrency. Treat
 this as a scheduler/admission or KV-budgeting investigation, not as another
 chunk-size tuning problem.
+
+The original one-round forum53 proxy is incomplete for current user behavior:
+with prefix cache enabled it only exercises cold first turns. The harness
+default now uses two rounds for C=2/C=4, and scheduler experiments that target
+multi-agent behavior must compare round-2 TTFT, prefix-cache hit deltas,
+running/waiting request counts, and KV usage. For real C=4+ long-agent
+sessions, run the same wrapper as a development observation with a larger
+`max_model_len` and a C=4 two-round case before claiming improvement; do not
+fold that expensive shape into every PR hard gate yet.
+
+Scheduler root-cause note: the current long-prefill safety guards were added to
+avoid GB10 no-token-progress and decode starvation, but total prompt length is
+not a valid work proxy after prefix cache hits are known. A long-context request
+with a small cached-tail prefill should not be treated the same as a cold
+long-context prefill. Scheduling guards should preserve cold very-long
+protection while basing admission and budget pressure on remaining prefill
+work.
+
+2026-06-09 RTX reduced validation after making the scheduler guard
+prefix-cache-aware:
+
+- `prefix_cache_probe`, TP=2, MTP=2, EP, FP8 KV, prefix cache enabled,
+  `max_model_len=131072`, `max_num_seqs=4`, `FULL_AND_PIECEWISE`: startup and
+  probe exited `0`; 51K-token session prompts had cold TTFT about `7.6-7.9s`
+  and warm-turn TTFT about `0.15-0.34s`; CUDA/NCCL/driver/engine/worker-crash
+  counts were `0`.
+- `prefix_cache_stress`, same serve profile, one trial with two concurrent
+  sessions and three turns: exit `0`, health `200`, solo hit-rate mean
+  `59.3%`, concurrent hit-rate mean `84.6%`, runtime
+  `running_requests_max=2`, `waiting_requests_max=0`, preemptions `0`, and
+  CUDA/NCCL/driver/engine/worker-crash counts `0`.
+- A C=4 two-round streaming-pressure smoke also exited `0` with zero request
+  failures and ITL p99 `0.020s`, but that harness path recorded zero
+  prefix-cache hits. Treat it only as a C=4 pressure smoke, not as evidence for
+  prefix-cache-heavy agent reuse.
+- 2026-06-09 GB10 forum53 safe-default retry after the C=6/262K
+  unsafe-profile capacity incident: artifact
+  `artifacts/main/2x_gb10_sm121/20260609_forum53_safe_defaults_after_oom_guard/20260609013550`.
+  `mbt=2048` and `4096` both exited `0` with 12/12 requests successful, no
+  preemptions, no current-boot NVRM/Xid/UVM/GPU-lost signal, max TTFT
+  `136.610s` / `130.811s`, and ITL p99 about `0.051s`. Runtime still showed
+  `running_requests_max=1` and `waiting_requests_max=2`, so the safe profile is
+  an availability default, not a fairness fix.
+- 2026-06-09 GB10 forum53 C=4 two-round scheduler trace after making the
+  very-long-prefill guard prefix-cache-aware:
+  `artifacts/main/2x_gb10_sm121/20260609_forum53_c4_round2_cached_tail_fix_temp0/20260609032956`.
+  Profile: TP=2, no-MTP, EP, prefix cache enabled, `FULL_AND_PIECEWISE`,
+  `max_model_len=196608`, `max_num_seqs=4`,
+  `max_num_batched_tokens=2048`, `temperature=0`. Result: wrapper exit `0`,
+  8/8 requests successful, no current-boot driver errors, no preemptions,
+  `running_requests_max=3`, `waiting_requests_max=3`, prefix-cache hit delta
+  `2,875,392`, max TTFT `269.494s`, ITL p99 `0.075s`. The first cold round
+  remains serialized by design; the second warm round had prefill chunks of
+  only `255` tokens and TTFT `1.36-4.14s`, proving cached-tail requests are not
+  blocked by the very-long-prefill guard.
 
 Persistent TODO: the next production-class prefill improvement must reduce
 long-prefill sparse-MLA real work or memory pressure, especially in
