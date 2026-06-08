@@ -9710,3 +9710,11 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   connects the existing sparse metadata, reuses locked workspace/scratch, and
   proves endpoint performance. Do not promote it without the full promotion
   matrix.
+- **Endpoint-like microbench follow-up:** using the existing
+  `run_sm12x_b12x_mla_microbench.py` on GB10 with public b12x 0.20, the
+  `real_c128` shape (`rows=256`, `SWA=1024`, `indexed=128`) measured b12x
+  compressed MLA at `3.951 ms`, old vLLM online packed at `25.233 ms`, and
+  current D512 split+finish at `1.443 ms`. This keeps the direct b12x
+  compressed-MLA endpoint adapter below the promotion bar for now: the layout
+  is usable, but the direct route does not beat current Dev's relevant
+  component baseline.
