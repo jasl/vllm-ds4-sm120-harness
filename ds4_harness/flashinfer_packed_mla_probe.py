@@ -389,6 +389,229 @@ def run_packed_mla_probe(config: PackedMLAProbeConfig) -> Json:
     return result
 
 
+def run_packed_mla_layout_variants(config: PackedMLAProbeConfig) -> list[Json]:
+    """Check whether the packed wrapper accepts vLLM-style non-contiguous views.
+
+    The current Aiden/PR3395 wrapper requires dense row-major ``q`` and
+    ``indices`` inputs. Keep this probe separate from the main component check
+    so a future FlashInfer update can be rechecked without changing serving
+    code first.
+    """
+    torch, cache_utils, wrapper_cls = _import_required_modules()
+    device = torch.device(config.device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available")
+
+    def make_inputs(
+        *,
+        contiguous_indices: bool,
+        q_output_views: bool,
+    ) -> tuple[Any, ...]:
+        rows = prefill_length_rows(
+            num_tokens=config.num_tokens,
+            window_size=config.window_size,
+            compress_ratio=config.compress_ratio,
+            topk=config.topk,
+        )
+        swa_num_blocks = max(
+            1, _ceil_div(config.num_tokens, _DSV4_MAIN_PAGE_BLOCK_SIZE)
+        )
+        compressed_tokens = max(
+            1, _ceil_div(config.num_tokens, config.compress_ratio)
+        )
+        extra_num_blocks = max(
+            1, _ceil_div(compressed_tokens, config.extra_page_block_size)
+        )
+        query_start_loc = torch.tensor(
+            [0, config.num_tokens], dtype=torch.int32, device=device
+        )
+        seq_lens = torch.tensor(
+            [config.num_tokens], dtype=torch.int32, device=device
+        )
+        token_to_req_indices = torch.zeros(
+            config.num_tokens, dtype=torch.int32, device=device
+        )
+        decode_swa_indices = torch.empty(
+            (0, config.window_size), dtype=torch.int32, device=device
+        )
+        prefill_topk_indices, _ = _make_prefill_topk_indices(
+            torch, config, device
+        )
+        sparse_indices, _ = cache_utils.build_flashinfer_mixed_sparse_indices(
+            decode_swa_indices,
+            None,
+            None,
+            prefill_topk_indices,
+            query_start_loc,
+            seq_lens,
+            token_to_req_indices,
+            _make_block_table(torch, num_blocks=swa_num_blocks, device=device),
+            _DSV4_MAIN_PAGE_BLOCK_SIZE,
+            _make_block_table(torch, num_blocks=extra_num_blocks, device=device),
+            config.extra_page_block_size,
+            config.window_size,
+            config.compress_ratio,
+            config.topk,
+        )
+        main_indices = sparse_indices[:, : config.window_size]
+        extra_indices = sparse_indices[:, config.window_size :]
+        if contiguous_indices:
+            main_indices = main_indices.contiguous()
+            extra_indices = extra_indices.contiguous()
+        main_lens = torch.tensor(
+            [row["main_len"] for row in rows], dtype=torch.int32, device=device
+        )
+        extra_lens = torch.tensor(
+            [row["extra_len"] for row in rows], dtype=torch.int32, device=device
+        )
+        if q_output_views:
+            q_storage = torch.zeros(
+                (config.num_tokens, config.num_heads + 8, 512),
+                dtype=torch.bfloat16,
+                device=device,
+            )
+            output_storage = torch.empty_like(q_storage)
+            q = q_storage[:, : config.num_heads]
+            output = output_storage[:, : config.num_heads]
+        else:
+            q = torch.zeros(
+                (config.num_tokens, config.num_heads, 512),
+                dtype=torch.bfloat16,
+                device=device,
+            )
+            output = torch.empty_like(q)
+        main_cache = torch.zeros(
+            (
+                swa_num_blocks,
+                _DSV4_MAIN_PAGE_BLOCK_SIZE,
+                1,
+                _DSV4_PACKED_TOKEN_BYTES,
+            ),
+            dtype=torch.uint8,
+            device=device,
+        )
+        extra_cache = torch.zeros(
+            (
+                extra_num_blocks,
+                config.extra_page_block_size,
+                1,
+                _DSV4_PACKED_TOKEN_BYTES,
+            ),
+            dtype=torch.uint8,
+            device=device,
+        )
+        expected_lse = torch.log2((main_lens + extra_lens).to(torch.float32))
+        expected_lse = expected_lse.view(-1, 1).expand(
+            config.num_tokens, config.num_heads
+        )
+        return (
+            q,
+            output,
+            main_cache,
+            extra_cache,
+            main_indices,
+            extra_indices,
+            main_lens,
+            extra_lens,
+            expected_lse,
+        )
+
+    def run_variant(
+        *,
+        label: str,
+        contiguous_indices: bool,
+        q_output_views: bool,
+    ) -> Json:
+        try:
+            (
+                q,
+                output,
+                main_cache,
+                extra_cache,
+                main_indices,
+                extra_indices,
+                main_lens,
+                extra_lens,
+                expected_lse,
+            ) = make_inputs(
+                contiguous_indices=contiguous_indices,
+                q_output_views=q_output_views,
+            )
+            wrapper = wrapper_cls(
+                max_num_tokens=config.num_tokens,
+                max_num_heads=config.num_heads,
+                d_v=512,
+                device=device,
+            )
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            start = time.perf_counter()
+            lse = wrapper.run(
+                q,
+                main_cache,
+                main_indices,
+                output,
+                512**-0.5,
+                topk_length=main_lens,
+                extra_kv_cache=extra_cache,
+                extra_indices=extra_indices,
+                extra_topk_length=extra_lens,
+                return_lse=True,
+            )
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            lse_error = (lse - expected_lse).abs()
+            ok = (
+                torch.isfinite(output).all().item()
+                and torch.isfinite(lse).all().item()
+                and float(output.abs().max().item()) == 0.0
+                and float(lse_error.max().item()) <= 1e-4
+            )
+            return {
+                "label": label,
+                "ok": bool(ok),
+                "elapsed_ms": (time.perf_counter() - start) * 1000.0,
+                "q_contiguous": bool(q.is_contiguous()),
+                "output_contiguous": bool(output.is_contiguous()),
+                "main_indices_contiguous": bool(main_indices.is_contiguous()),
+                "extra_indices_contiguous": bool(extra_indices.is_contiguous()),
+                "lse_error_max": float(lse_error.max().item()),
+                "output_absmax": float(output.abs().max().item()),
+            }
+        except Exception as exc:
+            return {
+                "label": label,
+                "ok": False,
+                "error": {
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            }
+
+    return [
+        run_variant(
+            label="contiguous",
+            contiguous_indices=True,
+            q_output_views=False,
+        ),
+        run_variant(
+            label="noncontiguous_indices",
+            contiguous_indices=False,
+            q_output_views=False,
+        ),
+        run_variant(
+            label="noncontiguous_q_output",
+            contiguous_indices=True,
+            q_output_views=True,
+        ),
+        run_variant(
+            label="noncontiguous_all",
+            contiguous_indices=False,
+            q_output_views=True,
+        ),
+    ]
+
+
 def write_markdown(path: Path, result: Json) -> None:
     cfg = result.get("config", {})
     cache = result.get("cache", {})
@@ -414,6 +637,31 @@ def write_markdown(path: Path, result: Json) -> None:
         f"- LSE max error: `{run.get('lse_error_max')}`",
         "",
     ]
+    layout_variants = result.get("layout_variants") or []
+    if layout_variants:
+        lines.extend(
+            [
+                "## Layout Variants",
+                "",
+                "| Variant | OK | q | output | main indices | extra indices | Error |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
+            ]
+        )
+        for variant in layout_variants:
+            error = variant.get("error") or {}
+            lines.append(
+                "| `{label}` | `{ok}` | `{q}` | `{out}` | `{main}` | "
+                "`{extra}` | `{err}` |".format(
+                    label=variant.get("label"),
+                    ok=variant.get("ok"),
+                    q=variant.get("q_contiguous", "n/a"),
+                    out=variant.get("output_contiguous", "n/a"),
+                    main=variant.get("main_indices_contiguous", "n/a"),
+                    extra=variant.get("extra_indices_contiguous", "n/a"),
+                    err=error.get("type", ""),
+                )
+            )
+        lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -428,6 +676,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--extra-page-block-size", type=int)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--layout-variants",
+        action="store_true",
+        help="Also test whether the FlashInfer wrapper accepts non-contiguous views.",
+    )
     parser.add_argument("--json-output", type=Path)
     parser.add_argument("--markdown-output", type=Path)
     return parser.parse_args()
@@ -448,6 +701,8 @@ def main() -> int:
     )
     try:
         result = run_packed_mla_probe(config)
+        if args.layout_variants:
+            result["layout_variants"] = run_packed_mla_layout_variants(config)
     except Exception as exc:
         result = {
             "ok": False,

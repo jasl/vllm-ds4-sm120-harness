@@ -9965,3 +9965,38 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   either a clean packed-prefill FlashInfer backend once it is available in a
   maintainable fork, or a local sparse prefill kernel/dataflow change that
   reduces candidate visits and value traffic.
+
+### 2026-06-08 FlashInfer packed SM120 layout contract recheck
+
+- **Scope:** harness-only probe extension plus GB10 component validation; no
+  vLLM Dev or PR serving code changed.
+- **Source state:** the ignored local FlashInfer checkout now has
+  `flashinfer-ai/flashinfer#3395` fetched as a local review branch for
+  source-level inspection. The current project fork `main` still does not
+  expose `flashinfer.sparse_mla_sm120`; the runnable packed wrapper remains
+  from the Aiden wheelhouse / PR3395 route.
+- **Harness update:** `ds4_harness.flashinfer_packed_mla_probe` now supports
+  `--layout-variants`, and `scripts/run_flashinfer_packed_mla_probe.sh`
+  exposes it via `LAYOUT_VARIANTS=1`. The summary JSON/Markdown now preserve
+  per-case layout-variant results.
+- **GB10 artifact:**
+  `artifacts/main/2x_gb10_sm121/flashinfer_packed_mla_probe/20260608_layout_variant_summary_probe`.
+- **Result:** the normal contiguous C128A component probe passed. Non-contiguous
+  split-index views failed with
+  `indices must be contiguous`; non-contiguous `q` / output views failed with
+  `q must be contiguous`. Current-boot driver health stayed clean: no Xid, UVM,
+  lost-bus, `NV_ERR`, or launch-failure signal beyond module load.
+- **Source audit:** PR3395 relaxes padded KV-cache block stride via
+  `effective_stride_kv_row`, but the binding still checks dense row-major
+  indices and contiguous `q` / `output`. This matches the runtime probe. The
+  kernel itself also assumes dense strides: `Q` is addressed as
+  `token * NUM_HEADS * D_QK + head * D_QK`, indices as `token * TOPK`, and
+  output as `token * NUM_HEADS * D_V + head * D_V`. Adding stride support would
+  therefore touch the raw-pointer ABI plus SG/MG/dual prefill kernels, not only
+  the Python wrapper.
+- **Decision:** do not retry a "pass vLLM views directly to FlashInfer" adapter.
+  A production candidate must either change the FlashInfer binding/kernel to
+  accept q/output/index strides, or keep vLLM-side staging but make it cheap and
+  graph-safe with workspace-backed contiguous q/output, contiguous main/extra
+  indices, and explicit main/extra length generation. The next endpoint probe
+  should measure that staging overhead against current D512 before promotion.

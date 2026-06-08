@@ -115,3 +115,50 @@ def test_cli_writes_failure_json_for_missing_runtime(monkeypatch, tmp_path):
     data = json.loads(json_path.read_text(encoding="utf-8"))
     assert data["ok"] is False
     assert data["error"]["type"] == "ModuleNotFoundError"
+
+
+def test_cli_can_attach_layout_variant_results(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        probe,
+        "run_packed_mla_probe",
+        lambda _config: {"ok": True, "case": "c4a_prefill"},
+    )
+    monkeypatch.setattr(
+        probe,
+        "run_packed_mla_layout_variants",
+        lambda _config: [
+            {"label": "contiguous", "ok": True},
+            {"label": "noncontiguous_indices", "ok": False},
+        ],
+    )
+    json_path = tmp_path / "probe.json"
+
+    monkeypatch.setattr(
+        probe,
+        "_parse_args",
+        lambda: type(
+            "Args",
+            (),
+            {
+                "case": "c4a_prefill",
+                "num_tokens": None,
+                "num_heads": None,
+                "window_size": None,
+                "compress_ratio": None,
+                "topk": None,
+                "extra_page_block_size": None,
+                "seed": 0,
+                "device": "cuda",
+                "layout_variants": True,
+                "json_output": json_path,
+                "markdown_output": None,
+            },
+        )(),
+    )
+
+    assert probe.main() == 0
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    assert data["layout_variants"] == [
+        {"label": "contiguous", "ok": True},
+        {"label": "noncontiguous_indices", "ok": False},
+    ]

@@ -2477,6 +2477,18 @@ def test_kv_layout_probe_script_exports_structured_and_raw_artifacts(tmp_path):
     assert (out_dir / "kv_layout_probe_packed_cache.bin").read_bytes() == b"\x00\x01"
 
 
+def test_flashinfer_packed_mla_probe_script_supports_layout_variants():
+    script = (ROOT / "scripts" / "run_flashinfer_packed_mla_probe.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'LAYOUT_VARIANTS="${LAYOUT_VARIANTS:-0}"' in script
+    assert 'case_args+=(--layout-variants)' in script
+    assert '"${case_args[@]}"' in script
+    assert '"layout_variants": row.get("layout_variants", [])' in script
+    assert "## Layout Variants" in script
+
+
 def test_baseline_bundle_script_generates_report_and_public_data():
     script = (ROOT / "scripts" / "generate_baseline_bundle.sh").read_text(
         encoding="utf-8"

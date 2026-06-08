@@ -327,6 +327,13 @@ that thread, search `External unholy-fusion feedback refresh`.
   source for future FI-side experiments; upstream #3489 is MXFP8 GEMM
   background, not a sparse-MLA prefill backend. Do not make dense/MoE
   replacement the next main route.
+- FlashInfer packed SM120 layout contract:
+  open `docs/sm120_optimization_notes.md` and search
+  `FlashInfer packed SM120 layout contract recheck`. Current conclusion:
+  PR3395's packed wrapper accepts vLLM-compatible packed KV cache strides, but
+  still requires contiguous q/output and dense row-major main/extra indices.
+  Do not retry a direct-view adapter; either add stride support in FlashInfer or
+  keep graph-safe vLLM-side staging and measure its endpoint cost.
 
 ## Correctness
 

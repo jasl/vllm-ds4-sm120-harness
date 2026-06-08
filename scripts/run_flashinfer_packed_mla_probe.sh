@@ -11,6 +11,7 @@ ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
 OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/flashinfer_packed_mla_probe/${RUN_TIMESTAMP}}"
 PYTHON="${PYTHON:-python3}"
 CASES="${CASES:-c4a_prefill c128a_prefill}"
+LAYOUT_VARIANTS="${LAYOUT_VARIANTS:-0}"
 
 # The known Aiden wheelhouse route pairs flashinfer-python 0.6.12 with
 # flashinfer-cubin 0.6.11.post3. This probe is intentionally route-level, so
@@ -23,10 +24,15 @@ overall=0
 for case_name in ${CASES}; do
   case_json="${OUT_DIR}/flashinfer_packed_mla_${case_name}.json"
   case_md="${OUT_DIR}/flashinfer_packed_mla_${case_name}.md"
+  case_args=()
+  if [[ "${LAYOUT_VARIANTS}" == "1" ]]; then
+    case_args+=(--layout-variants)
+  fi
   if "${PYTHON}" -m ds4_harness.flashinfer_packed_mla_probe \
     --case "${case_name}" \
     --json-output "${case_json}" \
-    --markdown-output "${case_md}"; then
+    --markdown-output "${case_md}" \
+    "${case_args[@]}"; then
     printf '%s\n' 0 > "${OUT_DIR}/flashinfer_packed_mla_${case_name}.exit_code"
   else
     code=$?
@@ -61,6 +67,7 @@ summary = {
             "error": row.get("error"),
             "run": row.get("run"),
             "indices": row.get("indices"),
+            "layout_variants": row.get("layout_variants", []),
         }
         for row in rows
     ],
@@ -87,6 +94,22 @@ for row in rows:
             err=error.get("type", ""),
         )
     )
+    layout_variants = row.get("layout_variants") or []
+    if layout_variants:
+        lines.append("")
+        lines.append(f"## Layout Variants: `{row.get('case')}`")
+        lines.append("")
+        lines.append("| Variant | OK | Error |")
+        lines.append("| --- | --- | --- |")
+        for variant in layout_variants:
+            error = variant.get("error") or {}
+            lines.append(
+                "| `{label}` | `{ok}` | `{err}` |".format(
+                    label=variant.get("label"),
+                    ok=variant.get("ok"),
+                    err=error.get("type", ""),
+                )
+            )
 (out_dir / "flashinfer_packed_mla_probe_summary.md").write_text(
     "\n".join(lines) + "\n",
     encoding="utf-8",
