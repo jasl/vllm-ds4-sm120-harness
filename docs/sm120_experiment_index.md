@@ -233,6 +233,12 @@ that thread, search `External unholy-fusion feedback refresh`.
 - Upstream `FLASHINFER_MLA_SPARSE_DSV4` endpoint/API startup probe:
   open `docs/sm120_optimization_notes.md` and search
   `Upstream FlashInfer MLA sparse DSV4 endpoint probe`.
+- FlashInfer packed SM120 sparse-MLA route split:
+  open `docs/sm120_optimization_notes.md` and search
+  `FlashInfer packed SM120 sparse-MLA route split`. Current conclusion: the
+  official `flashinfer.mla` DSV4 route is the plain-KV path, while the unmerged
+  `flashinfer.sparse_mla_sm120` packed `584B/token` path is not present in the
+  current wheel and must pass direct component smoke before any vLLM adapter.
 - vLLM PR #43477 8K/1K comparison shape:
   open `docs/vllm_correctness_gates.md` and search
   `FlashInfer sparse-MLA comparison tracking`.
@@ -253,7 +259,9 @@ that thread, search `External unholy-fusion feedback refresh`.
   were missing from the older `0.15.2` notes. Endpoint validation is route
   dependent: mHC is slower than current TileLang, WO is blocked on public
   CUTLASS DSL MXFP8 MMA support, and sparse-indexer prefill is blocked by a
-  TMA-partition failure in direct GB10 `extend_tiled_topk` smoke.
+  TMA-partition failure in direct GB10 `extend_tiled_topk` smoke. The same
+  probe now reports whether the current environment has the plain FlashInfer
+  DSV4 TRTLLM-gen route versus the unmerged packed SM120 sparse-MLA route.
 - Public b12x 0.20 KV-layout compatibility:
   open `docs/sm120_optimization_notes.md` and search
   `Public b12x 0.20 KV-layout probe`. Current conclusion: public b12x's

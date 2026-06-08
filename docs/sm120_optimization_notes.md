@@ -3887,14 +3887,26 @@ B12X runtime-path probe, 2026-06-08:
 - The stack probe now separates package/API availability from vLLM runtime
   integration. This prevents treating "b12x imports" as evidence that serving
   will select the Aiden/unholy runtime path.
+- The same probe now also separates two different FlashInfer DeepSeek V4
+  routes:
+  - `flashinfer_dsv4_trtllm_gen_plain`: current official FlashInfer
+    `flashinfer.mla.trtllm_batch_decode_sparse_mla_dsv4`, which targets the
+    plain BF16 / per-tensor-FP8 KV-cache layout used by the current upstream
+    `FLASHINFER_MLA_SPARSE_DSV4` backend.
+  - `flashinfer_sm120_sparse_mla_packed`: the unmerged SM120 sparse-MLA route
+    exposed as `flashinfer.sparse_mla_sm120`, with a packed `584B/token` DS4
+    KV-cache contract. This is the route relevant to the local-inference-lab /
+    PR 43477-style packed SM120 sparse MLA work, not the plain upstream route.
 - Current Dev with public `b12x==0.20.0`, FlashInfer `0.6.12`, FlashInfer JIT
   cache `0.6.12+cu130`, and CUTLASS DSL `4.5.2` was probed on RTX PRO 6000
   SM120 and both GB10 SM121 nodes. Package-level routes are present:
   compressed MLA, native FP4 MoE helper APIs, FP8 block-linear, PCIe all-reduce,
-  and upstream FlashInfer B12X MoE all import. vLLM runtime readiness is much
-  narrower: only the upstream FlashInfer B12X MoE path is exposed. The runtime
-  does not expose Aiden's B12X sparse indexer hook, native MXFP4 B12X MoE
-  plumbing, or a DS4-specific B12X compressed-MLA adapter.
+  upstream FlashInfer B12X MoE, and the plain FlashInfer DSV4 TRTLLM-gen API
+  all import. The packed SM120 sparse-MLA module is not present in the current
+  wheel. vLLM runtime readiness is much narrower: current Dev exposes upstream
+  FlashInfer B12X MoE and the plain FlashInfer DSV4 sparse-MLA backend, but not
+  Aiden's B12X sparse indexer hook, native MXFP4 B12X MoE plumbing, a DS4-specific
+  B12X compressed-MLA adapter, or the packed SM120 sparse-MLA backend.
 - The Aiden production image was probed as a control. Its runtime exposes the
   B12X sparse indexer hook and native MXFP4 B12X MoE plumbing, plus upstream
   FlashInfer B12X MoE. It still does not expose a runtime-importable DS4
@@ -3904,11 +3916,13 @@ B12X runtime-path probe, 2026-06-08:
   page for page size `64`; current vLLM `fp8_ds_mla` stores `37376` bytes per
   page as `584` byte token-interleaved rows. `public_b12x_vllm_fp8_ds_mla_zero_copy`
   is therefore false in all checked environments.
-- Decision: do not retry env-only public-b12x serving toggles or a naive
-  zero-copy compressed-MLA adapter. The practical Aiden/unholy deltas to study
-  first are the runtime sparse indexer and native MXFP4 B12X MoE paths. A DS4
-  compressed-MLA route would need a lower-level layout-compatible entrypoint,
-  a measured repack/mirror-cache prototype, or an explicit cache-layout change.
+- Decision: do not retry env-only public-b12x serving toggles, the plain
+  upstream FlashInfer DSV4 selector, or a naive zero-copy compressed-MLA
+  adapter. The practical Aiden/unholy deltas to study first are the runtime
+  sparse indexer, native MXFP4 B12X MoE path, and the unmerged packed FlashInfer
+  SM120 sparse-MLA backend. A DS4 compressed-MLA route would need a lower-level
+  layout-compatible entrypoint, a measured repack/mirror-cache prototype, or an
+  explicit cache-layout change.
 
 The currently installed optional stack exposes official FlashInfer b12x probes:
 `has_flashinfer_b12x_moe=True` and `has_flashinfer_b12x_gemm=True`. Those are
@@ -6498,6 +6512,11 @@ Official FlashInfer 0.6.12 DS4 sparse-MLA API recheck, 2026-06-04:
 Decision: keep this API as a future decode-backend candidate, not a raw
 long-prefill replacement. It does not remove the need for the current D512
 prefill path, nor does it revive the rejected dense/grouped-SWA endpoint route.
+This decision applies to the current official `flashinfer.mla` TRTLLM-gen DSV4
+plain-KV API. It should not be read as a rejection of the unmerged
+`flashinfer.sparse_mla_sm120` packed SM120 sparse-MLA backend, which has a
+different DS4 packed-cache contract and still needs a direct component smoke in
+an isolated dependency environment.
 
 Fixed C=2 fairness recheck after harness gate tightening, 2026-06-04:
 
@@ -9558,6 +9577,14 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   manager. Revisit only if public b12x exposes an SM12x-compatible non-TMA
   extend path, or if the Aiden image's bundled b12x source is reproduced and a
   direct component smoke passes.
+- **FlashInfer packed SM120 sparse-MLA route split:** current FlashInfer
+  `0.6.12` exposes the plain `flashinfer.mla.trtllm_batch_decode_sparse_mla_dsv4`
+  API used by upstream `FLASHINFER_MLA_SPARSE_DSV4`, but it does not expose
+  `flashinfer.sparse_mla_sm120`. The latter is the unmerged packed DS4
+  `584B/token` SM120 sparse-MLA route and is the more relevant candidate for
+  reducing vLLM-side sparse-MLA dataflow work. Next test it in a copied route
+  venv by building or installing the unmerged FlashInfer SM120 branch, then run
+  a direct packed prefill/decode component smoke before any endpoint adapter.
 - **Rejected B12X mHC endpoint route:** added
   `scripts/run_sm12x_b12x_mhc_microbench.py` to compare current TileLang fused
   mHC with public b12x `b12x_mhc_post_pre` before touching vLLM. On GB10 with

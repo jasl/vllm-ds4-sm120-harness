@@ -34,6 +34,10 @@ def test_b12x_stack_probe_classifies_public_b12x_without_aiden_apis(monkeypatch)
             b12x_moe_fp4=object(),
         ),
         "b12x.distributed": types.SimpleNamespace(),
+        "flashinfer.mla": types.SimpleNamespace(
+            trtllm_batch_decode_sparse_mla_dsv4=object(),
+            BatchMLAPagedAttentionWrapper=object(),
+        ),
         "flashinfer.fused_moe": types.SimpleNamespace(b12x_fused_moe=object()),
     }
 
@@ -51,6 +55,8 @@ def test_b12x_stack_probe_classifies_public_b12x_without_aiden_apis(monkeypatch)
     assert result["routes"]["public_b12x_mla"]["ok"] is True
     assert result["routes"]["aiden_ds4_compressed_mla"]["ok"] is False
     assert result["routes"]["aiden_native_mxfp4_moe"]["ok"] is False
+    assert result["routes"]["flashinfer_dsv4_trtllm_gen_plain"]["ok"] is True
+    assert result["routes"]["flashinfer_sm120_sparse_mla_packed"]["ok"] is False
     assert result["routes"]["flashinfer_b12x_moe_nvfp4"]["ok"] is True
 
 
@@ -83,6 +89,13 @@ def test_b12x_stack_probe_classifies_aiden_bundle_apis(monkeypatch):
         ),
         "b12x.gemm.block_fp8_linear": types.SimpleNamespace(),
         "b12x.distributed": types.SimpleNamespace(PCIeOneshotAllReducePool=object()),
+        "flashinfer.mla": types.SimpleNamespace(
+            trtllm_batch_decode_sparse_mla_dsv4=object(),
+        ),
+        "flashinfer.sparse_mla_sm120": types.SimpleNamespace(
+            sparse_mla_sm120_paged_attention=object(),
+            BatchSparseMLAPagedAttentionWrapper=object(),
+        ),
         "flashinfer.fused_moe": types.SimpleNamespace(b12x_fused_moe=object()),
     }
     monkeypatch.setattr(
@@ -97,6 +110,8 @@ def test_b12x_stack_probe_classifies_aiden_bundle_apis(monkeypatch):
     assert result["routes"]["aiden_native_mxfp4_moe"]["ok"] is True
     assert result["routes"]["b12x_fp8_linear"]["ok"] is True
     assert result["routes"]["pcie_oneshot_allreduce"]["ok"] is True
+    assert result["routes"]["flashinfer_dsv4_trtllm_gen_plain"]["ok"] is True
+    assert result["routes"]["flashinfer_sm120_sparse_mla_packed"]["ok"] is True
 
 
 def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
@@ -161,6 +176,10 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
             else page_size * 584,
             compressed_mla_scale_region_offset=lambda page_size: page_size * 576,
         ),
+        "flashinfer.mla": types.SimpleNamespace(
+            trtllm_batch_decode_sparse_mla_dsv4=object(),
+            BatchMLAPagedAttentionWrapper=object(),
+        ),
         "flashinfer.fused_moe": types.SimpleNamespace(b12x_fused_moe=object()),
     }
 
@@ -183,6 +202,8 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
     assert result["routes"]["aiden_b12x_wo_projection"]["ok"] is True
     assert result["routes"]["aiden_b12x_mhc_residual"]["ok"] is True
     assert result["routes"]["pcie_oneshot_allreduce"]["ok"] is True
+    assert result["routes"]["flashinfer_dsv4_trtllm_gen_plain"]["ok"] is True
+    assert result["routes"]["flashinfer_sm120_sparse_mla_packed"]["ok"] is False
     assert result["layouts"]["b12x_compressed_mla"]["ok"] is True
     assert result["layouts"]["b12x_compressed_mla"]["vllm_zero_copy_compatible"] is False
     assert result["routes"]["public_b12x_vllm_fp8_ds_mla_zero_copy"]["ok"] is False
@@ -274,7 +295,13 @@ def test_b12x_stack_probe_classifies_current_dev_without_aiden_runtime(monkeypat
             b12x_moe_fp4=object(),
         ),
         "flashinfer.fused_moe": types.SimpleNamespace(b12x_fused_moe=object()),
+        "flashinfer.mla": types.SimpleNamespace(
+            trtllm_batch_decode_sparse_mla_dsv4=object(),
+        ),
         "vllm.envs": types.SimpleNamespace(),
+        "vllm.models.deepseek_v4.nvidia.flashinfer_sparse": types.SimpleNamespace(
+            DeepseekV4FlashInferMLAAttention=object(),
+        ),
         "vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe": (
             types.SimpleNamespace(FlashInferB12xExperts=object())
         ),
@@ -293,6 +320,10 @@ def test_b12x_stack_probe_classifies_current_dev_without_aiden_runtime(monkeypat
     assert result["runtime_routes"]["runtime_b12x_sparse_indexer"]["ok"] is False
     assert result["runtime_routes"]["runtime_native_mxfp4_b12x_moe"]["ok"] is False
     assert result["runtime_routes"]["runtime_flashinfer_b12x_moe"]["ok"] is True
+    assert result["runtime_routes"]["runtime_flashinfer_mla_sparse_dsv4_plain"][
+        "ok"
+    ] is True
+    assert result["routes"]["flashinfer_sm120_sparse_mla_packed"]["ok"] is False
 
 
 def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
@@ -320,6 +351,10 @@ def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
                 "ok": True,
                 "note": "b12x extend_tiled_topk is available",
             },
+            "flashinfer_sm120_sparse_mla_packed": {
+                "ok": False,
+                "note": "FlashInfer PR3395 packed sparse MLA is unavailable",
+            },
         },
         "vllm_modules": {
             "vllm.model_executor.layers.sparse_attn_indexer": {
@@ -342,7 +377,9 @@ def test_b12x_stack_probe_markdown_records_routes(tmp_path: Path):
     assert "# B12X Stack Probe" in text
     assert "`aiden_ds4_compressed_mla`" in text
     assert "`public_b12x_sparse_indexer_extend`" in text
+    assert "`flashinfer_sm120_sparse_mla_packed`" in text
     assert "b12x extend_tiled_topk is available" in text
+    assert "FlashInfer PR3395 packed sparse MLA is unavailable" in text
     assert "`runtime_b12x_sparse_indexer`" in text
     assert "vLLM runtime can select b12x sparse indexer" in text
     assert "missing compressed scratch" in text

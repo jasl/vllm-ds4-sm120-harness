@@ -93,6 +93,20 @@ MODULES = (
         ),
     ),
     ModuleProbe("b12x.distributed", ("PCIeOneshotAllReducePool",)),
+    ModuleProbe(
+        "flashinfer.mla",
+        (
+            "BatchMLAPagedAttentionWrapper",
+            "trtllm_batch_decode_sparse_mla_dsv4",
+        ),
+    ),
+    ModuleProbe(
+        "flashinfer.sparse_mla_sm120",
+        (
+            "BatchSparseMLAPagedAttentionWrapper",
+            "sparse_mla_sm120_paged_attention",
+        ),
+    ),
     ModuleProbe("flashinfer.fused_moe", ("b12x_fused_moe",)),
 )
 
@@ -143,6 +157,10 @@ VLLM_MODULES = (
     ModuleProbe(
         "vllm.model_executor.layers.fused_moe.experts.flashinfer_b12x_moe",
         ("FlashInferB12xExperts",),
+    ),
+    ModuleProbe(
+        "vllm.models.deepseek_v4.nvidia.flashinfer_sparse",
+        ("DeepseekV4FlashInferMLAAttention",),
     ),
     ModuleProbe(
         "vllm.utils.flashinfer",
@@ -314,6 +332,37 @@ def _classify_routes(result: Json) -> Json:
         "ok": _has_attr(result, "flashinfer.fused_moe", "b12x_fused_moe"),
         "note": "Current upstream NVFP4 FlashInfer B12X MoE path, not native DS4 MXFP4.",
     }
+    routes["flashinfer_dsv4_trtllm_gen_plain"] = {
+        "ok": _has_attr(
+            result,
+            "flashinfer.mla",
+            "trtllm_batch_decode_sparse_mla_dsv4",
+        ),
+        "note": (
+            "Installed FlashInfer DeepSeek V4 TRTLLM-gen path for plain "
+            "BF16/per-tensor-FP8 KV cache; this is not the packed 584B/token "
+            "SM120 sparse-MLA PR path."
+        ),
+    }
+    routes["flashinfer_sm120_sparse_mla_packed"] = {
+        "ok": (
+            _has_attr(
+                result,
+                "flashinfer.sparse_mla_sm120",
+                "sparse_mla_sm120_paged_attention",
+            )
+            and _has_attr(
+                result,
+                "flashinfer.sparse_mla_sm120",
+                "BatchSparseMLAPagedAttentionWrapper",
+            )
+        ),
+        "note": (
+            "FlashInfer PR3395-style packed SM120 sparse MLA path. This is the "
+            "candidate that can consume DS4 584B/token packed KV and should be "
+            "validated with a direct component smoke before any vLLM adapter."
+        ),
+    }
     routes["public_b12x_vllm_fp8_ds_mla_zero_copy"] = {
         "ok": (
             routes["public_b12x_mla"]["ok"]
@@ -421,6 +470,18 @@ def _classify_runtime_routes(result: Json) -> Json:
             "FlashInferB12xExperts",
         ),
         "note": "vLLM runtime exposes the upstream FlashInfer B12X MoE path.",
+    }
+    runtime_routes["runtime_flashinfer_mla_sparse_dsv4_plain"] = {
+        "ok": _vllm_has_attr(
+            result,
+            "vllm.models.deepseek_v4.nvidia.flashinfer_sparse",
+            "DeepseekV4FlashInferMLAAttention",
+        ),
+        "note": (
+            "vLLM runtime exposes the explicit FLASHINFER_MLA_SPARSE_DSV4 "
+            "backend, which currently uses FlashInfer's plain BF16/per-tensor "
+            "FP8 KV-cache route rather than PR3395 packed 584B/token SM120 MLA."
+        ),
     }
     return runtime_routes
 
