@@ -48,10 +48,13 @@ Last updated: 2026-06-08.
   packed single-cache prefill, dual-cache prefill, and decode correctness
   smokes. The adapter question is now narrower: the tested packed backend
   requires a main `page_block_size=64` and only supports secondary
-  `page_block_size=64` or `2`; current vLLM's SWA cache uses
-  `page_block_size=256`, so a direct zero-copy full replacement is blocked
-  unless the backend learns the SWA page shape or vLLM changes/mirrors that
-  cache layout behind a guarded experiment.
+  `page_block_size=64` or `2`. Current code audit shows the actual vLLM
+  physical cache shapes are compatible in principle: SWA uses `64`, C4A
+  compressed cache uses `64`, and C128A compressed cache uses `2`; the old
+  `256` reading was the global scheduler/cache block preference, not the
+  packed wrapper's physical page size. A direct endpoint adapter still needs an
+  endpoint-shaped component smoke because metadata, index semantics, graph
+  capture, and workspace reservation must all match.
 - Blocked or rejected as current endpoint backends, in the specific forms that
   were tested: public b12x / FlashInfer wheels as a direct DS4 endpoint
   backend, upstream `FLASHINFER_MLA_SPARSE_DSV4` with the current official

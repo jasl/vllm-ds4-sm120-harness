@@ -9653,13 +9653,15 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   secondary `page_block_size=64` or `2`. A direct reference smoke passed for
   main `pbs=64`, failed for main `pbs=2`, and an invalid main `pbs=256` probe
   raised an illegal memory access and left a current-boot Xid 31 on the GB10
-  node. This matches the source contract and blocks a naive zero-copy endpoint
-  adapter because current vLLM uses `pbs=256` for the SWA cache, `pbs=64` for
-  C4A, and `pbs=2` for C128A. Do not repeat the `pbs=256` packed-backend smoke
-  as a performance test. Revisit only if FlashInfer adds a DSV4 path whose main
-  cache supports the SWA page shape, or if a Dev-only vLLM experiment changes
-  or mirrors the SWA cache layout and then passes correctness plus the full
-  promotion matrix.
+  node. This matches the source contract, but it does **not** by itself block
+  the current vLLM adapter route: current code audit shows the physical cache
+  shapes that matter to the wrapper are `pbs=64` for SWA, `pbs=64` for C4A
+  compressed cache, and `pbs=2` for C128A compressed cache. The older
+  `SWA pbs=256` note confused global scheduler/cache block preference with the
+  physical page size exposed by `DeepseekV4SWACache`. Do not repeat the invalid
+  `pbs=256` packed-backend smoke as a performance test. The remaining adapter
+  risks are metadata/index semantics, per-layer workspace reservation, CUDA
+  graph address stability, and endpoint performance.
 - **Rejected B12X mHC endpoint route:** added
   `scripts/run_sm12x_b12x_mhc_microbench.py` to compare current TileLang fused
   mHC with public b12x `b12x_mhc_post_pre` before touching vLLM. On GB10 with

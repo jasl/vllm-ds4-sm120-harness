@@ -239,9 +239,12 @@ that thread, search `External unholy-fusion feedback refresh`.
   official `flashinfer.mla` DSV4 route is the plain-KV path, while the unmerged
   `flashinfer.sparse_mla_sm120` packed `584B/token` path is not present in the
   current wheel. A copied GB10 route venv with the unmerged backend now passes
-  direct packed DSV4 prefill/decode smokes. It is still not a direct vLLM
-  endpoint backend because the tested route requires main `page_block_size=64`,
-  while vLLM's SWA cache is `page_block_size=256`; search
+  direct packed DSV4 prefill/decode smokes. Current vLLM cache shapes appear
+  compatible in principle (`SWA=64`, `C4A=64`, `C128A=2`); the earlier
+  `SWA=256` note confused global scheduler/cache preference with the physical
+  page size passed to the wrapper. It is still not a direct vLLM endpoint
+  backend until metadata/index semantics, workspace reservation, and graph
+  capture are adapter-tested; search
   `FlashInfer packed SM120 component smoke` and
   `FlashInfer packed SM120 vLLM-layout constraint` before adapter work.
 - Aiden wheelhouse FlashInfer SM120 sparse-MLA wrapper:
