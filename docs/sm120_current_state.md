@@ -185,6 +185,17 @@ production endpoint adapter for this direct route unless a newer backend or a
 different sparse-MLA dataflow changes that performance result and then passes
 the promotion matrix.
 
+The same 2026-06-08 GB10 recheck also tested public b12x
+`compressed_indexer.index_topk_fp8` on the shared-prefill path. The API is
+runnable and correct against the reference on small shapes, including
+row-shared page tables. It is not a better endpoint candidate by itself:
+current SM12x `fp8_fp4_mqa_topk_indices` is about `3.4-3.8x` faster on the
+same linear-KV top-k work, and `cp_gather_indexer_k_quant_cache` measured only
+about `0.013 ms` at 32K tokens and `0.135 ms` at 131K tokens. Avoiding that
+gather copy does not offset the slower public b12x top-k route. Do not port the
+public compressed-indexer route into vLLM unless a future b12x/FlashInfer
+release changes those component timings.
+
 ## Active Direction
 
 The next high-value target is split into two measurement tracks before more
@@ -381,8 +392,10 @@ code. The current order is:
 3. Recheck official FlashInfer / TRTLLM sparse-MLA and public b12x routes after
    dependency updates. FlashInfer `#3395` is still unmerged, but public
    `b12x==0.20.0` now exposes the previously missing DS4 helper APIs. Start
-   with direct import/API smokes, then endpoint tests only after the dependency
-   route is proven in the target vLLM runtime.
+   with direct import/API smokes. Direct public compressed-MLA and
+   compressed-indexer routes are currently below the endpoint promotion bar, so
+   only revisit them after a dependency/runtime update or a broader dataflow
+   change.
 4. Keep PCP / DCP / context-parallel prefill as a four-card or larger-topology
    research track, not a dual-card default-optimization path.
 5. Only after the above checks are clean, return to new candidate/value-work

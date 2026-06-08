@@ -3870,17 +3870,14 @@ Public b12x recheck, 2026-06-08:
 
 - Interpretation: public b12x `0.20.0` clearly fixes the older GB10 compile
   blocker and is much faster than the older packed online path on endpoint-like
-  real-C128 shapes. It is still slower than the current D512 split+finish
-  kernel-only timing, but that D512 number starts after gather/dequant and does
-  not include the full endpoint dataflow. The only high-value next step is an
-  end-to-end Dev-only adapter/probe that can replace enough gather/value
-  traffic to win the real request path; a standalone sub-kernel comparison is
-  no longer decisive.
-- Next route: build a narrow Dev-only DS4 endpoint adapter/probe against public
-  b12x `0.20.0`, starting from direct API smoke and microbench, then endpoint
-  startup, then the promotion matrix. Keep it optional and env-gated until it
-  beats current Dev without GSM8K, FULL_AND_PIECEWISE, prefix/KV lifecycle,
-  short throughput, long-C2, or GB10 reduced long-C2 regressions.
+  real-C128 shapes. The 2026-06-08 page-view and compressed-indexer follow-up
+  below changed the decision: public b12x APIs are layout/API compatible enough
+  for research, but direct compressed-MLA and compressed-indexer routes still do
+  not beat current Dev's relevant component baselines. Do not build a public
+  b12x endpoint adapter solely from these components. Revisit only after a
+  newer b12x/FlashInfer backend changes the component timings, or if a broader
+  Aiden/unholy dataflow port can reduce real endpoint work beyond this direct
+  substitution.
 
 B12X runtime-path probe, 2026-06-08:
 
@@ -9718,3 +9715,38 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   compressed-MLA endpoint adapter below the promotion bar for now: the layout
   is usable, but the direct route does not beat current Dev's relevant
   component baseline.
+
+### 2026-06-08 Public b12x compressed-indexer route recheck
+
+- **Purpose:** test whether public b12x `compressed_indexer.index_topk_fp8`
+  can replace the current vLLM sparse-indexer prefill path by reading paged
+  compressed index cache directly and avoiding the linear K gather.
+- **GB10 correctness/API smoke:** in the isolated public-b12x `0.20.0` venv,
+  small unshared and row-shared page-table cases passed against
+  `compressed_index_logits_reference` plus `torch.topk` with exact top-k set
+  equality. Larger shared-prefill shapes also ran without errors:
+  `1024 rows x 4096 tokens` and `1024 rows x 32768 tokens`, both with
+  `topk=512`. Artifact:
+  `artifacts/local_b12x_compressed_indexer_probe/20260608100218`.
+- **Top-k component A/B:** on the same GB10 node, public b12x was slower than
+  the current SM12x fallback `fp8_fp4_mqa_topk_indices` on the same linear-KV
+  top-k work:
+
+| Shape | Public b12x compressed indexer | Current SM12x top-k | Current / b12x |
+| --- | ---: | ---: | ---: |
+| 16 rows x 1K tokens | `0.256 ms` | `0.075 ms` | `0.29x` |
+| 1024 rows x 4K tokens | `3.495 ms` | `0.957 ms` | `0.27x` |
+| 1024 rows x 32K tokens | `23.920 ms` | `6.329 ms` | `0.26x` |
+
+  Artifact:
+  `artifacts/local_b12x_compressed_indexer_vs_current/20260608100346`.
+- **Gather-cost check:** `cp_gather_indexer_k_quant_cache` is too cheap to
+  justify swapping to the slower public b12x top-k path: `0.013 ms` at 32K
+  tokens and `0.135 ms` at 131K tokens on GB10. Artifact:
+  `artifacts/local_indexer_gather_cost/20260608100431`.
+- **Decision:** reject the direct public-b12x compressed-indexer substitution
+  for current Dev. It is useful as a compatibility smoke and future recheck
+  target, but it is not the source of the Aiden/unholy raw-prefill advantage.
+  Next investigations should compare broader runtime/dataflow changes or a
+  genuinely different sparse-MLA backend, not merely replace
+  `fp8_fp4_mqa_topk_indices` or avoid the current gather copy.

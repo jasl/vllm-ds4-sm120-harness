@@ -272,9 +272,17 @@ that thread, search `External unholy-fusion feedback refresh`.
   `Public b12x 0.20 KV-layout probe`. Current conclusion: the old
   token-interleaved incompatibility reading was too strong. vLLM exposes a 3D
   logical cache tensor, but its physical CUDA page layout can match public
-  b12x through a zero-copy 2D page-byte view. Do not retry env-only b12x
-  serving switches; the next valid step is a direct b12x component smoke and
-  then a dev-only adapter if that passes.
+  b12x through a zero-copy 2D page-byte view. The follow-up component smoke
+  passed, but endpoint-like microbenching kept direct public-b12x compressed
+  MLA below the current D512 split+finish baseline.
+- Public b12x compressed-indexer recheck:
+  open `docs/sm120_optimization_notes.md` and search
+  `Public b12x compressed-indexer route recheck`. Current conclusion: public
+  b12x `index_topk_fp8` is runnable and correct on shared-prefill shapes, but
+  is about `3.4-3.8x` slower than the current SM12x top-k path; the gather copy
+  it could avoid is only `0.013 ms` at 32K tokens and `0.135 ms` at 131K tokens
+  on GB10. Do not port this direct substitution into vLLM unless a future
+  dependency changes the component timing.
 
 ## Correctness
 
