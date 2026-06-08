@@ -238,7 +238,9 @@ that thread, search `External unholy-fusion feedback refresh`.
   `FlashInfer packed SM120 sparse-MLA route split`. Current conclusion: the
   official `flashinfer.mla` DSV4 route is the plain-KV path, while the unmerged
   `flashinfer.sparse_mla_sm120` packed `584B/token` path is not present in the
-  current wheel and must pass direct component smoke before any vLLM adapter.
+  current wheel. A copied GB10 route venv with the unmerged backend now passes
+  direct packed DSV4 prefill/decode smokes; search
+  `FlashInfer packed SM120 component smoke` for details before adapter work.
 - vLLM PR #43477 8K/1K comparison shape:
   open `docs/vllm_correctness_gates.md` and search
   `FlashInfer sparse-MLA comparison tracking`.

@@ -9585,6 +9585,22 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   reducing vLLM-side sparse-MLA dataflow work. Next test it in a copied route
   venv by building or installing the unmerged FlashInfer SM120 branch, then run
   a direct packed prefill/decode component smoke before any endpoint adapter.
+- **FlashInfer packed SM120 component smoke:** an isolated GB10 route venv was
+  created from the routine vLLM environment, the unmerged FlashInfer SM120
+  sparse-MLA branch was installed editable with `--no-build-isolation`, and
+  NCCL was force-upgraded back to the known-good CUDA 13 wheel after pip
+  temporarily downgraded it through Torch dependency resolution. The stack
+  probe then reported both `flashinfer_dsv4_trtllm_gen_plain=True` and
+  `flashinfer_sm120_sparse_mla_packed=True`, while current vLLM still only
+  exposes the plain runtime selector. Direct GB10 correctness smokes passed:
+  `test_sparse_mla_sm120_prefill_dsv4[False-128-16-128]`,
+  `test_sparse_mla_sm120_prefill_dsv4[False-128-128-1024]`,
+  `test_sparse_mla_sm120_prefill_dsv4_dual[512-64-128]`, and
+  `test_sparse_mla_sm120_decode_dsv4[False-16-128-1024]`. This changes the
+  route status from dependency-blocked to adapter/prototype-worthy. The next
+  step is not another env toggle; it is a Dev-only adapter or component
+  microbench that measures whether this packed backend reduces endpoint
+  sparse-MLA work against the current D512 path.
 - **Rejected B12X mHC endpoint route:** added
   `scripts/run_sm12x_b12x_mhc_microbench.py` to compare current TileLang fused
   mHC with public b12x `b12x_mhc_post_pre` before touching vLLM. On GB10 with

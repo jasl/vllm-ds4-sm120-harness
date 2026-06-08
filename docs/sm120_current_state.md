@@ -43,7 +43,11 @@ Last updated: 2026-06-08.
   `584B/token` SM120 sparse-MLA route from the unmerged FlashInfer SM120 work.
   The current official FlashInfer `0.6.12` wheel still does not expose
   `flashinfer.sparse_mla_sm120`, and the earlier plain-route startup/API probes
-  fail in `TllmGenFmhaRunner` with `Unsupported architecture`.
+  fail in `TllmGenFmhaRunner` with `Unsupported architecture`. An isolated GB10
+  build of the unmerged packed SM120 sparse-MLA backend now passes direct DSV4
+  packed single-cache prefill, dual-cache prefill, and decode correctness
+  smokes, so the next question is vLLM dataflow/adapter integration rather than
+  basic backend availability.
 - Blocked or rejected as current endpoint backends, in the specific forms that
   were tested: public b12x / FlashInfer wheels as a direct DS4 endpoint
   backend, upstream `FLASHINFER_MLA_SPARSE_DSV4` with the current official
@@ -116,8 +120,10 @@ is still materially ahead in GB10 prefill. Repeated startup/API probes say the
 official plain `FLASHINFER_MLA_SPARSE_DSV4` route is blocked on the current
 FlashInfer wheel, and both SM120 and SM121 direct API calls show the same
 `Unsupported architecture` failure. Keep that distinct from the unmerged packed
-SM120 sparse-MLA route, which is not available in the current wheel and needs a
-direct component smoke before any vLLM adapter work.
+SM120 sparse-MLA route, which is not available in the current wheel. A direct
+GB10 component smoke against an isolated build passed DSV4 packed
+prefill/decode correctness, so the remaining work is proving an endpoint
+adapter can reduce real sparse-MLA work without regressions.
 
 External feedback on 2026-06-07 strengthens the GB10 prefill-gap concern: a
 NVIDIA Developer Forums report for the local-inference-lab / unholy-fusion
@@ -208,10 +214,10 @@ production code is added:
   chunk profile by default; keep it as an opt-in latency/capacity tradeoff.
 - Do not spend more endpoint time on env-only selection of upstream
   `FLASHINFER_MLA_SPARSE_DSV4`: the current route is the plain FlashInfer DSV4
-  path and is already blocked in this environment. The next FlashInfer work
-  should instead build or install the unmerged packed SM120 sparse-MLA backend
-  in an isolated venv, prove a direct DS4 packed prefill/decode component
-  smoke, and only then prototype a vLLM adapter.
+  path and is already blocked in this environment. The unmerged packed SM120
+  sparse-MLA backend has now passed direct DS4 packed prefill/decode component
+  smokes on GB10, so the next FlashInfer work is a Dev-only adapter/prototype
+  that measures endpoint TTFT/input tok/s and promotion-matrix risk.
 - Re-audit and A/B the latest local-inference-lab `main` and
   `dev/unholy-fusion` before the next GB10 backend experiment. The promising
   pieces are B12X sparse MLA, B12X sparse indexer / compressed-indexer copy
