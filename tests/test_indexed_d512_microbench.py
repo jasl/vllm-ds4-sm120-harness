@@ -120,6 +120,44 @@ def test_grouped_stream_online_validation_requires_c128a_shape():
             raise AssertionError(f"expected validation failure for {overrides}")
 
 
+def test_grouped_swa_online_validation_requires_real_d512_shape():
+    module = _load_microbench_module()
+
+    module._validate_grouped_swa_online_shape(
+        index_pattern="mixed-c128-swa",
+        num_tokens=16,
+        num_candidates=640,
+        compressed_candidates=128,
+        group_size=4,
+        head_dim=512,
+    )
+
+    invalid_cases = [
+        {"index_pattern": "c128a-current"},
+        {"num_tokens": 18},
+        {"group_size": 0},
+        {"head_dim": 256},
+        {"compressed_candidates": 0},
+        {"compressed_candidates": 640},
+    ]
+    for overrides in invalid_cases:
+        kwargs = {
+            "index_pattern": "mixed-c128-swa",
+            "num_tokens": 16,
+            "num_candidates": 640,
+            "compressed_candidates": 128,
+            "group_size": 4,
+            "head_dim": 512,
+        }
+        kwargs.update(overrides)
+        try:
+            module._validate_grouped_swa_online_shape(**kwargs)
+        except ValueError as exc:
+            assert str(exc)
+        else:
+            raise AssertionError(f"expected validation failure for {overrides}")
+
+
 def test_indexed_d512_microbench_exposes_sliding_window_pattern():
     script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
         encoding="utf-8"
@@ -169,3 +207,15 @@ def test_indexed_d512_microbench_exposes_grouped_stream_online_mode():
     assert "grouped_stream_online_mean_ms" in script
     assert "grouped_stream_online_speedup" in script
     assert "grouped_stream_online_reuse_ratio" in script
+
+
+def test_indexed_d512_microbench_exposes_grouped_swa_online_mode():
+    script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--grouped-swa-online" in script
+    assert "_grouped_swa_online_kernel" in script
+    assert "grouped_swa_online_mean_ms" in script
+    assert "grouped_swa_online_speedup" in script
+    assert "grouped_swa_online_swa_reuse_ratio" in script

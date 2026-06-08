@@ -10269,3 +10269,50 @@ Next step:
   retained component candidate must be exact against current D512 split/chunked
   output and beat the D512 split component baseline before it is wired into
   `flashmla.py`.
+
+### 2026-06-08 Real-D512 grouped-SWA component prototype
+
+This follows the stream-shape probe rather than the synthetic `c128a-current`
+shortcut. The real C4A/D512 indexed path does not have meaningful compressed
+same-position reuse, so the component keeps compressed top-k on the current
+exact per-token split path, groups only the shifted SWA stream, and exactly
+merges the two online softmax states.
+
+- **Code boundary:** harness-only component prototype in
+  `scripts/run_sm12x_indexed_d512_split_microbench.py`; no vLLM endpoint path
+  is enabled by this checkpoint.
+- **Shape:** `512` query tokens, `64` heads, D=`512`, `mixed-c128-swa`,
+  `128` compressed candidates, group size `32`, grouped-SWA block-C `32`.
+
+| Host | Candidates | Current chunk ms | Split ms | Grouped-SWA ms | Speedup vs split | Max diff |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 x2 | `640` | `2.383` | `0.620` | `0.572` | `1.084x` | `0.002607` |
+| RTX PRO 6000 x2 | `1152` | `4.228` | `1.375` | `0.814` | `1.689x` | `0.000953` |
+| GB10 node 1 | `640` | `11.239` | `7.742` | `4.917` | `1.575x` | `0.001639` |
+| GB10 node 1 | `1152` | `21.458` | `12.674` | `5.772` | `2.196x` | `0.001243` |
+
+Small parameter sweep on the `1152`-candidate target:
+
+| Host | Group/block-C | Grouped-SWA ms | Speedup vs split |
+| --- | --- | ---: | ---: |
+| RTX PRO 6000 x2 | `8 / 32` | `1.252` | `1.100x` |
+| RTX PRO 6000 x2 | `16 / 32` | `0.998` | `1.380x` |
+| RTX PRO 6000 x2 | `16 / 64` | `0.859` | `1.602x` |
+| RTX PRO 6000 x2 | `32 / 32` | `0.814` | `1.713x` |
+| GB10 node 1 | `8 / 32` | `7.709` | `1.604x` |
+| GB10 node 1 | `16 / 32` | `6.807` | `1.831x` |
+| GB10 node 1 | `16 / 64` | `6.174` | `2.028x` |
+| GB10 node 1 | `32 / 32` | `5.773` | `2.208x` |
+
+Interpretation:
+
+- This component now satisfies the previous exit criterion: exact against the
+  current split path within the expected BF16/Triton tolerance and faster on
+  both RTX PRO 6000 / SM120 and GB10 / SM121.
+- The result does not justify default behavior yet because it has not been
+  wired through the real vLLM endpoint, CUDA graph warmup/workspace sizing, or
+  sparse attribution path.
+- Next step should be a default-off vLLM endpoint candidate that routes only
+  the real D512 mixed compressed+SWA shape through this dataflow, fails closed
+  to current D512 otherwise, and then runs focused endpoint smoke before the
+  full promotion matrix.

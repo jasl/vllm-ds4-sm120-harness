@@ -240,6 +240,57 @@ Interpretation:
   online merge against the current D512 state. Only after that wins should it
   be wired as a default-off endpoint path.
 
+## 2026-06-08 Checkpoint: Real-D512 Grouped-SWA Component
+
+Status: active component prototype, not wired to vLLM endpoint.
+
+This component keeps the D512 compressed top-k stream on the current exact
+per-token split path and only groups the shifted SWA stream. It then merges the
+compressed and SWA online softmax states exactly. This matches the stream-shape
+probe result: the real C4A/D512 indexed path has almost no compressed
+same-position reuse, but the SWA shifted window is shared across neighboring
+query rows.
+
+Component target shape: `512` query tokens, `64` heads, D=`512`,
+`mixed-c128-swa`, `128` compressed candidates, group size `32`,
+grouped-SWA block-C `32`.
+
+| Host | Candidates | Current split | Grouped SWA | Speedup vs split | Speedup vs current chunk | Max diff |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 x2 | 640 | 0.620 ms | 0.572 ms | 1.084x | 4.166x | 0.002607 |
+| RTX PRO 6000 x2 | 1152 | 1.375 ms | 0.814 ms | 1.689x | 5.194x | 0.000953 |
+| GB10 node 1 | 640 | 7.742 ms | 4.917 ms | 1.575x | 2.286x | 0.001639 |
+| GB10 node 1 | 1152 | 12.674 ms | 5.772 ms | 2.196x | 3.718x | 0.001243 |
+
+Parameter sweep for the `1152`-candidate target:
+
+| Host | Group/block-C | Grouped SWA | Speedup vs split |
+| --- | --- | ---: | ---: |
+| RTX PRO 6000 x2 | 8 / 32 | 1.252 ms | 1.100x |
+| RTX PRO 6000 x2 | 16 / 32 | 0.998 ms | 1.380x |
+| RTX PRO 6000 x2 | 16 / 64 | 0.859 ms | 1.602x |
+| RTX PRO 6000 x2 | 32 / 32 | 0.814 ms | 1.713x |
+| GB10 node 1 | 8 / 32 | 7.709 ms | 1.604x |
+| GB10 node 1 | 16 / 32 | 6.807 ms | 1.831x |
+| GB10 node 1 | 16 / 64 | 6.174 ms | 2.028x |
+| GB10 node 1 | 32 / 32 | 5.773 ms | 2.208x |
+
+Interpretation:
+
+- This is the first fork-independent component result that respects the real
+  D512 stream contract and wins strongly on both RTX PRO 6000 / SM120 and
+  GB10 / SM121.
+- The win scales with SWA candidate count because the compressed stream is
+  deliberately left ungrouped. That is the correct tradeoff for D512 C4A
+  shapes where compressed candidates are mostly per-token.
+- Group size `32` with block-C `32` is the current component default. It avoids
+  the shared-memory pressure seen in prior group32/block-C64 probes while
+  giving the best measured result in this sweep.
+- Next endpoint candidate should use this as the dataflow target, but still
+  needs graph-stable workspace sizing, route attribution, conservative shape
+  gating, and full promotion validation before it can become PR branch
+  behavior.
+
 ## Work Plan
 
 ### Task 1: Branch And Code Hygiene
