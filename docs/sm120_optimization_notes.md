@@ -142,6 +142,136 @@ Current execution order:
    architecture support changes.
 4. Only then return to sparse-MLA candidate/value work reduction.
 
+### FlashInfer packed sparse-MLA layout contract
+
+2026-06-08 FlashInfer recheck:
+
+- The local FlashInfer fork is available for source-level experiments when the
+  vLLM-side adapter needs a matching FlashInfer change. Keep the harness checkout
+  as the source of truth and sync it outward to test machines, the same way vLLM
+  is handled.
+- FlashInfer main includes MXFP8 dense-GEMM work such as
+  `flashinfer-ai/flashinfer#3489`, but that route does not provide the DS4
+  sparse-MLA prefill backend needed for the current raw-prefill bottleneck.
+  Treat it as MoE / future NVFP4 background, not as a replacement for sparse MLA.
+- The relevant sparse-MLA backend remains the SM120 sparse-MLA work from
+  `flashinfer-ai/flashinfer#3395`. Its public Python binding accepts dense
+  `q`, dense `output`, and dense per-token index matrices. The KV cache block
+  stride is flexible, but split or non-contiguous views for `q`, output, or
+  index rows are rejected by the binding contract.
+
+Conclusion:
+
+- A direct-view vLLM adapter is rejected for now. It would either require a
+  FlashInfer ABI/kernel change to accept q/output/index strides, or it would
+  silently rely on copies that are not represented in the API contract.
+- The only vLLM-side candidate worth testing is a default-off adapter that
+  stages q/output/index tensors into graph-stable contiguous workspace before
+  calling the FlashInfer packed kernel.
+
+### FlashInfer packed sparse-MLA prefill prototype
+
+2026-06-08 default-off vLLM prototype:
+
+- Added an env-gated path behind
+  `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1`. The default remains disabled.
+- The adapter reuses prefill workspace for contiguous staging instead of adding
+  new hot-path allocations after the workspace is locked.
+- Focused GB10 tests passed for env parsing, fail-closed import behavior, packed
+  shape gating, and workspace reuse. A two-node GB10 smoke with TP=2, EP on,
+  MTP=2, FP8 KV, prefix cache off, and `FULL_AND_PIECEWISE` started cleanly and
+  completed requests without driver errors.
+- The smoke confirmed actual endpoint dispatch: sparse-MLA stats recorded
+  `mla_prefill_flashinfer_packed` for compressed layers while SWA-only layers
+  stayed on the existing chunk path.
+
+Initial signal, not a promotion result:
+
+| Case | Prompt tokens | Output tokens | Result |
+| --- | ---: | ---: | --- |
+| Default path, env off | 11,211 | 8 | 8.96s, D512/chunk stats |
+| FlashInfer packed, env on | 11,211 | 8 | 7.25s first measured request |
+| FlashInfer packed, env on repeat | 11,211 | 8 | 6.94s |
+
+Interpretation:
+
+- This is the first positive endpoint signal from the public FlashInfer SM120
+  sparse-MLA route: roughly 19-22% on a small 11K GB10 prompt smoke.
+- It is not enough to enable by default. The adapter still pays staging/copy and
+  PyTorch lens-computation overhead, and it has not passed the full promotion
+  matrix: 59K/124K C=1/C=2, mixed arrival, prefix/KV lifecycle, streaming
+  pressure, story recall, GSM8K limit-200, short throughput, and GB10 reduced
+  long-C2.
+- Next step: run the promotion subset against env-off and env-on. If the gain
+  survives long-context and correctness gates, keep the adapter as a dev
+  candidate. If it only wins this synthetic smoke, remove the vLLM code and keep
+  this note as a rejected route.
+
+Profiling hypothesis to validate next:
+
+- The unholy/Aiden gap is not only a very-long-context issue. 4K/8K prompts
+  still execute the DS4 sparse-MLA prefill path, including SWA tail work, FP8
+  MQA logits/top-k, value accumulation, workspace staging, and launch overhead.
+  Backend/dataflow changes can therefore improve short and mid-size prefill even
+  when C128 candidate growth is not yet dominant.
+- Do not explain "faster at every input length" as only reduced long-context
+  candidate growth. Split the evidence by prompt length: 4K/8K/32K should expose
+  fixed overhead, SWA-tail/value traffic, staging, MoE, runner, and graph/warmup
+  differences; 64K/128K+ should expose C128 sparse candidate/value work, cache
+  access, memory pressure, and prefill/decode interference.
+- The next measurement should compare current Dev, the env-gated FlashInfer
+  packed prefill prototype, and external unholy/Aiden data using the same
+  prefix-off, MTP=2, EP, FP8-KV, `FULL_AND_PIECEWISE` profile. Use the endpoint
+  attribution matrix first, then Nsys only on representative short/mid/long
+  cases to keep runtime manageable.
+
+2026-06-08 layered GB10 attribution, prefix cache disabled:
+
+- Artifacts:
+  - env off:
+    `artifacts/main/2x_gb10_sm121/20260608_layered_prefill_profile_env_off/20260608160214`
+  - env on:
+    `artifacts/main/2x_gb10_sm121/20260608_layered_prefill_profile_env_on/20260608162915`
+- Profile: two-node GB10, TP=2, EP on, MTP=2, FP8 KV,
+  `max_num_batched_tokens=4176`, `max_num_seqs=2`, prefix cache disabled,
+  `FULL_AND_PIECEWISE`, two random prompts per ISL, output length 128.
+- Both runs passed and left no current-boot NVIDIA driver health signal beyond
+  normal module load messages.
+
+| ISL | Default input tok/s | Packed input tok/s | Speedup | Default TTFT ms | Packed TTFT ms | TTFT delta |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `4096` | `593.62` | `680.40` | `1.146x` | `3612.61` | `2770.50` | `-23.3%` |
+| `8192` | `892.37` | `1008.87` | `1.131x` | `6576.24` | `5202.25` | `-20.9%` |
+| `32768` | `1198.32` | `1354.89` | `1.131x` | `24560.72` | `21308.95` | `-13.2%` |
+| `128000` | `1185.68` | `1312.55` | `1.107x` | `105029.55` | `94591.24` | `-9.9%` |
+
+Sparse-MLA attribution:
+
+- The env-off path used `mla_prefill_chunk` at 4K and
+  `mla_prefill_chunk` + `mla_prefill_indexed_d512` from 8K upward.
+- The env-on path used `mla_prefill_chunk` + `mla_prefill_flashinfer_packed`
+  for all four ISLs, confirming the prototype actually dispatches through the
+  packed FlashInfer backend in endpoint runs.
+- Effective candidate visits are unchanged, as expected. The gain comes from
+  a faster backend/dataflow for the same sparse work, not from reducing the
+  number of candidates.
+- Aggregate sparse stage time dropped sharply in the stats report, but
+  endpoint input tok/s improved only about `10-15%`. Therefore the packed
+  sparse-MLA backend is a real positive signal across short, mid, and long
+  prompts, but it does not by itself close the Aiden/unholy gap. Remaining
+  work likely sits in fixed prefill overhead, JIT/warmup coverage, SWA tail /
+  staging cost, MoE/MLP path, and runner/all-reduce integration.
+
+Decision:
+
+- Keep the vLLM prototype as Dev-only and default-off while it goes through
+  the promotion matrix.
+- Do not spend immediate time on Nsys for this question: endpoint sparse stats
+  already establish that 4K/8K benefit too, and that the benefit is insufficient
+  to fully explain external all-length speedups. Use Nsys next only if a
+  candidate promotion gate regresses or if component attribution cannot explain
+  a remaining endpoint delta.
+
 ### GB10 MTP=2 MoE TP Deadlock Gate
 
 External PR feedback reported an intermittent two-node GB10 / SM121 hang with
@@ -10000,3 +10130,71 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   graph-safe with workspace-backed contiguous q/output, contiguous main/extra
   indices, and explicit main/extra length generation. The next endpoint probe
   should measure that staging overhead against current D512 before promotion.
+
+### 2026-06-08 FlashInfer packed SM120 endpoint promotion subset
+
+- **Scope:** Dev-only endpoint adapter prototype for the unmerged FlashInfer
+  packed SM120 sparse-MLA backend. It is guarded by
+  `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` and remains default-off. This
+  run used GB10 / SM121, TP=2, EP on, MTP=2, FP8 KV,
+  `FULL_AND_PIECEWISE`, `max_model_len=131072`, `max_num_seqs=2`,
+  `max_num_batched_tokens=4176`, and `gpu_memory_utilization=0.70`.
+- **Environment repair:** endpoint probing initially misdetected CPU platform
+  because stale generated `vllm.egg-info` metadata reported a CPU-local version
+  from the source checkout. Removing generated metadata and reinstalling the
+  probe venv restored CUDA platform detection. Future syncs must avoid deleting
+  compiled dependency artifacts or carrying stale generated package metadata
+  across route venvs; rebuild explicitly when in doubt.
+- **Endpoint smoke:** artifact
+  `artifacts/main/2x_gb10_sm121/20260608_packed_fi_endpoint_smoke/20260608175934`.
+  The server reached CUDA serving with FULL and PIECEWISE graph capture, a real
+  request completed, and sparse stats confirmed
+  `layer_type="mla_prefill_flashinfer_packed"` with dominant stage
+  `flashinfer_packed_attention`.
+- **Prefill attribution artifact:** artifact
+  `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_prefill_gap_valid/20260608180541`.
+  All 8 cases passed: prefix cache disabled/enabled crossed with
+  `4096/8192/32768/128000` input tokens. Current-boot driver health stayed clean
+  on both nodes.
+
+  | ISL | Env-off input tok/s | Packed prefix-off input tok/s | TTFT env-off -> packed | Sparse ms/M effective visit |
+  | ---: | ---: | ---: | --- | --- |
+  | 4096 | `593.62` | `664.94` | `3.613s -> 2.767s` | `19.56 -> 0.639` |
+  | 8192 | `892.37` | `1012.61` | `6.576s -> 5.165s` | `13.61 -> 0.577` |
+  | 32768 | `1198.32` | `1368.76` | `24.561s -> 21.004s` | `10.50 -> 0.485` |
+  | 128000 | `1185.68` | `1315.45` | `105.030s -> 94.386s` | `6.88 -> 0.345` |
+
+  Prefix-cache enabled cold prompts were essentially flat relative to
+  prefix-disabled packed runs: `728.83/1050.26/1377.96/1314.91` input tok/s for
+  `4096/8192/32768/128000`, with `2.779s/5.189s/20.988s/94.436s` mean TTFT.
+  This is the desired interpretation: prefix cache on did not break or regress
+  the packed route, but these prompts did not use prefix hits as a benchmark
+  advantage.
+- **GB10 reduced long-C2 gate:** artifact
+  `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_long_c2_mtp2/20260608185801`.
+  The MTP=2 reduced `long_c2:2:2:4000:128` case passed: 4 requests, 0 failures,
+  max TTFT `147.820s`, p95 ITL `0.073s`, p99 ITL `0.079s`, no preemptions, and
+  current-boot driver signal count `0`. Runtime metrics showed
+  `running_requests_max=1`, `waiting_requests_max=1`, so this remains an
+  availability/cadence gate, not evidence that long+long C=2 throughput is
+  solved.
+- **GB10 reduced MTP=2 MoE TP soak:** artifact
+  `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_mtp2_moe_soak_reduced/20260608190816`.
+  Reduced soak profile passed: 16 requests, 0 failures, max TTFT `54.444s`,
+  p99 ITL `0.0739s`, no no-token-progress watchdog hit, preemptions `0`,
+  prefix hit-rate delta `67.69%`, and driver signal count `0`.
+- **Cold-start warmup gap:** repeated inference-time JIT warnings remain in the
+  packed endpoint runs, including `eagle_prepare_next_token_padded_kernel`,
+  `_mtp_shared_head_rmsnorm_kernel`, `eagle_step_slot_mapping_metadata_kernel`,
+  `_fp8_mqa_logits_kernel`, `_build_flashinfer_mixed_sparse_indices_kernel`,
+  `_build_prefill_chunk_metadata_kernel`, `_tf32_hc_prenorm_gemm_kernel`,
+  `_w8a8_triton_block_scaled_mm`, and
+  `_deepseek_v4_sm12x_fp8_einsum_kernel`. These warnings explain part of the
+  cold TTFT variance and must be addressed or explicitly discounted before
+  customer-facing latency claims.
+- **Decision:** keep the endpoint adapter Dev-only and default-off. The GB10
+  subset is positive and materially faster than the current D512 path, proving
+  that the raw-prefill gap is backend/dataflow-shaped even at 4K/8K. Do not push
+  it to the PR branch or default it on until the remaining promotion matrix is
+  green: RTX 59K/124K C=1/C=2, short throughput, mixed arrival, prefix/KV
+  lifecycle, GSM8K limit-200, and a full rather than reduced GB10 MTP2 soak.

@@ -8,6 +8,8 @@ with `docs/sm120_current_state.md` for the live decision state.
 
 - Current state and next direction:
   `docs/sm120_current_state.md`.
+- Active fork-independent sparse-MLA rewrite task:
+  `docs/sm12x_triton_sparse_mla_rewrite_plan.md`.
 - Upstream DeepSeek backlog watchlist:
   open `docs/sm120_optimization_notes.md` and search
   `Upstream DeepSeek backlog triage`.
@@ -26,6 +28,9 @@ with `docs/sm120_current_state.md` for the live decision state.
 - B12X package/API versus vLLM runtime-path probe:
   open `docs/sm120_optimization_notes.md` and search
   `B12X runtime-path probe, 2026-06-08`.
+- FlashInfer SM120 packed sparse-MLA prefill prototype:
+  open `docs/sm120_optimization_notes.md` and search
+  `FlashInfer packed sparse-MLA prefill prototype`.
 
 ## Promotion Gates
 
@@ -144,6 +149,9 @@ that thread, search `External unholy-fusion feedback refresh`.
 - Official b12x compressed MLA endpoint route:
   open `docs/sm120_optimization_notes.md` and search
   `Official FlashInfer 0.6.12 DS4 sparse-MLA API recheck`.
+- Direct-view FlashInfer packed sparse-MLA adapter:
+  open `docs/sm120_optimization_notes.md` and search
+  `FlashInfer packed sparse-MLA layout contract`.
 - leavelet DeepGEMM SM120 MQA route:
   open `docs/sm120_optimization_notes.md` and search
   `leavelet DeepGEMM SM120 MQA route recheck`.
@@ -334,6 +342,15 @@ that thread, search `External unholy-fusion feedback refresh`.
   still requires contiguous q/output and dense row-major main/extra indices.
   Do not retry a direct-view adapter; either add stride support in FlashInfer or
   keep graph-safe vLLM-side staging and measure its endpoint cost.
+- FlashInfer packed SM120 endpoint promotion subset:
+  open `docs/sm120_optimization_notes.md` and search
+  `FlashInfer packed SM120 endpoint promotion subset`. Current conclusion:
+  the Dev-only `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` endpoint adapter
+  passed GB10 prefill attribution with prefix cache disabled/enabled, reduced
+  long-C2, and reduced MTP=2 MoE TP soak. It improved GB10 C=1 prefill by about
+  `10-23%` TTFT versus the same-day env-off control and moved sparse work to
+  `flashinfer_packed_attention`, but remains default-off pending RTX, GSM8K,
+  prefix/KV lifecycle, mixed-arrival, and full GB10 soak promotion.
 
 ## Correctness
 

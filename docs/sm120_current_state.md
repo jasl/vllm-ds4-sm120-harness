@@ -11,10 +11,12 @@ Last updated: 2026-06-08.
 
 1. Read this file for the current branch posture and next target.
 2. Read `docs/vllm_correctness_gates.md` for promotion requirements.
-3. Read `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup and
+3. Read `docs/sm12x_triton_sparse_mla_rewrite_plan.md` before starting the
+   next fork-independent sparse-MLA prefill kernel/backend iteration.
+4. Read `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup and
    reduced long-context gates.
-4. Use `docs/sm120_experiment_index.md` to jump into historical experiments.
-5. Use `docs/sm120_optimization_notes.md` only when you need the detailed
+5. Use `docs/sm120_experiment_index.md` to jump into historical experiments.
+6. Use `docs/sm120_optimization_notes.md` only when you need the detailed
    artifact trail or rejected-route rationale.
 
 ## Current Posture
@@ -23,6 +25,12 @@ Last updated: 2026-06-08.
   scheduling, workspace warmup, prefix/KV lifecycle, and correctness fixes that
   already passed promotion gates. This is the current defensible customer
   baseline for dual RTX PRO 6000 / SM120 and the reduced GB10 / SM121 envelope.
+- Active next task: `docs/sm12x_triton_sparse_mla_rewrite_plan.md`. The next
+  production-class prefill effort should extract the dataflow lesson from the
+  unmerged packed FlashInfer SM120 backend and implement a fork-independent
+  Triton sparse-MLA prefill backend. The first target is lower cost per
+  effective candidate visit with the same semantic candidate set, not another
+  scheduler or chunk-size sweep.
 - Newly promoted work: exact chunked D512 online merge for
   `combined_topk > 1152`. It is now default-on because the RTX promotion subset,
   GSM8K limit-200, prefix/KV lifecycle checks, and GB10 reduced long-C2 gate are
@@ -56,9 +64,12 @@ Last updated: 2026-06-08.
   now validates the next adapter assumption: vLLM's
   `build_flashinfer_mixed_sparse_indices` output can be split into the packed
   wrapper's main SWA stream and extra compressed stream for both C4A and C128A,
-  with correct per-stream lengths and zero-KV LSE. A direct endpoint adapter
-  still needs workspace reservation, CUDA graph address stability, and endpoint
-  performance validation.
+  with correct per-stream lengths and zero-KV LSE. A Dev-only endpoint adapter
+  behind `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` now has clean GB10
+  evidence for the prefill/prefix subset, reduced long-C2, and reduced MTP=2
+  MoE TP soak. It remains default-off because it depends on an unmerged
+  FlashInfer packed backend and has not yet passed the full RTX + GSM8K +
+  lifecycle promotion matrix.
 - Blocked or rejected as current endpoint backends, in the specific forms that
   were tested: public b12x / FlashInfer wheels as a direct DS4 endpoint
   backend, upstream `FLASHINFER_MLA_SPARSE_DSV4` with the current official
@@ -135,6 +146,18 @@ SM120 sparse-MLA route, which is not available in the current wheel. A direct
 GB10 component smoke against an isolated build passed DSV4 packed
 prefill/decode correctness, so the remaining work is proving an endpoint
 adapter can reduce real sparse-MLA work without regressions.
+The first endpoint-shaped Dev-only adapter for that packed route now has a
+positive GB10 attribution signal at every tested input length, with prefix
+cache both disabled and enabled. `4096/8192/32768/128000` improved input tok/s
+by roughly `1.11-1.15x` and TTFT by roughly `10-23%` against the same-day
+env-off control, while preserving the same effective candidate-visit counts.
+This proves the 4K/8K gap can be affected by sparse-MLA prefill
+backend/dataflow, not only by very-long-context C128 candidate growth.
+The route also passed a GB10 reduced long-C2 gate and a reduced MTP=2 MoE TP
+soak with clean driver health. It is still default-off because the endpoint
+gain is not enough to explain the full Aiden/unholy gap, the dependency is not
+an official wheel path, and RTX + GSM8K + prefix/KV lifecycle promotion is still
+pending.
 
 External feedback on 2026-06-07 strengthens the GB10 prefill-gap concern: a
 NVIDIA Developer Forums report for the local-inference-lab / unholy-fusion
