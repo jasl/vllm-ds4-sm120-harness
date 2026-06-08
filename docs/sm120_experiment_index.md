@@ -269,10 +269,12 @@ that thread, search `External unholy-fusion feedback refresh`.
   DSV4 TRTLLM-gen route versus the unmerged packed SM120 sparse-MLA route.
 - Public b12x 0.20 KV-layout compatibility:
   open `docs/sm120_optimization_notes.md` and search
-  `Public b12x 0.20 KV-layout probe`. Current conclusion: public b12x's
-  compressed MLA API uses page-packed payload-then-scale bytes, while vLLM's
-  `fp8_ds_mla` cache is 584B token-interleaved. Do not retry env-only b12x or
-  a naive zero-copy adapter unless the backend layout contract changes.
+  `Public b12x 0.20 KV-layout probe`. Current conclusion: the old
+  token-interleaved incompatibility reading was too strong. vLLM exposes a 3D
+  logical cache tensor, but its physical CUDA page layout can match public
+  b12x through a zero-copy 2D page-byte view. Do not retry env-only b12x
+  serving switches; the next valid step is a direct b12x component smoke and
+  then a dev-only adapter if that passes.
 
 ## Correctness
 

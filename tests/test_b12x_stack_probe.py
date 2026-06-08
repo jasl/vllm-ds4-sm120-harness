@@ -205,7 +205,46 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
     assert result["routes"]["flashinfer_dsv4_trtllm_gen_plain"]["ok"] is True
     assert result["routes"]["flashinfer_sm120_sparse_mla_packed"]["ok"] is False
     assert result["layouts"]["b12x_compressed_mla"]["ok"] is True
-    assert result["layouts"]["b12x_compressed_mla"]["vllm_zero_copy_compatible"] is False
+    layout = result["layouts"]["b12x_compressed_mla"]
+    assert layout["vllm_zero_copy_compatible"] is True
+    assert layout["vllm_page_view_required"] is True
+    assert layout["vllm_page_view_zero_copy"] is True
+    assert layout["b12x_scale_region_offset"] == 36864
+    assert layout["vllm_page_view_scale_region_offset"] == 36864
+    assert layout["vllm_3d_token_stride"] == 584
+    assert layout["vllm_physical_payload_stride"] == 576
+    assert result["routes"]["public_b12x_vllm_fp8_ds_mla_zero_copy"]["ok"] is True
+
+
+def test_b12x_stack_probe_rejects_b12x_page_layout_mismatch(monkeypatch):
+    modules = {
+        "b12x.integration.mla": types.SimpleNamespace(
+            compressed_mla_decode_forward=object(),
+        ),
+        "b12x.attention.mla.compressed_reference": types.SimpleNamespace(
+            compressed_mla_page_nbytes=lambda page_size: page_size * 584,
+            compressed_mla_scale_region_offset=lambda page_size: 576,
+        ),
+    }
+
+    def fake_import_module(name):
+        if name not in modules:
+            raise ModuleNotFoundError(name)
+        return modules[name]
+
+    monkeypatch.setattr(
+        b12x_stack_probe.importlib.metadata,
+        "version",
+        lambda name: "local",
+    )
+    monkeypatch.setattr(b12x_stack_probe.importlib, "import_module", fake_import_module)
+
+    result = b12x_stack_probe.probe_b12x_stack()
+
+    layout = result["layouts"]["b12x_compressed_mla"]
+    assert layout["vllm_zero_copy_compatible"] is False
+    assert layout["vllm_page_view_required"] is True
+    assert layout["vllm_page_view_zero_copy"] is False
     assert result["routes"]["public_b12x_vllm_fp8_ds_mla_zero_copy"]["ok"] is False
 
 

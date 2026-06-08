@@ -9659,33 +9659,29 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
 - **Source audit:** b12x `compressed_reference.py` documents and implements a
   page-packed cache layout:
   `[page_size * 576 payload bytes][page_size * 8 scale bytes][padding]`.
-  Its `unified_sm120` prefill launcher exposes `stride_kv_block`, but the DSV4
-  IO helper still computes per-token payload offsets as `local_idx * 576` and
-  scale offsets in the separate page scale region. The stride only changes the
-  distance between pages, not the token-internal layout.
-- **vLLM layout:** current vLLM `fp8_ds_mla` cache shape remains
-  `[num_blocks, block_size, 584]`, where each token row is interleaved as
-  `448B` NoPE FP8, `128B` RoPE BF16 bytes, and `8B` UE8M0 scale bytes.
+  Current vLLM still exposes a logical cache tensor shaped
+  `[num_blocks, block_size, 584]`, but the CUDA store/gather path writes the
+  physical page as payload bytes first and page-tail scale bytes second. The
+  `584` byte token stride is a logical view; it is not the physical byte layout
+  that b12x must consume.
 - **Probe numbers:** with `page_size=64`, b12x computes
-  `page_nbytes=37440` and `scale_offset=36864`, while vLLM's interleaved page
-  is `64 * 584 = 37376` bytes. Token offsets diverge immediately:
-  token 0 scale is `36864` in b12x versus `576` in vLLM; token 1 payload is
-  `576` in b12x versus `584` in vLLM.
+  `page_nbytes=37440` and `scale_offset=36864`. vLLM's unpadded logical byte
+  count is `64 * 584 = 37376`, but the physical page is padded to `37440` and
+  has the same page-tail scale offset `36864`. Token 1 payload offset is `576`
+  in the physical page view. A zero-copy 2D page-byte view
+  `[num_pages, page_nbytes]` can therefore match b12x; directly passing the
+  3D logical tensor remains wrong.
 - **Harness update:** `ds4_harness.b12x_stack_probe` now emits
   `layouts.b12x_compressed_mla` and the route
-  `public_b12x_vllm_fp8_ds_mla_zero_copy`, so future b12x versions can be
-  checked before endpoint startup.
-- **Conclusion:** public b12x 0.20 cannot be a zero-copy endpoint backend for
-  the current vLLM `fp8_ds_mla` cache through the high-level compressed-MLA API,
-  and simply passing a custom `stride_kv_block` to the unified prefill path is
-  insufficient. The viable routes are:
-  1. find or contribute a lower-level b12x / FlashInfer entrypoint whose IO
-     explicitly supports vLLM's interleaved 584B token rows;
-  2. build a repack prototype only to measure upper-bound kernel behavior,
-     treating repack cost as diagnostic unless it still wins end-to-end;
-  3. introduce a guarded alternate / mirrored KV layout after proving capacity,
-     correctness, prefix/KV lifecycle, and GB10 promotion gates.
-- **Do not re-enter:** public-b12x env-only switches or a naive adapter that
-  forwards the existing vLLM cache into `compressed_mla_decode_forward` are now
-  rejected. Revisit only if b12x / FlashInfer changes its DS4 cache contract or
-  vLLM adopts a compatible layout.
+  `public_b12x_vllm_fp8_ds_mla_zero_copy`. The route means "page-view
+  compatible", not "endpoint adapter exists".
+- **Conclusion:** the previous "public b12x layout is incompatible" conclusion
+  was too strong. The high-confidence next step is a direct CUDA component
+  smoke that passes a 2D view of vLLM-style physical pages into public b12x
+  compressed MLA and compares it with the reference for page sizes `64` and
+  `2`. Only after that should a dev-only vLLM adapter be considered.
+- **Still rejected:** public-b12x env-only serving switches remain rejected.
+  Installing b12x or setting an env var is not evidence that vLLM selected a
+  correct DS4 compressed-MLA path. Promotion still requires endpoint logs,
+  correctness, prefix/KV lifecycle, GB10 reduced long-C2, and the normal
+  performance gates.

@@ -173,6 +173,10 @@ B12X_DSV4_PAYLOAD_BYTES = 576
 LAYOUT_PROBE_PAGE_SIZE = 64
 
 
+def _round_up(value: int, multiple: int) -> int:
+    return ((value + multiple - 1) // multiple) * multiple
+
+
 def _module_ok(result: Json, name: str) -> bool:
     module = result["modules"].get(name, {})
     return bool(module.get("ok"))
@@ -370,7 +374,8 @@ def _classify_routes(result: Json) -> Json:
         ),
         "note": (
             "Whether public b12x compressed-MLA can consume current vLLM "
-            "fp8_ds_mla cache without repack or alternate layout."
+            "fp8_ds_mla cache without repack by using a 2D page-byte view of "
+            "the physical cache pages."
         ),
     }
     return routes
@@ -510,22 +515,30 @@ def _probe_b12x_compressed_mla_layout() -> Json:
             "detail": str(exc),
         }
 
-    vllm_page_nbytes = LAYOUT_PROBE_PAGE_SIZE * VLLM_FP8_DS_MLA_TOKEN_BYTES
+    vllm_unpadded_page_nbytes = (
+        LAYOUT_PROBE_PAGE_SIZE * VLLM_FP8_DS_MLA_TOKEN_BYTES
+    )
+    vllm_page_nbytes = _round_up(
+        vllm_unpadded_page_nbytes,
+        B12X_DSV4_PAYLOAD_BYTES,
+    )
     b12x_token0_scale_offset = scale_offset
     b12x_token1_payload_offset = B12X_DSV4_PAYLOAD_BYTES
-    vllm_token0_scale_offset = B12X_DSV4_PAYLOAD_BYTES
-    vllm_token1_payload_offset = VLLM_FP8_DS_MLA_TOKEN_BYTES
+    vllm_page_view_scale_region_offset = (
+        LAYOUT_PROBE_PAGE_SIZE * B12X_DSV4_PAYLOAD_BYTES
+    )
+    vllm_page_view_token1_payload_offset = B12X_DSV4_PAYLOAD_BYTES
     compatible = (
         page_nbytes == vllm_page_nbytes
-        and b12x_token0_scale_offset == vllm_token0_scale_offset
-        and b12x_token1_payload_offset == vllm_token1_payload_offset
+        and b12x_token0_scale_offset == vllm_page_view_scale_region_offset
+        and b12x_token1_payload_offset == vllm_page_view_token1_payload_offset
     )
     reason = (
-        "layout offsets match current vLLM fp8_ds_mla rows"
+        "vLLM physical page layout matches b12x via a 2D page-byte view"
         if compatible
         else (
-            "page-packed layout does not match vLLM 584B token-interleaved "
-            "fp8_ds_mla rows"
+            "b12x page-packed layout does not match the current vLLM "
+            "physical fp8_ds_mla page layout"
         )
     )
 
@@ -536,9 +549,17 @@ def _probe_b12x_compressed_mla_layout() -> Json:
         "b12x_scale_region_offset": scale_offset,
         "b12x_token0_scale_offset": b12x_token0_scale_offset,
         "b12x_token1_payload_offset": b12x_token1_payload_offset,
+        "vllm_unpadded_page_nbytes": vllm_unpadded_page_nbytes,
         "vllm_page_nbytes": vllm_page_nbytes,
-        "vllm_token0_scale_offset": vllm_token0_scale_offset,
-        "vllm_token1_payload_offset": vllm_token1_payload_offset,
+        "vllm_padded_page_nbytes": vllm_page_nbytes,
+        "vllm_3d_token_stride": VLLM_FP8_DS_MLA_TOKEN_BYTES,
+        "vllm_physical_payload_stride": B12X_DSV4_PAYLOAD_BYTES,
+        "vllm_page_view_required": True,
+        "vllm_page_view_zero_copy": compatible,
+        "vllm_page_view_scale_region_offset": vllm_page_view_scale_region_offset,
+        "vllm_page_view_token1_payload_offset": (
+            vllm_page_view_token1_payload_offset
+        ),
         "vllm_zero_copy_compatible": compatible,
         "reason": reason,
     }

@@ -174,9 +174,11 @@ on both GB10 nodes, but treat b12x MLA as research-only until a real vLLM
 endpoint adapter selects that path and the end-to-end GB10 promotion matrix
 passes. The public b12x compressed-MLA high-level cache layout is page-packed:
 `[page_size * 576 payload bytes][page_size * 8 scale bytes][padding]`. Current
-vLLM `fp8_ds_mla` cache rows are token-interleaved `584` byte records. Do not
-assume a zero-copy b12x endpoint adapter is possible without a layout-specific
-lower-level API, a repack step, or a cache-layout change.
+vLLM `fp8_ds_mla` exposes a logical 3D view with `584` byte token stride, but
+the physical CUDA page layout matches the b12x page-byte contract when exported
+as a 2D `[num_pages, page_nbytes]` view. Do not pass the 3D tensor directly.
+Treat this as a research route until a direct component smoke and a dev-only
+endpoint adapter prove correctness and end-to-end benefit.
 
 For one-off kernel/configuration experiments, `scripts/dgx_spark_start_mp_serve.sh`
 can forward explicitly named environment variables to the remote vLLM processes
