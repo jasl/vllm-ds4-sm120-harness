@@ -9685,3 +9685,28 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   correct DS4 compressed-MLA path. Promotion still requires endpoint logs,
   correctness, prefix/KV lifecycle, GB10 reduced long-C2, and the normal
   performance gates.
+
+### 2026-06-08 Public b12x 0.20 2D page-view component smoke
+
+- **Purpose:** validate the corrected KV-layout conclusion with a real CUDA
+  component call, not just source reading. The smoke used public b12x
+  compressed MLA with caller-owned scratch and passed a zero-copy 2D
+  `[num_pages, page_nbytes]` page-byte view derived from a vLLM-style 3D
+  logical cache tensor.
+- **SWA-only result:** `page_size=64`, 2 rows, 32 local query heads,
+  vLLM-style logical cache shape `(2, 64, 584)`, stride `(37440, 584, 1)`;
+  derived page view shape `(2, 37440)`, stride `(37440, 1)`. Public b12x
+  `compressed_mla_decode_forward` matched
+  `compressed_sparse_mla_reference` with `max_abs_diff=3.0517578125e-05` and
+  `mean_abs_diff=4.27e-06`.
+- **SWA + indexed result:** SWA `page_size=64` plus indexed `page_size=2`;
+  indexed logical cache shape `(4, 2, 584)`, stride `(1728, 584, 1)`;
+  derived indexed page view shape `(4, 1728)`, stride `(1728, 1)`. Public b12x
+  matched reference with `max_abs_diff=3.0517578125e-05` and
+  `mean_abs_diff=4.51e-06`.
+- **Conclusion:** public b12x compressed MLA is no longer blocked by DS4
+  packed-cache physical layout. It is still not an endpoint optimization:
+  vLLM needs a dev-only adapter that creates the correct 2D page views,
+  connects the existing sparse metadata, reuses locked workspace/scratch, and
+  proves endpoint performance. Do not promote it without the full promotion
+  matrix.
