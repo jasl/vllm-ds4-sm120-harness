@@ -9826,3 +9826,40 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   Next investigations should compare broader runtime/dataflow changes or a
   genuinely different sparse-MLA backend, not merely replace
   `fp8_fp4_mqa_topk_indices` or avoid the current gather copy.
+
+### 2026-06-08 FlashInfer packed SM120 vLLM-shaped component probe
+
+- **Harness update:** added `ds4_harness.flashinfer_packed_mla_probe` and
+  `scripts/run_flashinfer_packed_mla_probe.sh`. The probe is development-only:
+  it builds vLLM-style mixed sparse indices with
+  `build_flashinfer_mixed_sparse_indices`, splits the result into the packed
+  wrapper's main SWA stream and extra compressed stream, and validates a
+  zero-KV run against the expected per-token LSE. It does not change vLLM
+  serving behavior.
+- **Environment:** GB10 head node, isolated Aiden wheelhouse route venv
+  recorded in the ignored local handoff notes. The script set
+  `FLASHINFER_DISABLE_VERSION_CHECK=1` because this route uses the public Aiden
+  image's patched `flashinfer_python-0.6.12` plus
+  `flashinfer_cubin-0.6.11.post3` combination. Current-boot driver health after
+  the run had no Xid/UVM/lost-bus entries.
+- **Artifact:**
+  `artifacts/main/2x_gb10_sm121/flashinfer_packed_mla_probe/20260608_packed_mla_component_probe_devicefix`.
+- **C4A result:** `num_tokens=128`, `num_heads=64`, `window=128`,
+  `compress_ratio=4`, `topk=512`, main `pbs=64`, extra `pbs=64`. The vLLM
+  helper emitted combined shape `[128, 640]`; split shapes were main
+  `[128, 128]` and extra `[128, 512]`. Past-length slots were `-1`,
+  helper lens semantics matched the expected fixed-window FlashInfer route, and
+  the packed wrapper returned finite zero output with `lse_error_max=4.77e-7`.
+- **C128A result:** `num_tokens=256`, `num_heads=64`, `window=128`,
+  `compress_ratio=128`, `topk=1024`, main `pbs=64`, extra `pbs=2`. Combined
+  shape `[256, 1152]`; split shapes were main `[256, 128]` and extra
+  `[256, 1024]`. Past-length slots and helper lens semantics were correct, and
+  zero-KV LSE again matched within `4.77e-7`.
+- **Conclusion:** the previous adapter risk is reduced. The packed
+  FlashInfer SM120 sparse-MLA wrapper is not only importable and runnable in
+  standalone tests; it can consume vLLM-generated sparse metadata after a
+  simple split into main/extra streams for C4A and C128A physical page sizes.
+  The next step can be a Dev-only endpoint adapter prototype. The remaining
+  promotion blockers are per-layer wrapper/workspace reservation, CUDA graph
+  address stability under FULL_AND_PIECEWISE, endpoint TTFT/input tok/s versus
+  current D512 split+finish, and the full promotion matrix.

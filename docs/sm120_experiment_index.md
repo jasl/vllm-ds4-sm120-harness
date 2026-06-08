@@ -242,19 +242,23 @@ that thread, search `External unholy-fusion feedback refresh`.
   direct packed DSV4 prefill/decode smokes. Current vLLM cache shapes appear
   compatible in principle (`SWA=64`, `C4A=64`, `C128A=2`); the earlier
   `SWA=256` note confused global scheduler/cache preference with the physical
-  page size passed to the wrapper. It is still not a direct vLLM endpoint
-  backend until metadata/index semantics, workspace reservation, and graph
-  capture are adapter-tested; search
-  `FlashInfer packed SM120 component smoke` and
-  `FlashInfer packed SM120 vLLM-layout constraint` before adapter work.
+  page size passed to the wrapper. The development probe
+  `scripts/run_flashinfer_packed_mla_probe.sh` now validates vLLM helper output
+  split into packed-wrapper C4A and C128A index streams on GB10. It is still
+  not a direct vLLM endpoint backend until workspace reservation, CUDA graph
+  capture, and endpoint performance are adapter-tested; search
+  `FlashInfer packed SM120 component smoke`,
+  `FlashInfer packed SM120 vLLM-layout constraint`, and
+  `FlashInfer packed SM120 vLLM-shaped component probe` before adapter work.
 - Aiden wheelhouse FlashInfer SM120 sparse-MLA wrapper:
   open `docs/sm120_optimization_notes.md` and search
   `Aiden wheelhouse FlashInfer sparse-MLA wrapper probe`. Current conclusion:
   the public Aiden image's wheelhouse contains patched FlashInfer wheels that
   expose `BatchSparseMLAPagedAttentionWrapper`; installing only the cubin wheel
   over the official Python package does not. The wrapper passed small GB10
-  single-cache and dual-cache DSV4 prefill component smokes. This is now the
-  highest-signal adapter route, but it still needs vLLM page-layout integration
+  single-cache and dual-cache DSV4 prefill component smokes, plus the
+  vLLM-shaped C4A/C128A split-index probe. This is now the highest-signal
+  adapter route, but it still needs endpoint workspace/CUDA-graph integration
   and endpoint A/B before promotion.
 - vLLM PR #43477 8K/1K comparison shape:
   open `docs/vllm_correctness_gates.md` and search

@@ -52,9 +52,13 @@ Last updated: 2026-06-08.
   physical cache shapes are compatible in principle: SWA uses `64`, C4A
   compressed cache uses `64`, and C128A compressed cache uses `2`; the old
   `256` reading was the global scheduler/cache block preference, not the
-  packed wrapper's physical page size. A direct endpoint adapter still needs an
-  endpoint-shaped component smoke because metadata, index semantics, graph
-  capture, and workspace reservation must all match.
+  packed wrapper's physical page size. A GB10 endpoint-shaped component probe
+  now validates the next adapter assumption: vLLM's
+  `build_flashinfer_mixed_sparse_indices` output can be split into the packed
+  wrapper's main SWA stream and extra compressed stream for both C4A and C128A,
+  with correct per-stream lengths and zero-KV LSE. A direct endpoint adapter
+  still needs workspace reservation, CUDA graph address stability, and endpoint
+  performance validation.
 - Blocked or rejected as current endpoint backends, in the specific forms that
   were tested: public b12x / FlashInfer wheels as a direct DS4 endpoint
   backend, upstream `FLASHINFER_MLA_SPARSE_DSV4` with the current official
@@ -326,11 +330,13 @@ production code is added:
   signature observed inside the Aiden image. Small GB10 component smokes passed
   for single-cache and dual-cache DSV4 prefill with `num_heads=16`,
   `topk=128`, main `page_block_size=64`, and secondary `page_block_size=64`.
-  This makes the next route concrete: prototype a Dev-only adapter around the
-  packed FlashInfer SM120 sparse-MLA wrapper, then measure endpoint TTFT/input
-  tok/s against current D512 before any default switch. The remaining
-  integration risk is vLLM's current SWA/cache page layout, not wrapper
-  availability.
+  A follow-up vLLM-shaped probe with `scripts/run_flashinfer_packed_mla_probe.sh`
+  passed C4A and C128A split-index cases against the wrapper. This makes the
+  next route concrete: prototype a Dev-only adapter around the packed
+  FlashInfer SM120 sparse-MLA wrapper, then measure endpoint TTFT/input tok/s
+  against current D512 before any default switch. The remaining integration
+  risk is endpoint workspace/graph/performance, not wrapper availability or
+  cache page shape.
 - Use `scripts/run_b12x_stack_probe.sh` before any new B12X endpoint
   experiment to classify the target venv/image as public b12x,
   Aiden/unholy bundled b12x, FlashInfer-b12x NVFP4, or missing. Public
