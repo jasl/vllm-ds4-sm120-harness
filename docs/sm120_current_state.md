@@ -172,16 +172,18 @@ smoke, including a full `E=256` synthetic DS4-shaped call, but the
 Aiden/unholy implementation is non-EP only and prior MoE-off endpoint A/B says
 it is a small positive component rather than the main prefill-gap source.
 
-The same probe shows public b12x compressed MLA does not zero-copy match the
-current vLLM `fp8_ds_mla` KV cache: b12x expects page-packed payload followed
-by page-packed scale bytes, while vLLM stores `584` byte token-interleaved
-records. The remaining question is therefore narrower than "install b12x and
-call it": study the sparse indexer and native MXFP4 MoE runtime deltas first,
-or find a lower-level b12x / FlashInfer entrypoint that truly supports the vLLM
-layout, add a measured repack/mirror-cache prototype as a diagnostic only, or
-change cache layout behind a guarded backend. Do not add a production endpoint
-adapter until that dataflow question is resolved and the promotion matrix stays
-green.
+The follow-up b12x page-view probe corrected the earlier cache-layout reading:
+vLLM exposes a logical 3D `fp8_ds_mla` tensor with `584` byte token stride, but
+the physical CUDA page can be exported as a zero-copy 2D
+`[num_pages, page_nbytes]` page-byte view that matches public b12x compressed
+MLA. Direct CUDA component smokes passed for SWA-only `page_size=64` and
+SWA+indexed `page_size=2` with `max_abs_diff=3.0517578125e-05`. That removes
+the layout blocker, but it does not make b12x compressed MLA an endpoint
+optimization: the endpoint-like `real_c128` microbench measured public b12x at
+`3.951 ms` versus current D512 split+finish at `1.443 ms`. Do not add a
+production endpoint adapter for this direct route unless a newer backend or a
+different sparse-MLA dataflow changes that performance result and then passes
+the promotion matrix.
 
 ## Active Direction
 
