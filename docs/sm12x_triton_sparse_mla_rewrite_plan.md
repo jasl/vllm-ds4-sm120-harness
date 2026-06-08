@@ -160,6 +160,34 @@ GB10 component shapes. It is not enough to close the raw prefill gap. The main
 route remains reducing true sparse MLA candidate/value work and memory
 pressure, especially the SWA tail/value traffic.
 
+## 2026-06-08 Checkpoint: Cross-Query Reuse Attribution
+
+Artifact label:
+`artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260608_reuse_attribution_smoke/20260608210317`.
+
+This was a diagnostic attribution smoke, not a customer-facing latency
+baseline. It used current default behavior, prefix cache disabled, MTP=2, EP
+enabled, FP8 KV, `FULL_AND_PIECEWISE`, overlap sampling enabled, stage timing
+enabled, C=1, and one request per input length.
+
+| Input | Sparse stage total | Sparse visits/s | Compressed effective visits | SWA effective visits | Compressed group16 reuse | SWA group16 reuse |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 4K | 563.596 ms | 203.119M/s | 68.580M | 45.422M | 0.919 | 0.923 |
+| 32K | 2877.888 ms | 426.360M/s | 849.729M | 368.383M | 0.855 | 0.930 |
+
+Interpretation:
+
+- Cross-query reuse exists at short and mid prompts, not only at very long
+  contexts.
+- SWA is smaller than compressed work in these shapes, but it still accounts
+  for about `30-40%` of effective visits and has high sampled reuse.
+- A compressed-only grouped path repeats the already rejected failure mode:
+  it leaves enough SWA/value traffic that endpoint gains are small or erased.
+- The next retained prototype must preserve the current D512 head-block score
+  reuse while reducing candidate/value work across both compressed and SWA
+  streams. Score-only grouped reuse, split-launch grouped-combined reuse, and
+  two-pass grouped-union replay remain rejected routes.
+
 ## Work Plan
 
 ### Task 1: Branch And Code Hygiene
