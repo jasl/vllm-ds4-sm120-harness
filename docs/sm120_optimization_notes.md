@@ -9863,3 +9863,29 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   promotion blockers are per-layer wrapper/workspace reservation, CUDA graph
   address stability under FULL_AND_PIECEWISE, endpoint TTFT/input tok/s versus
   current D512 split+finish, and the full promotion matrix.
+
+### 2026-06-08 FlashInfer packed SM120 endpoint adapter probe
+
+- **Scope:** Dev-only vLLM adapter prototype, saved on local backup branch
+  `codex/flashinfer-packed-prefill-probe-20260608` and removed from the main
+  Dev checkout. The route was default-off behind
+  `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1`.
+- **Implementation lessons:** the packed wrapper expects local-head,
+  contiguous inputs. The endpoint prototype needed workspace-backed packing for
+  `q` and output, and it had to pass only the first `n_local_heads` entries of
+  the padded `attn_sink`.
+- **GB10 diagnostic smoke:** TP=2, FP8 KV, prefix cache off,
+  `FULL_AND_PIECEWISE`, `max_model_len=8192`, `max_num_seqs=1`,
+  `max_num_batched_tokens=4096`. The server reached ready, captured both
+  PIECEWISE and FULL CUDA graphs, and a real chat request completed. Sparse MLA
+  stats on both ranks confirmed `layer_type="mla_prefill_flashinfer_packed"`
+  for C4A and C128A layers.
+- **Blocking issue:** the same startup window logged NVIDIA driver
+  `NV_ERR_NO_MEMORY` during warmup/graph profiling. Treat the run as interface
+  evidence only, not as clean stability or performance evidence. Do not promote
+  this adapter, default it on, or compare throughput until a clean driver-health
+  run passes and endpoint A/B beats the current Dev path under the promotion
+  matrix.
+- **Decision:** keep the code only on the local backup branch for later
+  recheck against newer FlashInfer/b12x/driver stacks. Current Dev and PR
+  branches remain on the existing vLLM path.
