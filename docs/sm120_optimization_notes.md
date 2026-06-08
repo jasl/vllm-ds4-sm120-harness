@@ -9556,6 +9556,17 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   but the performance signal is negative. Do not port the Aiden/unholy mHC hook
   into current Dev unless a future b12x release changes this result; keep the
   script as a recheck tool.
+- **Blocked B12X WO projection endpoint route:** a direct GB10 call into public
+  `b12x.gemm.wo_projection` with DS4-like TP=2 dimensions confirmed that
+  weight packing succeeds, but the first fused WO projection call fails while
+  compiling the underlying MXFP8 dense GEMM:
+  `cutlass.cute.nvgpu.warp.MmaMXF8Op` is missing from public
+  `nvidia-cutlass-dsl==4.5.2`. This matches the Aiden overlay's own guard that
+  auto-disables B12X WO unless that symbol exists. Do not add the DS4 B12X WO
+  endpoint hook to current Dev under the public dependency stack. Revisit only
+  after CUTLASS DSL or b12x exposes a runnable SM12x MXFP8 GEMM path, or if the
+  Aiden image's bundled dependency stack is reproduced and can pass a standalone
+  WO smoke first.
 
 ### 2026-06-08 Public b12x 0.20 KV-layout probe
 

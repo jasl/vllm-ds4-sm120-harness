@@ -146,6 +146,9 @@ MXFP4 B12X MoE runtime plumbing, DS4 B12X WO projection / mHC hooks, or a
 DS4-specific compressed-MLA runtime adapter. The Aiden production image does
 expose the sparse indexer and native MXFP4 B12X MoE runtime hooks, but still not
 a runtime-importable DS4 compressed-MLA adapter in its installed vLLM package.
+Public b12x mHC was slower than the current TileLang fused path in standalone
+GB10 microbenching, and public b12x WO projection is blocked on the missing
+Cutlass DSL MXFP8 MMA symbol, so neither should be the next endpoint port.
 
 The same probe shows public b12x compressed MLA does not zero-copy match the
 current vLLM `fp8_ds_mla` KV cache: b12x expects page-packed payload followed
@@ -204,9 +207,12 @@ production code is added:
   `VLLM_USE_B12X_DEEPSEEK_V4*` switches. The public-b12x `0.20.0` mHC route
   has now been rechecked with a standalone GB10 microbench and is rejected for
   current Dev: `b12x_mhc_post_pre` is slower than the existing TileLang fused
-  MHC path with and without fused norm. The Model Runner V2 enablement alone is
-  unlikely to explain the prefill gap, but it may be required for that stack's
-  warmup/scratch compatibility.
+  MHC path with and without fused norm. The public-b12x `0.20.0` WO projection
+  route is dependency-blocked in the current public stack: DS4-shaped weight
+  packing succeeds, but the first fused WO call fails because public
+  `nvidia-cutlass-dsl==4.5.2` lacks `cutlass.cute.nvgpu.warp.MmaMXF8Op`. The
+  Model Runner V2 enablement alone is unlikely to explain the prefill gap, but
+  it may be required for that stack's warmup/scratch compatibility.
 - Use `scripts/run_gb10_b12x_backend_ab_matrix.sh` for that comparison. It
   wraps the existing GB10 prefill-gap gate and takes semicolon-separated
   `GB10_B12X_AB_TARGETS` entries in
