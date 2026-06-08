@@ -267,6 +267,12 @@ that thread, search `External unholy-fusion feedback refresh`.
   TMA-partition failure in direct GB10 `extend_tiled_topk` smoke. The same
   probe now reports whether the current environment has the plain FlashInfer
   DSV4 TRTLLM-gen route versus the unmerged packed SM120 sparse-MLA route.
+- FlashInfer #3489 MXFP8 GEMM check:
+  open `docs/sm120_optimization_notes.md` and search
+  `FlashInfer #3489 MXFP8 check`. Current conclusion: the local FlashInfer fork
+  includes #3489, but the installed GB10 wheel still does not unblock WO/MXFP8:
+  `mm_mxfp8` `auto/cutlass` fails the SM120 mat2 layout check and explicit
+  `cudnn` is not supported for capability 121.
 - Public b12x 0.20 KV-layout compatibility:
   open `docs/sm120_optimization_notes.md` and search
   `Public b12x 0.20 KV-layout probe`. Current conclusion: the old

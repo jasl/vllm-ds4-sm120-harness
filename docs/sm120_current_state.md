@@ -162,7 +162,11 @@ expose the sparse indexer and native MXFP4 B12X MoE runtime hooks, but still not
 a runtime-importable DS4 compressed-MLA adapter in its installed vLLM package.
 Public b12x mHC was slower than the current TileLang fused path in standalone
 GB10 microbenching, and public b12x WO projection is blocked on the missing
-Cutlass DSL MXFP8 MMA symbol, so neither should be the next endpoint port.
+Cutlass DSL MXFP8 MMA symbol. FlashInfer `#3489` adds MXFP8 GEMM plumbing, but
+the installed `0.6.12` SM121 wheel does not yet unblock this route: `mm_mxfp8`
+`auto/cutlass` fails the SM120 kernel's mat2 layout check and explicit `cudnn`
+is not supported for capability 121. Neither mHC nor WO should be the next
+endpoint port.
 The public b12x sparse-indexer prefill `extend_tiled_topk` route also failed a
 direct GB10 component smoke during TMA partitioning, so do not port the
 unholy/Aiden sparse-indexer prefill branch directly under the released b12x

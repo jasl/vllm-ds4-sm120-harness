@@ -9635,6 +9635,21 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   after CUTLASS DSL or b12x exposes a runnable SM12x MXFP8 GEMM path, or if the
   Aiden image's bundled dependency stack is reproduced and can pass a standalone
   WO smoke first.
+- **FlashInfer #3489 MXFP8 check:** the local FlashInfer fork already includes
+  `flashinfer-ai/flashinfer#3489` (`add_cudnn_mxfp8`). It is GEMM plumbing, not
+  sparse MLA. A direct GB10 SM121 smoke against the installed
+  `flashinfer-python==0.6.12` tried `flashinfer.gemm.mm_mxfp8` on small and
+  DS4-like `4096 x 4096` shapes. `auto` and `cutlass` both failed inside
+  `mxfp8_gemm_cutlass_sm120.cu` with
+  `mat2.IsContiguous() is false`, even when the PyTorch tensor reported normal
+  contiguous strides; explicit `backend="cudnn"` is rejected for capability
+  `121`. Artifacts:
+  `artifacts/local_flashinfer_mxfp8_gemm_probe/20260608100803`,
+  `artifacts/local_flashinfer_mxfp8_gemm_probe/20260608100839_contig`, and
+  `artifacts/local_flashinfer_mxfp8_gemm_probe/20260608100950_nk`. Therefore
+  #3489 does not currently unblock the B12X WO/MXFP8 route on GB10. Revisit
+  only after a newer FlashInfer wheel/source build changes SM121 backend
+  support or the mat2 layout contract.
 - **Native MXFP4 B12X MoE direct smoke:** public `b12x==0.20.0` can run the
   W4A16 native-MXFP4 MoE path on GB10. Synthetic DS4-shaped smokes passed for
   `hidden=4096`, `intermediate=2048`, `topk=6`, first with `E=8` and then with
