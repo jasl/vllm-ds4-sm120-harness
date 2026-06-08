@@ -308,6 +308,14 @@ that thread, search `External unholy-fusion feedback refresh`.
   it could avoid is only `0.013 ms` at 32K tokens and `0.135 ms` at 131K tokens
   on GB10. Do not port this direct substitution into vLLM unless a future
   dependency changes the component timing.
+- local-inference B12X stack replay:
+  open `docs/sm120_optimization_notes.md` and search
+  `local-inference B12X stack replay blocker`. Current conclusion: replaying
+  the local-inference B12X vLLM route is blocked with public dependencies.
+  B12X WO projection expects a CUTLASS DSL `MmaMXF8Op` symbol absent from
+  `nvidia-cutlass-dsl==4.5.2`; disabling WO projection falls back to DeepGEMM
+  O-proj, whose current `fp8_einsum` API rejects the DS4 O-proj layout even in
+  an eager microprobe. Do not copy this integration into Dev as-is.
 
 ## Correctness
 

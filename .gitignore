@@ -27,6 +27,9 @@ build/
 # FlashInfer repo
 /flashinfer
 
+# B12X repo
+/b12x
+
 # Spark arena
 /recipe-registry
 /spark-vllm-docker

@@ -9889,3 +9889,34 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
 - **Decision:** keep the code only on the local backup branch for later
   recheck against newer FlashInfer/b12x/driver stacks. Current Dev and PR
   branches remain on the existing vLLM path.
+
+### 2026-06-08 local-inference B12X stack replay blocker
+
+- **Scope:** external-checkout replay only. This did not modify current Dev or
+  PR branches. The goal was to determine whether the Aiden/local-inference B12X
+  route can run on the current GB10 software stack using public dependencies:
+  `b12x==0.20.0`, `flashinfer-python==0.6.12`, `flashinfer-cubin==0.6.12`,
+  `nvidia-cutlass-dsl==4.5.2`, Torch CUDA 13, and the community SM120
+  DeepGEMM branch.
+- **B12X WO path:** still blocked. Enabling B12X WO projection reaches a
+  CUTLASS DSL symbol gap: public `nvidia-cutlass-dsl==4.5.2` does not expose
+  `cutlass.cute.nvgpu.warp.MmaMXF8Op`, while the local-inference WO path
+  expects it. The installed b12x metadata only declares
+  `nvidia-cutlass-dsl>=4.5.2`, so this is a dependency/API mismatch, not a
+  vLLM scheduling issue.
+- **WO-off fallback path:** also blocked. Disabling B12X WO projection falls
+  back to DeepGEMM O-proj. Wrapping the O-proj and FlashInfer groupwise GEMM
+  calls as functional custom ops removes the earlier Inductor
+  `auto_functionalized was not removed` failure, but then DeepGEMM rejects the
+  O-proj `fp8_einsum` layout at runtime. A standalone microprobe showed the
+  same `fp8_einsum("bhr,hdr->bhd")` layout assertion in eager mode for the
+  current DS4 O-proj shapes, both with ordinary FP32 scales and SM10x
+  TMA-aligned INT32 UE8M0 scales.
+- **Driver health:** no Xid/UVM/lost-bus entries were observed during these
+  failed replays.
+- **Decision:** do not port the local-inference B12X vLLM integration as-is.
+  Treat it as blocked on dependency/API alignment. If this route is revisited,
+  test b12x 0.20 public functional APIs directly first, especially
+  `block_fp8_linear_mxfp8` and the WO benchmarks, rather than copying the
+  local-inference integration point. Current Dev remains on the existing
+  promoted path.
