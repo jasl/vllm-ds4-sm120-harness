@@ -153,6 +153,30 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
                 ).format(**row)
             )
         lines.append("")
+    if payload.get("grouped_stream_online"):
+        lines.extend(
+            [
+                "## Grouped Stream Online",
+                "",
+                (
+                    "| candidates | grouped ms | split/grouped speedup | "
+                    "current/grouped speedup | reuse ratio | max abs diff |"
+                ),
+                "| ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for row in payload["rows"]:
+            lines.append(
+                (
+                    "| {num_candidates} | "
+                    "{grouped_stream_online_mean_ms:.3f} | "
+                    "{grouped_stream_online_speedup:.3f}x | "
+                    "{grouped_stream_online_vs_current_speedup:.3f}x | "
+                    "{grouped_stream_online_reuse_ratio:.3f} | "
+                    "{grouped_stream_online_max_abs_diff:.6f} |"
+                ).format(**row)
+            )
+        lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -191,6 +215,30 @@ def _validate_mixed_c128_swa_index_shape(
         num_candidates=num_candidates - compressed_candidates,
         kv_tokens=kv_tokens,
     )
+
+
+def _validate_grouped_stream_online_shape(
+    *,
+    index_pattern: str,
+    num_tokens: int,
+    num_candidates: int,
+    compressed_candidates: int,
+    group_size: int,
+    head_dim: int,
+) -> None:
+    if index_pattern != "c128a-current":
+        raise ValueError("--grouped-stream-online requires --index-pattern c128a-current")
+    if group_size <= 0:
+        raise ValueError("--group-size must be positive")
+    if num_tokens % group_size != 0:
+        raise ValueError("--num-tokens must be divisible by --group-size")
+    if head_dim != 512:
+        raise ValueError("--grouped-stream-online requires --head-dim 512")
+    if compressed_candidates <= 0 or compressed_candidates >= num_candidates:
+        raise ValueError(
+            "--grouped-stream-online requires compressed_candidates between "
+            "1 and num_candidates - 1"
+        )
 
 
 def _candidate_chunks(num_candidates: int, chunk_size: int) -> list[tuple[int, int]]:
@@ -235,6 +283,27 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--grouped-stream-online",
+        action="store_true",
+        help=(
+            "Also benchmark a component-only grouped compressed+SWA online "
+            "prototype for the c128a-current candidate pattern. This is a "
+            "research probe, not an endpoint backend."
+        ),
+    )
+    parser.add_argument(
+        "--group-size",
+        type=int,
+        default=4,
+        help="query rows per group for --grouped-stream-online",
+    )
+    parser.add_argument(
+        "--grouped-stream-block-c",
+        type=int,
+        default=32,
+        help="candidate union block size for --grouped-stream-online",
+    )
+    parser.add_argument(
         "--score-dtype",
         choices=("float32", "bfloat16"),
         default="float32",
@@ -276,6 +345,21 @@ def main() -> int:
         parser.error("--production-with-sink requires --head-dim 512")
     if args.production_with_sink and max(args.candidate_lens) > 1152:
         parser.error("--production-with-sink supports at most 1152 candidates")
+    if args.grouped_stream_online:
+        if args.grouped_stream_block_c <= 0:
+            parser.error("--grouped-stream-block-c must be positive")
+        for candidate_len in args.candidate_lens:
+            try:
+                _validate_grouped_stream_online_shape(
+                    index_pattern=args.index_pattern,
+                    num_tokens=args.num_tokens,
+                    num_candidates=candidate_len,
+                    compressed_candidates=args.compressed_candidates,
+                    group_size=args.group_size,
+                    head_dim=args.head_dim,
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
 
     import torch
     import triton
@@ -465,6 +549,129 @@ def main() -> int:
             + dim_offsets[None, :] * stride_out_d,
             acc,
             mask=head_mask[:, None] & dim_mask[None, :],
+        )
+
+    @triton.jit
+    def _grouped_stream_online_kernel(
+        q_ptr,
+        kv_ptr,
+        out_ptr,
+        stride_q_t: tl.constexpr,
+        stride_q_h: tl.constexpr,
+        stride_q_d: tl.constexpr,
+        stride_kv_t,
+        stride_kv_d: tl.constexpr,
+        stride_out_t: tl.constexpr,
+        stride_out_h: tl.constexpr,
+        stride_out_d: tl.constexpr,
+        compressed_candidates: tl.constexpr,
+        swa_candidates: tl.constexpr,
+        scale: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
+        HEAD_DIM: tl.constexpr,
+        BLOCK_C: tl.constexpr,
+    ):
+        group_idx = tl.program_id(0)
+        head_idx = tl.program_id(1)
+        group_offsets = tl.arange(0, GROUP_SIZE)
+        dim_offsets = tl.arange(0, HEAD_DIM)
+        candidate_offsets = tl.arange(0, BLOCK_C)
+        token_offsets = group_idx * GROUP_SIZE + group_offsets
+
+        q = tl.load(
+            q_ptr
+            + token_offsets[:, None] * stride_q_t
+            + head_idx * stride_q_h
+            + dim_offsets[None, :] * stride_q_d,
+            mask=True,
+            other=0.0,
+        )
+        running_max = tl.full((GROUP_SIZE,), -float("inf"), tl.float32)
+        running_denom = tl.zeros((GROUP_SIZE,), tl.float32)
+        running_acc = tl.zeros((GROUP_SIZE, HEAD_DIM), tl.float32)
+
+        for candidate_start in range(0, compressed_candidates, BLOCK_C):
+            candidates = candidate_start + candidate_offsets
+            candidate_mask = candidates < compressed_candidates
+            kv = tl.load(
+                kv_ptr
+                + candidates[None, :].to(tl.int64) * stride_kv_t
+                + dim_offsets[:, None] * stride_kv_d,
+                mask=candidate_mask[None, :],
+                other=0.0,
+            )
+            scores = tl.dot(q, kv) * scale
+            scores = tl.where(candidate_mask[None, :], scores, -float("inf"))
+            block_max = tl.max(scores, axis=1)
+            next_max = tl.maximum(running_max, block_max)
+            safe_next_max = tl.where(next_max > -float("inf"), next_max, 0.0)
+            previous_scale = tl.where(
+                running_denom > 0.0,
+                tl.exp(running_max - safe_next_max),
+                0.0,
+            )
+            weights = tl.where(
+                candidate_mask[None, :],
+                tl.exp(scores - safe_next_max[:, None]),
+                0.0,
+            )
+            block_denom = tl.sum(weights, axis=1)
+            running_acc = (
+                running_acc * previous_scale[:, None]
+                + tl.dot(weights.to(tl.bfloat16), tl.trans(kv))
+            )
+            running_denom = running_denom * previous_scale + block_denom
+            running_max = next_max
+
+        swa_union_candidates: tl.constexpr = swa_candidates + GROUP_SIZE - 1
+        for union_start in range(0, swa_union_candidates, BLOCK_C):
+            union_offsets = union_start + candidate_offsets
+            union_mask = union_offsets < swa_union_candidates
+            kv_indices = compressed_candidates + group_idx * GROUP_SIZE + union_offsets
+            kv = tl.load(
+                kv_ptr
+                + kv_indices[None, :].to(tl.int64) * stride_kv_t
+                + dim_offsets[:, None] * stride_kv_d,
+                mask=union_mask[None, :],
+                other=0.0,
+            )
+            scores = tl.dot(q, kv) * scale
+            member_mask = (
+                union_mask[None, :]
+                & (union_offsets[None, :] >= group_offsets[:, None])
+                & (union_offsets[None, :] < group_offsets[:, None] + swa_candidates)
+            )
+            scores = tl.where(member_mask, scores, -float("inf"))
+            block_max = tl.max(scores, axis=1)
+            next_max = tl.maximum(running_max, block_max)
+            safe_next_max = tl.where(next_max > -float("inf"), next_max, 0.0)
+            previous_scale = tl.where(
+                running_denom > 0.0,
+                tl.exp(running_max - safe_next_max),
+                0.0,
+            )
+            weights = tl.where(
+                member_mask,
+                tl.exp(scores - safe_next_max[:, None]),
+                0.0,
+            )
+            block_denom = tl.sum(weights, axis=1)
+            running_acc = (
+                running_acc * previous_scale[:, None]
+                + tl.dot(weights.to(tl.bfloat16), tl.trans(kv))
+            )
+            running_denom = running_denom * previous_scale + block_denom
+            running_max = next_max
+
+        inv_denom = tl.where(running_denom > 0.0, 1.0 / running_denom, 0.0)
+        output = running_acc * inv_denom[:, None]
+        tl.store(
+            out_ptr
+            + token_offsets[:, None] * stride_out_t
+            + head_idx * stride_out_h
+            + dim_offsets[None, :] * stride_out_d,
+            output,
+            mask=True,
         )
 
     @triton.jit
@@ -751,6 +958,7 @@ def main() -> int:
         current_chunk_acc = torch.empty_like(split_out)
         production_split_finish_samples_ms: list[float] = []
         production_fused_with_sink_samples_ms: list[float] = []
+        grouped_stream_online_samples_ms: list[float] = []
         if args.production_with_sink:
             attn_sink = torch.randn(
                 args.num_heads,
@@ -809,6 +1017,17 @@ def main() -> int:
         else:
             production_output = None
             fused_output = None
+        if args.grouped_stream_online:
+            grouped_stream_online_out = torch.empty_like(split_out)
+            grouped_stream_online_reuse_ratio = 1.0 - (
+                args.compressed_candidates
+                + (num_candidates - args.compressed_candidates)
+                + args.group_size
+                - 1
+            ) / (args.group_size * num_candidates)
+        else:
+            grouped_stream_online_out = None
+            grouped_stream_online_reuse_ratio = 0.0
 
         def run_current_chunk() -> None:
             current_chunk_max.fill_(float("-inf"))
@@ -960,6 +1179,32 @@ def main() -> int:
             run_stats()
             run_value()
 
+        def run_grouped_stream_online() -> None:
+            assert grouped_stream_online_out is not None
+            _grouped_stream_online_kernel[
+                (args.num_tokens // args.group_size, args.num_heads)
+            ](
+                q,
+                kv_flat,
+                grouped_stream_online_out,
+                q.stride(0),
+                q.stride(1),
+                q.stride(2),
+                kv_flat.stride(0),
+                kv_flat.stride(1),
+                grouped_stream_online_out.stride(0),
+                grouped_stream_online_out.stride(1),
+                grouped_stream_online_out.stride(2),
+                args.compressed_candidates,
+                num_candidates - args.compressed_candidates,
+                args.scale,
+                GROUP_SIZE=args.group_size,
+                HEAD_DIM=args.head_dim,
+                BLOCK_C=args.grouped_stream_block_c,
+                num_warps=8,
+                num_stages=3,
+            )
+
         wide_split_enabled = args.wide_split_chunk_candidates > 0
         wide_split_samples_ms: list[float] = []
         if wide_split_enabled:
@@ -1062,6 +1307,8 @@ def main() -> int:
             if args.production_with_sink:
                 run_production_split_finish()
                 run_production_fused_with_sink()
+            if args.grouped_stream_online:
+                run_grouped_stream_online()
             if wide_split_enabled:
                 run_wide_split()
         torch.cuda.synchronize()
@@ -1086,6 +1333,10 @@ def main() -> int:
                 )
                 production_fused_with_sink_samples_ms.append(
                     time_call(run_production_fused_with_sink)
+                )
+            if args.grouped_stream_online:
+                grouped_stream_online_samples_ms.append(
+                    time_call(run_grouped_stream_online)
                 )
             if wide_split_enabled:
                 wide_split_samples_ms.append(time_call(run_wide_split))
@@ -1163,6 +1414,32 @@ def main() -> int:
                     ),
                 }
             )
+        if args.grouped_stream_online:
+            assert grouped_stream_online_out is not None
+            grouped_diff = (split_out - grouped_stream_online_out).abs()
+            grouped_summary = _summarize_ms(grouped_stream_online_samples_ms)
+            row.update(
+                {
+                    "grouped_stream_online": grouped_summary,
+                    "grouped_stream_online_mean_ms": grouped_summary["mean_ms"],
+                    "grouped_stream_online_speedup": (
+                        split_summary["mean_ms"] / grouped_summary["mean_ms"]
+                    ),
+                    "grouped_stream_online_vs_current_speedup": (
+                        current_chunk_summary["mean_ms"]
+                        / grouped_summary["mean_ms"]
+                    ),
+                    "grouped_stream_online_reuse_ratio": (
+                        grouped_stream_online_reuse_ratio
+                    ),
+                    "grouped_stream_online_max_abs_diff": float(
+                        grouped_diff.max().item()
+                    ),
+                    "grouped_stream_online_mean_abs_diff": float(
+                        grouped_diff.mean().item()
+                    ),
+                }
+            )
         rows.append(row)
         line = (
             "candidates={num_candidates} "
@@ -1190,6 +1467,17 @@ def main() -> int:
                 "{production_fused_with_sink_speedup:.3f}x "
                 "production_max_diff="
                 "{production_with_sink_max_abs_diff:.6f}"
+            ).format(**row)
+        if args.grouped_stream_online:
+            line += (
+                " grouped_stream_online="
+                "{grouped_stream_online_mean_ms:.3f}ms "
+                "grouped_stream_online_speedup="
+                "{grouped_stream_online_speedup:.3f}x "
+                "grouped_stream_online_reuse_ratio="
+                "{grouped_stream_online_reuse_ratio:.3f} "
+                "grouped_stream_online_max_diff="
+                "{grouped_stream_online_max_abs_diff:.6f}"
             ).format(**row)
         print(line)
 
@@ -1229,6 +1517,9 @@ def main() -> int:
         ),
         "wide_split_chunk_candidates": args.wide_split_chunk_candidates,
         "production_with_sink": args.production_with_sink,
+        "grouped_stream_online": args.grouped_stream_online,
+        "group_size": args.group_size,
+        "grouped_stream_block_c": args.grouped_stream_block_c,
         "index_pattern": args.index_pattern,
         "warmup": args.warmup,
         "iterations": args.iterations,

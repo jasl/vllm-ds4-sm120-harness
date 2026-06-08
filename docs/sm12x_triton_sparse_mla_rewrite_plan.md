@@ -188,6 +188,48 @@ Interpretation:
   streams. Score-only grouped reuse, split-launch grouped-combined reuse, and
   two-pass grouped-union replay remain rejected routes.
 
+## 2026-06-08 Checkpoint: Grouped Stream Online Component
+
+Status: active component prototype, not wired to vLLM endpoint.
+
+This prototype tests a single grouped-query online attention kernel for the
+`c128a-current` component shape. It processes compressed and SWA streams through
+a shared per-group union and does not materialize a score workspace. Unlike the
+earlier rejected compressed-only and score-only grouped probes, this one
+reduces score/value work for both streams in the same kernel. The current
+prototype intentionally uses one head per program with a full D512 accumulator,
+so it still needs endpoint-oriented engineering before it can replace the
+current D512 path.
+
+Component results with `512` query tokens, `64` heads, D=`512`,
+`128` compressed candidates, `group_size=32`, and grouped block-C=`32`:
+
+| Host | Candidates | Current split | Grouped stream online | Speedup | Max diff |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 x2 | 640 | 0.555 ms | 0.353 ms | 1.572x | 0.001577 |
+| RTX PRO 6000 x2 | 1152 | 1.057 ms | 0.591 ms | 1.788x | 0.001028 |
+| GB10 node 1 | 640 | 4.373 ms | 1.484 ms | 2.948x | 0.001377 |
+| GB10 node 1 | 1152 | 7.405 ms | 2.353 ms | 3.147x | 0.001030 |
+
+Rejected boundary from the same component family: group32/block-C64 exceeds
+SM12x shared-memory limits (`106496` bytes required versus a `101376` byte
+limit). Group16/block-C64 works and is positive, but slower than
+group32/block-C32 on the target shape.
+
+Interpretation:
+
+- This is the first fork-independent Triton component direction in this cycle
+  that wins strongly on both RTX PRO 6000 / SM120 and GB10 / SM121 while
+  touching the real compressed+SWA candidate shape.
+- The result supports moving to an endpoint candidate, but not by directly
+  dropping this kernel into production. Endpoint work must add graph-stable
+  workspace sizing, conservative shape gating, sparse attribution, and
+  `FULL_AND_PIECEWISE` validation. It also needs to prove that one-head
+  program granularity does not erase the component win after integration.
+- Immediate next step: wire a default-off endpoint candidate only for the
+  `c128a-current`/D512/long-prefill shape, fail closed to the current D512
+  path, then run the focused endpoint smoke before the full promotion matrix.
+
 ## Work Plan
 
 ### Task 1: Branch And Code Hygiene

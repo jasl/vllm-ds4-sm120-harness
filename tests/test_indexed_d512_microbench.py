@@ -82,6 +82,44 @@ def test_candidate_chunks_split_wide_candidate_lists():
             raise AssertionError("expected candidate chunk validation to fail")
 
 
+def test_grouped_stream_online_validation_requires_c128a_shape():
+    module = _load_microbench_module()
+
+    module._validate_grouped_stream_online_shape(
+        index_pattern="c128a-current",
+        num_tokens=16,
+        num_candidates=1152,
+        compressed_candidates=128,
+        group_size=4,
+        head_dim=512,
+    )
+
+    invalid_cases = [
+        {"index_pattern": "per-token"},
+        {"num_tokens": 18},
+        {"group_size": 0},
+        {"head_dim": 256},
+        {"compressed_candidates": 0},
+        {"compressed_candidates": 1152},
+    ]
+    for overrides in invalid_cases:
+        kwargs = {
+            "index_pattern": "c128a-current",
+            "num_tokens": 16,
+            "num_candidates": 1152,
+            "compressed_candidates": 128,
+            "group_size": 4,
+            "head_dim": 512,
+        }
+        kwargs.update(overrides)
+        try:
+            module._validate_grouped_stream_online_shape(**kwargs)
+        except ValueError as exc:
+            assert str(exc)
+        else:
+            raise AssertionError(f"expected validation failure for {overrides}")
+
+
 def test_indexed_d512_microbench_exposes_sliding_window_pattern():
     script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
         encoding="utf-8"
@@ -118,3 +156,16 @@ def test_indexed_d512_microbench_compares_production_split_finish_with_sink():
     assert "production_split_finish_mean_ms" in script
     assert "production_fused_with_sink_mean_ms" in script
     assert "production_fused_with_sink_speedup" in script
+
+
+def test_indexed_d512_microbench_exposes_grouped_stream_online_mode():
+    script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--grouped-stream-online" in script
+    assert "--group-size" in script
+    assert "_grouped_stream_online_kernel" in script
+    assert "grouped_stream_online_mean_ms" in script
+    assert "grouped_stream_online_speedup" in script
+    assert "grouped_stream_online_reuse_ratio" in script
