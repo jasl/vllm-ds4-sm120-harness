@@ -316,6 +316,17 @@ that thread, search `External unholy-fusion feedback refresh`.
   `nvidia-cutlass-dsl==4.5.2`; disabling WO projection falls back to DeepGEMM
   O-proj, whose current `fp8_einsum` API rejects the DS4 O-proj layout even in
   an eager microprobe. Do not copy this integration into Dev as-is.
+- Public B12X / FlashInfer dense recheck:
+  open `docs/sm120_optimization_notes.md` and search
+  `public B12X / FlashInfer dense component recheck`. Current conclusion:
+  public B12X MXFP8 dense and WO projection both remain blocked by the missing
+  CUTLASS DSL `MmaMXF8Op` symbol. Public FlashInfer `mm_mxfp8` is runnable but
+  is not faster than `gemm_fp8_nt_groupwise` for DS4-like `K=7168,N=1536`
+  dense shapes, and it does not consume the native DS4 128x128 FP8 block-scale
+  checkpoint format. The ignored FlashInfer checkout is the writable dependency
+  source for future FI-side experiments; upstream #3489 is MXFP8 GEMM
+  background, not a sparse-MLA prefill backend. Do not make dense/MoE
+  replacement the next main route.
 
 ## Correctness
 

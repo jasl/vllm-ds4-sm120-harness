@@ -9920,3 +9920,48 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   `block_fp8_linear_mxfp8` and the WO benchmarks, rather than copying the
   local-inference integration point. Current Dev remains on the existing
   promoted path.
+
+### 2026-06-08 public B12X / FlashInfer dense component recheck
+
+- **Scope:** GB10 component-only probes in an external venv; no vLLM Dev or PR
+  code changed.
+- **B12X public FP8 linear:** direct calls to
+  `b12x.gemm.block_fp8_linear.block_fp8_linear_mxfp8` failed for
+  `M=1/16/256/1024`, `K=7168`, `N=1536` with
+  `cutlass.cute.nvgpu.warp.MmaMXF8Op` missing. This matches the WO projection
+  blocker and shows the issue is in the public B12X MXFP8 dense path, not just
+  the local-inference vLLM adapter.
+- **B12X WO benchmark:** `benchmarks/benchmark_wo_projection.py` with DS4-like
+  shape `groups=8`, `group_width=512`, `rank=1024`, `hidden=7168` failed for
+  all tested token counts with the same missing `MmaMXF8Op` symbol.
+- **FlashInfer official sparse-MLA boundary:** current FlashInfer exposes
+  `trtllm_batch_decode_sparse_mla_dsv4`, but its own API and C++ checks make it
+  decode-only: sparse MLA prefill is not supported by this public route. It is
+  not a replacement for the Aiden packed prefill backend.
+- **FlashInfer fork handling:** keep the editable FlashInfer checkout as an
+  ignored external dependency source, with the public upstream as the reference
+  and the project fork as the writable origin. FlashInfer-side experiments may
+  use this checkout and then sync the same source to GB10/RTX hosts, but vLLM
+  Dev should only depend on it after a concrete endpoint win is proven. The
+  upstream `add_cudnn_mxfp8` change (#3489) is relevant background for MXFP8
+  GEMM experiments, but it is not a DS4 sparse-MLA prefill backend by itself.
+- **FlashInfer dense MXFP8 vs DS4 FP8 groupwise:** with `K=7168`, `N=1536`,
+  public FlashInfer `mm_mxfp8` was runnable, but it uses MXFP8 re-quantized
+  operands rather than DS4 checkpoint 128x128 FP8 block scales. Timings:
+
+  | M | FI `mm_mxfp8` median | FI `gemm_fp8_nt_groupwise` median |
+  | ---: | ---: | ---: |
+  | 1 | `0.202 ms` | `0.070 ms` |
+  | 2 | `0.199 ms` | `0.069 ms` |
+  | 16 | `0.183 ms` | `0.069 ms` |
+  | 128 | `0.070 ms` | `0.068 ms` |
+  | 1024 | `0.266 ms` | `0.131 ms` |
+
+- **Decision:** do not pursue B12X MXFP8 dense or FlashInfer MXFP8 dense as
+  the next vLLM Dev optimization. The public B12X path is blocked by CUTLASS
+  DSL API availability, and the public FlashInfer MXFP8 path is not faster for
+  DS4-like dense shapes than the existing groupwise FP8 route. The remaining
+  Aiden gap should be attacked in sparse-MLA prefill candidate/value work:
+  either a clean packed-prefill FlashInfer backend once it is available in a
+  maintainable fork, or a local sparse prefill kernel/dataflow change that
+  reduces candidate visits and value traffic.
