@@ -1799,6 +1799,7 @@ def test_b200_baseline_preserves_chunked_d512_prefill_env():
 
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL" in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL" in script
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_FUSED_SINK_PREFILL" in script
 
 
 def test_vllm_correctness_gate_docs_use_public_gsm8k_slice():

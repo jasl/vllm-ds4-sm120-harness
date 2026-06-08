@@ -130,6 +130,29 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
                 ).format(**row)
             )
     lines.append("")
+    if payload.get("production_with_sink"):
+        lines.extend(
+            [
+                "## Production Split+Finish With Sink",
+                "",
+                (
+                    "| candidates | split+finish ms | fused-with-sink ms | "
+                    "fused speedup | max abs diff |"
+                ),
+                "| ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for row in payload["rows"]:
+            lines.append(
+                (
+                    "| {num_candidates} | "
+                    "{production_split_finish_mean_ms:.3f} | "
+                    "{production_fused_with_sink_mean_ms:.3f} | "
+                    "{production_fused_with_sink_speedup:.3f}x | "
+                    "{production_with_sink_max_abs_diff:.6f} |"
+                ).format(**row)
+            )
+        lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -203,6 +226,15 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--production-with-sink",
+        action="store_true",
+        help=(
+            "Also benchmark vLLM's production D512 split+finish helper against "
+            "the fused-with-sink helper. This requires a vLLM checkout with "
+            "accumulate_indexed_d512_split_sparse_mla_attention_with_sink."
+        ),
+    )
+    parser.add_argument(
         "--score-dtype",
         choices=("float32", "bfloat16"),
         default="float32",
@@ -240,6 +272,10 @@ def main() -> int:
         parser.error("--warmup must be >= 0 and --iterations must be > 0")
     if args.wide_split_chunk_candidates < 0:
         parser.error("--wide-split-chunk-candidates must be >= 0")
+    if args.production_with_sink and args.head_dim != 512:
+        parser.error("--production-with-sink requires --head-dim 512")
+    if args.production_with_sink and max(args.candidate_lens) > 1152:
+        parser.error("--production-with-sink supports at most 1152 candidates")
 
     import torch
     import triton
@@ -582,6 +618,12 @@ def main() -> int:
     from vllm.v1.attention.backends.mla.sparse_mla_kernels import (
         accumulate_indexed_sparse_mla_attention_chunk,
     )
+    if args.production_with_sink:
+        from vllm.v1.attention.backends.mla.sparse_mla_kernels import (
+            accumulate_indexed_d512_split_sparse_mla_attention,
+            accumulate_indexed_d512_split_sparse_mla_attention_with_sink,
+            finish_sparse_mla_attention_with_sink,
+        )
 
     torch.cuda.set_device(args.gpu_id)
     device = torch.device(f"cuda:{args.gpu_id}")
@@ -707,6 +749,66 @@ def main() -> int:
         current_chunk_max = torch.empty_like(split_max)
         current_chunk_denom = torch.empty_like(split_denom)
         current_chunk_acc = torch.empty_like(split_out)
+        production_split_finish_samples_ms: list[float] = []
+        production_fused_with_sink_samples_ms: list[float] = []
+        if args.production_with_sink:
+            attn_sink = torch.randn(
+                args.num_heads,
+                device=device,
+                dtype=torch.float32,
+            )
+            production_scores = torch.empty(
+                args.num_tokens,
+                args.num_heads,
+                num_candidates,
+                device=device,
+                dtype=torch.float32,
+            )
+            production_max = torch.empty_like(split_max)
+            production_denom = torch.empty_like(split_denom)
+            production_acc = torch.empty_like(split_out)
+            production_output = torch.empty_like(q)
+            fused_scores = torch.empty_like(production_scores)
+            fused_max = torch.empty_like(split_max)
+            fused_denom = torch.empty_like(split_denom)
+            fused_output = torch.empty_like(q)
+
+            def run_production_split_finish() -> None:
+                accumulate_indexed_d512_split_sparse_mla_attention(
+                    q,
+                    kv_flat,
+                    indices,
+                    lens,
+                    args.scale,
+                    production_scores,
+                    production_max,
+                    production_denom,
+                    production_acc,
+                )
+                finish_sparse_mla_attention_with_sink(
+                    production_max,
+                    production_denom,
+                    production_acc,
+                    attn_sink,
+                    production_output,
+                )
+
+            def run_production_fused_with_sink() -> None:
+                accumulate_indexed_d512_split_sparse_mla_attention_with_sink(
+                    q,
+                    kv_flat,
+                    indices,
+                    lens,
+                    args.scale,
+                    fused_scores,
+                    fused_max,
+                    fused_denom,
+                    attn_sink,
+                    fused_output,
+                )
+        else:
+            production_output = None
+            fused_output = None
 
         def run_current_chunk() -> None:
             current_chunk_max.fill_(float("-inf"))
@@ -957,6 +1059,9 @@ def main() -> int:
         for _ in range(args.warmup):
             run_current_chunk()
             run_split()
+            if args.production_with_sink:
+                run_production_split_finish()
+                run_production_fused_with_sink()
             if wide_split_enabled:
                 run_wide_split()
         torch.cuda.synchronize()
@@ -975,6 +1080,13 @@ def main() -> int:
             stats_samples_ms.append(stats_ms)
             value_samples_ms.append(value_ms)
             split_samples_ms.append(score_ms + stats_ms + value_ms)
+            if args.production_with_sink:
+                production_split_finish_samples_ms.append(
+                    time_call(run_production_split_finish)
+                )
+                production_fused_with_sink_samples_ms.append(
+                    time_call(run_production_fused_with_sink)
+                )
             if wide_split_enabled:
                 wide_split_samples_ms.append(time_call(run_wide_split))
 
@@ -1017,6 +1129,40 @@ def main() -> int:
                     "wide_mean_abs_diff": float(wide_diff.mean().item()),
                 }
             )
+        if args.production_with_sink:
+            assert production_output is not None
+            assert fused_output is not None
+            production_diff = (production_output.float() - fused_output.float()).abs()
+            production_split_finish_summary = _summarize_ms(
+                production_split_finish_samples_ms
+            )
+            production_fused_with_sink_summary = _summarize_ms(
+                production_fused_with_sink_samples_ms
+            )
+            row.update(
+                {
+                    "production_split_finish": production_split_finish_summary,
+                    "production_fused_with_sink": (
+                        production_fused_with_sink_summary
+                    ),
+                    "production_split_finish_mean_ms": (
+                        production_split_finish_summary["mean_ms"]
+                    ),
+                    "production_fused_with_sink_mean_ms": (
+                        production_fused_with_sink_summary["mean_ms"]
+                    ),
+                    "production_fused_with_sink_speedup": (
+                        production_split_finish_summary["mean_ms"]
+                        / production_fused_with_sink_summary["mean_ms"]
+                    ),
+                    "production_with_sink_max_abs_diff": float(
+                        production_diff.max().item()
+                    ),
+                    "production_with_sink_mean_abs_diff": float(
+                        production_diff.mean().item()
+                    ),
+                }
+            )
         rows.append(row)
         line = (
             "candidates={num_candidates} "
@@ -1034,6 +1180,17 @@ def main() -> int:
             ).format(
                 **row
             )
+        if args.production_with_sink:
+            line += (
+                " production_split_finish="
+                "{production_split_finish_mean_ms:.3f}ms "
+                "production_fused_with_sink="
+                "{production_fused_with_sink_mean_ms:.3f}ms "
+                "production_fused_speedup="
+                "{production_fused_with_sink_speedup:.3f}x "
+                "production_max_diff="
+                "{production_with_sink_max_abs_diff:.6f}"
+            ).format(**row)
         print(line)
 
     payload = {
@@ -1071,6 +1228,7 @@ def main() -> int:
             else 0.0
         ),
         "wide_split_chunk_candidates": args.wide_split_chunk_candidates,
+        "production_with_sink": args.production_with_sink,
         "index_pattern": args.index_pattern,
         "warmup": args.warmup,
         "iterations": args.iterations,

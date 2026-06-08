@@ -104,3 +104,17 @@ def test_indexed_d512_microbench_exposes_wide_chunked_split_mode():
     assert "_indexed_merge_normalized_chunk_kernel" in script
     assert "wide_split_speedup" in script
     assert "wide_score_workspace_mib" in script
+
+
+def test_indexed_d512_microbench_compares_production_split_finish_with_sink():
+    script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "accumulate_indexed_d512_split_sparse_mla_attention" in script
+    assert "accumulate_indexed_d512_split_sparse_mla_attention_with_sink" in script
+    assert "finish_sparse_mla_attention_with_sink" in script
+    assert "--production-with-sink" in script
+    assert "production_split_finish_mean_ms" in script
+    assert "production_fused_with_sink_mean_ms" in script
+    assert "production_fused_with_sink_speedup" in script

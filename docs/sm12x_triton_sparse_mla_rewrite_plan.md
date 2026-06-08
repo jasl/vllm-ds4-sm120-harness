@@ -124,6 +124,42 @@ For a first component microbench, a `5%` win is only a triage signal. Endpoint
 promotion should aim for a clear same-host improvement, preferably at least
 `8-10%` TTFT or input tok/s on one target class with no measured regressions.
 
+## 2026-06-08 Checkpoint: D512 Fused Sink Finish
+
+Status: active dev candidate, default off behind
+`VLLM_DEEPSEEK_V4_INDEXED_D512_FUSED_SINK_PREFILL=0`.
+
+This candidate does not reduce sparse candidate visits and does not change the
+score/stats dataflow. It fuses the current D512 split value stage with sink
+finish so the D512 split route can write normalized output directly and skip
+one `acc` workspace read/write plus the separate finish launch.
+
+Measured component signal:
+
+| Host | Candidates | Split+finish | Fused sink | Speedup | Max diff |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 x2 | 640 | 1.102 ms | 0.953 ms | 1.157x | 0 |
+| RTX PRO 6000 x2 | 1152 | 1.878 ms | 1.737 ms | 1.082x | 0 |
+| GB10 node 1 | 640 | 9.653 ms | 8.441 ms | 1.144x | 0 |
+| GB10 node 1 | 1152 | 16.095 ms | 14.889 ms | 1.081x | 0 |
+| GB10 node 2 | 640 | 9.684 ms | 8.458 ms | 1.145x | 0 |
+| GB10 node 2 | 1152 | 16.095 ms | 14.958 ms | 1.076x | 0 |
+
+Measured RTX endpoint smoke with TP=2, MTP=2, EP enabled, FP8 KV, prefix cache
+disabled, `FULL_AND_PIECEWISE`, `max_num_batched_tokens=4096`, C=1, two random
+requests per input length:
+
+| Shape | Old TTFT | Fused TTFT | TTFT delta | Old input tok/s | Fused input tok/s | Throughput delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 65K / O=1 | 9.786 s | 9.694 s | -0.94% | 6697.6 | 6759.8 | +0.93% |
+| 124K / O=1 | 19.451 s | 18.810 s | -3.30% | 6375.3 | 6592.2 | +3.40% |
+
+Interpretation: this is worth keeping on the dev branch and promoting through
+the matrix because it is exact, graph-compatible, and wins on both RTX and
+GB10 component shapes. It is not enough to close the raw prefill gap. The main
+route remains reducing true sparse MLA candidate/value work and memory
+pressure, especially the SWA tail/value traffic.
+
 ## Work Plan
 
 ### Task 1: Branch And Code Hygiene
