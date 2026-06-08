@@ -75,12 +75,15 @@ Last updated: 2026-06-08.
   backend, upstream `FLASHINFER_MLA_SPARSE_DSV4` with the current official
   wheel, standalone C128 grouped-compressed prefill, generic D512
   selector/tile/chunk sweeps, BF16 score workspace, SWA-only routing through
-  the current D512 helper, and grouped-query local-SWA tiling that keeps the
-  same candidate work. A fused-stats/value D512 prototype and a
-  lower-live-state value-tile prototype were also rejected because they did not
-  improve GB10 and did not reduce real candidate/value visits. This is not a
-  rejection of the newer local-inference-lab B12X backend stack; that line must
-  be tested as a separate backend/dataflow candidate.
+  the current D512 helper, grouped-query local-SWA tiling that keeps the same
+  candidate work, and the grouped-SWA-final D512 endpoint route. The last route
+  was rejected after route stats corrected the real C4A shape to
+  `512 compressed + 128 SWA`: it regressed RTX C=1 TTFT and was slower in the
+  same shape on GB10. A fused-stats/value D512 prototype and a lower-live-state
+  value-tile prototype were also rejected because they did not improve GB10 and
+  did not reduce real candidate/value visits. This is not a rejection of the
+  newer local-inference-lab B12X backend stack; that line must be tested as a
+  separate backend/dataflow candidate.
 - A separate leavelet DeepGEMM `sm120` recheck found strong isolated FP8 MQA
   logits speedups, but the vLLM endpoint route is not viable in the current
   production profile: full top-k microbench was flat, and enabling the route

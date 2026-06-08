@@ -10351,3 +10351,34 @@ win to extra launches and state merge traffic. Do not re-enter the same design.
 The next viable Triton endpoint must fuse grouped-SWA with sink/merge or remove
 the extra state traffic; simply decomposing compressed and SWA into separate
 launches is not enough.
+
+Current-shape correction and final rejection, 2026-06-08:
+
+- **Correction:** later route-stat instrumentation showed that the real C4A
+  D512 endpoint chunks use `512` compressed candidates plus `128` SWA
+  candidates at `combined_topk=640`, not the earlier `128` compressed plus
+  `512` SWA assumption used by the first grouped-SWA component probe.
+- **RTX actual-shape component artifact:**
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260608_grouped_swa_final_actual_c4a_microbench`.
+- **GB10 actual-shape component artifact:**
+  `artifacts/main/2x_gb10/20260608_grouped_swa_final_actual_c4a_microbench`.
+
+| Host | Candidates | Compressed/SWA | Current chunk ms | Split ms | Production fused+sink ms | Grouped-SWA-final ms | Speedup vs split |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| RTX PRO 6000 x2 | `640` | `512 / 128` | `2.687` | `0.734` | `0.583` | `0.915` | `0.802x` |
+| GB10 node 1 | `640` | `512 / 128` | `13.628` | `12.870` | `8.149` | `13.134` | `0.980x` |
+
+Endpoint A/B with route stats confirmed the default-off route was really hit,
+but it still regressed cold TTFT under the current production profile:
+
+| Shape | Env off TTFT | Env on TTFT | Delta | Route evidence |
+| --- | ---: | ---: | ---: | --- |
+| 59K C=1 | `8.706 s` | `8.787 s` | `+0.9%` | `grouped_swa_final` chunks active |
+| 124K C=1 | `18.709 s` | `18.907 s` | `+1.1%` | `grouped_swa_final` chunks active |
+
+Decision: reject the grouped-SWA-final endpoint route and do not keep a vLLM
+runtime switch or harness probe for it. The active vLLM tree only keeps generic
+prefill stats diagnostics (`prefill_start_position` and route counters); this
+note and the saved artifacts are the evidence record so this design is not
+re-entered unless a future upstream/backend change materially changes the C4A
+candidate split or can reduce the dominant compressed value traffic.

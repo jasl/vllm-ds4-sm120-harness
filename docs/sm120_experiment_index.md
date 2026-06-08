@@ -167,6 +167,9 @@ that thread, search `External unholy-fusion feedback refresh`.
 - Grouped-query local-SWA tiled route:
   open `docs/sm120_optimization_notes.md` and search
   `Rejected grouped-query local-SWA tiled route`.
+- Grouped-SWA-final D512 endpoint route:
+  open `docs/sm120_optimization_notes.md` and search
+  `Current-shape correction and final rejection`.
 - SWA range candidate / gather-only style routes:
   open `docs/sm120_optimization_notes.md` and search
   `range-SWA D512 microbench candidate`.
