@@ -291,6 +291,38 @@ Interpretation:
   gating, and full promotion validation before it can become PR branch
   behavior.
 
+### Endpoint Probe Result
+
+A default-off vLLM endpoint prototype was archived on local branch
+`codex/backup-grouped-swa-endpoint-20260608` and removed from the active work
+tree. It routed only full-row C4A/D512 chunks through compressed-current plus
+grouped-SWA state merge and failed closed to the existing split path for early
+rows.
+
+RTX C=1 smoke with TP=2, EP enabled, MTP=2, FP8 KV, prefix cache disabled,
+`FULL_AND_PIECEWISE`, 59K/124K synthetic prompts, and
+`max_num_batched_tokens=4096` showed endpoint regression:
+
+| Shape | Env off TTFT | Env on TTFT | Delta |
+| --- | ---: | ---: | ---: |
+| 59K | 13.028 s | 13.200 s | +1.3% |
+| 124K | 29.840 s | 30.212 s | +1.2% |
+
+Sparse stats confirmed the route was active:
+`mla_prefill_indexed_d512_grouped_swa` appeared for mature chunks, while early
+chunks still used `mla_prefill_indexed_d512`. The total sparse-accumulate time
+increased because the naive endpoint shape added separate compressed, grouped
+SWA, merge-state, merge-acc, and finish launches. Therefore do not reintroduce
+this endpoint form.
+
+Updated direction:
+
+- Keep the component result as evidence that SWA value work can be reduced.
+- Do not wire grouped-SWA as separate compressed + grouped-SWA + merge launches.
+- A future endpoint must fuse grouped-SWA with the finish/merge path or
+  otherwise remove enough launch/workspace traffic to preserve the component
+  win.
+
 ## Work Plan
 
 ### Task 1: Branch And Code Hygiene

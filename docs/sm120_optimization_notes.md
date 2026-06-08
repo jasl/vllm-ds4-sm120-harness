@@ -10316,3 +10316,38 @@ Interpretation:
   the real D512 mixed compressed+SWA shape through this dataflow, fails closed
   to current D512 otherwise, and then runs focused endpoint smoke before the
   full promotion matrix.
+
+Follow-up default-off endpoint probe:
+
+- **Backup branch:** local vLLM branch
+  `codex/backup-grouped-swa-endpoint-20260608`.
+- **Active tree decision:** rejected and removed from the active vLLM work tree.
+- **Implementation shape:** C4A/D512 only, full top-k + full SWA rows only,
+  early-row chunks fail closed to current split D512. The helper kept
+  compressed top-k on the current split path, computed grouped-SWA state, then
+  merged the two states before the existing sink finish.
+- **Focused tests:** RTX venv passed
+  `tests/v1/attention/test_sparse_mla_indexed_d512.py -q` and
+  `tests/model_executor/test_deepseek_v4_flashmla_decode_dispatch.py -q` before
+  the endpoint smoke.
+- **RTX endpoint smoke:** TP=2, EP enabled, MTP=2, FP8 KV, prefix cache
+  disabled, `FULL_AND_PIECEWISE`, `max_num_batched_tokens=4096`, C=1 cold,
+  synthetic `1900` and `4000` line prompts.
+
+| Shape | Env off TTFT | Env on TTFT | Delta | Route evidence |
+| --- | ---: | ---: | ---: | --- |
+| 59K | `13.028 s` | `13.200 s` | `+1.3%` | grouped-SWA active on mature chunks |
+| 124K | `29.840 s` | `30.212 s` | `+1.2%` | grouped-SWA active on mature chunks |
+
+Sparse stats route counts:
+
+| Env | Layer type counts | Sparse-accumulate timing |
+| --- | --- | --- |
+| off | `mla_prefill_chunk=1320`, `mla_prefill_indexed_d512=2728` | chunk `7951.130 ms`, indexed D512 `5629.171 ms` |
+| on | `mla_prefill_chunk=1320`, `mla_prefill_indexed_d512_grouped_swa=1848`, `mla_prefill_indexed_d512=880` | chunk `7968.266 ms`, grouped-SWA `4480.152 ms`, indexed D512 `1952.944 ms` |
+
+Interpretation: the component result is real, but this endpoint form loses the
+win to extra launches and state merge traffic. Do not re-enter the same design.
+The next viable Triton endpoint must fuse grouped-SWA with sink/merge or remove
+the extra state traffic; simply decomposing compressed and SWA into separate
+launches is not enough.
