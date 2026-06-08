@@ -70,19 +70,34 @@ def test_scripts_allow_explicit_python_interpreter():
         assert '"${PYTHON}" -m ds4_harness.cli' in script
 
 
-def test_gb10_decode_throughput_probe_wrapper_runs_user_report_profile():
+def test_gb10_decode_throughput_probe_wrapper_defaults_to_safe_smoke_profile():
     script = (
         ROOT / "scripts" / "run_gb10_decode_throughput_probe.sh"
     ).read_text(encoding="utf-8")
 
     assert "SERVE_SPECULATIVE_CONFIG" in script
     assert '{"method":"mtp","num_speculative_tokens":2}' in script
-    assert 'MAX_MODEL_LEN="${GB10_DECODE_MAX_MODEL_LEN:-131072}"' in script
-    assert 'MAX_NUM_SEQS="${GB10_DECODE_MAX_NUM_SEQS:-4}"' in script
+    assert 'GB10_DECODE_ENABLE_MTP="${GB10_DECODE_ENABLE_MTP:-0}"' in script
     assert (
-        'MAX_NUM_BATCHED_TOKENS="${GB10_DECODE_MAX_NUM_BATCHED_TOKENS:-4096}"'
+        'GB10_DECODE_PREFIX_CACHE_MODE="${GB10_DECODE_PREFIX_CACHE_MODE:-disabled}"'
         in script
     )
+    assert 'MAX_MODEL_LEN="${GB10_DECODE_MAX_MODEL_LEN:-32768}"' in script
+    assert 'MAX_NUM_SEQS="${GB10_DECODE_MAX_NUM_SEQS:-1}"' in script
+    assert (
+        'MAX_NUM_BATCHED_TOKENS="${GB10_DECODE_MAX_NUM_BATCHED_TOKENS:-1024}"'
+        in script
+    )
+    assert (
+        'GPU_MEMORY_UTILIZATION="${GB10_DECODE_GPU_MEMORY_UTILIZATION:-0.55}"'
+        in script
+    )
+    assert (
+        'DECODE_THROUGHPUT_SERIES_SPECS="${GB10_DECODE_SERIES_SPECS:-cycle3_temp1:cycle3:1.0:3}"'
+        in script
+    )
+    assert 'PROBE_VARIANT="${GB10_DECODE_VARIANT:-nomtp}"' in script
+    assert 'if [[ "${GB10_DECODE_ENABLE_MTP}" == "1" ]]; then' in script
     assert "SERVE_COMPILATION_CONFIG" in script
     assert "FULL_AND_PIECEWISE" in script
     assert "run_decode_throughput_probe.sh" in script

@@ -85,6 +85,14 @@ compile the SM120-family vLLM CUDA objects such as Marlin, `scaled_mm_sm120`,
 unsupported architecture on current upstream sources; treat that as a separate
 backend availability limit, not as the arch-detection failure.
 
+After rebasing or otherwise replacing the vLLM source tree with commits that
+touch native bindings, model executor kernels, MoE, KV-cache layout, or
+DeepSeek V4 model code, rebuild the editable vLLM install before serving. Do
+not treat a source-only reset as a valid GB10 runtime sync for those changes:
+stale native extension artifacts mixed with new Python code can make startup
+fail in ways that look like driver hangs. Re-apply the NCCL override after the
+editable install if dependency resolution replaced it.
+
 For Ubuntu/Debian DGX Spark nodes using CUDA 13.2, install from the NVIDIA CUDA
 repository for the node architecture, then pin the matching NCCL package on both
 nodes:
@@ -817,18 +825,51 @@ request pattern. This gate is diagnostic: it decides whether a decode
 throughput change is a true runtime regression or a speculative-decoding
 acceptance/workload-shape effect.
 
-Default shape:
+Default bootstrap-safe smoke shape:
 
 - `TP=2`, `PP=1`, expert parallel enabled.
-- Prefix cache enabled.
-- `MTP=2`, FP8 KV.
-- `max_model_len=131072`.
-- `max_num_seqs=4`.
-- `max_num_batched_tokens=4096`.
-- `gpu_memory_utilization=0.85`.
+- Prefix cache disabled.
+- MTP disabled, FP8 KV.
+- `max_model_len=32768`.
+- `max_num_seqs=1`.
+- `max_num_batched_tokens=1024`.
+- `gpu_memory_utilization=0.55`.
 - `FULL_AND_PIECEWISE` CUDA graph mode.
 - Sequential C=1 request series:
-  `fixed_temp1:fixed:1.0:20,cycle3_temp1:cycle3:1.0:20,fixed_temp0:fixed:0.0:20`.
+  `cycle3_temp1:cycle3:1.0:3`.
+
+This conservative default is intentional. On 2026-06-09, immediately after an
+upstream rebase, starting the previous all-in-one probe default
+(`max_model_len=131072`, `max_num_seqs=4`, `max_num_batched_tokens=4096`,
+`gpu_memory_utilization=0.85`, prefix cache enabled, and MTP=2) made both GB10
+nodes stop completing SSH banner exchange during startup and required a reboot.
+A second reduced attempt with `max_model_len=65536`, `max_num_seqs=2`,
+`max_num_batched_tokens=2048`, `gpu_memory_utilization=0.70`, prefix cache
+enabled, and MTP=2 still stalled SSH banner exchange during startup. Treat any
+MTP-enabled GB10 decode probe as a deliberate ramp/stress profile, not a first
+smoke after a rebase or environment change.
+
+If this bootstrap-safe no-MTP/prefix-off shape also stalls during `vllm serve`
+startup, stop lowering runtime parameters. First rebuild the vLLM editable
+install for the current source checkout, re-apply the NCCL override, and collect
+previous-boot driver logs. If it still reproduces after a clean rebuild, switch
+to a before-rebase versus after-rebase A/B rather than continuing parameter
+sweeps.
+
+To rerun the original user-report stress shape after the bootstrap-safe smoke
+passes:
+
+```bash
+GB10_DECODE_ENABLE_MTP=1 \
+GB10_DECODE_PREFIX_CACHE_MODE=enabled \
+GB10_DECODE_MAX_MODEL_LEN=131072 \
+GB10_DECODE_MAX_NUM_SEQS=4 \
+GB10_DECODE_MAX_NUM_BATCHED_TOKENS=4096 \
+GB10_DECODE_GPU_MEMORY_UTILIZATION=0.85 \
+GB10_DECODE_SERIES_SPECS='fixed_temp1:fixed:1.0:20,cycle3_temp1:cycle3:1.0:20,fixed_temp0:fixed:0.0:20' \
+GB10_DECODE_SLOW_TOK_S_THRESHOLD=36 \
+scripts/run_gb10_decode_throughput_probe.sh
+```
 
 The probe records per-request output tok/s plus `/metrics` deltas for
 `spec_decode_num_drafts_total`, `spec_decode_num_draft_tokens_total`,
