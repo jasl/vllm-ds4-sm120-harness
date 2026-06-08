@@ -221,14 +221,24 @@ Interpretation:
 - This is the first fork-independent Triton component direction in this cycle
   that wins strongly on both RTX PRO 6000 / SM120 and GB10 / SM121 while
   touching the real compressed+SWA candidate shape.
-- The result supports moving to an endpoint candidate, but not by directly
-  dropping this kernel into production. Endpoint work must add graph-stable
-  workspace sizing, conservative shape gating, sparse attribution, and
-  `FULL_AND_PIECEWISE` validation. It also needs to prove that one-head
-  program granularity does not erase the component win after integration.
-- Immediate next step: wire a default-off endpoint candidate only for the
-  `c128a-current`/D512/long-prefill shape, fail closed to the current D512
-  path, then run the focused endpoint smoke before the full promotion matrix.
+- The result supports moving toward an endpoint candidate, but not by directly
+  dropping this synthetic kernel into production. Endpoint work must add
+  graph-stable workspace sizing, conservative shape gating, sparse
+  attribution, and `FULL_AND_PIECEWISE` validation. It also needs to prove
+  that one-head program granularity does not erase the component win after
+  integration.
+- A follow-up stream-shape probe showed the endpoint contract differs by path:
+  the real C4A/D512 indexed path has almost no compressed same-position reuse
+  (`~0.7%`) but perfect SWA shifted-window reuse, while C128A chunk rows have
+  high compressed and SWA stream reuse. Therefore the first endpoint candidate
+  should not assume compressed candidates are shared for the D512 path. It
+  should either keep compressed work on the current exact path and group only
+  the SWA stream, or introduce a real union/membership representation for
+  compressed candidates.
+- Immediate next step: build a component candidate for the real D512 endpoint
+  contract: current/random compressed top-k plus grouped SWA union, with exact
+  online merge against the current D512 state. Only after that wins should it
+  be wired as a default-off endpoint path.
 
 ## Work Plan
 
