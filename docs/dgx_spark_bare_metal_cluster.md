@@ -809,6 +809,42 @@ lines to approach the target shared-context length. Compare round-2 TTFT,
 usage against the cold round before deciding whether a scheduling change helps
 agent workloads.
 
+## GB10 C=1 MTP Decode Throughput Probe
+
+Use `scripts/run_gb10_decode_throughput_probe.sh` for the user-feedback report
+where short-context C=1, MTP=2, `max_tokens=512` showed a bimodal slow/fast
+request pattern. This gate is diagnostic: it decides whether a decode
+throughput change is a true runtime regression or a speculative-decoding
+acceptance/workload-shape effect.
+
+Default shape:
+
+- `TP=2`, `PP=1`, expert parallel enabled.
+- Prefix cache enabled.
+- `MTP=2`, FP8 KV.
+- `max_model_len=131072`.
+- `max_num_seqs=4`.
+- `max_num_batched_tokens=4096`.
+- `gpu_memory_utilization=0.85`.
+- `FULL_AND_PIECEWISE` CUDA graph mode.
+- Sequential C=1 request series:
+  `fixed_temp1:fixed:1.0:20,cycle3_temp1:cycle3:1.0:20,fixed_temp0:fixed:0.0:20`.
+
+The probe records per-request output tok/s plus `/metrics` deltas for
+`spec_decode_num_drafts_total`, `spec_decode_num_draft_tokens_total`,
+`spec_decode_num_accepted_tokens_total`, and accepted tokens at draft positions
+0 and 1. Interpret slow/fast patterns by comparing tok/s against the
+per-request accepted/draft ratio. If slow requests line up with low MTP
+acceptance, the primary issue is draft-quality or output-trajectory
+sensitivity; if tok/s drops without an acceptance drop, investigate scheduler,
+CUDA graph shape, or kernel runtime variance.
+
+The local wrapper `scripts/run_decode_throughput_probe.sh` can be used against
+an already-running server on RTX PRO 6000 or GB10. The GB10 wrapper starts the
+full two-node MP serve profile, runs the same probe, fetches
+`decode_throughput_probe.json`, `decode_throughput_probe.md`, runtime stats,
+GPU stats, and the serve log slice, then stops vLLM.
+
 Use `scripts/run_gb10_mtp2_moe_tp_deadlock_gate.sh` for the MTP=2 MoE TP deadlock
 sustained gate. This is a user-feedback reproduction gate for the
 report where a two-node GB10 TP=2 server with MTP enabled can silently stop

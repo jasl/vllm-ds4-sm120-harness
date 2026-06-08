@@ -213,6 +213,9 @@ that thread, search `External unholy-fusion feedback refresh`.
 - Prefix-cache user-feedback shapes:
   open `docs/vllm_correctness_gates.md` and search
   `prefix-cache`.
+- GB10 C=1 MTP short-decode slow/fast user report:
+  open `docs/dgx_spark_bare_metal_cluster.md` and search
+  `GB10 C=1 MTP Decode Throughput Probe`.
 
 ## GB10 / SM121 Environment
 

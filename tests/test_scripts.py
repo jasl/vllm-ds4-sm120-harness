@@ -62,11 +62,30 @@ def test_scripts_allow_explicit_python_interpreter():
         "run_needle_position_matrix.sh",
         "run_streaming_pressure_matrix.sh",
         "run_streaming_pressure_soak.sh",
+        "run_decode_throughput_probe.sh",
     ):
         script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
 
         assert 'PYTHON="${PYTHON:-python}"' in script
         assert '"${PYTHON}" -m ds4_harness.cli' in script
+
+
+def test_gb10_decode_throughput_probe_wrapper_runs_user_report_profile():
+    script = (
+        ROOT / "scripts" / "run_gb10_decode_throughput_probe.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "SERVE_SPECULATIVE_CONFIG" in script
+    assert '{"method":"mtp","num_speculative_tokens":2}' in script
+    assert 'MAX_MODEL_LEN="${GB10_DECODE_MAX_MODEL_LEN:-131072}"' in script
+    assert 'MAX_NUM_SEQS="${GB10_DECODE_MAX_NUM_SEQS:-4}"' in script
+    assert (
+        'MAX_NUM_BATCHED_TOKENS="${GB10_DECODE_MAX_NUM_BATCHED_TOKENS:-4096}"'
+        in script
+    )
+    assert "SERVE_COMPILATION_CONFIG" in script
+    assert "FULL_AND_PIECEWISE" in script
+    assert "run_decode_throughput_probe.sh" in script
 
 
 def test_lm_eval_script_uses_vllm_venv_binary_by_default():

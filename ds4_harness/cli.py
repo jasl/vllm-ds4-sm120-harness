@@ -26,6 +26,15 @@ from ds4_harness.bench import (
 from ds4_harness.cases import SmokeCase, build_cases, select_cases
 from ds4_harness.checks import CheckResult, assistant_text, check_chat_response, tool_call_names
 from ds4_harness.client import get_json, get_status, post_json, post_json_with_retries
+from ds4_harness.decode_throughput_probe import (
+    DEFAULT_CASE_NAME as DEFAULT_DECODE_THROUGHPUT_CASE_NAME,
+    DEFAULT_MAX_TOKENS as DEFAULT_DECODE_THROUGHPUT_MAX_TOKENS,
+    DEFAULT_SLOW_TOK_S_THRESHOLD as DEFAULT_DECODE_THROUGHPUT_SLOW_TOK_S_THRESHOLD,
+    DEFAULT_TIMEOUT as DEFAULT_DECODE_THROUGHPUT_TIMEOUT,
+    parse_decode_probe_series_specs,
+    run_decode_throughput_probe,
+    write_decode_throughput_probe_markdown,
+)
 from ds4_harness.generation import (
     DEFAULT_THINKING_MODES,
     evaluate_generation_response,
@@ -1451,6 +1460,51 @@ def _cmd_streaming_pressure_matrix(args: argparse.Namespace) -> int:
     return 0 if row.get("ok") else 1
 
 
+def _cmd_decode_throughput_probe(args: argparse.Namespace) -> int:
+    try:
+        raw_specs: list[str] = []
+        if args.series_specs:
+            raw_specs.append(args.series_specs)
+        raw_specs.extend(args.series_spec or [])
+        specs = parse_decode_probe_series_specs(raw_specs or None)
+        row = run_decode_throughput_probe(
+            base_url=args.base_url,
+            model=args.model,
+            variant=args.variant,
+            case_name=args.case_name,
+            series_specs=specs,
+            max_tokens=args.max_tokens,
+            top_p=args.top_p,
+            timeout=args.timeout,
+            slow_tok_s_threshold=args.slow_tok_s_threshold,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    if args.markdown_output is not None:
+        write_decode_throughput_probe_markdown(args.markdown_output, row)
+
+    summary = row.get("summary") if isinstance(row.get("summary"), dict) else {}
+    status = "PASS" if row.get("ok") else "FAIL"
+    print(
+        "{status} {case} variant={variant}: requests={requests} slow={slow}".format(
+            status=status,
+            case=row.get("case"),
+            variant=args.variant,
+            requests=summary.get("request_count", "n/a"),
+            slow=summary.get("slow_request_count", "n/a"),
+        )
+    )
+    return 0 if row.get("ok") else 1
+
+
 def _cmd_kv_layout_probe(args: argparse.Namespace) -> int:
     try:
         row = run_kv_layout_probe(
@@ -2659,6 +2713,41 @@ def build_parser() -> argparse.ArgumentParser:
     streaming_matrix.add_argument("--json-output", type=Path)
     streaming_matrix.add_argument("--markdown-output", type=Path)
     streaming_matrix.set_defaults(func=_cmd_streaming_pressure_matrix)
+
+    decode_probe = subparsers.add_parser("decode-throughput-sequential-probe")
+    decode_probe.add_argument("--base-url", default="http://127.0.0.1:8000")
+    decode_probe.add_argument("--model", default=DEFAULT_MODEL)
+    decode_probe.add_argument("--variant", default="manual")
+    decode_probe.add_argument(
+        "--case-name", default=DEFAULT_DECODE_THROUGHPUT_CASE_NAME
+    )
+    decode_probe.add_argument(
+        "--series-specs",
+        default=None,
+        help=(
+            "Comma-separated specs: "
+            "name:prompt_group:temperature:request_count. "
+            "Built-in prompt groups: fixed, cycle3."
+        ),
+    )
+    decode_probe.add_argument(
+        "--series-spec",
+        action="append",
+        help="Add one decode probe series spec; may be repeated.",
+    )
+    decode_probe.add_argument(
+        "--max-tokens", type=int, default=DEFAULT_DECODE_THROUGHPUT_MAX_TOKENS
+    )
+    decode_probe.add_argument("--top-p", type=float, default=1.0)
+    decode_probe.add_argument("--timeout", type=float, default=DEFAULT_DECODE_THROUGHPUT_TIMEOUT)
+    decode_probe.add_argument(
+        "--slow-tok-s-threshold",
+        type=float,
+        default=DEFAULT_DECODE_THROUGHPUT_SLOW_TOK_S_THRESHOLD,
+    )
+    decode_probe.add_argument("--json-output", type=Path)
+    decode_probe.add_argument("--markdown-output", type=Path)
+    decode_probe.set_defaults(func=_cmd_decode_throughput_probe)
 
     kv_layout = subparsers.add_parser("kv-layout-probe")
     kv_layout.add_argument("--target-python", default=sys.executable)
