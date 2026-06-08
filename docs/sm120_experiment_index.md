@@ -250,8 +250,10 @@ that thread, search `External unholy-fusion feedback refresh`.
   and search `B12X stack capability probe and route split` plus
   `Public b12x recheck, 2026-06-08`. Public `b12x==0.20.0` now exposes the
   DS4 compressed MLA / compressed-indexer / native FP4 MoE helper APIs that
-  were missing from the older `0.15.2` notes; endpoint validation is still
-  pending.
+  were missing from the older `0.15.2` notes. Endpoint validation is route
+  dependent: mHC is slower than current TileLang, WO is blocked on public
+  CUTLASS DSL MXFP8 MMA support, and sparse-indexer prefill is blocked by a
+  TMA-partition failure in direct GB10 `extend_tiled_topk` smoke.
 - Public b12x 0.20 KV-layout compatibility:
   open `docs/sm120_optimization_notes.md` and search
   `Public b12x 0.20 KV-layout probe`. Current conclusion: public b12x's

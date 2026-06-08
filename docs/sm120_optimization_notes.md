@@ -9545,6 +9545,19 @@ GB10 sparse-MLA candidate/value work recheck after counter unlock, 2026-06-05:
   MXFP4 MoE, and compressed-MLA runtime hooks are all absent. This confirms the
   blocker has moved from "public package APIs do not exist" to "vLLM endpoint
   wiring and dataflow are not integrated."
+- **Blocked public-b12x sparse-indexer prefill route:** a direct GB10 call into
+  public `b12x.integration.indexer.extend_tiled_topk` with endpoint-shaped
+  rank-3 query, FP8 KV, FP32 weights, and `IndexerExtendMetadata` passed the
+  Python-side contract checks but failed while constructing the kernel:
+  `unable to partition input tensors for TMA` in
+  `b12x/attention/indexer/extend_kernel.py`. This is consistent with the route
+  using a TMA-oriented kernel path that is not runnable on the tested SM121
+  stack. Do not port the Aiden/unholy sparse-indexer prefill branch as-is under
+  public `b12x==0.20.0`; it also allocates temporary gathered `k_quant` and
+  `k_scale` tensors per chunk rather than using the current vLLM workspace
+  manager. Revisit only if public b12x exposes an SM12x-compatible non-TMA
+  extend path, or if the Aiden image's bundled b12x source is reproduced and a
+  direct component smoke passes.
 - **Rejected B12X mHC endpoint route:** added
   `scripts/run_sm12x_b12x_mhc_microbench.py` to compare current TileLang fused
   mHC with public b12x `b12x_mhc_post_pre` before touching vLLM. On GB10 with

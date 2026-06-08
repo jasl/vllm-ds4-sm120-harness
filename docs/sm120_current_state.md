@@ -149,6 +149,10 @@ a runtime-importable DS4 compressed-MLA adapter in its installed vLLM package.
 Public b12x mHC was slower than the current TileLang fused path in standalone
 GB10 microbenching, and public b12x WO projection is blocked on the missing
 Cutlass DSL MXFP8 MMA symbol, so neither should be the next endpoint port.
+The public b12x sparse-indexer prefill `extend_tiled_topk` route also failed a
+direct GB10 component smoke during TMA partitioning, so do not port the
+unholy/Aiden sparse-indexer prefill branch directly under the released b12x
+stack.
 Public b12x native MXFP4 MoE is dependency-unblocked in a standalone GB10
 smoke, including a full `E=256` synthetic DS4-shaped call, but the
 Aiden/unholy implementation is non-EP only and prior MoE-off endpoint A/B says
@@ -215,6 +219,10 @@ production code is added:
   route is dependency-blocked in the current public stack: DS4-shaped weight
   packing succeeds, but the first fused WO call fails because public
   `nvidia-cutlass-dsl==4.5.2` lacks `cutlass.cute.nvgpu.warp.MmaMXF8Op`. The
+  public-b12x sparse-indexer prefill route is likewise blocked for endpoint
+  use: a direct `extend_tiled_topk` smoke failed during TMA partitioning on
+  GB10, and the unholy branch's prefill path still materializes temporary
+  gathered KV tensors outside the current workspace manager. The
   Model Runner V2 enablement alone is unlikely to explain the prefill gap, but
   it may be required for that stack's warmup/scratch compatibility.
 - Use `scripts/run_gb10_b12x_backend_ab_matrix.sh` for that comparison. It
