@@ -345,12 +345,12 @@ that thread, search `External unholy-fusion feedback refresh`.
 - FlashInfer packed SM120 endpoint promotion subset:
   open `docs/sm120_optimization_notes.md` and search
   `FlashInfer packed SM120 endpoint promotion subset`. Current conclusion:
-  the Dev-only `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` endpoint adapter
+  the archived `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` endpoint adapter
   passed GB10 prefill attribution with prefix cache disabled/enabled, reduced
   long-C2, and reduced MTP=2 MoE TP soak. It improved GB10 C=1 prefill by about
   `10-23%` TTFT versus the same-day env-off control and moved sparse work to
-  `flashinfer_packed_attention`, but remains default-off pending RTX, GSM8K,
-  prefix/KV lifecycle, mixed-arrival, and full GB10 soak promotion.
+  `flashinfer_packed_attention`, but remains a reference-only route pending
+  an official dependency path or a fork-independent Triton rewrite.
 
 ## Correctness
 

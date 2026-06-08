@@ -61,15 +61,15 @@ Last updated: 2026-06-08.
   compressed cache uses `64`, and C128A compressed cache uses `2`; the old
   `256` reading was the global scheduler/cache block preference, not the
   packed wrapper's physical page size. A GB10 endpoint-shaped component probe
-  now validates the next adapter assumption: vLLM's
+  validated the next adapter assumption: vLLM's
   `build_flashinfer_mixed_sparse_indices` output can be split into the packed
   wrapper's main SWA stream and extra compressed stream for both C4A and C128A,
-  with correct per-stream lengths and zero-KV LSE. A Dev-only endpoint adapter
-  behind `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` now has clean GB10
-  evidence for the prefill/prefix subset, reduced long-C2, and reduced MTP=2
-  MoE TP soak. It remains default-off because it depends on an unmerged
-  FlashInfer packed backend and has not yet passed the full RTX + GSM8K +
-  lifecycle promotion matrix.
+  with correct per-stream lengths and zero-KV LSE. The endpoint adapter was
+  archived as a local reference branch after the 2026-06-08 GB10 subset because
+  it depends on an unmerged FlashInfer packed backend and has not passed the
+  full RTX + GSM8K + lifecycle promotion matrix. Current dev and PR branches
+  should not contain a `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL` runtime
+  path.
 - Blocked or rejected as current endpoint backends, in the specific forms that
   were tested: public b12x / FlashInfer wheels as a direct DS4 endpoint
   backend, upstream `FLASHINFER_MLA_SPARSE_DSV4` with the current official
@@ -146,18 +146,17 @@ SM120 sparse-MLA route, which is not available in the current wheel. A direct
 GB10 component smoke against an isolated build passed DSV4 packed
 prefill/decode correctness, so the remaining work is proving an endpoint
 adapter can reduce real sparse-MLA work without regressions.
-The first endpoint-shaped Dev-only adapter for that packed route now has a
-positive GB10 attribution signal at every tested input length, with prefix
-cache both disabled and enabled. `4096/8192/32768/128000` improved input tok/s
-by roughly `1.11-1.15x` and TTFT by roughly `10-23%` against the same-day
-env-off control, while preserving the same effective candidate-visit counts.
-This proves the 4K/8K gap can be affected by sparse-MLA prefill
-backend/dataflow, not only by very-long-context C128 candidate growth.
-The route also passed a GB10 reduced long-C2 gate and a reduced MTP=2 MoE TP
-soak with clean driver health. It is still default-off because the endpoint
-gain is not enough to explain the full Aiden/unholy gap, the dependency is not
-an official wheel path, and RTX + GSM8K + prefix/KV lifecycle promotion is still
-pending.
+The first endpoint-shaped adapter prototype for that packed route produced a
+positive GB10 attribution signal at every tested input length, with prefix cache
+both disabled and enabled. `4096/8192/32768/128000` improved input tok/s by
+roughly `1.11-1.15x` and TTFT by roughly `10-23%` against the same-day env-off
+control, while preserving the same effective candidate-visit counts. This
+proves the 4K/8K gap can be affected by sparse-MLA prefill backend/dataflow,
+not only by very-long-context C128 candidate growth. The route also passed a
+GB10 reduced long-C2 gate and a reduced MTP=2 MoE TP soak with clean driver
+health. It remains a reference implementation only: the endpoint gain is not
+enough to explain the full Aiden/unholy gap, the dependency is not an official
+wheel path, and RTX + GSM8K + prefix/KV lifecycle promotion is still pending.
 
 External feedback on 2026-06-07 strengthens the GB10 prefill-gap concern: a
 NVIDIA Developer Forums report for the local-inference-lab / unholy-fusion

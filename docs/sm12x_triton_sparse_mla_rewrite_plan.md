@@ -67,18 +67,21 @@ Use these current evidence anchors before writing code:
 Current vLLM worktree state to audit before implementation:
 
 - `vllm/envs.py`
-  - Contains dev-only env gates. Remove or keep only gates with an active
+  - Current dev and PR branches should not contain the archived FlashInfer
+    packed prefill env gate. Remove or keep only gates with an active
     experiment owner and matching notes.
 - `vllm/models/deepseek_v4/nvidia/flashmla.py`
-  - Current D512 path, exact chunked D512 merge, sparse attribution, and the
-    dev-only packed FlashInfer endpoint adapter live here today.
+  - Current D512 path, exact chunked D512 merge, and sparse attribution live
+    here today. The FlashInfer packed endpoint adapter is a reference-only
+    archived branch unless it is explicitly restored for comparison.
 - `vllm/models/deepseek_v4/common/ops/cache_utils.py`
   - Builds mixed sparse indices and is the current shared bridge between vLLM
     metadata and external packed-backend probes.
 - `tests/model_executor/test_deepseek_v4_flashinfer_packed_prefill.py`
-  - Development-only coverage for the packed FlashInfer adapter. Keep it only
-    while that adapter remains in the dev branch; do not move it to the PR
-    branch unless the dependency route is promoted.
+  - Development-only coverage for the packed FlashInfer adapter. It belongs
+    with the archived reference branch unless the dependency route is restored
+    for comparison; do not move it to the PR branch unless that route is
+    promoted.
 
 The next Triton backend should either be placed behind an internal developer
 gate in the existing sparse-MLA module or be split into a small dedicated
