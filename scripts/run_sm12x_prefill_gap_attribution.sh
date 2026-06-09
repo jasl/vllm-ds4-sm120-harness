@@ -48,7 +48,20 @@ SM12X_PREFILL_GAP_GPU_MEMORY_UTILIZATION="${SM12X_PREFILL_GAP_GPU_MEMORY_UTILIZA
 SM12X_PREFILL_GAP_MAX_MODEL_LEN="${SM12X_PREFILL_GAP_MAX_MODEL_LEN:-131072}"
 SM12X_PREFILL_GAP_MAX_NUM_BATCHED_TOKENS="${SM12X_PREFILL_GAP_MAX_NUM_BATCHED_TOKENS:-4096}"
 SM12X_PREFILL_GAP_MAX_NUM_SEQS="${SM12X_PREFILL_GAP_MAX_NUM_SEQS:-4}"
-_DEFAULT_SM12X_PREFILL_GAP_EXTRA_SERVE_ARGS="--gpu-memory-utilization ${SM12X_PREFILL_GAP_GPU_MEMORY_UTILIZATION} --max-num-batched-tokens ${SM12X_PREFILL_GAP_MAX_NUM_BATCHED_TOKENS} --max-num-seqs ${SM12X_PREFILL_GAP_MAX_NUM_SEQS} --enable-expert-parallel --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}'"
+SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL:-1}"
+case "${SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL}" in
+  1|true|TRUE|yes|YES)
+    _prefill_gap_expert_parallel_arg=" --enable-expert-parallel"
+    ;;
+  0|false|FALSE|no|NO)
+    _prefill_gap_expert_parallel_arg=""
+    ;;
+  *)
+    echo "SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL must be 0/1 or true/false; got '${SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL}'" >&2
+    exit 2
+    ;;
+esac
+_DEFAULT_SM12X_PREFILL_GAP_EXTRA_SERVE_ARGS="--gpu-memory-utilization ${SM12X_PREFILL_GAP_GPU_MEMORY_UTILIZATION} --max-num-batched-tokens ${SM12X_PREFILL_GAP_MAX_NUM_BATCHED_TOKENS} --max-num-seqs ${SM12X_PREFILL_GAP_MAX_NUM_SEQS}${_prefill_gap_expert_parallel_arg} --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}'"
 B200_EXTRA_SERVE_ARGS="${B200_EXTRA_SERVE_ARGS:-${_DEFAULT_SM12X_PREFILL_GAP_EXTRA_SERVE_ARGS}}"
 
 SM12X_PREFILL_GAP_D512_ENV="${SM12X_PREFILL_GAP_D512_ENV:-0}"
@@ -140,6 +153,7 @@ case_dir_list="$(IFS=:; printf '%s' "${case_dirs[*]}")"
 SM12X_PREFILL_GAP_CASE_DIRS="${case_dir_list}" \
 SM12X_PREFILL_GAP_ROOT="${SM12X_PREFILL_GAP_ROOT}" \
 SM12X_PREFILL_GAP_VARIANT="${SM12X_PREFILL_GAP_VARIANT}" \
+SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL}" \
 "${PYTHON}" - <<'PY'
 import json
 import os
@@ -148,6 +162,7 @@ from typing import Any
 
 root = Path(os.environ["SM12X_PREFILL_GAP_ROOT"])
 variant = os.environ["SM12X_PREFILL_GAP_VARIANT"]
+expert_parallel_enabled = os.environ["SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL"]
 case_dirs = [
     Path(item)
     for item in os.environ.get("SM12X_PREFILL_GAP_CASE_DIRS", "").split(":")
@@ -242,6 +257,7 @@ for case_dir in case_dirs:
 summary = {
     "case": "sm12x_prefill_gap_attribution",
     "variant": variant,
+    "expert_parallel_enabled": expert_parallel_enabled,
     "ok": all(row["ok"] for row in rows),
     "rows": rows,
 }
@@ -256,6 +272,7 @@ lines = [
     "",
     f"- OK: `{summary['ok']}`",
     f"- Variant: `{variant}`",
+    f"- Expert parallel enabled: `{expert_parallel_enabled}`",
     "",
     "| Case | OK | C | Input tok/s | Mean TTFT ms | P99 TTFT ms | Sparse rows | Candidate slots | Effective visits | Padding ratio | Compressed effective visits | Compressed padding ratio | SWA effective visits | SWA padding ratio | All group16 unique/valid | Compressed group16 unique/valid | SWA group16 unique/valid | All group16 reuse | Compressed group16 reuse | SWA group16 reuse | Stage total ms | Dominant stage | Accumulate ratio | Sparse visits/s | Sparse ms/Mvisit |",
     "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |",

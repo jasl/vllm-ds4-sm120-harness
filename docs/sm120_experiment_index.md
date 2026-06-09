@@ -287,6 +287,16 @@ that thread, search `External unholy-fusion feedback refresh`.
   `Aiden Image Parity Recheck`, `Current-Dev EP-off A/B`,
   `Sparse-indexer-only A/B`, or
   `Public image control-plane correction`.
+- RTX EP-off prefill attribution:
+  open `docs/sm120_optimization_notes.md` and search
+  `RTX EP-off prefill attribution, 2026-06-10`. Current conclusion: EP-off is
+  not a universal raw-prefill multiplier on dual RTX PRO 6000, but it materially
+  improved the 124K C=2 pure-prefill shape (`1.29x` input tok/s, `0.77x` mean
+  TTFT) while short inputs moved only `1-4%`. The same section also records a
+  same-protocol RTX prefill/decode promotion smoke: EP-off passed and was often
+  slightly better for long/streaming TTFT, but EP-on still won a few cadence /
+  fairness metrics, so EP mode remains a benchmark dimension rather than a
+  default recommendation.
 - B12X optional stack capability probe:
   `scripts/run_b12x_stack_probe.sh`; open `docs/sm120_optimization_notes.md`
   and search `B12X stack capability probe and route split` plus

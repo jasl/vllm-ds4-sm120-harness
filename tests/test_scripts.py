@@ -315,6 +315,12 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert 'SM12X_PREFILL_GAP_STATS_OVERLAP_ROWS="${SM12X_PREFILL_GAP_STATS_OVERLAP_ROWS:-0}"' in script
     assert 'SM12X_PREFILL_GAP_STAGE_TIMING="${SM12X_PREFILL_GAP_STAGE_TIMING:-0}"' in script
     assert 'SM12X_PREFILL_GAP_D512_ENV="${SM12X_PREFILL_GAP_D512_ENV:-0}"' in script
+    assert (
+        'SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL:-1}"'
+        in script
+    )
+    assert "_prefill_gap_expert_parallel_arg" in script
+    assert "SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL must be 0/1 or true/false" in script
     assert "SM12X_PREFILL_GAP_D512_ENV must be 0, 1, or default" in script
     assert 'SERVE_REMOTE_ENV_VARS="${SERVE_REMOTE_ENV_VARS:+${SERVE_REMOTE_ENV_VARS},}${_prefill_gap_remote_envs}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH="${stats_dir}"' in script
@@ -330,6 +336,8 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert "sparse-mla-stats-report" in script
     assert "prefill_gap_attribution_summary.json" in script
     assert "prefill_gap_attribution_summary.md" in script
+    assert '"expert_parallel_enabled": expert_parallel_enabled' in script
+    assert "Expert parallel enabled" in script
     assert '"stage_timings_ms": sparse_summary.get("stage_timings_ms", {})' in script
     assert '"stage_efficiency": sparse_summary.get("stage_efficiency", {})' in script
     assert '"candidate_overlap": sparse_summary.get("candidate_overlap", {})' in script
@@ -2462,6 +2470,15 @@ def test_sm12x_prefill_decode_promotion_gate_covers_fairness_without_nsys():
     assert "long_context_latency_matrix,long_context_decode_concurrency,long_context_mixed_arrival,streaming_pressure_matrix" in script
     assert 'SM12X_PREFILL_DECODE_LINE_COUNTS="${SM12X_PREFILL_DECODE_LINE_COUNTS:-1900,4000}"' in script
     assert 'SM12X_PREFILL_DECODE_CONCURRENCY="${SM12X_PREFILL_DECODE_CONCURRENCY:-1,2}"' in script
+    assert (
+        'SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL:-1}"'
+        in script
+    )
+    assert "_prefill_decode_expert_parallel_arg" in script
+    assert (
+        "SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL must be 0/1 or true/false"
+        in script
+    )
     assert "long_long_c2:4000:4000:fixed_delay:0:128:128" in script
     assert "decode_then_59k:1900:1900:after_first_token:0:256:128" in script
     assert "decode_then_124k:4000:4000:after_first_token:0:256:128" in script
@@ -2482,6 +2499,8 @@ def test_sm12x_prefill_decode_promotion_gate_covers_fairness_without_nsys():
     assert "prefill_decode_regression_gate.md" in script
     assert "prefill_decode_promotion_gate_summary.json" in script
     assert "prefill_decode_promotion_gate_summary.md" in script
+    assert '"expert_parallel_enabled": expert_parallel_enabled' in script
+    assert "expert parallel enabled" in script
     assert "FULL_AND_PIECEWISE" in script
     assert "/home/" not in script
     assert "/Users/" not in script

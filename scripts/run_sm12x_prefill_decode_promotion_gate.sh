@@ -36,7 +36,20 @@ SM12X_PREFILL_DECODE_GPU_MEMORY_UTILIZATION="${SM12X_PREFILL_DECODE_GPU_MEMORY_U
 SM12X_PREFILL_DECODE_MAX_NUM_BATCHED_TOKENS="${SM12X_PREFILL_DECODE_MAX_NUM_BATCHED_TOKENS:-4096}"
 SM12X_PREFILL_DECODE_MAX_NUM_SEQS="${SM12X_PREFILL_DECODE_MAX_NUM_SEQS:-4}"
 SM12X_PREFILL_DECODE_MAX_MODEL_LEN="${SM12X_PREFILL_DECODE_MAX_MODEL_LEN:-131072}"
-_DEFAULT_SM12X_PREFILL_DECODE_EXTRA_SERVE_ARGS="--gpu-memory-utilization ${SM12X_PREFILL_DECODE_GPU_MEMORY_UTILIZATION} --max-num-batched-tokens ${SM12X_PREFILL_DECODE_MAX_NUM_BATCHED_TOKENS} --max-num-seqs ${SM12X_PREFILL_DECODE_MAX_NUM_SEQS} --enable-expert-parallel --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}'"
+SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL:-1}"
+case "${SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL}" in
+  1|true|TRUE|yes|YES)
+    _prefill_decode_expert_parallel_arg=" --enable-expert-parallel"
+    ;;
+  0|false|FALSE|no|NO)
+    _prefill_decode_expert_parallel_arg=""
+    ;;
+  *)
+    echo "SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL must be 0/1 or true/false; got '${SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL}'" >&2
+    exit 2
+    ;;
+esac
+_DEFAULT_SM12X_PREFILL_DECODE_EXTRA_SERVE_ARGS="--gpu-memory-utilization ${SM12X_PREFILL_DECODE_GPU_MEMORY_UTILIZATION} --max-num-batched-tokens ${SM12X_PREFILL_DECODE_MAX_NUM_BATCHED_TOKENS} --max-num-seqs ${SM12X_PREFILL_DECODE_MAX_NUM_SEQS}${_prefill_decode_expert_parallel_arg} --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}'"
 B200_EXTRA_SERVE_ARGS="${B200_EXTRA_SERVE_ARGS:-${_DEFAULT_SM12X_PREFILL_DECODE_EXTRA_SERVE_ARGS}}"
 
 SM12X_PREFILL_DECODE_LINE_COUNTS="${SM12X_PREFILL_DECODE_LINE_COUNTS:-1900,4000}"
@@ -149,6 +162,7 @@ SM12X_PREFILL_DECODE_BASELINE_DIR="${SM12X_PREFILL_DECODE_BASELINE_DIR}" \
 SM12X_PREFILL_DECODE_VARIANT="${SM12X_PREFILL_DECODE_VARIANT}" \
 RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2="${RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2}" \
 SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR="${SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR}" \
+SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL}" \
 "${PYTHON}" - <<'PYEOF'
 import json
 import os
@@ -173,6 +187,7 @@ root = Path(os.environ["SM12X_PREFILL_DECODE_ROOT"])
 label = os.environ["SM12X_PREFILL_DECODE_LABEL"]
 baseline_dir = Path(os.environ["SM12X_PREFILL_DECODE_BASELINE_DIR"])
 variant = os.environ["SM12X_PREFILL_DECODE_VARIANT"]
+expert_parallel_enabled = os.environ["SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL"]
 gb10_dir = Path(os.environ["SM12X_PREFILL_DECODE_GB10_LONG_C2_DIR"])
 gb10_enabled = os.environ["RUN_SM12X_PREFILL_DECODE_GB10_LONG_C2"] in {"1", "true"}
 phase_rows = []
@@ -202,6 +217,7 @@ payload = {
     "label": label,
     "baseline_dir": str(baseline_dir),
     "variant": variant,
+    "expert_parallel_enabled": expert_parallel_enabled,
     "baseline_exit_code": _read_exit(root / "baseline.exit_code"),
     "prefill_decode_regression_gate_exit_code": _read_exit(
         root / "prefill_decode_regression_gate.exit_code"
@@ -238,6 +254,7 @@ lines = [
     "",
     f"- baseline dir: `{baseline_dir}`",
     f"- variant: `{variant}`",
+    f"- expert parallel enabled: `{expert_parallel_enabled}`",
     f"- baseline exit: `{payload['baseline_exit_code']}`",
     "- prefill/decode regression gate exit: "
     f"`{payload['prefill_decode_regression_gate_exit_code']}`",

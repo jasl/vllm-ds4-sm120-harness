@@ -10458,3 +10458,82 @@ blindly interleaving every cold long prefill:
   `running_requests_max=3`, `waiting_requests_max=3`, prefix-cache hit delta
   `2,875,392`. The warm second round had only `255` scheduled prefill tokens per
   request and TTFT `1.36-4.14s`.
+
+## RTX EP-off prefill attribution, 2026-06-10
+
+Purpose: test whether the observed prefill gap could be explained by deployment
+mode rather than only sparse-MLA kernel/dataflow. Both runs used the same dual
+RTX PRO 6000 / SM120 vLLM commit, `TP=2`, MTP=2, FP8 KV, prefix cache disabled,
+`FULL_AND_PIECEWISE`, `max_model_len=131072`,
+`max_num_batched_tokens=4096`, `max_num_seqs=4`, output length `1`, and
+`SM12X_PREFILL_GAP_D512_ENV=default`. The only intended serve-argument
+difference was presence or absence of `--enable-expert-parallel`.
+
+- **EP-on artifact:**
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260610_ep_on_prefill_attribution/20260610003949`.
+- **EP-off artifact:**
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260610_ep_off_prefill_attribution/20260610005151`.
+- **Health:** all child phases exited `0`; serve logs did not contain CUDA,
+  NCCL, Xid, UVM, GPU-lost, illegal access, unspecified launch, fatal, or OOM
+  errors; GPUs returned to idle after the run.
+
+| ISL | C | EP-on input tok/s | EP-off input tok/s | EP-off / EP-on | EP-on mean TTFT | EP-off mean TTFT |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 4096 | 1 | `6068.15` | `6182.64` | `1.02x` | `0.674s` | `0.662s` |
+| 4096 | 2 | `6253.44` | `6325.87` | `1.01x` | `1.148s` | `1.134s` |
+| 4096 | 4 | `6206.06` | `6277.39` | `1.01x` | `1.667s` | `1.643s` |
+| 8192 | 1 | `7249.56` | `7396.84` | `1.02x` | `1.131s` | `1.106s` |
+| 8192 | 2 | `6869.60` | `7062.07` | `1.03x` | `2.107s` | `2.051s` |
+| 8192 | 4 | `6501.59` | `6593.16` | `1.01x` | `3.576s` | `3.521s` |
+| 32768 | 1 | `7806.55` | `8151.24` | `1.04x` | `4.196s` | `4.021s` |
+| 32768 | 2 | `6766.75` | `6891.27` | `1.02x` | `8.835s` | `8.684s` |
+| 32768 | 4 | `6690.76` | `6816.02` | `1.02x` | `13.212s` | `12.988s` |
+| 124000 | 1 | `6740.96` | `6918.68` | `1.03x` | `18.395s` | `17.922s` |
+| 124000 | 2 | `4841.86` | `6261.05` | `1.29x` | `45.930s` | `35.264s` |
+| 124000 | 4 | `6164.55` | `6255.52` | `1.01x` | `51.735s` | `51.061s` |
+
+Conclusion: EP-off is not a universal raw-prefill multiplier on RTX; short
+inputs and most C=1/C=4 cases improved only `1-4%`. The strong signal is the
+124K C=2 shape, where EP-off improved input throughput by `29%` and reduced mean
+TTFT by `23%`. During the 124K EP-off run the observed GPU power reached roughly
+full-board power, while the comparable EP-on observation was much lower. Treat
+EP mode as a first-class attribution variable for long-prefill concurrency and
+for unholy/Aiden parity work, but do not switch defaults without correctness,
+decode, prefix-cache, and GB10 promotion coverage.
+
+RTX EP-mode promotion smoke, same day:
+
+- **EP-off artifact:**
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260610_ep_off_prefill_decode_promotion_smoke/20260610011855`.
+- **EP-on artifact:**
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260610_ep_on_prefill_decode_promotion_smoke/20260610012958`.
+- Protocol: same dual RTX PRO 6000 / SM120 vLLM commit, `TP=2`, MTP=2, FP8 KV,
+  prefix cache disabled, `FULL_AND_PIECEWISE`,
+  `max_num_batched_tokens=4096`, `max_num_seqs=4`, `max_model_len=131072`,
+  repeat count `1`; only the expert-parallel flag changed.
+- Result: both runs exited `0`, regression gate exited `0`, all phases exited
+  `0`, and post-run GPUs were idle. EP-off serve command did not include
+  `--enable-expert-parallel`; EP-on serve command did.
+
+| Check | EP-off | EP-on | Direction |
+| --- | ---: | ---: | --- |
+| 59K-ish latency C=2 decode min/max | `0.9756` | `0.9584` | EP-off slightly better |
+| 124K-ish latency C=2 decode min/max | `0.8487` | `0.9217` | EP-on better |
+| 124K-ish decode-concurrency C=2 min/max | `0.9489` | `0.9850` | EP-on better |
+| `decode_then_124k` secondary p99 ITL | `0.0165s` | `0.0171s` | EP-off slightly better |
+| `long_long_c2` secondary p99 ITL | `0.0182s` | `0.0185s` | EP-off slightly better |
+| Streaming `short_c4` avg/max TTFT | `13.37s` / `19.85s` | `13.59s` / `20.22s` | EP-off slightly better |
+| Streaming `issue7_5k_c4` p99 ITL | `0.805s` | `0.727s` | EP-on better |
+| Streaming `long_c2` avg/max TTFT | `23.86s` / `30.59s` | `24.12s` / `30.98s` | EP-off slightly better |
+| Streaming `long_c4` avg/max TTFT | `25.17s` / `38.25s` | `25.51s` / `38.67s` | EP-off slightly better |
+
+Interpretation: no-EP is promotion-smoke-safe on RTX for this small matrix and
+is often slightly better for long/streaming TTFT, but it is not a clean win on
+all cadence/fairness metrics. Keep EP mode as an explicit benchmark dimension.
+Do not make no-EP the default recommendation until at least GSM8K/tool-call,
+prefix-cache warm agent workload, and GB10 safe-profile validation pass.
+
+GB10 no-EP follow-up was blocked before serve startup by the existing safety
+preflight: the worker node's current boot already contained NVIDIA driver OOM
+signals. The small EP-on/EP-off GB10 comparison should be retried only after a
+clean boot; do not treat this blocked attempt as an EP-mode regression.
