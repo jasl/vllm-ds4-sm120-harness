@@ -1563,7 +1563,18 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
         in script
     )
     assert 'SERVE_PREFIX_CACHE_MODE=enabled' in script
-    assert 'SERVE_ENABLE_EXPERT_PARALLEL=1' in script
+    assert (
+        'GB10_FORUM53_ENABLE_EXPERT_PARALLEL="${GB10_FORUM53_ENABLE_EXPERT_PARALLEL:-1}"'
+        in script
+    )
+    assert (
+        'SERVE_ENABLE_EXPERT_PARALLEL="${gb10_forum53_enable_expert_parallel}"'
+        in script
+    )
+    assert "capture_remote_driver_health" in script
+    assert "driver_health_summary.json" in script
+    assert "GB10_FORUM53_ALLOW_DRIVER_SIGNALS" in script
+    assert "driver_health.get(\"ok\", True)" in script
     assert 'GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c2:2:2:3200:128,forum53_c4:4:2:3200:128}"' in script
     assert 'GB10_FORUM53_TEMPERATURE="${GB10_FORUM53_TEMPERATURE:-0}"' in script
     assert 'STREAMING_PRESSURE_MATRIX_TEMPERATURE=$(shell_quote "${GB10_FORUM53_TEMPERATURE}")' in script
@@ -1590,6 +1601,7 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
     assert '"${SCRIPT_DIR}/analyze_scheduler_trace.py"' in script
     assert "SUMMARY_MAX_MODEL_LEN" in script
     assert "SUMMARY_PROFILE" in script
+    assert "SUMMARY_EXPERT_PARALLEL_ENABLED" in script
     assert "SUMMARY_SAFE_CONTEXT_LIMIT" in script
     assert "SUMMARY_CASE_SPECS" in script
     assert "running_requests_max" in script

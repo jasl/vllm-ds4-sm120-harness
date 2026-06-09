@@ -638,6 +638,22 @@ prefix-cache-aware:
   remains serialized by design; the second warm round had prefill chunks of
   only `255` tokens and TTFT `1.36-4.14s`, proving cached-tail requests are not
   blocked by the very-long-prefill guard.
+- 2026-06-10 GB10 forum53 MTP=2 EP-mode A/B with post-run driver-health hard
+  checks:
+  EP-off artifact
+  `artifacts/main/2x_gb10_sm121/20260610_forum53_mtp2_epoff_candidate_c2c4/20260610024217`;
+  EP-on artifact
+  `artifacts/main/2x_gb10_sm121/20260610_forum53_mtp2_epon_candidate_c2c4/20260610025323`.
+  Profile: TP=2, MTP=2, prefix cache enabled, FP8 KV,
+  `FULL_AND_PIECEWISE`, MP executor, `gpu_memory_utilization=0.85`,
+  `max_model_len=131072`, `max_num_seqs=4`,
+  `max_num_batched_tokens=4096`, C=2 and C=4 two-round cases around `80K`
+  prompt tokens. Both runs exited `0`, 12/12 requests completed, preemptions
+  were `0`, and driver signal count was `0`. EP-off was only slightly better:
+  max TTFT `130.782s` versus EP-on `133.344s`, ITL p99 `0.1716s` versus
+  `0.1792s`, waiting max `1` versus `2`. Treat EP-off as a GB10 performance
+  candidate with mandatory driver-health and correctness gates, not as a
+  default replacement for the conservative EP-on profile yet.
 
 Persistent TODO: the next production-class prefill improvement must reduce
 long-prefill sparse-MLA real work or memory pressure, especially in

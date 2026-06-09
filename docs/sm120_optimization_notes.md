@@ -10555,6 +10555,34 @@ GB10 EP-mode follow-up after a clean reboot:
   launch failure makes the gate fail. `GB10_LONG_C2_ALLOW_DRIVER_SIGNALS=1`
   is for diagnostics only.
 
-Conclusion: no-EP remains an RTX-only candidate until GB10 has a safe profile.
-On GB10, do not run no-EP as a default recommendation and do not continue to
-MTP=2 no-EP after a dirty driver-health signal without rebooting first.
+GB10 forum53 EP-mode A/B after adding driver-health hard checks:
+
+- **EP-off, MTP=2 forum53 candidate artifact:**
+  `artifacts/main/2x_gb10_sm121/20260610_forum53_mtp2_epoff_candidate_c2c4/20260610024217`.
+- **EP-on, MTP=2 forum53 control artifact:**
+  `artifacts/main/2x_gb10_sm121/20260610_forum53_mtp2_epon_candidate_c2c4/20260610025323`.
+- Protocol: same GB10 pair, same vLLM commit, `TP=2`, MTP=2, FP8 KV,
+  prefix cache enabled, `FULL_AND_PIECEWISE`, MP executor,
+  `gpu_memory_utilization=0.85`, `max_model_len=131072`,
+  `max_num_seqs=4`, `max_num_batched_tokens=4096`, two forum53 matrix cases:
+  C=2 and C=4, two rounds each, `~80K` prompt tokens.
+- Result: both runs exited `0`; both had `12/12` successful requests,
+  preemptions `0`, and current-boot driver signal count `0`.
+
+| Metric | EP-off | EP-on | Direction |
+| --- | ---: | ---: | --- |
+| Max TTFT | `130.782s` | `133.344s` | EP-off `1.9%` lower |
+| Max elapsed | `131.623s` | `134.433s` | EP-off `2.1%` lower |
+| ITL p99 | `0.1716s` | `0.1792s` | EP-off slightly better |
+| Running requests max / avg | `3.0` / `1.20` | `3.0` / `1.20` | tie |
+| Waiting requests max / avg | `1.0` / `0.22` | `2.0` / `0.25` | EP-off slightly better |
+| Prefix-cache hit delta | `3,674,112` | `3,115,008` | EP-off higher in this run |
+| GPU util avg / max | `89.59%` / `96%` | `92.07%` / `96%` | EP-on slightly higher |
+| Driver-health signals | `0` | `0` | tie |
+
+Interpretation: GB10 no-EP is no longer categorically rejected, but the evidence
+is mixed. The earlier no-MTP EP-off smoke completed while still recording a
+driver OOM signal; this MTP=2 forum53 candidate completed cleanly and is
+slightly faster than EP-on for this prefix-cache-heavy C=2/C=4 shape. Treat
+EP-off as a GB10 performance candidate that requires driver-health checks, KV
+lifecycle checks, and correctness gates before becoming a recommendation.

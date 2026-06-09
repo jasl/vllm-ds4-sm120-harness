@@ -778,6 +778,9 @@ Default safe shape:
 - `max_num_seqs=4`.
 - `gpu_memory_utilization=0.80`.
 - `FULL_AND_PIECEWISE` CUDA graph mode.
+- `GB10_FORUM53_ENABLE_EXPERT_PARALLEL=1` by default. Set it to `0` only for
+  explicit EP-off performance-candidate runs that also inspect post-run driver
+  health.
 - no-MTP first; set `GB10_FORUM53_OPTIONAL_MTP2=1` to append the MTP=2
   stability comparison.
 - `max_num_batched_tokens=4096`.
@@ -819,8 +822,24 @@ The summary files are
 `gb10_forum53_multi_user_gate_summary.json` and
 `gb10_forum53_multi_user_gate_summary.md`. Inspect `running_requests_max`,
 `waiting_requests_max`, `gpu_kv_cache_usage_percent_max`, TTFT, ITL p99,
-prefix-cache hits, and preemptions before deciding whether a regression is in
-scheduler admission, KV capacity, prefix-cache retention, or MTP stability.
+prefix-cache hits, preemptions, `expert_parallel_enabled`, and driver-health
+signal count before deciding whether a regression is in scheduler admission, KV
+capacity, prefix-cache retention, EP routing, or MTP stability. The wrapper
+fails by default when current-boot NVRM/UVM/Xid/GPU-lost/fatal kernel signals
+are present after the run; use `GB10_FORUM53_ALLOW_DRIVER_SIGNALS=1` only for
+diagnostic replay where preserving partial artifacts matters more than a clean
+pass/fail result.
+
+EP-off performance candidate:
+
+Recent user-reported short-context numbers and local replay showed that a
+Ray/no-explicit-EP profile can beat the GB10 MP+EP profile for short C=1/C=2/C=4
+throughput. Test it through the same gate with
+`GB10_FORUM53_ENABLE_EXPERT_PARALLEL=0`, `GB10_FORUM53_VARIANTS=mtp2`,
+`GB10_FORUM53_GPU_MEMORY_UTILIZATION=0.85`, and the target C=2/C=4 case specs.
+Do not promote EP-off as the default GB10 long-context profile until the same
+run has zero driver-health signals and acceptable KV lifecycle / prefix-cache
+behavior. Keep EP-on as the conservative fallback profile.
 
 For the newer real-user agent shape, keep this as a development observation
 gate rather than a normal PR hard gate: raise `GB10_FORUM53_MAX_MODEL_LEN` to

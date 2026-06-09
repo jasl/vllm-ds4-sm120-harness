@@ -68,6 +68,26 @@ fetch_remote_file() {
   fi
 }
 
+capture_remote_driver_health() {
+  local host="$1"
+  local label="$2"
+  local out_dir="$3"
+  local host_dir="${out_dir}/${label}"
+  local signal_pattern
+  signal_pattern='NVRM:.*(Out of memory|NV_ERR_NO_MEMORY)|Xid|UVM|lost from the bus|fallen off|GPU lost|unspecified launch failure|illegal memory access|device-side assert|global fatal'
+
+  mkdir -p "${host_dir}"
+  run_remote "${host}" \
+    "date -Ins; hostname; uname -a; uptime" \
+    > "${host_dir}/system.txt" 2>&1 || true
+  run_remote "${host}" \
+    "nvidia-smi; nvidia-smi pmon -c 1 || true" \
+    > "${host_dir}/nvidia_smi.txt" 2>&1 || true
+  run_remote "${host}" \
+    "journalctl -b -k --no-pager | grep -Ei $(shell_quote "${signal_pattern}") | tail -n 200 || true" \
+    > "${host_dir}/kernel_gpu_signals.log" 2>&1 || true
+}
+
 run_remote_streaming_matrix() {
   local remote_out_dir="$1"
   local variant="$2"
@@ -159,9 +179,25 @@ GB10_FORUM53_MAX_ELAPSED_SECONDS="${GB10_FORUM53_MAX_ELAPSED_SECONDS:-1800}"
 GB10_FORUM53_FAIL_ON_SLOW="${GB10_FORUM53_FAIL_ON_SLOW:-0}"
 GB10_FORUM53_TEMPERATURE="${GB10_FORUM53_TEMPERATURE:-0}"
 GB10_FORUM53_SERVER_STARTUP_TIMEOUT="${GB10_FORUM53_SERVER_STARTUP_TIMEOUT:-45}"
+GB10_FORUM53_ENABLE_EXPERT_PARALLEL="${GB10_FORUM53_ENABLE_EXPERT_PARALLEL:-1}"
+GB10_FORUM53_ALLOW_DRIVER_SIGNALS="${GB10_FORUM53_ALLOW_DRIVER_SIGNALS:-0}"
 GB10_FORUM53_SAFE_TOTAL_KV_TOKENS="${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS:-2048898}"
 GB10_FORUM53_CONTEXT_SAFETY_PERCENT="${GB10_FORUM53_CONTEXT_SAFETY_PERCENT:-70}"
 GB10_FORUM53_SKIP_CONTEXT_GUARD="${GB10_FORUM53_SKIP_CONTEXT_GUARD:-0}"
+
+case "${GB10_FORUM53_ENABLE_EXPERT_PARALLEL}" in
+  1|true)
+    gb10_forum53_enable_expert_parallel=1
+    ;;
+  0|false)
+    gb10_forum53_enable_expert_parallel=0
+    ;;
+  *)
+    printf 'GB10_FORUM53_ENABLE_EXPERT_PARALLEL must be 0/1 or true/false; got %s\n' \
+      "${GB10_FORUM53_ENABLE_EXPERT_PARALLEL}" >&2
+    exit 2
+    ;;
+esac
 
 MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash}"
 API_PORT="${API_PORT:-8000}"
@@ -303,7 +339,7 @@ for variant in "${variants[@]}"; do
       API_PORT="${API_PORT}" \
       RUN_DIR="${remote_serve_dir}" \
       PREWARM_AFTER_HEALTH=0 \
-      SERVE_ENABLE_EXPERT_PARALLEL=1 \
+      SERVE_ENABLE_EXPERT_PARALLEL="${gb10_forum53_enable_expert_parallel}" \
       SERVE_PREFIX_CACHE_MODE=enabled \
       SERVE_SPECULATIVE_CONFIG="${speculative_config}" \
       SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG}" \
@@ -357,8 +393,68 @@ for variant in "${variants[@]}"; do
   done
 done
 
+driver_health_dir="${OUT_DIR}/driver_health"
+capture_remote_driver_health "${HEAD_HOST}" head "${driver_health_dir}"
+capture_remote_driver_health "${WORKER_HOST}" worker "${driver_health_dir}"
+
+driver_health_signal_count=0
+for signal_file in \
+    "${driver_health_dir}/head/kernel_gpu_signals.log" \
+    "${driver_health_dir}/worker/kernel_gpu_signals.log"; do
+  if [[ -s "${signal_file}" ]]; then
+    file_count="$(wc -l < "${signal_file}" | tr -d '[:space:]')"
+    driver_health_signal_count="$((driver_health_signal_count + file_count))"
+  fi
+done
+
+if [[ "${driver_health_signal_count}" == "0" \
+    || "${GB10_FORUM53_ALLOW_DRIVER_SIGNALS}" == "1" ]]; then
+  driver_health_ok=1
+else
+  driver_health_ok=0
+  failures=1
+fi
+
+DRIVER_HEALTH_ROOT="${driver_health_dir}" \
+DRIVER_HEALTH_OK="${driver_health_ok}" \
+DRIVER_HEALTH_SIGNAL_COUNT="${driver_health_signal_count}" \
+DRIVER_HEALTH_ALLOW="${GB10_FORUM53_ALLOW_DRIVER_SIGNALS}" \
+LOCAL_PYTHON="${LOCAL_PYTHON:-python3}" \
+"${LOCAL_PYTHON:-python3}" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+
+root = Path(os.environ["DRIVER_HEALTH_ROOT"])
+hosts = {}
+for label in ("head", "worker"):
+    signal_path = root / label / "kernel_gpu_signals.log"
+    text = ""
+    if signal_path.exists():
+        text = signal_path.read_text(encoding="utf-8", errors="replace")
+    lines = [line for line in text.splitlines() if line.strip()]
+    hosts[label] = {
+        "signal_count": len(lines),
+        "signals_path": str(signal_path),
+        "has_signals": bool(lines),
+    }
+
+payload = {
+    "ok": os.environ["DRIVER_HEALTH_OK"] == "1",
+    "allow_driver_signals": os.environ["DRIVER_HEALTH_ALLOW"] == "1",
+    "signal_count": int(os.environ["DRIVER_HEALTH_SIGNAL_COUNT"]),
+    "hosts": hosts,
+}
+(root.parent / "driver_health_summary.json").write_text(
+    json.dumps(payload, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+
 SUMMARY_ROOT="${OUT_DIR}" \
 SUMMARY_PROFILE="${GB10_FORUM53_PROFILE}" \
+SUMMARY_EXPERT_PARALLEL_ENABLED="${gb10_forum53_enable_expert_parallel}" \
 SUMMARY_MAX_MODEL_LEN="${MAX_MODEL_LEN}" \
 SUMMARY_MAX_NUM_SEQS="${MAX_NUM_SEQS}" \
 SUMMARY_SAFE_TOTAL_KV_TOKENS="${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS}" \
@@ -386,8 +482,14 @@ def read_json(path: Path) -> dict:
 
 
 root = Path(os.environ["SUMMARY_ROOT"])
+driver_health = {}
+driver_health_path = root / "driver_health_summary.json"
+if driver_health_path.exists():
+    driver_health = json.loads(driver_health_path.read_text(encoding="utf-8"))
 rows = []
 for variant_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+    if variant_dir.name == "driver_health":
+        continue
     variant = read_text(variant_dir / "variant.txt") or variant_dir.name
     max_batched_tokens = read_text(variant_dir / "max_num_batched_tokens.txt")
     matrix = read_json(variant_dir / "streaming_pressure_matrix.json")
@@ -431,7 +533,9 @@ payload = {
         and row.get("streaming_pressure_exit_code") == "0"
         and row.get("ok") is not False
         for row in rows
-    ),
+    ) and driver_health.get("ok", True),
+    "expert_parallel_enabled": os.environ["SUMMARY_EXPERT_PARALLEL_ENABLED"],
+    "driver_health": driver_health,
     "profile": {
         "name": os.environ["SUMMARY_PROFILE"],
         "max_model_len": int(os.environ["SUMMARY_MAX_MODEL_LEN"]),
@@ -462,6 +566,9 @@ lines = [
     "# GB10 Forum #53 Multi-User Prefix-Cache Gate",
     "",
     f"- OK: `{payload['ok']}`",
+    f"- Expert parallel enabled: `{payload['expert_parallel_enabled']}`",
+    f"- Driver health OK: `{payload['driver_health'].get('ok', True)}`",
+    f"- Driver signal count: `{payload['driver_health'].get('signal_count', 0)}`",
     "- Profile `{}`: `TP=2`, `max_model_len={}`, `max_num_seqs={}`, prefix cache `{}`.".format(
         payload["profile"]["name"],
         payload["profile"]["max_model_len"],
@@ -501,6 +608,13 @@ for row in rows:
             remote=row.get("remote_variant_root", ""),
         )
     )
+if not payload["driver_health"].get("ok", True):
+    lines.extend(["", "## Driver Health", ""])
+    for label, host in payload["driver_health"].get("hosts", {}).items():
+        lines.append(
+            f"- `{label}`: {host.get('signal_count', 0)} signal(s), "
+            f"`{host.get('signals_path', '')}`"
+        )
 (root / "gb10_forum53_multi_user_gate_summary.md").write_text(
     "\n".join(lines) + "\n",
     encoding="utf-8",
