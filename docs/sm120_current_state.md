@@ -5,7 +5,7 @@ working entrypoint for DeepSeek V4 SM12x optimization status, current gates, and
 next-step decisions. Treat `docs/sm120_optimization_notes.md` as the append-only
 evidence archive.
 
-Last updated: 2026-06-08.
+Last updated: 2026-06-10.
 
 ## Read Order
 
@@ -25,6 +25,11 @@ Last updated: 2026-06-08.
   scheduling, workspace warmup, prefix/KV lifecycle, and correctness fixes that
   already passed promotion gates. This is the current defensible customer
   baseline for dual RTX PRO 6000 / SM120 and the reduced GB10 / SM121 envelope.
+- GB10 recommended serve shape: use the MP executor with expert parallel
+  disabled by default, FlashInfer autotune left on the current vLLM default,
+  FP8 KV, MTP=2 when exercising the production path, and
+  `FULL_AND_PIECEWISE`. Keep EP as an environment-controlled fallback A/B
+  dimension only.
 - Active next task: `docs/sm12x_triton_sparse_mla_rewrite_plan.md`. The next
   production-class prefill effort should extract the dataflow lesson from the
   unmerged packed FlashInfer SM120 backend and implement a fork-independent

@@ -291,6 +291,20 @@ if [[ "${GB10_MTP2_MOE_SPEC_METHOD}" == *[!A-Za-z0-9_:-]* ]]; then
     "${GB10_MTP2_MOE_SPEC_METHOD}" >&2
   exit 2
 fi
+GB10_MTP2_MOE_ENABLE_EXPERT_PARALLEL="${GB10_MTP2_MOE_ENABLE_EXPERT_PARALLEL:-0}"
+case "${GB10_MTP2_MOE_ENABLE_EXPERT_PARALLEL}" in
+  1|true|TRUE|yes|YES)
+    gb10_mtp2_moe_enable_expert_parallel=1
+    ;;
+  0|false|FALSE|no|NO)
+    gb10_mtp2_moe_enable_expert_parallel=0
+    ;;
+  *)
+    printf 'GB10_MTP2_MOE_ENABLE_EXPERT_PARALLEL must be 0/1 or true/false; got %s\n' \
+      "${GB10_MTP2_MOE_ENABLE_EXPERT_PARALLEL}" >&2
+    exit 2
+    ;;
+esac
 MTP2_SPECULATIVE_CONFIG="{\"method\":\"${GB10_MTP2_MOE_SPEC_METHOD}\",\"num_speculative_tokens\":2}"
 SCHEDULER_TRACE_PATH="${REMOTE_RUN_ROOT}/serve/scheduler_trace.jsonl"
 VLLM_SCHEDULER_TRACE_PATH="${SCHEDULER_TRACE_PATH}"
@@ -337,7 +351,7 @@ env \
   API_PORT="${API_PORT}" \
   RUN_DIR="${remote_serve_dir}" \
   PREWARM_AFTER_HEALTH=0 \
-  SERVE_ENABLE_EXPERT_PARALLEL=1 \
+  SERVE_ENABLE_EXPERT_PARALLEL="${gb10_mtp2_moe_enable_expert_parallel}" \
   SERVE_PREFIX_CACHE_MODE=enabled \
   SERVE_SPECULATIVE_CONFIG="${MTP2_SPECULATIVE_CONFIG}" \
   SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG}" \
@@ -459,6 +473,7 @@ SUMMARY_MAX_NUM_SEQS="${MAX_NUM_SEQS}" \
 SUMMARY_MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS}" \
 SUMMARY_GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION}" \
 SUMMARY_MTP_METHOD="${GB10_MTP2_MOE_SPEC_METHOD}" \
+SUMMARY_ENABLE_EXPERT_PARALLEL="${gb10_mtp2_moe_enable_expert_parallel}" \
 SUMMARY_CONCURRENCY="${GB10_MTP2_MOE_CONCURRENCY}" \
 SUMMARY_ROUND_COUNT="${GB10_MTP2_MOE_ROUND_COUNT}" \
 SUMMARY_LINE_COUNT="${GB10_MTP2_MOE_LINE_COUNT}" \
@@ -499,7 +514,7 @@ payload = {
         "hardware": "2x GB10 / SM121",
         "tp": 2,
         "pp": 1,
-        "expert_parallel": True,
+        "expert_parallel": os.environ["SUMMARY_ENABLE_EXPERT_PARALLEL"] == "1",
         "prefix_cache": "enabled",
         "mtp": {
             "method": os.environ["SUMMARY_MTP_METHOD"],
@@ -567,7 +582,7 @@ lines = [
     "",
     "## Profile",
     "",
-    "- `TP=2`, `PP=1`, expert parallel enabled.",
+    f"- `TP=2`, `PP=1`, expert parallel enabled: `{payload['profile']['expert_parallel']}`.",
     "- Prefix cache enabled, FP8 KV, MTP=2.",
     "- `max_model_len={}`, `max_num_seqs={}`, `max_num_batched_tokens={}`.".format(
         payload["profile"]["max_model_len"],

@@ -55,7 +55,6 @@ PREWARM_PROMPTS="${PREWARM_PROMPTS:-4}"
 PREWARM_C_HIGH="${PREWARM_C_HIGH:-${MAX_NUM_SEQS:-4}}"
 PREWARM_TIMEOUT="${PREWARM_TIMEOUT:-600}"
 SERVE_ENABLE_EXPERT_PARALLEL="${SERVE_ENABLE_EXPERT_PARALLEL:-0}"
-SERVE_DISABLE_FLASHINFER_AUTOTUNE="${SERVE_DISABLE_FLASHINFER_AUTOTUNE:-0}"
 SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG:-}"
 SERVE_SPECULATIVE_CONFIG="${SERVE_SPECULATIVE_CONFIG:-}"
 SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS="${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS:-}"
@@ -135,7 +134,6 @@ remote_env_prefix() {
   printf 'STARTUP_TIMEOUT=%s ' "$(shell_quote "${STARTUP_TIMEOUT}")"
   printf 'HEALTH_TIMEOUT=%s ' "$(shell_quote "${HEALTH_TIMEOUT}")"
   printf 'SERVE_ENABLE_EXPERT_PARALLEL=%s ' "$(shell_quote "${SERVE_ENABLE_EXPERT_PARALLEL}")"
-  printf 'SERVE_DISABLE_FLASHINFER_AUTOTUNE=%s ' "$(shell_quote "${SERVE_DISABLE_FLASHINFER_AUTOTUNE}")"
   printf 'SERVE_COMPILATION_CONFIG=%s ' "$(shell_quote "${SERVE_COMPILATION_CONFIG}")"
   printf 'SERVE_SPECULATIVE_CONFIG=%s ' "$(shell_quote "${SERVE_SPECULATIVE_CONFIG}")"
   printf 'SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS=%s ' "$(shell_quote "${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS}")"
@@ -290,9 +288,6 @@ serve_args=(
 if [[ "${SERVE_ENABLE_EXPERT_PARALLEL}" == "1" ]]; then
   serve_args+=(--enable-expert-parallel)
 fi
-if [[ "${SERVE_DISABLE_FLASHINFER_AUTOTUNE}" == "1" ]]; then
-  serve_args+=(--no-enable-flashinfer-autotune)
-fi
 case "${SERVE_PREFIX_CACHE_MODE}" in
   auto|"")
     ;;
@@ -396,9 +391,6 @@ serve_args=(
 )
 if [[ "${SERVE_ENABLE_EXPERT_PARALLEL}" == "1" ]]; then
   serve_args+=(--enable-expert-parallel)
-fi
-if [[ "${SERVE_DISABLE_FLASHINFER_AUTOTUNE}" == "1" ]]; then
-  serve_args+=(--no-enable-flashinfer-autotune)
 fi
 case "${SERVE_PREFIX_CACHE_MODE}" in
   auto|"")

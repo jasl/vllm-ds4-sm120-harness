@@ -183,7 +183,8 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   [issuecomment-4641514454](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4641514454):
   run `scripts/run_gb10_mtp2_moe_tp_deadlock_gate.sh` on the two-node GB10
   cluster with prefix cache enabled, FP8 KV, `max_model_len=200000`,
-  `max_num_seqs=8`, `max_num_batched_tokens=4096`, expert parallel enabled,
+  `max_num_seqs=8`, `max_num_batched_tokens=4096`, expert parallel disabled by
+  default,
   MTP=2, and `FULL_AND_PIECEWISE`. This gate is not satisfied by the existing
   no-MTP forum53 admission/fairness gate or by the prefix-cache MTP=1 proxy.
   Treat no-token-progress watchdog hits, py-spy rank divergence, NCCL/CUDA
@@ -426,8 +427,8 @@ reported four-card or 512K/1M shapes:
   preserve a reduced version of the reported profiles when validating GB10
   regressions. The useful shapes are short-context C=1/2/4 with `max_tokens=512`
   and a 120K-class C=1/C=2 long-context probe under TP=2, MTP=2, FP8 KV, block
-  size 256, FULL_AND_PIECEWISE CUDA graphs, EP enabled when comparing the
-  throughput report, and prefix-cache mode recorded explicitly. For Docker,
+  size 256, FULL_AND_PIECEWISE CUDA graphs, EP mode recorded explicitly, and
+  prefix-cache mode recorded explicitly. For Docker,
   record `gpu_memory_utilization`, `MemAvailable`, first-run versus cached-start
   status, torch version, and whether the build came from the fork branch
   directly rather than a patch-on-upstream helper. Treat these as user-feedback

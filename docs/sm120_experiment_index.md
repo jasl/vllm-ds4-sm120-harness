@@ -369,11 +369,10 @@ that thread, search `External unholy-fusion feedback refresh`.
   an official dependency path or a fork-independent Triton rewrite.
 - GB10 EP-mode safety recheck:
   open `docs/sm120_optimization_notes.md` and search
-  `GB10 EP-mode follow-up after a clean reboot`. Current conclusion: EP-on
-  MTP=2 reduced MP smoke passed with clean driver health, while no-EP no-MTP
-  completed the request but recorded `NV_ERR_NO_MEMORY`; no-EP is therefore
-  not a GB10 default recommendation. The long-C2 gate now records post-run
-  driver health and fails by default on GPU driver signals.
+  `GB10 backend/EP baseline smoke after forum53 follow-up`. Current conclusion:
+  MP with expert parallel disabled is the GB10 recommendation. Keep EP as an
+  environment-controlled fallback A/B dimension, and keep post-run driver
+  health as part of every GB10 pressure gate.
 
 ## Correctness
 

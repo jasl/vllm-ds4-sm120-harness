@@ -448,7 +448,9 @@ This wrapper starts the same no-Ray MP server through
 `scripts/dgx_spark_start_mp_serve.sh`, runs the `long_c2:2:2:4000:128`
 streaming-pressure matrix on the head node, stops the server, repeats for MTP=2,
 and writes a combined summary. It intentionally keeps prefix cache disabled,
-expert parallel enabled, and CUDA graph mode `FULL_AND_PIECEWISE`.
+expert parallel disabled by default, and CUDA graph mode `FULL_AND_PIECEWISE`.
+Use `GB10_LONG_C2_ENABLE_EXPERT_PARALLEL=1` only for explicit fallback A/B
+against older EP-on artifacts.
 
 Latest reduced-gate artifacts:
 
@@ -563,7 +565,7 @@ MAX_MODEL_LEN=1048576 \
 MAX_NUM_SEQS=1 \
 MAX_NUM_BATCHED_TOKENS=4096 \
 SERVE_PREFIX_CACHE_MODE=disabled \
-SERVE_ENABLE_EXPERT_PARALLEL=1 \
+SERVE_ENABLE_EXPERT_PARALLEL=0 \
 SERVE_COMPILATION_CONFIG='{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}' \
 scripts/dgx_spark_start_mp_serve.sh
 
@@ -772,15 +774,14 @@ for the report where a newer image improved single-user prefill but collapsed
 
 Default safe shape:
 
-- `TP=2`, `PP=1`, expert parallel enabled.
+- `TP=2`, `PP=1`, MP executor, expert parallel disabled.
 - Prefix cache enabled.
 - `max_model_len=196608`.
 - `max_num_seqs=4`.
 - `gpu_memory_utilization=0.80`.
 - `FULL_AND_PIECEWISE` CUDA graph mode.
-- `GB10_FORUM53_ENABLE_EXPERT_PARALLEL=1` by default. Set it to `0` only for
-  explicit EP-off performance-candidate runs that also inspect post-run driver
-  health.
+- `GB10_FORUM53_ENABLE_EXPERT_PARALLEL=0` by default. Set it to `1` only for
+  explicit EP-on fallback A/B against older artifacts.
 - no-MTP first; set `GB10_FORUM53_OPTIONAL_MTP2=1` to append the MTP=2
   stability comparison.
 - `max_num_batched_tokens=4096`.
@@ -830,16 +831,16 @@ are present after the run; use `GB10_FORUM53_ALLOW_DRIVER_SIGNALS=1` only for
 diagnostic replay where preserving partial artifacts matters more than a clean
 pass/fail result.
 
-EP-off performance candidate:
+GB10 EP recommendation:
 
-Recent user-reported short-context numbers and local replay showed that a
-Ray/no-explicit-EP profile can beat the GB10 MP+EP profile for short C=1/C=2/C=4
-throughput. Test it through the same gate with
-`GB10_FORUM53_ENABLE_EXPERT_PARALLEL=0`, `GB10_FORUM53_VARIANTS=mtp2`,
-`GB10_FORUM53_GPU_MEMORY_UTILIZATION=0.85`, and the target C=2/C=4 case specs.
-Do not promote EP-off as the default GB10 long-context profile until the same
-run has zero driver-health signals and acceptable KV lifecycle / prefix-cache
-behavior. Keep EP-on as the conservative fallback profile.
+The current recommended GB10 route is MP with expert parallel disabled. A clean
+same-protocol A/B with MTP=2, FP8 KV, prefix cache disabled, FlashInfer autotune
+enabled, and `FULL_AND_PIECEWISE` showed EP-off improving short C=1/C=2/C=4
+throughput by roughly 11-12% and random-prefill input throughput by roughly
+4-5%. The forum53 MTP=2 prefix-cache gate also passed with `12/12` requests,
+zero preemptions, zero driver signals, max TTFT `130.16s`, and ITL p99
+`0.101s`. Keep `GB10_FORUM53_ENABLE_EXPERT_PARALLEL=1` only for explicit
+fallback A/B when comparing to older EP-on baselines.
 
 For the newer real-user agent shape, keep this as a development observation
 gate rather than a normal PR hard gate: raise `GB10_FORUM53_MAX_MODEL_LEN` to
@@ -889,14 +890,14 @@ acceptance/workload-shape effect.
 
 Default bootstrap-safe smoke shape:
 
-- `TP=2`, `PP=1`, expert parallel enabled.
+- `TP=2`, `PP=1`, MP executor, expert parallel disabled.
 - Prefix cache disabled.
 - MTP disabled, FP8 KV.
 - `max_model_len=32768`.
 - `max_num_seqs=1`.
 - `max_num_batched_tokens=1024`.
 - `gpu_memory_utilization=0.70`.
-- FlashInfer autotune disabled.
+- FlashInfer autotune uses the current vLLM/FlashInfer default.
 - `FULL_AND_PIECEWISE` CUDA graph mode.
 - Sequential C=1 request series:
   `cycle3_temp1:cycle3:1.0:3`.
@@ -917,11 +918,11 @@ A later rebuilt-venv attempt with no MTP, prefix cache disabled,
 `gpu_memory_utilization=0.55` still stalled both nodes during startup. Previous
 boot logs showed synchronized NVIDIA kernel `NV_ERR_NO_MEMORY` near model-load
 startup, before health, `Model loading took`, or CUDA graph capture logs. A
-follow-up A/B with the same low-memory TP=2+EP production shape, FlashInfer
-autotune disabled, and DeepSeek V4 sparse-MLA startup warmup disabled still made
-both nodes stop completing SSH banner exchange. That rules out runtime request
-shape, prefix cache, MTP, sparse-MLA startup warmup, and FlashInfer autotune as
-the first trigger for this specific post-rebase crash.
+follow-up A/B with the then-current low-memory TP=2+EP shape and DeepSeek V4
+sparse-MLA startup warmup disabled still made both nodes stop completing SSH
+banner exchange. That rules out runtime request shape, prefix cache, MTP,
+sparse-MLA startup warmup, and FlashInfer autotune as the first trigger for this
+specific post-rebase crash.
 
 Root cause was the DeepSeek V4 quantization dispatch after the upstream MoE
 runner refactor: `RoutedExperts` requested the quant method, but the DeepSeek V4
@@ -935,10 +936,10 @@ Post-fix GB10 validation on 2026-06-09:
 - `gpu_memory_utilization=0.55` no longer triggered driver failure, but it failed
   normally with no available KV cache blocks. Do not use 0.55 as the default
   bootstrap profile.
-- `gpu_memory_utilization=0.70`, no MTP, prefix cache disabled, FlashInfer
-  autotune disabled, and sparse-MLA startup warmup disabled completed 3 C=1
-  requests: mean `21.29 tok/s`, min/max `18.759/23.477 tok/s`, no slow
-  requests, no Xid/NV_ERR/UVM/NCCL errors on the current boot.
+- `gpu_memory_utilization=0.70`, no MTP, prefix cache disabled, and
+  sparse-MLA startup warmup disabled completed 3 C=1 requests: mean
+  `21.29 tok/s`, min/max `18.759/23.477 tok/s`, no slow requests, no
+  Xid/NV_ERR/UVM/NCCL errors on the current boot.
 - The same profile with sparse-MLA startup warmup enabled completed 3 C=1
   requests: mean `24.734 tok/s`, min/max `24.338/24.968 tok/s`, no slow
   requests, no Xid/NV_ERR/UVM/NCCL errors. Warmup is not the crash trigger.
@@ -946,12 +947,10 @@ Post-fix GB10 validation on 2026-06-09:
   mean `30.502 tok/s`, min/max `26.855/35.518 tok/s`, mean acceptance ratio
   `0.667`, no slow requests, no Xid/NV_ERR/UVM/NCCL errors.
 
-This wrapper now defaults `GB10_DECODE_DISABLE_FLASHINFER_AUTOTUNE=1`; keep it
-disabled for the first post-crash smoke. The wrapper exposes
-`GB10_DECODE_ENABLE_EXPERT_PARALLEL` for explicit fallback A/B, but no-EP is not
-the first smoke for DeepSeek V4 on GB10 because it changes the local expert set
-from the production `E=128/N=2048` TP=2+EP shape to a larger TP=2 no-EP
-fallback.
+This wrapper now follows the GB10 recommendation: MP executor, expert parallel
+disabled by default, and FlashInfer autotune left on the current vLLM default.
+The wrapper exposes `GB10_DECODE_ENABLE_EXPERT_PARALLEL=1` only for explicit
+fallback A/B against older EP-on artifacts.
 
 If this bootstrap-safe no-MTP/prefix-off shape also stalls during `vllm serve`
 startup, stop lowering runtime parameters. First rebuild the vLLM editable
@@ -964,8 +963,7 @@ passes:
 
 ```bash
 GB10_DECODE_ENABLE_MTP=1 \
-GB10_DECODE_ENABLE_EXPERT_PARALLEL=1 \
-GB10_DECODE_DISABLE_FLASHINFER_AUTOTUNE=1 \
+GB10_DECODE_ENABLE_EXPERT_PARALLEL=0 \
 GB10_DECODE_PREFIX_CACHE_MODE=enabled \
 GB10_DECODE_MAX_MODEL_LEN=131072 \
 GB10_DECODE_MAX_NUM_SEQS=4 \
@@ -999,7 +997,7 @@ rank is still earlier in the MoE path.
 
 Default shape:
 
-- `TP=2`, `PP=1`, expert parallel enabled.
+- `TP=2`, `PP=1`, MP executor, expert parallel disabled.
 - Prefix cache enabled.
 - `MTP=2`, FP8 KV. The gate defaults the user-facing speculative method to
   `deepseek_mtp` to match the external report; current vLLM normalizes that

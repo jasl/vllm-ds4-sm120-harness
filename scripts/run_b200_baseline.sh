@@ -676,7 +676,6 @@ official_serve_args() {
     --tensor-parallel-size "${B200_TENSOR_PARALLEL_SIZE}"
     --host "${HOST}"
     --port "${PORT}"
-    --no-enable-flashinfer-autotune
     --reasoning-parser deepseek_v4
     --tokenizer-mode deepseek_v4
     --tool-call-parser deepseek_v4
