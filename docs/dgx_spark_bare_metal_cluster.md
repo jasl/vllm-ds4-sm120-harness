@@ -945,7 +945,7 @@ Default shape:
 - `max_model_len=200000`.
 - `max_num_seqs=8`.
 - `max_num_batched_tokens=4096`.
-- `gpu_memory_utilization=0.92`.
+- `gpu_memory_utilization=0.80`.
 - `FULL_AND_PIECEWISE` CUDA graph mode.
 - Streaming-pressure soak with `concurrency=8`, `round_count=16`,
   `line_count=1600`, and `max_tokens=128`.

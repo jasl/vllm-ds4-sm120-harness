@@ -248,7 +248,7 @@ def test_gb10_mtp2_moe_deadlock_gate_matches_user_report_shape():
     assert 'MAX_MODEL_LEN="${GB10_MTP2_MOE_MAX_MODEL_LEN:-200000}"' in script
     assert 'MAX_NUM_SEQS="${GB10_MTP2_MOE_MAX_NUM_SEQS:-8}"' in script
     assert 'MAX_NUM_BATCHED_TOKENS="${GB10_MTP2_MOE_MAX_NUM_BATCHED_TOKENS:-4096}"' in script
-    assert 'GPU_MEMORY_UTILIZATION="${GB10_MTP2_MOE_GPU_MEMORY_UTILIZATION:-0.92}"' in script
+    assert 'GPU_MEMORY_UTILIZATION="${GB10_MTP2_MOE_GPU_MEMORY_UTILIZATION:-0.80}"' in script
     assert 'GB10_MTP2_MOE_SPEC_METHOD="${GB10_MTP2_MOE_SPEC_METHOD:-deepseek_mtp}"' in script
     assert 'SERVE_PREFIX_CACHE_MODE=enabled' in script
     assert 'SERVE_ENABLE_EXPERT_PARALLEL=1' in script
