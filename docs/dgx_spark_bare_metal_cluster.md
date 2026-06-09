@@ -33,10 +33,12 @@ export MODEL_ID="deepseek-ai/DeepSeek-V4-Flash"
 
 The vLLM venv must contain the runtime packages that vLLM workers need,
 including `torch`, `ray`, and `ninja`. For the current routine GB10 Ray
-validation path, `ray[default]==2.48.0` in the vLLM venv has been sufficient.
-Install `ray[cgraph,default]` in the same venv only when validating Ray compiled
-graph or pipeline-parallel test paths. Avoid a standalone Ray venv unless the
-vLLM venv imports that same site-packages tree explicitly.
+validation path, `ray[default]` at `2.48.0` or newer in the vLLM venv has been
+sufficient. Install the latest compatible Ray package instead of pinning an
+older exact version unless replaying a historical artifact. Install
+`ray[cgraph,default]` in the same venv only when validating Ray compiled graph
+or pipeline-parallel test paths. Avoid a standalone Ray venv unless the vLLM
+venv imports that same site-packages tree explicitly.
 
 For dependency-route experiments, keep a clean local base venv on each host and
 copy it into route-specific venvs before installing optional stacks such as
@@ -46,11 +48,11 @@ routes. Record the derived venv path in an ignored local handoff note; do not
 put site-specific absolute paths in tracked docs.
 
 Before using a fresh GB10/DGX Spark environment for DeepSeek V4, upgrade NCCL to
-the latest NVIDIA build that matches the CUDA runtime. Do this as part of
-environment bootstrap, before debugging vLLM scheduler, CUDA graph, or sparse MLA
-behavior. On 2026-05-11 the current NVIDIA download page lists NCCL `2.30.4`
-for CUDA 13.2, with Ubuntu/Deb packages `2.30.4-1+cuda13.2`; recheck the NVIDIA
-NCCL download page for newer builds when creating the next environment.
+the latest NVIDIA build that matches the installed CUDA runtime. Do this as part
+of environment bootstrap, before debugging vLLM scheduler, CUDA graph, or sparse
+MLA behavior. Use NCCL `2.30.4` or newer; newer CUDA/Spark images may expose a newer
+CUDA package suffix, so do not pin old `cuda13.2` package names unless that is
+the active CUDA runtime on the node.
 
 Use the active CUDA toolkit symlink (`/usr/local/cuda`) in public GB10 profiles
 unless a site-specific note proves a versioned path exists on every node.
@@ -93,14 +95,25 @@ stale native extension artifacts mixed with new Python code can make startup
 fail in ways that look like driver hangs. Re-apply the NCCL override after the
 editable install if dependency resolution replaced it.
 
-For Ubuntu/Debian DGX Spark nodes using CUDA 13.2, install from the NVIDIA CUDA
-repository for the node architecture, then pin the matching NCCL package on both
-nodes:
+For Ubuntu/Debian DGX Spark nodes, install from the NVIDIA CUDA repository for
+the node architecture, then install the newest NCCL package that both matches the
+active CUDA runtime and is at least `2.30.4`. Check the available package suffix
+first and apply the same runtime package on both nodes:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y libnccl2=2.30.4-1+cuda13.2 libnccl-dev=2.30.4-1+cuda13.2
+apt-cache madison libnccl2 libnccl-dev
+apt-cache policy libnccl2 libnccl-dev
+sudo apt-get install -y libnccl2 libnccl-dev
+dpkg-query -W -f='${Package} ${Version}\n' libnccl2 libnccl-dev
 ```
+
+If the default candidate is older than `2.30.4` or points at the wrong CUDA
+suffix, fix the NVIDIA CUDA repository configuration before installing. Use
+package-version pins only for narrow historical reproduction or bisect work, not
+for normal GB10 bootstrap. The package suffix should follow the active runtime,
+for example `+cuda13.*` for a CUDA 13 image. Avoid downgrading a newer matching
+NCCL package just to reproduce an older note.
 
 If the environment uses NCCL4PY or other NCCL Python bindings, update those in
 the vLLM venv as well. NCCL 2.30.x release notes include NCCL4PY v0.2.0; keep
@@ -119,9 +132,11 @@ PYTHON=~/tmp/vllm/.venv/bin/python \
   scripts/install_flashinfer_jit_cache.sh
 ```
 
-For CUDA 13 this resolves a base version such as `0.6.12` to the CUDA-specific
-wheel version `0.6.12+cu130` from the FlashInfer wheel directory, then verifies
-the installed packages and runs `flashinfer show-config` when available.
+For CUDA 13 this resolves the installed FlashInfer base version to the matching
+CUDA-specific JIT-cache companion wheel from the FlashInfer wheel directory,
+then verifies the installed packages and runs `flashinfer show-config` when
+available. This exact companion-wheel match is an ABI alignment rule, not a
+global dependency pin.
 
 `b12x` is an optional SM120/SM121 kernel package for research builds. Do not add
 it to vLLM's hard requirements or the default public GB10 profile until the
@@ -131,7 +146,7 @@ different Torch, CUDA, CUTLASS DSL, or NCCL stack:
 
 ```bash
 cd ~/tmp/ds4-sm120-harness/vllm
-.venv/bin/python -m pip install --no-deps b12x==0.20.0
+.venv/bin/python -m pip install --no-deps b12x
 .venv/bin/python - <<'PY'
 import importlib.util
 
@@ -154,7 +169,7 @@ If the target venv was created without the `pip` module, install through `uv`
 while still pointing at the vLLM Python executable:
 
 ```bash
-uv pip install --python .venv/bin/python --no-deps b12x==0.20.0
+uv pip install --python .venv/bin/python --no-deps b12x
 ```
 
 This is analogous to the NCCL override above: document the exact package
@@ -173,11 +188,11 @@ Treat package routes such as `public_b12x_mla=True` as dependency availability
 only. For serving decisions, require the corresponding `runtime_*` route to be
 true or prove through serve logs that vLLM selected the intended backend.
 
-As of the 2026-06-08 optional-dependency recheck, public `b12x==0.20.0` exposes
-the DS4 compressed MLA, compressed indexer, sparse-indexer extend top-k, native
-FP4 MoE, FP8 block-linear, and PCIe all-reduce API surfaces that were missing
-from `0.15.2`. Import success is still not enough for promotion. The public
-`0.20.0` package has compiled and run the single-GPU compressed-MLA microbench
+As of the 2026-06-08 optional-dependency recheck, public b12x `0.20.0` and newer
+exposes the DS4 compressed MLA, compressed indexer, sparse-indexer extend top-k,
+native FP4 MoE, FP8 block-linear, and PCIe all-reduce API surfaces that were
+missing from `0.15.2`. Import success is still not enough for promotion. The
+public `0.20.0` package has compiled and run the single-GPU compressed-MLA microbench
 on both GB10 nodes, but treat b12x MLA as research-only until a real vLLM
 endpoint adapter selects that path and the end-to-end GB10 promotion matrix
 passes. The public b12x compressed-MLA high-level cache layout is page-packed:
@@ -816,6 +831,34 @@ lines to approach the target shared-context length. Compare round-2 TTFT,
 `running_requests_max`, `waiting_requests_max`, prefix-cache hit deltas, and KV
 usage against the cold round before deciding whether a scheduling change helps
 agent workloads.
+
+Optional forum53 high-pressure benchmark:
+
+Use `GB10_FORUM53_PROFILE=long_prefix_400k_c6c8` to run the larger
+forum-reported shape as an explicit observation benchmark. This profile sets
+`max_model_len=458752`, `max_num_seqs=8`, prefix cache enabled, and two
+streaming-pressure cases:
+
+- `forum53_c6_400k:6:2:16000:64:1800:7200`
+- `forum53_c8_400k:8:2:16000:64:1800:7200`
+
+The 16000-line prompt is a tokenizer-dependent 400K-class synthetic context;
+use the generated summary's `max_prompt_tokens` to report the actual size.
+This profile intentionally exceeds the default safe context guard for C=6/C=8,
+so it still exits before serving unless the operator also sets
+`GB10_FORUM53_SKIP_CONTEXT_GUARD=1`. Only run it after a clean reboot, with
+driver-health monitoring enabled, and with someone available to recover the
+cluster if the driver becomes unhealthy. Do not include this profile in normal
+PR hard gates.
+
+Example:
+
+```bash
+GB10_FORUM53_PROFILE=long_prefix_400k_c6c8 \
+GB10_FORUM53_SKIP_CONTEXT_GUARD=1 \
+GB10_FORUM53_OPTIONAL_MTP2=1 \
+scripts/run_gb10_forum53_multi_user_gate.sh
+```
 
 ## GB10 C=1 MTP Decode Throughput Probe
 

@@ -196,7 +196,7 @@ worsening p99 ITL. It also cut 131K KV-cache concurrency from roughly
 Reddit-scale prefill gap.
 
 The latest public b12x recheck changes the dependency picture but not the
-endpoint decision yet. `b12x==0.20.0` now exposes DS4 compressed-MLA, compressed
+endpoint decision yet. b12x `0.20.0` or newer now exposes DS4 compressed-MLA, compressed
 indexer, sparse-indexer extend top-k, native FP4 MoE, FP8 block-linear, fused
 WO projection, mHC residual, and PCIe all-reduce APIs, and the compressed-MLA
 microbench compiles on RTX PRO 6000 SM120 and both GB10 nodes.
@@ -212,7 +212,7 @@ a runtime-importable DS4 compressed-MLA adapter in its installed vLLM package.
 Public b12x mHC was slower than the current TileLang fused path in standalone
 GB10 microbenching, and public b12x WO projection plus public b12x FP8
 block-linear are both blocked on the missing Cutlass DSL MXFP8 MMA symbol.
-The direct `b12x==0.20.0` `block_fp8_linear_mxfp8` smoke on the current
+The direct b12x `0.20.0+` `block_fp8_linear_mxfp8` smoke on the current
 vLLM/Torch stack still fails at compile time because public
 `nvidia-cutlass-dsl==4.5.2` has no `cutlass.cute.nvgpu.warp.MmaMXF8Op`.
 FlashInfer `#3489` adds MXFP8 GEMM plumbing, but the installed `0.6.12` SM121
@@ -298,7 +298,7 @@ production code is added:
   avoidance, native B12X MoE, plus the inherited PR 43477 scratch fixes. The
   public Aiden image currently exposes the older unholy-style B12X switches;
   it does not recognize the Aiden repository's newer
-  `VLLM_USE_B12X_DEEPSEEK_V4*` switches. The public-b12x `0.20.0` mHC route
+  `VLLM_USE_B12X_DEEPSEEK_V4*` switches. The public-b12x `0.20.0+` mHC route
   has now been rechecked with a standalone GB10 microbench and is rejected for
   current Dev: `b12x_mhc_post_pre` is slower than the existing TileLang fused
   MHC path with and without fused norm. The public-b12x `0.20.0` WO projection
@@ -360,7 +360,7 @@ production code is added:
   `flashinfer_python-0.6.12` plus `flashinfer_cubin-0.6.11.post3` combination
   that exposes `flashinfer.sparse_mla_sm120.BatchSparseMLAPagedAttentionWrapper`.
   Installing only the cubin wheel into the normal official
-  `flashinfer-python==0.6.12` venv does not expose the wrapper. Installing both
+  FlashInfer `0.6.12` venv does not expose the wrapper. Installing both
   image wheels into an isolated GB10 venv does expose it, with the same
   `run(q, kv_cache, indices, output, sm_scale, ..., extra_kv_cache=...)`
   signature observed inside the Aiden image. Small GB10 component smokes passed
@@ -376,8 +376,8 @@ production code is added:
 - Use `scripts/run_b12x_stack_probe.sh` before any new B12X endpoint
   experiment to classify the target venv/image as public b12x,
   Aiden/unholy bundled b12x, FlashInfer-b12x NVFP4, or missing. Public
-  `b12x==0.15.2` historically exposed only the generic MLA front door, but
-  public `b12x==0.20.0` now exposes the DS4-relevant compressed MLA scratch,
+  b12x `0.15.2` historically exposed only the generic MLA front door, but
+  public b12x `0.20.0+` now exposes the DS4-relevant compressed MLA scratch,
   compressed indexer, sparse-indexer extend top-k, native FP4 MoE preparation,
   FP8 block-linear, fused WO projection, mHC residual, and PCIe all-reduce APIs
   in RTX PRO 6000 and GB10
@@ -426,7 +426,7 @@ production code is added:
   because that backend is wired through the NVFP4 oracle, while DS4 Flash uses
   MXFP4 experts. The Aiden/unholy route therefore depends on a native MXFP4
   B12X integration that is not the same as the current upstream
-  `flashinfer_b12x` NVFP4 path. Public `b12x==0.20.0` now exposes
+  `flashinfer_b12x` NVFP4 path. Public b12x `0.20.0+` now exposes
   `prepare_b12x_fp4_moe_weights`, so the dependency/API blocker has moved from
   "not public" to "not integrated or endpoint-validated in current Dev". Treat
   this as an explicit vLLM backend integration task, not a serving-flag issue.
@@ -466,7 +466,7 @@ code. The current order is:
    designs over preserving local compatibility shims.
 3. Recheck official FlashInfer / TRTLLM sparse-MLA and public b12x routes after
    dependency updates. FlashInfer `#3395` is still unmerged, but public
-   `b12x==0.20.0` now exposes the previously missing DS4 helper APIs. Start
+   b12x `0.20.0+` now exposes the previously missing DS4 helper APIs. Start
    with direct import/API smokes. Direct public compressed-MLA and
    compressed-indexer routes are currently below the endpoint promotion bar, so
    only revisit them after a dependency/runtime update or a broader dataflow
@@ -585,6 +585,13 @@ running/waiting request counts, and KV usage. For real C=4+ long-agent
 sessions, run the same wrapper as a development observation with a larger
 `max_model_len` and a C=4 two-round case before claiming improvement; do not
 fold that expensive shape into every PR hard gate yet.
+
+For the full forum #53 pressure shape, use the optional profile
+`GB10_FORUM53_PROFILE=long_prefix_400k_c6c8`. It configures C=6 and C=8
+two-round synthetic 400K-class prefix-cache cases and intentionally remains
+outside the normal gate. Because it exceeds the safe context guard for
+`max_num_seqs=8`, it still requires an explicit
+`GB10_FORUM53_SKIP_CONTEXT_GUARD=1` operator override after a clean reboot.
 
 Scheduler root-cause note: the current long-prefill safety guards were added to
 avoid GB10 no-token-progress and decode starvation, but total prompt length is

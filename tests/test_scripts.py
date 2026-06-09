@@ -1431,7 +1431,13 @@ def test_dgx_spark_mp_serve_helper_records_384k_no_ray_startup_lessons():
     assert "safetensors" in docs
     assert "MXFP4" in docs
     assert "upgrade NCCL to" in docs
-    assert "2.30.4-1+cuda13.2" in docs
+    assert "2.30.4` or newer" in docs
+    assert "apt-cache madison libnccl2 libnccl-dev" in docs
+    assert "apt-cache policy libnccl2 libnccl-dev" in docs
+    assert "dpkg-query -W" in docs
+    assert "package-version pins only for narrow historical reproduction" in docs
+    assert "+cuda13.*" in docs
+    assert "2.30.4-1+cuda13.2" not in docs
     assert "NCCL4PY v0.2.0" in docs
     assert "No available shared memory broadcast block found in 60 seconds" in docs
     assert "sample_tokens" in docs
@@ -1527,6 +1533,13 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
         assert required in script
 
     assert 'GB10_FORUM53_VARIANTS="${GB10_FORUM53_VARIANTS:-nomtp}"' in script
+    assert 'GB10_FORUM53_PROFILE="${GB10_FORUM53_PROFILE:-safe_default}"' in script
+    assert "long_prefix_400k_c6c8" in script
+    assert 'GB10_FORUM53_LABEL="${GB10_FORUM53_LABEL:-gb10_forum53_long_prefix_400k_pressure}"' in script
+    assert 'GB10_FORUM53_MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-458752}"' in script
+    assert 'GB10_FORUM53_MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-8}"' in script
+    assert "forum53_c6_400k:6:2:16000:64:1800:7200" in script
+    assert "forum53_c8_400k:8:2:16000:64:1800:7200" in script
     assert 'GB10_FORUM53_OPTIONAL_MTP2="${GB10_FORUM53_OPTIONAL_MTP2:-0}"' in script
     assert 'MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-196608}"' in script
     assert 'MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-4}"' in script
@@ -1562,6 +1575,7 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
     assert "scheduler_trace_summary.json" in script
     assert '"${SCRIPT_DIR}/analyze_scheduler_trace.py"' in script
     assert "SUMMARY_MAX_MODEL_LEN" in script
+    assert "SUMMARY_PROFILE" in script
     assert "SUMMARY_SAFE_CONTEXT_LIMIT" in script
     assert "SUMMARY_CASE_SPECS" in script
     assert "running_requests_max" in script
@@ -1574,6 +1588,8 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
 
     assert "scripts/run_gb10_forum53_multi_user_gate.sh" in docs
     assert "forum53 multi-user prefix-cache gate" in docs
+    assert "GB10_FORUM53_PROFILE=long_prefix_400k_c6c8" in docs
+    assert "GB10_FORUM53_SKIP_CONTEXT_GUARD=1" in docs
     assert "GB10 forum53 safe context limits" in docs
 
 
@@ -1618,6 +1634,51 @@ def test_gb10_forum53_context_guard_rejects_unsafe_profile(tmp_path):
         "4,358557",
         "6,239038",
         "8,179278",
+    ]
+
+
+def test_gb10_forum53_high_pressure_profile_requires_guard_override(tmp_path):
+    script = ROOT / "scripts" / "run_gb10_forum53_multi_user_gate.sh"
+    out_dir = tmp_path / "forum53_high_pressure"
+    env = {
+        **os.environ,
+        "HEAD_HOST": "head.invalid",
+        "WORKER_HOST": "worker.invalid",
+        "HEAD_ROCE_IP": "192.0.2.10",
+        "WORKER_ROCE_IP": "192.0.2.11",
+        "ROCE_IFACE": "eth-test",
+        "NCCL_IB_HCA": "hca-test",
+        "VLLM_ROOT": str(tmp_path / "vllm"),
+        "VLLM_VENV": str(tmp_path / ".venv"),
+        "OUT_DIR": str(out_dir),
+        "GB10_FORUM53_PROFILE": "long_prefix_400k_c6c8",
+        "GB10_FORUM53_SAFE_TOTAL_KV_TOKENS": "2048898",
+        "GB10_FORUM53_CONTEXT_SAFETY_PERCENT": "70",
+    }
+
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "unsafe GB10 forum53 profile" in result.stderr
+    assert "max_model_len=458752 exceeds safe limit 179278" in result.stderr
+    assert (out_dir / "profile.txt").read_text(encoding="utf-8").strip() == (
+        "long_prefix_400k_c6c8"
+    )
+    assert (out_dir / "forum53_context_safety.txt").read_text(
+        encoding="utf-8"
+    ).splitlines() == [
+        "safe_total_kv_tokens=2048898",
+        "context_safety_percent=70",
+        "configured_max_num_seqs=8",
+        "configured_max_model_len=458752",
+        "safe_context_limit=179278",
     ]
 
 

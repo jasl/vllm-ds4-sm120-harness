@@ -333,10 +333,10 @@ artifact to debug.
    path is bounded by the sparse-MLA backend contract, not by another simple
    chunk-size sweep.
 
-   The optional `b12x==0.15.2` GB10 install is also not enough by itself.
-   Current public FlashInfer `0.6.12` plus `flashinfer-jit-cache==0.6.12+cu130`
-   imports on SM121 and `flashinfer show-config` succeeds, but the package still
-   lacks `flashinfer.sparse_mla_sm120`,
+   The older optional b12x `0.15.2` GB10 install was also not enough by itself.
+   Public FlashInfer `0.6.12` plus its matching CUDA 13 JIT-cache companion
+   wheel imports on SM121 and `flashinfer show-config` succeeds, but the package
+   still lacks `flashinfer.sparse_mla_sm120`,
    `BatchSparseMLAPagedAttentionWrapper`, and
    `sparse_mla_sm120_decode_dsv4_autotune`; released b12x imports
    `b12x.integration.mla` but not the fork's older

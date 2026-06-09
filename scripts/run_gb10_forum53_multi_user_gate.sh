@@ -114,6 +114,28 @@ BRANCH_SLUG="$(printf '%s' "${BRANCH_NAME}" | sed -E 's#[/[:space:]]+#_#g; s#[^A
 RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d%H%M%S)}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${REPO_ROOT}/artifacts}"
 GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-2x_gb10_sm121}"
+GB10_FORUM53_PROFILE="${GB10_FORUM53_PROFILE:-safe_default}"
+case "${GB10_FORUM53_PROFILE}" in
+  safe_default|default)
+    ;;
+  long_prefix_400k_c6c8)
+    GB10_FORUM53_LABEL="${GB10_FORUM53_LABEL:-gb10_forum53_long_prefix_400k_pressure}"
+    GB10_FORUM53_CASE_NAME="${GB10_FORUM53_CASE_NAME:-forum53_long_prefix_400k_pressure}"
+    GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c6_400k:6:2:16000:64:1800:7200,forum53_c8_400k:8:2:16000:64:1800:7200}"
+    GB10_FORUM53_TIMEOUT="${GB10_FORUM53_TIMEOUT:-7200}"
+    GB10_FORUM53_MAX_TTFT_SECONDS="${GB10_FORUM53_MAX_TTFT_SECONDS:-1800}"
+    GB10_FORUM53_MAX_ELAPSED_SECONDS="${GB10_FORUM53_MAX_ELAPSED_SECONDS:-7200}"
+    GB10_FORUM53_SERVER_STARTUP_TIMEOUT="${GB10_FORUM53_SERVER_STARTUP_TIMEOUT:-180}"
+    GB10_FORUM53_MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-458752}"
+    GB10_FORUM53_MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-8}"
+    GB10_FORUM53_MIN_AVAILABLE_MEM_GIB="${GB10_FORUM53_MIN_AVAILABLE_MEM_GIB:-112}"
+    ;;
+  *)
+    printf 'unsupported GB10_FORUM53_PROFILE: %s\n' "${GB10_FORUM53_PROFILE}" >&2
+    printf 'supported profiles: safe_default, long_prefix_400k_c6c8\n' >&2
+    exit 2
+    ;;
+esac
 GB10_FORUM53_LABEL="${GB10_FORUM53_LABEL:-gb10_forum53_multi_user_gate}"
 OUT_DIR="${OUT_DIR:-${ARTIFACT_ROOT}/${BRANCH_SLUG}/${GPU_TOPOLOGY_SLUG}/${GB10_FORUM53_LABEL}/${RUN_TIMESTAMP}}"
 
@@ -155,6 +177,7 @@ SERVE_COMPILATION_CONFIG="${GB10_FORUM53_COMPILATION_CONFIG:-{\"cudagraph_mode\"
 
 mkdir -p "${OUT_DIR}"
 printf '%s\n' "${REMOTE_RUN_ROOT}" > "${OUT_DIR}/remote_run_root.txt"
+printf '%s\n' "${GB10_FORUM53_PROFILE}" > "${OUT_DIR}/profile.txt"
 
 positive_integer() {
   local value="$1"
@@ -335,6 +358,7 @@ for variant in "${variants[@]}"; do
 done
 
 SUMMARY_ROOT="${OUT_DIR}" \
+SUMMARY_PROFILE="${GB10_FORUM53_PROFILE}" \
 SUMMARY_MAX_MODEL_LEN="${MAX_MODEL_LEN}" \
 SUMMARY_MAX_NUM_SEQS="${MAX_NUM_SEQS}" \
 SUMMARY_SAFE_TOTAL_KV_TOKENS="${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS}" \
@@ -409,6 +433,7 @@ payload = {
         for row in rows
     ),
     "profile": {
+        "name": os.environ["SUMMARY_PROFILE"],
         "max_model_len": int(os.environ["SUMMARY_MAX_MODEL_LEN"]),
         "max_num_seqs": int(os.environ["SUMMARY_MAX_NUM_SEQS"]),
         "prefix_cache": os.environ["SUMMARY_PREFIX_CACHE"],
@@ -437,7 +462,8 @@ lines = [
     "# GB10 Forum #53 Multi-User Prefix-Cache Gate",
     "",
     f"- OK: `{payload['ok']}`",
-    "- Profile: `TP=2`, `max_model_len={}`, `max_num_seqs={}`, prefix cache `{}`.".format(
+    "- Profile `{}`: `TP=2`, `max_model_len={}`, `max_num_seqs={}`, prefix cache `{}`.".format(
+        payload["profile"]["name"],
         payload["profile"]["max_model_len"],
         payload["profile"]["max_num_seqs"],
         payload["profile"]["prefix_cache"],
