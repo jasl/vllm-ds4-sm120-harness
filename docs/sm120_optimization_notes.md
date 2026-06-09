@@ -10533,7 +10533,28 @@ all cadence/fairness metrics. Keep EP mode as an explicit benchmark dimension.
 Do not make no-EP the default recommendation until at least GSM8K/tool-call,
 prefix-cache warm agent workload, and GB10 safe-profile validation pass.
 
-GB10 no-EP follow-up was blocked before serve startup by the existing safety
-preflight: the worker node's current boot already contained NVIDIA driver OOM
-signals. The small EP-on/EP-off GB10 comparison should be retried only after a
-clean boot; do not treat this blocked attempt as an EP-mode regression.
+GB10 EP-mode follow-up after a clean reboot:
+
+- **EP-on, MTP=2 MP smoke artifact:**
+  `artifacts/main/2x_gb10_sm121/20260610_gb10_mtp2_ep_on_mp_smoke/20260610015504`.
+  Profile was `TP=2`, MTP=2, FP8 KV, prefix cache disabled,
+  `FULL_AND_PIECEWISE`, `max_model_len=32768`, `max_num_seqs=2`,
+  `max_num_batched_tokens=4096`, `gpu_memory_utilization=0.70`,
+  one `~3.3K` token prompt, C=1. Result: OK, max TTFT `5.245s`,
+  p99 inter-chunk `0.277s`, no current-boot driver-health signals.
+- **EP-off, no-MTP MP smoke artifact:**
+  `artifacts/main/2x_gb10_sm121/20260610_gb10_nomtp_ep_off_mp_smoke/20260610020250`.
+  Same reduced prompt shape, with expert parallel disabled and MTP disabled.
+  The request completed with max TTFT `3.166s`, but the worker node recorded
+  `NV_ERR_NO_MEMORY` in the current boot during startup. Treat this as unsafe
+  for GB10 even when endpoint-level request metrics look good.
+- Harness change: `run_gb10_long_c2_reduced_gate.sh` now exposes
+  `GB10_LONG_C2_ENABLE_EXPERT_PARALLEL` for explicit EP on/off comparison and
+  captures post-run driver health. By default, any post-run GPU driver signal
+  such as `NV_ERR_NO_MEMORY`, Xid, UVM, GPU-lost, illegal access, or fatal
+  launch failure makes the gate fail. `GB10_LONG_C2_ALLOW_DRIVER_SIGNALS=1`
+  is for diagnostics only.
+
+Conclusion: no-EP remains an RTX-only candidate until GB10 has a safe profile.
+On GB10, do not run no-EP as a default recommendation and do not continue to
+MTP=2 no-EP after a dirty driver-health signal without rebooting first.

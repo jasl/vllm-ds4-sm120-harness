@@ -367,6 +367,13 @@ that thread, search `External unholy-fusion feedback refresh`.
   `10-23%` TTFT versus the same-day env-off control and moved sparse work to
   `flashinfer_packed_attention`, but remains a reference-only route pending
   an official dependency path or a fork-independent Triton rewrite.
+- GB10 EP-mode safety recheck:
+  open `docs/sm120_optimization_notes.md` and search
+  `GB10 EP-mode follow-up after a clean reboot`. Current conclusion: EP-on
+  MTP=2 reduced MP smoke passed with clean driver health, while no-EP no-MTP
+  completed the request but recorded `NV_ERR_NO_MEMORY`; no-EP is therefore
+  not a GB10 default recommendation. The long-C2 gate now records post-run
+  driver health and fails by default on GPU driver signals.
 
 ## Correctness
 

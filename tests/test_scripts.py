@@ -1497,7 +1497,13 @@ def test_gb10_long_c2_reduced_gate_runs_nomtp_and_mtp2_variants():
     assert 'MAX_MODEL_LEN="${GB10_LONG_C2_MAX_MODEL_LEN:-131072}"' in script
     assert 'MAX_NUM_SEQS="${GB10_LONG_C2_MAX_NUM_SEQS:-2}"' in script
     assert 'MAX_NUM_BATCHED_TOKENS="${GB10_LONG_C2_MAX_NUM_BATCHED_TOKENS:-4176}"' in script
-    assert 'SERVE_ENABLE_EXPERT_PARALLEL=1' in script
+    assert 'GB10_LONG_C2_ENABLE_EXPERT_PARALLEL="${GB10_LONG_C2_ENABLE_EXPERT_PARALLEL:-1}"' in script
+    assert 'SERVE_ENABLE_EXPERT_PARALLEL="${gb10_long_c2_enable_expert_parallel}"' in script
+    assert 'expert_parallel_enabled' in script
+    assert "capture_remote_driver_health" in script
+    assert "driver_health_summary.json" in script
+    assert "GB10_LONG_C2_ALLOW_DRIVER_SIGNALS" in script
+    assert "driver_health.get(\"ok\", True)" in script
     assert 'SERVE_PREFIX_CACHE_MODE=disabled' in script
     assert 'GB10_LONG_C2_SCHEDULER_TRACE="${GB10_LONG_C2_SCHEDULER_TRACE:-0}"' in script
     assert 'VLLM_SCHEDULER_TRACE_PATH="${scheduler_trace_path}"' in script

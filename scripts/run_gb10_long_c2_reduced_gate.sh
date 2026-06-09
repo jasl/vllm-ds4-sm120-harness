@@ -68,6 +68,26 @@ fetch_remote_file() {
   fi
 }
 
+capture_remote_driver_health() {
+  local host="$1"
+  local label="$2"
+  local out_dir="$3"
+  local host_dir="${out_dir}/${label}"
+  local signal_pattern
+  signal_pattern='NVRM:.*(Out of memory|NV_ERR_NO_MEMORY)|Xid|UVM|lost from the bus|fallen off|GPU lost|unspecified launch failure|illegal memory access|device-side assert|global fatal'
+
+  mkdir -p "${host_dir}"
+  run_remote "${host}" \
+    "date -Ins; hostname; uname -a; uptime" \
+    > "${host_dir}/system.txt" 2>&1 || true
+  run_remote "${host}" \
+    "nvidia-smi; nvidia-smi pmon -c 1 || true" \
+    > "${host_dir}/nvidia_smi.txt" 2>&1 || true
+  run_remote "${host}" \
+    "journalctl -b -k --no-pager | grep -Ei $(shell_quote "${signal_pattern}") | tail -n 200 || true" \
+    > "${host_dir}/kernel_gpu_signals.log" 2>&1 || true
+}
+
 run_remote_streaming_matrix() {
   local remote_out_dir="$1"
   local variant="$2"
@@ -127,6 +147,22 @@ GB10_LONG_C2_MAX_ELAPSED_SECONDS="${GB10_LONG_C2_MAX_ELAPSED_SECONDS:-900}"
 GB10_LONG_C2_FAIL_ON_SLOW="${GB10_LONG_C2_FAIL_ON_SLOW:-0}"
 GB10_LONG_C2_SERVER_STARTUP_TIMEOUT="${GB10_LONG_C2_SERVER_STARTUP_TIMEOUT:-30}"
 GB10_LONG_C2_SCHEDULER_TRACE="${GB10_LONG_C2_SCHEDULER_TRACE:-0}"
+GB10_LONG_C2_ENABLE_EXPERT_PARALLEL="${GB10_LONG_C2_ENABLE_EXPERT_PARALLEL:-1}"
+GB10_LONG_C2_ALLOW_DRIVER_SIGNALS="${GB10_LONG_C2_ALLOW_DRIVER_SIGNALS:-0}"
+
+case "${GB10_LONG_C2_ENABLE_EXPERT_PARALLEL}" in
+  1|true|TRUE|yes|YES)
+    gb10_long_c2_enable_expert_parallel=1
+    ;;
+  0|false|FALSE|no|NO)
+    gb10_long_c2_enable_expert_parallel=0
+    ;;
+  *)
+    printf 'GB10_LONG_C2_ENABLE_EXPERT_PARALLEL must be 0/1 or true/false; got %s\n' \
+      "${GB10_LONG_C2_ENABLE_EXPERT_PARALLEL}" >&2
+    exit 2
+    ;;
+esac
 
 MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash}"
 API_PORT="${API_PORT:-8000}"
@@ -202,7 +238,7 @@ for variant in "${variants[@]}"; do
     API_PORT="${API_PORT}" \
     RUN_DIR="${remote_serve_dir}" \
     PREWARM_AFTER_HEALTH=0 \
-    SERVE_ENABLE_EXPERT_PARALLEL=1 \
+    SERVE_ENABLE_EXPERT_PARALLEL="${gb10_long_c2_enable_expert_parallel}" \
     SERVE_PREFIX_CACHE_MODE=disabled \
     SERVE_SPECULATIVE_CONFIG="${speculative_config}" \
     SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG}" \
@@ -253,14 +289,82 @@ for variant in "${variants[@]}"; do
   fi
 done
 
-SUMMARY_ROOT="${OUT_DIR}" LOCAL_PYTHON="${LOCAL_PYTHON:-python3}" "${LOCAL_PYTHON:-python3}" - <<'PY'
+driver_health_dir="${OUT_DIR}/driver_health"
+capture_remote_driver_health "${HEAD_HOST}" head "${driver_health_dir}"
+capture_remote_driver_health "${WORKER_HOST}" worker "${driver_health_dir}"
+
+driver_health_signal_count=0
+for signal_file in \
+    "${driver_health_dir}/head/kernel_gpu_signals.log" \
+    "${driver_health_dir}/worker/kernel_gpu_signals.log"; do
+  if [[ -s "${signal_file}" ]]; then
+    file_count="$(wc -l < "${signal_file}" | tr -d '[:space:]')"
+    driver_health_signal_count="$((driver_health_signal_count + file_count))"
+  fi
+done
+
+if [[ "${driver_health_signal_count}" == "0" \
+    || "${GB10_LONG_C2_ALLOW_DRIVER_SIGNALS}" == "1" ]]; then
+  driver_health_ok=1
+else
+  driver_health_ok=0
+  failures=1
+fi
+
+DRIVER_HEALTH_ROOT="${driver_health_dir}" \
+DRIVER_HEALTH_OK="${driver_health_ok}" \
+DRIVER_HEALTH_SIGNAL_COUNT="${driver_health_signal_count}" \
+DRIVER_HEALTH_ALLOW="${GB10_LONG_C2_ALLOW_DRIVER_SIGNALS}" \
+LOCAL_PYTHON="${LOCAL_PYTHON:-python3}" \
+"${LOCAL_PYTHON:-python3}" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+
+root = Path(os.environ["DRIVER_HEALTH_ROOT"])
+hosts = {}
+for label in ("head", "worker"):
+    signal_path = root / label / "kernel_gpu_signals.log"
+    text = ""
+    if signal_path.exists():
+        text = signal_path.read_text(encoding="utf-8", errors="replace")
+    lines = [line for line in text.splitlines() if line.strip()]
+    hosts[label] = {
+        "signal_count": len(lines),
+        "signals_path": str(signal_path),
+        "has_signals": bool(lines),
+    }
+
+payload = {
+    "ok": os.environ["DRIVER_HEALTH_OK"] == "1",
+    "allow_driver_signals": os.environ["DRIVER_HEALTH_ALLOW"] == "1",
+    "signal_count": int(os.environ["DRIVER_HEALTH_SIGNAL_COUNT"]),
+    "hosts": hosts,
+}
+(root.parent / "driver_health_summary.json").write_text(
+    json.dumps(payload, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+
+SUMMARY_ROOT="${OUT_DIR}" \
+GB10_LONG_C2_ENABLE_EXPERT_PARALLEL="${gb10_long_c2_enable_expert_parallel}" \
+LOCAL_PYTHON="${LOCAL_PYTHON:-python3}" \
+"${LOCAL_PYTHON:-python3}" - <<'PY'
 import json
 import os
 from pathlib import Path
 
 root = Path(os.environ["SUMMARY_ROOT"])
+driver_health = {}
+driver_health_path = root / "driver_health_summary.json"
+if driver_health_path.exists():
+    driver_health = json.loads(driver_health_path.read_text(encoding="utf-8"))
 rows = []
 for variant_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+    if variant_dir.name == "driver_health":
+        continue
     variant = variant_dir.name
     row = {
         "variant": variant,
@@ -293,7 +397,9 @@ payload = {
         and row.get("streaming_pressure_exit_code") == "0"
         and row.get("ok") is not False
         for row in rows
-    ),
+    ) and driver_health.get("ok", True),
+    "expert_parallel_enabled": os.environ["GB10_LONG_C2_ENABLE_EXPERT_PARALLEL"],
+    "driver_health": driver_health,
     "variants": rows,
 }
 (root / "gb10_long_c2_reduced_gate_summary.json").write_text(
@@ -305,6 +411,9 @@ lines = [
     "# GB10 Long C=2 Reduced Gate",
     "",
     f"- OK: `{payload['ok']}`",
+    f"- Expert parallel enabled: `{payload['expert_parallel_enabled']}`",
+    f"- Driver health OK: `{payload['driver_health'].get('ok', True)}`",
+    f"- Driver signal count: `{payload['driver_health'].get('signal_count', 0)}`",
     "",
     "| Variant | Serve exit | Matrix exit | Requests | Failures | Max TTFT s | ITL P99 s | Remote artifact |",
     "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
@@ -323,6 +432,13 @@ for row in rows:
             remote=row.get("remote_variant_root", ""),
         )
     )
+if not payload["driver_health"].get("ok", True):
+    lines.extend(["", "## Driver Health", ""])
+    for label, host in payload["driver_health"].get("hosts", {}).items():
+        lines.append(
+            f"- `{label}`: {host.get('signal_count', 0)} signal(s), "
+            f"`{host.get('signals_path', '')}`"
+        )
 (root / "gb10_long_c2_reduced_gate_summary.md").write_text(
     "\n".join(lines) + "\n",
     encoding="utf-8",
