@@ -833,7 +833,8 @@ Default bootstrap-safe smoke shape:
 - `max_model_len=32768`.
 - `max_num_seqs=1`.
 - `max_num_batched_tokens=1024`.
-- `gpu_memory_utilization=0.55`.
+- `gpu_memory_utilization=0.70`.
+- FlashInfer autotune disabled.
 - `FULL_AND_PIECEWISE` CUDA graph mode.
 - Sequential C=1 request series:
   `cycle3_temp1:cycle3:1.0:3`.
@@ -849,18 +850,60 @@ enabled, and MTP=2 still stalled SSH banner exchange during startup. Treat any
 MTP-enabled GB10 decode probe as a deliberate ramp/stress profile, not a first
 smoke after a rebase or environment change.
 
+A later rebuilt-venv attempt with no MTP, prefix cache disabled,
+`max_model_len=32768`, `max_num_seqs=1`, `max_num_batched_tokens=1024`, and
+`gpu_memory_utilization=0.55` still stalled both nodes during startup. Previous
+boot logs showed synchronized NVIDIA kernel `NV_ERR_NO_MEMORY` near model-load
+startup, before health, `Model loading took`, or CUDA graph capture logs. A
+follow-up A/B with the same low-memory TP=2+EP production shape, FlashInfer
+autotune disabled, and DeepSeek V4 sparse-MLA startup warmup disabled still made
+both nodes stop completing SSH banner exchange. That rules out runtime request
+shape, prefix cache, MTP, sparse-MLA startup warmup, and FlashInfer autotune as
+the first trigger for this specific post-rebase crash.
+
+Root cause was the DeepSeek V4 quantization dispatch after the upstream MoE
+runner refactor: `RoutedExperts` requested the quant method, but the DeepSeek V4
+FP4 path only recognized `MoERunner`. As a result, FP4 experts fell through to
+the generic FP8 MoE path. Pre-fix logs showed the wrong `TRITON Fp8 MoE`
+backend; fixed logs show `DeepSeek V4 expert_dtype resolved to 'fp4'` and
+`Using 'MARLIN' Mxfp4 MoE backend.`
+
+Post-fix GB10 validation on 2026-06-09:
+
+- `gpu_memory_utilization=0.55` no longer triggered driver failure, but it failed
+  normally with no available KV cache blocks. Do not use 0.55 as the default
+  bootstrap profile.
+- `gpu_memory_utilization=0.70`, no MTP, prefix cache disabled, FlashInfer
+  autotune disabled, and sparse-MLA startup warmup disabled completed 3 C=1
+  requests: mean `21.29 tok/s`, min/max `18.759/23.477 tok/s`, no slow
+  requests, no Xid/NV_ERR/UVM/NCCL errors on the current boot.
+- The same profile with sparse-MLA startup warmup enabled completed 3 C=1
+  requests: mean `24.734 tok/s`, min/max `24.338/24.968 tok/s`, no slow
+  requests, no Xid/NV_ERR/UVM/NCCL errors. Warmup is not the crash trigger.
+- The same bootstrap profile with MTP=2 enabled completed 3 C=1 requests:
+  mean `30.502 tok/s`, min/max `26.855/35.518 tok/s`, mean acceptance ratio
+  `0.667`, no slow requests, no Xid/NV_ERR/UVM/NCCL errors.
+
+This wrapper now defaults `GB10_DECODE_DISABLE_FLASHINFER_AUTOTUNE=1`; keep it
+disabled for the first post-crash smoke. The wrapper exposes
+`GB10_DECODE_ENABLE_EXPERT_PARALLEL` for explicit fallback A/B, but no-EP is not
+the first smoke for DeepSeek V4 on GB10 because it changes the local expert set
+from the production `E=128/N=2048` TP=2+EP shape to a larger TP=2 no-EP
+fallback.
+
 If this bootstrap-safe no-MTP/prefix-off shape also stalls during `vllm serve`
 startup, stop lowering runtime parameters. First rebuild the vLLM editable
-install for the current source checkout, re-apply the NCCL override, and collect
-previous-boot driver logs. If it still reproduces after a clean rebuild, switch
-to a before-rebase versus after-rebase A/B rather than continuing parameter
-sweeps.
+install for the current source checkout, re-apply the NCCL override, collect
+previous-boot driver logs, and verify the DeepSeek V4 quant dispatch is using
+the MXFP4 backend before continuing parameter sweeps.
 
 To rerun the original user-report stress shape after the bootstrap-safe smoke
 passes:
 
 ```bash
 GB10_DECODE_ENABLE_MTP=1 \
+GB10_DECODE_ENABLE_EXPERT_PARALLEL=1 \
+GB10_DECODE_DISABLE_FLASHINFER_AUTOTUNE=1 \
 GB10_DECODE_PREFIX_CACHE_MODE=enabled \
 GB10_DECODE_MAX_MODEL_LEN=131072 \
 GB10_DECODE_MAX_NUM_SEQS=4 \

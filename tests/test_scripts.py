@@ -79,9 +79,18 @@ def test_gb10_decode_throughput_probe_wrapper_defaults_to_safe_smoke_profile():
     assert '{"method":"mtp","num_speculative_tokens":2}' in script
     assert 'GB10_DECODE_ENABLE_MTP="${GB10_DECODE_ENABLE_MTP:-0}"' in script
     assert (
+        'GB10_DECODE_ENABLE_EXPERT_PARALLEL="${GB10_DECODE_ENABLE_EXPERT_PARALLEL:-1}"'
+        in script
+    )
+    assert (
+        'GB10_DECODE_DISABLE_FLASHINFER_AUTOTUNE="${GB10_DECODE_DISABLE_FLASHINFER_AUTOTUNE:-1}"'
+        in script
+    )
+    assert (
         'GB10_DECODE_PREFIX_CACHE_MODE="${GB10_DECODE_PREFIX_CACHE_MODE:-disabled}"'
         in script
     )
+    assert 'GB10_DECODE_EXTRA_ARGS="${GB10_DECODE_EXTRA_ARGS:-}"' in script
     assert 'MAX_MODEL_LEN="${GB10_DECODE_MAX_MODEL_LEN:-32768}"' in script
     assert 'MAX_NUM_SEQS="${GB10_DECODE_MAX_NUM_SEQS:-1}"' in script
     assert (
@@ -89,9 +98,23 @@ def test_gb10_decode_throughput_probe_wrapper_defaults_to_safe_smoke_profile():
         in script
     )
     assert (
-        'GPU_MEMORY_UTILIZATION="${GB10_DECODE_GPU_MEMORY_UTILIZATION:-0.55}"'
+        'GPU_MEMORY_UTILIZATION="${GB10_DECODE_GPU_MEMORY_UTILIZATION:-0.70}"'
         in script
     )
+    assert (
+        'GB10_DECODE_REMOTE_ENV_VARS="${GB10_DECODE_REMOTE_ENV_VARS:-${SERVE_REMOTE_ENV_VARS:-}}"'
+        in script
+    )
+    assert (
+        'SERVE_ENABLE_EXPERT_PARALLEL="${GB10_DECODE_ENABLE_EXPERT_PARALLEL}"'
+        in script
+    )
+    assert (
+        'SERVE_DISABLE_FLASHINFER_AUTOTUNE="${GB10_DECODE_DISABLE_FLASHINFER_AUTOTUNE}"'
+        in script
+    )
+    assert 'SERVE_EXTRA_ARGS="${GB10_DECODE_EXTRA_ARGS}"' in script
+    assert 'SERVE_REMOTE_ENV_VARS="${GB10_DECODE_REMOTE_ENV_VARS}"' in script
     assert (
         'DECODE_THROUGHPUT_SERIES_SPECS="${GB10_DECODE_SERIES_SPECS:-cycle3_temp1:cycle3:1.0:3}"'
         in script
@@ -100,6 +123,8 @@ def test_gb10_decode_throughput_probe_wrapper_defaults_to_safe_smoke_profile():
     assert 'if [[ "${GB10_DECODE_ENABLE_MTP}" == "1" ]]; then' in script
     assert "SERVE_COMPILATION_CONFIG" in script
     assert "FULL_AND_PIECEWISE" in script
+    assert 'SUMMARY_EXTRA_ARGS="${GB10_DECODE_EXTRA_ARGS}"' in script
+    assert '"extra_args": os.environ["SUMMARY_EXTRA_ARGS"]' in script
     assert "run_decode_throughput_probe.sh" in script
 
 
