@@ -659,6 +659,34 @@ prefix-cache-aware:
   `0.1792s`, waiting max `1` versus `2`. Treat EP-off as a GB10 performance
   candidate with mandatory driver-health and correctness gates, not as a
   default replacement for the conservative EP-on profile yet.
+- 2026-06-10 post-rebase user-regression rerun:
+  forum53 MTP=2, EP-off, prefix-cache enabled, MP executor,
+  `FULL_AND_PIECEWISE`, `max_model_len=196608`, `max_num_seqs=4`,
+  `max_num_batched_tokens=4096`, and C=2/C=4 two-round cases completed cleanly
+  when the output budget was raised to `max_tokens=256`.
+  Artifact:
+  `artifacts/main/2x_gb10_sm121/20260610_rebase_user_regression_forum53_mtp2_clean256/20260610_rebase_user_regression_forum53_mtp2_clean256`.
+  Result: wrapper exit `0`, 12/12 requests successful, no current-boot driver
+  signals, preemptions `0`, max TTFT `127.021s`, ITL p99 `0.1166s`,
+  `running_requests_max=2`, `waiting_requests_max=1`, and prefix-cache hit
+  delta `2,715,648`. The same shape with `max_tokens=128` can fail the
+  semantic sentinel check by truncating before the required marker, so treat
+  the 128-token result as a gate false-negative risk rather than a runtime
+  regression.
+- 2026-06-10 post-rebase GB10 MTP=2 C=8 reduced soak:
+  artifact
+  `artifacts/main/2x_gb10_sm121/20260610_rebase_user_regression_gb10_mtp2_moe_c8_reduced/20260610_rebase_user_regression_gb10_mtp2_moe_c8_reduced`.
+  Profile: TP=2, MTP=2, prefix cache enabled, EP-off, MP executor,
+  `FULL_AND_PIECEWISE`, `gpu_memory_utilization=0.80`,
+  `max_model_len=200000`, `max_num_seqs=8`,
+  `max_num_batched_tokens=4096`, C=8, 8 rounds, 40K-token prompts. Result:
+  no no-token-progress watchdog hit, decode tokens advanced throughout, p99
+  inter-chunk `0.1545s`, preemptions `0`, `running_requests_max=7`, but the
+  wrapper exit was `1` because 16/64 requests failed the output-content check
+  at `max_tokens=128` and the worker logged one current-boot
+  `NV_ERR_NO_MEMORY`. Treat this as evidence that C=8/MTP2 is not a clean GB10
+  recommendation yet; it is a diagnostic pressure shape, not a production
+  default.
 
 Persistent TODO: the next production-class prefill improvement must reduce
 long-prefill sparse-MLA real work or memory pressure, especially in

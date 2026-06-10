@@ -373,6 +373,12 @@ that thread, search `External unholy-fusion feedback refresh`.
   MP with expert parallel disabled is the GB10 recommendation. Keep EP as an
   environment-controlled fallback A/B dimension, and keep post-run driver
   health as part of every GB10 pressure gate.
+- GB10 post-rebase user-regression rerun:
+  open `docs/sm120_optimization_notes.md` and search
+  `Post-rebase user-regression rerun, 2026-06-10`. Current conclusion: the
+  forum53 C=2/C=4 MTP=2 EP-off profile is clean with `max_tokens=256`, while
+  the C=8/MTP=2 reduced soak shows no no-token-progress but still logs a worker
+  `NV_ERR_NO_MEMORY`; keep C=8 as diagnostic pressure only.
 
 ## Correctness
 

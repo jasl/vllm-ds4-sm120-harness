@@ -10586,3 +10586,40 @@ driver OOM signal; this MTP=2 forum53 candidate completed cleanly and is
 slightly faster than EP-on for this prefix-cache-heavy C=2/C=4 shape. Treat
 EP-off as a GB10 performance candidate that requires driver-health checks, KV
 lifecycle checks, and correctness gates before becoming a recommendation.
+
+Post-rebase user-regression rerun, 2026-06-10:
+
+- vLLM PR/dev branch head for this rerun: `5d1584e2d`.
+- RTX PRO 6000 GSM8K limit-200 artifact:
+  `artifacts/main/2x_nvidia_rtx_pro_6000_blackwell_workstation_edition/20260610_rebase_user_regression_rtx_gsm8k200/20260610_rebase_user_regression_rtx_gsm8k200`.
+  Result: `lm_eval` and the GSM8K gate exited `0`; flexible exact match
+  `0.960`, strict exact match `0.940`, above the fixed `0.940 / 0.925`
+  floors. The smaller acceptance smoke still had known quality failures
+  (ToolCall-15 `25/30`, one generation length failure), so do not treat that
+  smoke as a green API-quality gate.
+- GB10 forum53 post-rebase artifact:
+  `artifacts/main/2x_gb10_sm121/20260610_rebase_user_regression_forum53_mtp2_clean256/20260610_rebase_user_regression_forum53_mtp2_clean256`.
+  Profile: MP, EP disabled, MTP=2, prefix cache enabled, FP8 KV,
+  `FULL_AND_PIECEWISE`, `gpu_memory_utilization=0.80`,
+  `max_model_len=196608`, `max_num_seqs=4`,
+  `max_num_batched_tokens=4096`, C=2/C=4 two-round forum53 cases with
+  `max_tokens=256`. Result: wrapper exit `0`, 12/12 requests successful,
+  current-boot driver signal count `0`, preemptions `0`, max TTFT `127.021s`,
+  p99 inter-chunk `0.1166s`, `running_requests_max=2`,
+  `waiting_requests_max=1`, prefix-cache hits delta `2,715,648`. A same-shape
+  `max_tokens=128` run can fail the sentinel/content check by truncation; use
+  `256` for post-rebase regression evidence when checking this user-reported
+  shape.
+- GB10 MTP=2 C=8 reduced-soak artifact:
+  `artifacts/main/2x_gb10_sm121/20260610_rebase_user_regression_gb10_mtp2_moe_c8_reduced/20260610_rebase_user_regression_gb10_mtp2_moe_c8_reduced`.
+  Profile: MP, EP disabled, MTP=2, prefix cache enabled,
+  `FULL_AND_PIECEWISE`, `gpu_memory_utilization=0.80`,
+  `max_model_len=200000`, `max_num_seqs=8`,
+  `max_num_batched_tokens=4096`, C=8, 8 rounds, 40K-token prompts. Result:
+  no no-token-progress watchdog hit and decode tokens advanced; p99 inter-chunk
+  `0.1545s`, preemptions `0`, runtime `running_requests_max=7`. It is not a
+  clean pass: 16/64 requests failed the output-content check at
+  `max_tokens=128`, and the worker logged one current-boot
+  `NV_ERR_NO_MEMORY`. Keep C=8/MTP2 as a diagnostic pressure case, not a
+  recommendation, until the driver-health signal is eliminated under the same
+  profile.

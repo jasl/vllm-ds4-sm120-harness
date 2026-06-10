@@ -852,6 +852,20 @@ lines to approach the target shared-context length. Compare round-2 TTFT,
 usage against the cold round before deciding whether a scheduling change helps
 agent workloads.
 
+Post-rebase regression note, 2026-06-10:
+
+- The MTP=2 EP-off forum53 C=2/C=4 shape passed cleanly with
+  `max_tokens=256`: 12/12 requests successful, no current-boot driver signals,
+  no preemptions, max TTFT about `127s`, and ITL p99 about `0.117s`.
+- The same shape with `max_tokens=128` can fail the harness semantic sentinel
+  because the generated answer is truncated before the marker appears. Treat
+  that as an output-budget false-negative unless runtime metrics or driver
+  health also regress.
+- For post-rebase user-regression evidence, prefer overriding
+  `GB10_FORUM53_CASE_SPECS` so the forum53 C=2/C=4 cases use `max_tokens=256`.
+  Keep the shorter default only when runtime cost matters more than semantic
+  sentinel robustness.
+
 Optional forum53 high-pressure benchmark:
 
 Use `GB10_FORUM53_PROFILE=long_prefix_400k_c6c8` to run the larger
@@ -1025,6 +1039,13 @@ The summary files are
 `gb10_mtp2_moe_tp_deadlock_gate_summary.md`. Treat any no-progress watchdog
 hit, server unresponsiveness, CUDA/NCCL/NVRM/UVM error, or soak timeout as
 reproduction evidence until the captured rank stacks show otherwise.
+
+The 2026-06-10 post-rebase reduced C=8/MTP=2 soak did not reproduce
+no-token-progress: decode tokens advanced throughout, p99 inter-chunk was about
+`0.155s`, and preemptions stayed at `0`. It still was not clean because the
+worker logged one `NV_ERR_NO_MEMORY` in the current boot. Keep C=8/MTP=2 as a
+diagnostic pressure shape until the same profile runs with driver-health clean;
+do not use it as a GB10 recommendation.
 
 ## Common Failure Modes
 

@@ -192,7 +192,10 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   regressions. The current locally clean diagnostic profile uses
   `gpu_memory_utilization=0.80`; `0.90+` startup probes have produced
   `NV_ERR_NO_MEMORY` around CUDA graph profiling and must not be counted as
-  clean passes.
+  clean passes. A 2026-06-10 reduced C=8/MTP=2 rerun did not hit the
+  no-token-progress watchdog, but it still logged one worker
+  `NV_ERR_NO_MEMORY`, so it remains diagnostic rather than a clean promotion
+  pass.
 - GB10 forum53 multi-user prefix-cache admission gate:
   run `scripts/run_gb10_forum53_multi_user_gate.sh` when scheduler admission,
   KV capacity, or prefix-cache behavior changes. The default shape is now a
@@ -207,7 +210,11 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
   diagnostics; do not make them implicit promotion defaults without fresh
   evidence. For the current real-user agent shape, also run a development-only
   C=4 two-round long-context variant with a higher `GB10_FORUM53_MAX_MODEL_LEN`
-  before claiming prefix-cache-heavy multi-agent workloads are improved.
+  before claiming prefix-cache-heavy multi-agent workloads are improved. For
+  post-rebase user-regression evidence, prefer C=2/C=4 cases with
+  `max_tokens=256`; the 128-token shape can truncate before the deterministic
+  sentinel and produce a false semantic failure even when runtime metrics and
+  driver health are clean.
 - Multi-session decode pressure proxy for
   [issuecomment-4505504798](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4505504798):
   run `streaming_pressure_matrix` on the local TP=2 server with at least
