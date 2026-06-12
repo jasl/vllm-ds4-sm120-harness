@@ -147,6 +147,13 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
             extend_tiled_topk=object(),
             IndexerExtendMetadata=object(),
         ),
+        "b12x.attention.indexer": types.SimpleNamespace(
+            B12XIndexerScratchCaps=object(),
+            INDEXER_SOURCE_LAYOUT_PAGED=object(),
+            PAGED_INDEX_PAGE_SIZE=64,
+            index_topk_fp8=object(),
+            plan_indexer_scratch=object(),
+        ),
         "b12x.integration.sparse_mla_scratch": types.SimpleNamespace(),
         "b12x.integration.tp_moe": types.SimpleNamespace(
             TPMoEScratchCaps=object(),
@@ -198,6 +205,7 @@ def test_b12x_stack_probe_classifies_public_b12x_020_apis(monkeypatch):
     assert result["routes"]["aiden_ds4_compressed_mla"]["ok"] is True
     assert result["routes"]["aiden_native_mxfp4_moe"]["ok"] is True
     assert result["routes"]["public_b12x_sparse_indexer_extend"]["ok"] is True
+    assert result["routes"]["public_b12x_paged_indexer"]["ok"] is True
     assert result["routes"]["b12x_fp8_linear"]["ok"] is True
     assert result["routes"]["aiden_b12x_wo_projection"]["ok"] is True
     assert result["routes"]["aiden_b12x_mhc_residual"]["ok"] is True

@@ -124,6 +124,13 @@ tracked docs:
 - `VLLM_ROOT`
 - `VLLM_VENV`
 
+Use remote absolute paths in ignored local config. Do not write literal
+`$HOME/...` for `VLLM_ROOT` or `VLLM_VENV` in `.env`: the harness sources
+`.env` on the local machine before building SSH commands, so `$HOME` would
+expand to the local user's home rather than the GB10 node's home. If a handoff
+uses `$HOME/...`, resolve it with `ssh HEAD_HOST 'printf %s "$HOME"'` and store
+the resulting remote absolute path in ignored local config.
+
 Preflight checks should confirm:
 
 - both nodes can run the target vLLM venv Python;

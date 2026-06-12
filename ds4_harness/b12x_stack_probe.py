@@ -63,6 +63,16 @@ MODULES = (
             "IndexerExtendMetadata",
         ),
     ),
+    ModuleProbe(
+        "b12x.attention.indexer",
+        (
+            "B12XIndexerScratchCaps",
+            "INDEXER_SOURCE_LAYOUT_PAGED",
+            "PAGED_INDEX_PAGE_SIZE",
+            "index_topk_fp8",
+            "plan_indexer_scratch",
+        ),
+    ),
     ModuleProbe("b12x.integration.sparse_mla_scratch"),
     ModuleProbe(
         "b12x.integration.tp_moe",
@@ -285,6 +295,35 @@ def _classify_routes(result: Json) -> Json:
         "note": (
             "Released b12x sparse-indexer extend top-k API used by the "
             "Aiden/unholy prefill indexer path."
+        ),
+    }
+    routes["public_b12x_paged_indexer"] = {
+        "ok": (
+            _has_attr(
+                result,
+                "b12x.attention.indexer",
+                "B12XIndexerScratchCaps",
+            )
+            and _has_attr(
+                result,
+                "b12x.attention.indexer",
+                "INDEXER_SOURCE_LAYOUT_PAGED",
+            )
+            and _has_attr(
+                result,
+                "b12x.attention.indexer",
+                "PAGED_INDEX_PAGE_SIZE",
+            )
+            and _has_attr(result, "b12x.attention.indexer", "index_topk_fp8")
+            and _has_attr(
+                result,
+                "b12x.attention.indexer",
+                "plan_indexer_scratch",
+            )
+        ),
+        "note": (
+            "Current public b12x paged sparse-indexer API used by "
+            "black-benediction's B12X indexer planning path."
         ),
     }
     routes["b12x_fp8_linear"] = {

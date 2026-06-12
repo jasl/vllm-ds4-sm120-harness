@@ -1,13 +1,16 @@
 # Preflight Results
 
 Date: 2026-06-12
-Status: ready for first GB10/remote-gated bottleneck run
+Status: ready for RTX/SM120 EP-off control and GB10/SM121 stable-preview
+remote gates; B12X/packed-SM120 candidate routes need a dependency update
+before endpoint A/B.
 
 ## Local Git State
 
-- Harness checkout has documentation changes only.
+- Harness checkout has the backend-parity preparation and first-run wrapper
+  committed on `main`.
 - vLLM checkout is clean on
-  `codex/ds4-sm120-glm51-experimental-20260612`.
+  `codex/ds4-sm120-backend-parity-dev-20260612`.
 - FlashInfer checkout is clean on `main`; local `main` was fast-forwarded to
   upstream/main `d65c3eb`.
 - b12x checkout is clean on `master`.
@@ -47,8 +50,10 @@ Frozen local reference tags:
   `SM120_VLLM_REPO`, `SM120_VLLM_VENV`, `SM120_PYTHON`, and
   `SM120_VLLM_BIN`. Legacy `B200_VLLM_REPO` and `B200_VLLM_VENV` are present
   only as compatibility aliases for older harness scripts.
-- The stale remote `VLLM_VENV` value from the handoff note was corrected in
-  `.env` to the currently valid venv under the remote vLLM checkout.
+- The stale/literal-home remote `VLLM_ROOT` and `VLLM_VENV` values from the
+  handoff note were corrected in ignored `.env` to remote absolute paths. GB10
+  wrappers source `.env` locally before building SSH commands, so `$HOME/...`
+  must not be left for local expansion there.
 - Remote preflight was run without printing hostnames, IPs, usernames, local
   absolute paths, tokens, or model-cache paths.
 
@@ -89,27 +94,41 @@ forbid bare `pip`.
 
 ## Dependency Route Probe
 
-Remote b12x stack probe on the head node target venv:
+Remote b12x stack probe on the head node target venv was rechecked after
+starting the backend-parity phase:
 
 | Item | Status |
 | --- | --- |
-| `b12x` distribution | OK |
-| `flashinfer-python` distribution | OK |
-| `flashinfer-cubin` distribution | OK |
-| `nvidia-cutlass-dsl` distribution | OK |
-| public b12x MLA route | OK |
+| `b12x` distribution | `0.15.2` |
+| `flashinfer-python` distribution | `0.6.12` |
+| `flashinfer-cubin` distribution | `0.6.12` |
+| `nvidia-cutlass-dsl` distribution | `4.5.2` |
+| `b12x.integration.mla` | import OK; compressed/sparse MLA front-door attrs present |
+| `b12x.attention.indexer` | missing |
+| `b12x.integration.compressed_scratch` | missing |
+| `b12x.integration.tp_moe` | import OK, but scratch planning attrs missing |
 | FlashInfer DSV4 TRTLLM-gen plain route | OK |
 | FlashInfer packed SM120 sparse-MLA route | not ready |
 | FlashInfer B12X MoE NVFP4 route | OK |
 | vLLM runtime FlashInfer DSV4 plain route | OK |
 | vLLM runtime FlashInfer B12X MoE route | OK |
 | vLLM runtime DS4 B12X compressed-MLA adapter | not ready |
+| vLLM runtime B12X sparse-indexer hook | not ready |
+
+Interpretation: the current GB10 venv is suitable for stable-preview baseline,
+plain FlashInfer DSV4 checks, and FlashInfer B12X MoE availability checks. It
+is not ready for black-benediction B12X paged-indexer / compressed-MLA endpoint
+A/B, nor for FlashInfer PR3395 packed-SM120 endpoint A/B, without a separate
+dependency update or rebuilt candidate environment.
 
 ## Next Run
 
 Start with the RTX/SM120 EP-off attribution control when the RTX shell has its
-target vLLM venv exported. For GB10 confirmation, the current shell is ready to
-run the safe preflight-gated GB10 scripts using the ignored `.env` values.
+target vLLM venv exported. For GB10 confirmation of stable-preview behavior,
+the current shell is ready to run the safe preflight-gated GB10 scripts using
+the ignored `.env` values. For B12X or FlashInfer packed-SM120 candidates,
+prepare a separate updated dependency environment before treating GB10 as
+candidate-ready.
 
 Do not refresh upstream heads before the first candidate run. Use the frozen
 reference tags unless an explicit upstream-change review finds a relevant
