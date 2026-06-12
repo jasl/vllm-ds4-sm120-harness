@@ -14,14 +14,24 @@ Last updated: 2026-06-12.
 2. Read `docs/sm120/README.md` for the new note structure and writing rules.
 3. Read `docs/sm120/index.md` for framework-era decisions and experiment
    packages.
-4. Read `docs/vllm_correctness_gates.md` for promotion requirements.
-5. Read `docs/sm12x_triton_sparse_mla_rewrite_plan.md` before starting the
+4. Read `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/README.md`
+   before starting the next optimization branch.
+5. Read `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/preflight.md`
+   before running RTX or GB10 experiments.
+6. Read
+   `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/preflight-results.md`
+   for the latest sanitized readiness snapshot before deciding whether to
+   rerun preflight.
+7. Read `docs/sm120/experiments/2026-06-12-black-benediction-map/README.md`
+   before porting or imitating the external black-benediction line.
+8. Read `docs/vllm_correctness_gates.md` for promotion requirements.
+9. Read `docs/sm12x_triton_sparse_mla_rewrite_plan.md` before starting the
    next fork-independent sparse-MLA prefill kernel/backend iteration.
-6. Read `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup and
+10. Read `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup and
    reduced long-context gates.
-7. Use `docs/sm120_experiment_index.md` to jump into pre-framework historical
+11. Use `docs/sm120_experiment_index.md` to jump into pre-framework historical
    experiments.
-8. Use `docs/sm120_optimization_notes.md` only when you need the detailed
+12. Use `docs/sm120_optimization_notes.md` only when you need the detailed
    legacy artifact trail or rejected-route rationale.
 
 ## Current Posture
@@ -35,12 +45,30 @@ Last updated: 2026-06-12.
   FP8 KV, MTP=2 when exercising the production path, and
   `FULL_AND_PIECEWISE`. Keep EP as an environment-controlled fallback A/B
   dimension only.
-- Active next task: `docs/sm12x_triton_sparse_mla_rewrite_plan.md`. The next
-  production-class prefill effort should extract the dataflow lesson from the
-  unmerged packed FlashInfer SM120 backend and implement a fork-independent
-  Triton sparse-MLA prefill backend. The first target is lower cost per
-  effective candidate visit with the same semantic candidate set, not another
-  scheduler or chunk-size sweep.
+- Active next task: run the EP-off backend-parity program described in
+  `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/README.md` and
+  `docs/sm120/experiments/2026-06-12-black-benediction-map/README.md`. Develop
+  and profile on dual RTX PRO 6000 / SM120 first, then confirm promising
+  candidates on GB10 / SM121. The next integration should be a conservative,
+  easy-to-deploy branch based on explained bottleneck evidence and public
+  upstream dependency capabilities where possible. The Triton sparse-MLA
+  rewrite plan remains a candidate route if attribution shows sparse dataflow
+  or cost-per-effective-visit is the bottleneck.
+- Branch posture: keep `codex/ds4-sm120-min-enable` as the PR/user-facing
+  base. Use `codex/ds4-sm120-backend-parity-dev-20260612` at `7224e68417` as
+  the next dev starting point; it is based on PR stable preview `f32247a5a6`
+  plus one signed SM12x sparse-MLA selector diagnostic commit. When the PR
+  branch is rebased later, recreate or rebase dev on the new PR tip and split
+  any PR-worthy dev fix into reviewable PR-branch commits.
+- Naming posture: use SM120 for RTX PRO 6000 work and SM121 for GB10 work.
+  B200 is an older SM10x baseline name and should appear only in historical
+  notes or as a compatibility variable for older harness scripts.
+- Upstream reference posture: this phase is frozen to vLLM upstream/main
+  `b7f9b6a`, vLLM PR `#45277` `e57d3b78`, black-benediction `c6b2a7b`,
+  FlashInfer upstream/main `d65c3eb`, FlashInfer PR `#3395` `88539d03`, and
+  b12x master `fabb087`. Do not chase remote heads during routine candidate
+  runs; refresh only during an explicit upstream-change review or when a
+  dependency change is likely to affect SM12x behavior.
 - Newly promoted work: exact chunked D512 online merge for
   `combined_topk > 1152`. It is now default-on because the RTX promotion subset,
   GSM8K limit-200, prefix/KV lifecycle checks, and GB10 reduced long-C2 gate are
@@ -79,7 +107,9 @@ Last updated: 2026-06-12.
   it depends on an unmerged FlashInfer packed backend and has not passed the
   full RTX + GSM8K + lifecycle promotion matrix. Current dev and PR branches
   should not contain a `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL` runtime
-  path.
+  path. The current FlashInfer PR `#3395` head is `88539d03`; keep it as a
+  reference candidate because the old GB10 subset showed about `10-23%` TTFT
+  improvement, but revalidate it under EP-off before promotion.
 - Blocked or rejected as current endpoint backends, in the specific forms that
   were tested: public b12x / FlashInfer wheels as a direct DS4 endpoint
   backend, upstream `FLASHINFER_MLA_SPARSE_DSV4` with the current official
@@ -107,6 +137,9 @@ Any sparse-MLA, scheduler, workspace, or backend change that affects serving
 behavior must preserve:
 
 - GSM8K limit-200 correctness.
+- DFlash or speculative-decode changes must clear GSM8K limit-200 before their
+  performance numbers are used for promotion, because this class of change can
+  alter task correctness even when latency improves.
 - CUDA graph mode `FULL_AND_PIECEWISE`; do not hide correctness issues by
   disabling full decode graph capture.
 - Prefix-cache stress and KV lifecycle recoverability.
@@ -151,8 +184,29 @@ Do not use prefix-cache-enabled numbers as cold-prefill gains.
 
 ## Current Performance Snapshot
 
-Latest RTX PRO 6000 / SM120 dev evidence for the current D512 path is in the
-low-instrumentation promotion and attribution runs recorded in
+Latest RTX PRO 6000 / SM120 PR stable-preview evidence is the 2026-06-12
+EP-off, MTP, prefix-cache-disabled refresh under
+`artifacts/codex_pr_stable_preview_f32247a/2x_rtx_pro_6000_sm120/`.
+Use these as the current short-prefill and correctness baseline before looking
+back at the 2026-06-10 EP A/B data.
+
+- Cold OSL=1 random prefill, input lengths `1024/4096/16384/65536`:
+  `6606.45 / 6206.06 / 8056.05 / 7540.46` input tok/s, with all phase exits
+  `0`.
+- OSL=128 short-throughput supplement, input lengths `4096/16384/65536`:
+  `3123.74 / 6209.00 / 7049.72` input tok/s and
+  `97.60 / 48.51 / 13.77` output tok/s, with all phase exits `0`.
+- GSM8K 5-shot limit-200 exact match: flexible `0.965`, strict `0.940`,
+  exit `0`.
+
+The latest GB10 / SM121 PR stable-preview user-feedback gate is
+`artifacts/codex_pr_stable_preview_f32247a/2x_gb10_sm121/gb10_forum53_mtp2_epoff_c2_gmem0685_mml81920/20260612074113`:
+EP-off, MTP=2, prefix cache enabled, C=2, 4/4 requests, 0 failures, max TTFT
+`124.045698 s`, ITL p99 `0.144954 s`, prefix hits `79872`, and clean driver
+health.
+
+Earlier RTX PRO 6000 / SM120 long-context dev evidence for the current D512
+path is in the low-instrumentation promotion and attribution runs recorded in
 `docs/sm120_optimization_notes.md`.
 
 - 59K C=1: about `7458 tok/s`, `7.9 s` TTFT.

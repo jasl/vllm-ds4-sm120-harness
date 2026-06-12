@@ -20,10 +20,7 @@ load_harness_env
 MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8080}"
-B200_VLLM_REPO="${B200_VLLM_REPO:-/workspace/vllm}"
-B200_VLLM_VENV="${B200_VLLM_VENV:-${B200_VLLM_REPO}/.venv}"
-PYTHON="${PYTHON:-${B200_VLLM_VENV}/bin/python}"
-VLLM_BIN="${VLLM_BIN:-${B200_VLLM_VENV}/bin/vllm}"
+configure_sm120_vllm_env
 RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d%H%M%S)}"
 BRANCH_NAME="${BRANCH_NAME:-$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown-branch)}"
 BRANCH_SLUG="$(printf '%s' "${BRANCH_NAME}" | sed -E 's#[/[:space:]]+#_#g; s#[^A-Za-z0-9_.-]#_#g')"
@@ -99,6 +96,8 @@ if [[ "${SM12X_C2_RUN_FAIRNESS}" == "1" || "${SM12X_C2_RUN_FAIRNESS}" == "true" 
   run_child "${SM12X_C2_FAIRNESS_OUT_DIR}" env \
     OUT_DIR="${SM12X_C2_FAIRNESS_OUT_DIR}" \
     MODEL="${MODEL}" HOST="${HOST}" PORT="${PORT}" \
+    SM120_VLLM_REPO="${SM120_VLLM_REPO}" SM120_VLLM_VENV="${SM120_VLLM_VENV}" \
+    SM120_PYTHON="${SM120_PYTHON}" SM120_VLLM_BIN="${SM120_VLLM_BIN}" \
     B200_VLLM_REPO="${B200_VLLM_REPO}" B200_VLLM_VENV="${B200_VLLM_VENV}" \
     PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
     B200_BASELINE_LABEL="${SM12X_C2_PROTOCOL_LABEL}_fairness" \

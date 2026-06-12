@@ -1,0 +1,116 @@
+# SM12x Backend Parity Roadmap
+
+Status: watchlist
+Last reviewed: 2026-06-12
+Applies to: SM120 RTX PRO 6000, SM121 GB10, vLLM PR stable preview and
+external backend branches
+Profile sensitivity: EP-off is the current default comparison profile; EP-on,
+prefix-cache-on, and prefix-cache-off results must be reported separately.
+
+## Decision
+
+The next phase is a backend-parity program, not a PR-branch rewrite. Keep the
+validated PR stable preview as the user-facing base and run optimization work on
+separate research branches that can be discarded if they fail the matrix.
+
+Use the current PR branch as the base for new vLLM development. The local
+backend-parity development branch is
+`codex/ds4-sm120-backend-parity-dev-20260612` at `7224e68417`, which is the PR
+stable preview `f32247a5a6` plus one signed diagnostic selector commit. When
+the PR branch is later rebased on upstream/main, rebase or recreate the dev
+branch on top of the new PR tip. Any dev-branch fix that belongs in the PR
+must be split out and replayed onto the PR branch as a reviewable commit before
+it becomes user-facing baseline behavior.
+
+Freeze external references for this phase instead of following remote heads on
+every run. Refresh them only during an explicit upstream-change review, or when
+a rerun trigger below fires and the new upstream commit is relevant to SM12x
+coverage, FlashInfer/b12x backend capability, or black-benediction parity.
+
+Integrate the three active routes in this order:
+
+- First identify the current EP-off bottleneck on dual RTX PRO 6000. Use
+  sparse attribution, MoE/EP A/B, decode/interference profiles, and GSM8K
+  correctness before deciding which mechanism deserves a port. GB10 should
+  confirm narrowed candidates, not absorb every exploratory run.
+- Watch upstream CUDA arch coverage work in `vllm-project/vllm#45277`. Rebase
+  only when the merged upstream changes affect SM12x build/runtime coverage or
+  conflict with our stack. After that rebase, drop any local build workaround
+  that upstream has replaced and run targeted build/import/kernel smokes before
+  performance gates.
+- Revalidate FlashInfer and b12x experiments under the current EP-off serving
+  profile. The older EP-on dependency notes are no longer sufficient evidence
+  because EP-off now wins the routine profile. Use upstream/main or released
+  package capabilities where possible, and keep fork-only code behind
+  experiment branches until endpoint evidence justifies promotion.
+- Keep the unmerged FlashInfer packed SM120 sparse-MLA route
+  `flashinfer-ai/flashinfer#3395` as an important reference path. The earlier
+  GB10 endpoint-shaped prototype showed about `10-23%` TTFT improvement, but
+  it remains dependency-gated and must be revalidated under the current EP-off
+  matrix before any vLLM PR promotion.
+- Treat `local-inference-lab/vllm` `dev/black-benediction` as the external
+  performance target and reference implementation. Reproduce it with the
+  harness before porting ideas. Port only isolated mechanisms whose dependency,
+  licensing, DCO, and promotion-gate story is clear.
+
+## Evidence
+
+- `docs/sm120/experiments/2026-06-12-epoff-backend-revalidation/README.md`
+- `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/README.md`
+- `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/preflight.md`
+- `docs/sm120/experiments/2026-06-12-black-benediction-map/README.md`
+- Local PR stable preview tag:
+  `sm120-pr-41834-stable-preview-20260612075245`
+- Local fallback tag:
+  `sm120-pr-41834-fallback-before-replacement-20260612053720`
+- External heads checked on 2026-06-12:
+  vLLM upstream/main `b7f9b6a`, `vllm-project/vllm#45277` head `e57d3b78`,
+  `local-inference-lab/vllm dev/black-benediction` head `c6b2a7b`,
+  FlashInfer upstream/main `d65c3eb`,
+  `flashinfer-ai/flashinfer#3395` head `88539d03`, b12x master `fabb087`.
+- Local freeze tags:
+  `sm120-freeze-vllm-upstream-main-20260612`,
+  `sm120-freeze-vllm-pr45277-20260612`,
+  `sm120-freeze-black-benediction-20260612`,
+  `sm120-freeze-flashinfer-main-20260612`,
+  `sm120-freeze-flashinfer-pr3395-20260612`,
+  `sm120-freeze-b12x-master-20260612`.
+
+## Why
+
+EP-off beating the previous EP-on default changes the interpretation of the old
+dependency experiments. A MoE or pipeline imbalance can make a backend look
+neutral or bad under EP-on while still being useful under the current production
+profile. The route needs fresh same-host EP-off endpoint A/B data before any old
+conclusion is reused.
+
+The stable PR branch already has broad user and harness coverage. Moving fast
+on backend ideas is appropriate, but not on the PR branch itself. New code must
+show one of these before promotion: fewer real sparse-MLA candidate/value
+visits, better effective sparse visits/s at the same work, lower memory
+pressure that expands a guarded workload, or a measurable MoE/decode-pipeline
+gain without correctness or lifecycle regressions.
+
+DFlash-style speculative/decode optimizations are treated as high-risk until
+they clear GSM8K and semantic gates. RTX PRO 6000 is the development and
+profiling target; GB10 validation remains mandatory before claiming a candidate
+as the next user-facing baseline because GB10 is the weaker and more
+memory-sensitive environment.
+
+## Reopen If
+
+- `vllm-project/vllm#45277` merges or is replaced by another upstream SM12x
+  build/runtime coverage change.
+- FlashInfer exposes an official packed SM120 sparse-MLA route or b12x exposes
+  a faster DS4 compressed-MLA/indexer route that changes the prior component
+  results.
+- `flashinfer-ai/flashinfer#3395` changes in a way that removes the dependency
+  gate or materially changes the packed SM120 sparse-MLA integration contract.
+- `dev/black-benediction` publishes or moves a performance-critical mechanism
+  that our local harness cannot explain.
+- A same-profile EP-off endpoint A/B contradicts the current route ordering.
+
+## Supersedes
+
+- This does not supersede the legacy evidence archive. It defines how to reuse
+  that evidence after the EP-off default change.

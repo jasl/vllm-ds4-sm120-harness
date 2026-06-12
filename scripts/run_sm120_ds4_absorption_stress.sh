@@ -9,10 +9,7 @@ load_harness_env
 MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8080}"
-B200_VLLM_REPO="${B200_VLLM_REPO:-/workspace/vllm}"
-B200_VLLM_VENV="${B200_VLLM_VENV:-${B200_VLLM_REPO}/.venv}"
-PYTHON="${PYTHON:-${B200_VLLM_VENV}/bin/python}"
-VLLM_BIN="${VLLM_BIN:-${B200_VLLM_VENV}/bin/vllm}"
+configure_sm120_vllm_env
 RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d%H%M%S)}"
 BRANCH_NAME="${BRANCH_NAME:-$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown-branch)}"
 BRANCH_SLUG="$(printf '%s' "${BRANCH_NAME}" | sed -E 's#[/[:space:]]+#_#g; s#[^A-Za-z0-9_.-]#_#g')"
@@ -101,6 +98,8 @@ if [[ "${RUN_DS4_STRESS_USER_FEEDBACK}" == "1" || "${RUN_DS4_STRESS_USER_FEEDBAC
   run_child_phase user_feedback_matrix env \
     OUT_DIR="${RUN_ROOT}/user_feedback" \
     MODEL="${MODEL}" HOST="${HOST}" PORT="${PORT}" \
+    SM120_VLLM_REPO="${SM120_VLLM_REPO}" SM120_VLLM_VENV="${SM120_VLLM_VENV}" \
+    SM120_PYTHON="${SM120_PYTHON}" SM120_VLLM_BIN="${SM120_VLLM_BIN}" \
     B200_VLLM_REPO="${B200_VLLM_REPO}" B200_VLLM_VENV="${B200_VLLM_VENV}" \
     PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
     USER_FEEDBACK_MATRIX_LABEL="${DS4_ABSORPTION_STRESS_LABEL}_user_feedback" \
@@ -112,6 +111,8 @@ if [[ "${RUN_DS4_STRESS_ISSUE10_SAFE}" == "1" || "${RUN_DS4_STRESS_ISSUE10_SAFE}
   run_child_phase issue10_safe_proxy env \
     OUT_DIR="${RUN_ROOT}/issue10_safe" \
     MODEL="${MODEL}" HOST="${HOST}" PORT="$((PORT + 2))" \
+    SM120_VLLM_REPO="${SM120_VLLM_REPO}" SM120_VLLM_VENV="${SM120_VLLM_VENV}" \
+    SM120_PYTHON="${SM120_PYTHON}" SM120_VLLM_BIN="${SM120_VLLM_BIN}" \
     B200_VLLM_REPO="${B200_VLLM_REPO}" B200_VLLM_VENV="${B200_VLLM_VENV}" \
     PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
     B200_BASELINE_LABEL="${DS4_ABSORPTION_STRESS_LABEL}_issue10_safe" \
@@ -135,6 +136,8 @@ EOF
     run_child_phase issue8_crash_recheck env \
       OUT_DIR="${RUN_ROOT}/issue8_crash_recheck" \
       MODEL="${MODEL}" HOST="${HOST}" PORT="$((PORT + 3))" \
+      SM120_VLLM_REPO="${SM120_VLLM_REPO}" SM120_VLLM_VENV="${SM120_VLLM_VENV}" \
+      SM120_PYTHON="${SM120_PYTHON}" SM120_VLLM_BIN="${SM120_VLLM_BIN}" \
       B200_VLLM_REPO="${B200_VLLM_REPO}" B200_VLLM_VENV="${B200_VLLM_VENV}" \
       PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
       B200_BASELINE_LABEL="${DS4_ABSORPTION_STRESS_LABEL}_issue8_recheck" \
@@ -163,6 +166,8 @@ if [[ "${RUN_DS4_STRESS_ISSUE10_HIGH_RISK}" == "1" || "${RUN_DS4_STRESS_ISSUE10_
   run_child_phase issue10_high_risk_proxy env \
     OUT_DIR="${RUN_ROOT}/issue10_high_risk" \
     MODEL="${MODEL}" HOST="${HOST}" PORT="$((PORT + 4))" \
+    SM120_VLLM_REPO="${SM120_VLLM_REPO}" SM120_VLLM_VENV="${SM120_VLLM_VENV}" \
+    SM120_PYTHON="${SM120_PYTHON}" SM120_VLLM_BIN="${SM120_VLLM_BIN}" \
     B200_VLLM_REPO="${B200_VLLM_REPO}" B200_VLLM_VENV="${B200_VLLM_VENV}" \
     PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
     B200_BASELINE_LABEL="${DS4_ABSORPTION_STRESS_LABEL}_issue10_high_risk" \

@@ -16,11 +16,7 @@ load_harness_env
 MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8080}"
-B200_VLLM_REPO="${B200_VLLM_REPO:-/workspace/vllm}"
-B200_VLLM_VENV="${B200_VLLM_VENV:-${B200_VLLM_REPO}/.venv}"
-PYTHON="${PYTHON:-${B200_VLLM_VENV}/bin/python}"
-VLLM_BIN="${VLLM_BIN:-${B200_VLLM_VENV}/bin/vllm}"
-VLLM_ROOT="${VLLM_ROOT:-${B200_VLLM_REPO}}"
+configure_sm120_vllm_env
 PYTHONPATH="$(harness_pythonpath)"
 export VLLM_ROOT PYTHONPATH
 RUN_TIMESTAMP="${RUN_TIMESTAMP:-$(date +%Y%m%d%H%M%S)}"
@@ -107,6 +103,8 @@ for raw_input_len in "${input_lens[@]}"; do
   env \
     OUT_DIR="${case_dir}" \
     MODEL="${MODEL}" HOST="${HOST}" PORT="${PORT}" \
+    SM120_VLLM_REPO="${SM120_VLLM_REPO}" SM120_VLLM_VENV="${SM120_VLLM_VENV}" \
+    SM120_PYTHON="${SM120_PYTHON}" SM120_VLLM_BIN="${SM120_VLLM_BIN}" \
     B200_VLLM_REPO="${B200_VLLM_REPO}" B200_VLLM_VENV="${B200_VLLM_VENV}" \
     PYTHON="${PYTHON}" VLLM_BIN="${VLLM_BIN}" \
     B200_BASELINE_LABEL="${SM12X_PREFILL_GAP_LABEL}_isl${input_len}" \

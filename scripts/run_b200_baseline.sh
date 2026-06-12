@@ -25,11 +25,7 @@ elif [[ "${BASE_URL}" != "${_derived_base_url}" ]]; then
   BASE_URL="${_derived_base_url}"
 fi
 unset _derived_base_url
-B200_VLLM_REPO="${B200_VLLM_REPO:-/workspace/vllm}"
-B200_VLLM_VENV="${B200_VLLM_VENV:-${B200_VLLM_REPO}/.venv}"
-PYTHON="${PYTHON:-${B200_VLLM_VENV}/bin/python}"
-VLLM_BIN="${VLLM_BIN:-${B200_VLLM_VENV}/bin/vllm}"
-VLLM_ROOT="${VLLM_ROOT:-${B200_VLLM_REPO}}"
+configure_sm120_vllm_env
 PYTHONPATH="$(harness_pythonpath)"
 export VLLM_ROOT PYTHONPATH
 B200_TENSOR_PARALLEL_SIZE="${B200_TENSOR_PARALLEL_SIZE:-4}"
@@ -148,11 +144,11 @@ RUN_DECODE_PROFILE="${RUN_DECODE_PROFILE:-0}"
 # eval_longbench2 is OFF by default. It runs the lm-evaluation-harness
 # `longbench2` task family (LongBench-v2, 503 multiple-choice questions
 # spanning 8K-2M token prompts) against a *fresh* serve at
-# LONGBENCH2_MAX_MODEL_LEN — the baseline serve at 65K is too small for
+# LONGBENCH2_MAX_MODEL_LEN - the baseline serve at 65K is too small for
 # anything beyond the Short tier. The phase tears down the variant's
 # running serve and launches its own, like decode_profile, then tears
 # the temporary serve down at the end. Set LONGBENCH2_MAX_MODEL_LEN
-# explicitly when enabling (no harness-side default — workstation tops
+# explicitly when enabling (no harness-side default - workstation tops
 # out near 128K, GB10 around 256K).
 RUN_LONGBENCH2="${RUN_LONGBENCH2:-0}"
 LONGBENCH2_TASKS="${LONGBENCH2_TASKS:-longbench2}"
@@ -1785,7 +1781,7 @@ for variant in ${variant_list}; do
   fi
 
   # decode_profile runs LAST in the variant cycle because it must launch its
-  # own vllm serve with VLLM_TORCH_PROFILER_DIR set at startup — the variant's
+  # own vllm serve with VLLM_TORCH_PROFILER_DIR set at startup - the variant's
   # active serve is torn down here. There is no after-this-phase serve restart
   # because the next iteration starts its own serve via start_server() anyway.
   if phase_enabled "decode_profile" && { [[ "${RUN_DECODE_PROFILE}" == "1" ]] || [[ "${RUN_DECODE_PROFILE}" == "true" ]]; }; then
