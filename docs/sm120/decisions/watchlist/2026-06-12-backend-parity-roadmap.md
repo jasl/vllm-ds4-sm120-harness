@@ -57,7 +57,11 @@ Integrate the active routes in this order:
   showed about `10-23%` TTFT improvement, but the vLLM adapter must stay behind
   `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` and must be revalidated under
   the current EP-off correctness and performance matrix before any PR
-  promotion.
+  promotion. The GB10 subset artifacts are
+  `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_prefill_gap_valid/20260608180541`,
+  `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_long_c2_mtp2/20260608185801`,
+  and
+  `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_mtp2_moe_soak_reduced/20260608190816`.
 - Treat `local-inference-lab/vllm` `dev/black-benediction` as the external
   performance target and reference implementation. The public remote moved from
   the 2026-06-12 freeze point `c6b2a7b187` to `5fcd00c3d7` on 2026-06-13; the

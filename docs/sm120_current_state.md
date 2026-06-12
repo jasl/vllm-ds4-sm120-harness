@@ -249,6 +249,11 @@ GB10 reduced long-C2 gate and a reduced MTP=2 MoE TP soak with clean driver
 health. It remains a reference implementation only: the endpoint gain is not
 enough to explain the full Aiden/unholy gap, the dependency is not an official
 wheel path, and RTX + GSM8K + prefix/KV lifecycle promotion is still pending.
+The reference artifacts are
+`artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_prefill_gap_valid/20260608180541`,
+`artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_long_c2_mtp2/20260608185801`,
+and
+`artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_mtp2_moe_soak_reduced/20260608190816`.
 
 External feedback on 2026-06-07 strengthens the GB10 prefill-gap concern: a
 NVIDIA Developer Forums report for the local-inference-lab / unholy-fusion

@@ -75,6 +75,36 @@ decision:
 | grouped-SWA D512, `1152` candidates | split `1.382 ms`, grouped-SWA `0.824 ms`. | Component signal is still real, but the older separate-launch endpoint form regressed. |
 | grouped-stream, `1152` candidates | split `1.320 ms`, grouped stream `0.600 ms`. | Strongest fork-independent signal points to fused dual-stream online processing, not to a direct dependency swap. |
 
+## Historical PR3395 GB10 Subset
+
+The 2026-06-08 GB10 packed FlashInfer promotion subset is the strongest
+endpoint-shaped evidence for the PR3395 route so far. It used the default-off
+`VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` adapter and completed:
+
+- prefill matrix:
+  `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_prefill_gap_valid/20260608180541`;
+- reduced long-C2:
+  `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_long_c2_mtp2/20260608185801`;
+- reduced MTP=2 MoE TP soak:
+  `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_mtp2_moe_soak_reduced/20260608190816`.
+
+| ISL | Env-off input tok/s | Packed input tok/s | TTFT env-off -> packed | Sparse ms/M effective visit |
+| ---: | ---: | ---: | --- | --- |
+| 4096 | `593.62` | `664.94` | `3.613s -> 2.767s` | `19.56 -> 0.639` |
+| 8192 | `892.37` | `1012.61` | `6.576s -> 5.165s` | `13.61 -> 0.577` |
+| 32768 | `1198.32` | `1368.76` | `24.561s -> 21.004s` | `10.50 -> 0.485` |
+| 128000 | `1185.68` | `1315.45` | `105.030s -> 94.386s` | `6.88 -> 0.345` |
+
+Sparse work moved from `sparse_accumulate` to `flashinfer_packed_attention`.
+The GB10 reduced long-C2 gate passed with 4 requests, 0 failures, max TTFT
+`147.820s`, p99 ITL `0.079s`, and driver signal `0`. The reduced MTP=2 MoE TP
+soak passed with 16 requests, 0 failures, no no-progress watchdog, p99 ITL
+`0.0739s`, and driver signal `0`.
+
+This evidence makes PR3395 worth reviving, but it still does not promote the
+route by itself. Missing gates remain RTX 59K/124K C=1/C=2, short throughput,
+mixed arrival, prefix/KV lifecycle, GSM8K limit-200, and a full GB10 soak.
+
 ## Current Direction
 
 1. Keep the stable PR branch and current dev branch pinned. Do not chase

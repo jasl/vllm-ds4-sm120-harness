@@ -11,6 +11,19 @@ addresses, tokens, or absolute model-cache locations.
 | RTX PR stable preview OSL=128 supplement | `artifacts/codex_pr_stable_preview_f32247a/2x_rtx_pro_6000_sm120/rtx_current_pr_short_throughput_mtp_noep_20260612084721` |
 | GB10 forum53 MTP2 EP-off C=2 prefix-cache gate | `artifacts/codex_pr_stable_preview_f32247a/2x_gb10_sm121/gb10_forum53_mtp2_epoff_c2_gmem0685_mml81920/20260612074113` |
 
+## Historical PR3395 GB10 Promotion Subset
+
+These are positive reference artifacts for the unmerged
+`VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` route. They are not PR-branch
+promotion evidence by themselves because RTX, GSM8K, lifecycle, and full GB10
+soak gates were still pending.
+
+| Run | Hardware | Status | Relative artifact |
+| --- | --- | --- | --- |
+| Packed FlashInfer prefill matrix | SM121 GB10 x2 | 8/8 passed, driver health clean | `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_prefill_gap_valid/20260608180541` |
+| Packed FlashInfer reduced long-C2 gate | SM121 GB10 x2 | 4 requests, 0 failures, driver signal 0 | `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_long_c2_mtp2/20260608185801` |
+| Packed FlashInfer reduced MTP=2 MoE TP soak | SM121 GB10 x2 | 16 requests, 0 failures, driver signal 0 | `artifacts/main/2x_gb10_sm121/20260608_packed_fi_promotion_mtp2_moe_soak_reduced/20260608190816` |
+
 ## Bottleneck Runs
 
 | Run | Branch/commit | Hardware | EP | Prefix cache | Artifact |
