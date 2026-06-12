@@ -376,8 +376,12 @@ that thread, search `External unholy-fusion feedback refresh`.
 - GB10 post-rebase user-regression rerun:
   open `docs/sm120_optimization_notes.md` and search
   `Post-rebase user-regression rerun, 2026-06-10`. Current conclusion: the
-  forum53 C=2/C=4 MTP=2 EP-off profile is clean with `max_tokens=256`, while
-  the C=8/MTP=2 reduced soak shows no no-token-progress but still logs a worker
+  earlier forum53 C=2/C=4 MTP=2 EP-off profile was clean with
+  `max_tokens=256`, but the 2026-06-12 PR-head refresh narrowed the review-safe
+  forum53 gate to C=2, `max_num_seqs=2`, `max_model_len=81920`, and
+  `gpu_memory_utilization=0.685` for MTP=2. C=4 and larger C=2 context settings
+  remain explicit pressure profiles until they are clean across fresh boots. The
+  C=8/MTP=2 reduced soak shows no no-token-progress but still logs a worker
   `NV_ERR_NO_MEMORY`; keep C=8 as diagnostic pressure only.
 
 ## Correctness

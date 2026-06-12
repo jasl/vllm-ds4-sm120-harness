@@ -199,22 +199,24 @@ fit the local 128K-130K ceiling and directly cover the latest PR feedback:
 - GB10 forum53 multi-user prefix-cache admission gate:
   run `scripts/run_gb10_forum53_multi_user_gate.sh` when scheduler admission,
   KV capacity, or prefix-cache behavior changes. The default shape is now a
-  guarded two-round C=2/C=4 profile with prefix cache enabled, `max_num_seqs=4`,
-  `max_model_len=196608`, `gpu_memory_utilization=0.80`, and
+  guarded two-round C=2 profile with prefix cache enabled, `max_num_seqs=2`,
+  `max_model_len=81920`, `gpu_memory_utilization=0.685`, and
   `max_num_batched_tokens=4096`; the script refuses unsafe
   `max_model_len` values above `2048898 * 0.70 / max_num_seqs` unless
   `GB10_FORUM53_SKIP_CONTEXT_GUARD=1` is set for deliberate destructive
-  pressure. Treat `running_requests_max=1` with a large waiting queue as an
-  admission/fairness regression to analyze, even when all requests eventually
-  complete. Use `GB10_FORUM53_BATCHED_TOKEN_SWEEP` for explicit 2048/8192
-  diagnostics; do not make them implicit promotion defaults without fresh
-  evidence. For the current real-user agent shape, also run a development-only
-  C=4 two-round long-context variant with a higher `GB10_FORUM53_MAX_MODEL_LEN`
-  before claiming prefix-cache-heavy multi-agent workloads are improved. For
-  post-rebase user-regression evidence, prefer C=2/C=4 cases with
-  `max_tokens=256`; the 128-token shape can truncate before the deterministic
-  sentinel and produce a false semantic failure even when runtime metrics and
-  driver health are clean.
+  pressure. The context guard is not enough by itself: larger same-guard C=2
+  values such as `131072` or `196608` are capacity probes until they pass on the
+  current PR head with clean current-boot driver health. Treat
+  `running_requests_max=1` with a large waiting queue as an admission/fairness
+  regression to analyze, even when all requests eventually complete. Use
+  `GB10_FORUM53_BATCHED_TOKEN_SWEEP` for explicit 2048/8192 diagnostics; do not
+  make them implicit promotion defaults without fresh evidence. For the current
+  real-user agent shape, also run the
+  development-only `GB10_FORUM53_PROFILE=c4_prefix_cache_pressure` variant
+  before claiming prefix-cache-heavy C=4 multi-agent workloads are improved.
+  Use `max_tokens=256`; the 128-token shape can truncate before the
+  deterministic sentinel and produce a false semantic failure even when runtime
+  metrics and driver health are clean.
 - Multi-session decode pressure proxy for
   [issuecomment-4505504798](https://github.com/vllm-project/vllm/pull/41834#issuecomment-4505504798):
   run `streaming_pressure_matrix` on the local TP=2 server with at least
@@ -314,11 +316,14 @@ ds4-style frontier latency, ds4 story-recall semantic status, and prefix-cache
 stability and recoverability. The
 dual RTX PRO 6000 default serve point is the measured 128K small-concurrency
 configuration:
-`--gpu-memory-utilization 0.975 --max-num-batched-tokens 4096 --max-num-seqs 4 --enable-expert-parallel --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'`.
+`--distributed-executor-backend mp --gpu-memory-utilization 0.975 --max-num-batched-tokens 4096 --max-num-seqs 4 --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'`.
 This keeps FULL_AND_PIECEWISE CUDA graphs enabled while limiting capture memory
-enough for 124K/128K prompts. Override the `USER_FEEDBACK_*` serve variables
-or `B200_EXTRA_SERVE_ARGS` for high-concurrency short-context sweeps, and do
-not compare those results directly to the 128K small-concurrency baseline.
+enough for 124K/128K prompts. Expert parallel is disabled by default for the
+current SM12x profile. Turn it on only through the explicit harness env knobs
+for A/B runs, and compare EP-on results only against accepted EP-on baselines.
+Override the `USER_FEEDBACK_*` serve variables or `B200_EXTRA_SERVE_ARGS` for
+high-concurrency short-context sweeps, and do not compare those results
+directly to the 128K small-concurrency baseline.
 The
 profile hard-gates GSM8K limit-200 at `exact_match_flexible >= 0.94` and
 `exact_match_strict >= 0.925`, so any further correctness drop blocks the

@@ -761,7 +761,6 @@ vllm serve deepseek-ai/DeepSeek-V4-Flash \
   --block-size 256 \
   --max-model-len 393216 \
   --tensor-parallel-size 4 \
-  --no-enable-flashinfer-autotune \
   --attention_config.use_fp4_indexer_cache=True \
   --reasoning-parser deepseek_v4 \
   --tokenizer-mode deepseek_v4 \
@@ -774,6 +773,8 @@ The final `--speculative_config` line enables MTP. Remove it for the no-MTP
 baseline, and keep the rest of the serve command the same when comparing MTP
 against no-MTP. `--max-model-len 393216` follows the DeepSeek recommendation
 to keep Think Max quality tests on a context window of at least 384K tokens.
+FlashInfer autotune should follow the current vLLM default unless a specific
+regression is being isolated.
 The `--attention_config.use_fp4_indexer_cache=True` flag is currently SM100/B200
 specific. Do not use it on SM12x hosts such as RTX Pro 6000, RTX 5090, or GB10;
 those runs should leave `SERVE_USE_FP4_INDEXER_CACHE=auto` or set it to `0`.
@@ -1024,6 +1025,12 @@ an explicit split-GPU assignment. It stores phase exit codes in
 `phase_exit_codes.tsv` and a human summary in `baseline_summary.md`. It keeps
 running later phases after an earlier phase fails, then exits non-zero if any
 phase failed; the artifact tree is still valid for partial-baseline analysis.
+When overriding `B200_EXTRA_SERVE_ARGS` manually, keep JSON-valued flags as one
+shell token, for example
+`--compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'`.
+Bad quoting can make startup fail before any useful benchmark evidence is
+produced; prefer the profile-specific environment knobs when changing memory,
+sequence, EP, or CUDA graph settings.
 
 The reference venv must include the packages needed by `vllm bench serve` and
 the harness self-checks. At minimum, confirm `python -m pip check` is clean and
@@ -1195,7 +1202,10 @@ Before promoting an optimization:
   and prefix-cache stress data.
   On dual RTX PRO 6000 the profile defaults to the current 128K
   small-concurrency serve point:
-  `--gpu-memory-utilization 0.975 --max-num-batched-tokens 4096 --max-num-seqs 4 --enable-expert-parallel`.
+  `--distributed-executor-backend mp --gpu-memory-utilization 0.975 --max-num-batched-tokens 4096 --max-num-seqs 4`.
+  Expert parallel is disabled by default for the current SM12x promotion
+  profile. Enable it only for explicit A/B runs, and compare EP-on results only
+  against accepted EP-on baselines.
   Override `USER_FEEDBACK_GPU_MEMORY_UTILIZATION`,
   `USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS`, `USER_FEEDBACK_MAX_NUM_SEQS`, or
   `B200_EXTRA_SERVE_ARGS` when the goal is high-concurrency short-context
@@ -1213,6 +1223,14 @@ Before promoting an optimization:
   SM120. Run it only as an explicit isolation step with
   `RUN_USER_FEEDBACK_ISSUE10=1`, preserve partial artifacts, and do not treat
   a matrix that stops in this diagnostic as a complete promotion baseline.
+- `scripts/run_gb10_forum53_multi_user_gate.sh` is the GB10 / SM121
+  prefix-cache multi-user memory/admission gate. Its review-safe default is the
+  latest clean PR-head profile: `max_model_len=81920`, `max_num_seqs=2`,
+  `gpu_memory_utilization=0.685`, `max_num_batched_tokens=4096`, prefix cache
+  enabled, MP executor, expert parallel disabled, FP8 KV, and MTP=2 when
+  `GB10_FORUM53_OPTIONAL_MTP2=1`. Larger C=2 context settings and the C=4
+  profile are pressure probes until they produce clean startup, request, runtime,
+  and current-boot driver-health evidence on the branch being reviewed.
 - Before pushing the vLLM PR branch, run the hard performance regression gate
   against the latest accepted `bench_random_8000x1000/bench.json` reference:
   `PERF_BASELINE_JSON=/path/to/accepted/bench.json scripts/run_sm120_pr_performance_regression_gate.sh`.

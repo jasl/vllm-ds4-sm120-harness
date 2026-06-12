@@ -9,7 +9,7 @@
 #
 # Optional env:
 #   VLLM_REPO           Path to local vllm checkout (default
-#                       /home/jasl/Workspace/vllm).
+#                       ${REPO_ROOT}/vllm).
 #   BATCH_SIZES         Comma-separated M values
 #                       (default 1,2,4,8,16,32,64,128,256,512).
 #   SHAPES              Override shapes spec, e.g. "1536,4096:16384,1024"
@@ -42,7 +42,7 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 OUT_DIR="${OUT_DIR:?set OUT_DIR}"
-VLLM_REPO="${VLLM_REPO:-/home/jasl/Workspace/vllm}"
+VLLM_REPO="${VLLM_REPO:-${REPO_ROOT}/vllm}"
 BATCH_SIZES="${BATCH_SIZES:-1,2,4,8,16,32,64,128,256,512}"
 SHAPES="${SHAPES:-}"
 GPU_ID="${GPU_ID:-0}"

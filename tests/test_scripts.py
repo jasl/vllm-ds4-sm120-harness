@@ -183,6 +183,10 @@ def test_sm120_pr_performance_regression_gate_is_hard_gate():
     assert 'SM120_PR_PERF_CONCURRENCY="${SM120_PR_PERF_CONCURRENCY:-1,2,4,8,16,24}"' in script
     assert 'SM120_PR_PERF_MAX_MODEL_LEN="${SM120_PR_PERF_MAX_MODEL_LEN:-16384}"' in script
     assert 'SM120_PR_PERF_MAX_NUM_SEQS="${SM120_PR_PERF_MAX_NUM_SEQS:-24}"' in script
+    assert (
+        'SM120_PR_PERF_ENABLE_EXPERT_PARALLEL="${SM120_PR_PERF_ENABLE_EXPERT_PARALLEL:-0}"'
+        in script
+    )
     assert 'RANDOM_8K1K_INPUT_LEN="${RANDOM_8K1K_INPUT_LEN:-8000}"' in script
     assert 'RANDOM_8K1K_OUTPUT_LEN="${RANDOM_8K1K_OUTPUT_LEN:-1000}"' in script
     assert 'B200_BASELINE_PHASES="${B200_BASELINE_PHASES:-bench_random_8000x1000}"' in script
@@ -195,6 +199,10 @@ def test_sm120_pr_performance_regression_gate_is_hard_gate():
         '${SM120_PR_PERF_MIN_SPEC_ACCEPTANCE_PERCENT:-0.0}"'
     ) in script
     assert "FULL_AND_PIECEWISE" in script
+    assert "--distributed-executor-backend mp" in script
+    assert '--enable-expert-parallel' in script
+    assert '_sm120_pr_perf_expert_parallel_arg=""' in script
+    assert 'SM120_PR_PERF_ENABLE_EXPERT_PARALLEL="${SM120_PR_PERF_ENABLE_EXPERT_PARALLEL}"' in script
     assert '--concurrency "${SM120_PR_PERF_CONCURRENCY}"' in script
     assert "--fail-on-regression" in script
     assert "--min-output-speedup" in script
@@ -225,6 +233,24 @@ def test_sm12x_sparse_mla_ncu_microbench_targets_current_chunk_path():
     assert "Eligible Warps Per Scheduler" in script
     assert "sm12x_sparse_mla_ncu_microbench_summary.json" in script
     assert "sm12x_sparse_mla_ncu_microbench_summary.md" in script
+
+
+def test_sm12x_prefill_decode_promotion_defaults_to_mp_without_ep():
+    script = (
+        ROOT / "scripts" / "run_sm12x_prefill_decode_promotion_gate.sh"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL="'
+        '${SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL:-0}"'
+    ) in script
+    assert "--distributed-executor-backend mp" in script
+    assert '--enable-expert-parallel' in script
+    assert '_prefill_decode_expert_parallel_arg=""' in script
+    assert (
+        'SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL}"'
+        in script
+    )
 
 
 def test_gb10_mtp2_moe_deadlock_gate_matches_user_report_shape():
@@ -314,9 +340,10 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert 'SM12X_PREFILL_GAP_STAGE_TIMING="${SM12X_PREFILL_GAP_STAGE_TIMING:-0}"' in script
     assert 'SM12X_PREFILL_GAP_D512_ENV="${SM12X_PREFILL_GAP_D512_ENV:-0}"' in script
     assert (
-        'SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL:-1}"'
+        'SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL:-0}"'
         in script
     )
+    assert "--distributed-executor-backend mp" in script
     assert "_prefill_gap_expert_parallel_arg" in script
     assert "SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL must be 0/1 or true/false" in script
     assert "SM12X_PREFILL_GAP_D512_ENV must be 0, 1, or default" in script
@@ -672,10 +699,16 @@ def test_sm120_local_quality_gate_profile_targets_dual_card_dev_shape():
     assert 'SM120_LOCAL_GPU_MEMORY_UTILIZATION="${SM120_LOCAL_GPU_MEMORY_UTILIZATION:-0.975}"' in script
     assert 'SM120_LOCAL_MAX_NUM_BATCHED_TOKENS="${SM120_LOCAL_MAX_NUM_BATCHED_TOKENS:-4096}"' in script
     assert 'SM120_LOCAL_MAX_NUM_SEQS="${SM120_LOCAL_MAX_NUM_SEQS:-4}"' in script
+    assert (
+        'SM120_LOCAL_ENABLE_EXPERT_PARALLEL="${SM120_LOCAL_ENABLE_EXPERT_PARALLEL:-0}"'
+        in script
+    )
     assert "--gpu-memory-utilization ${SM120_LOCAL_GPU_MEMORY_UTILIZATION}" in script
     assert "--max-num-batched-tokens ${SM120_LOCAL_MAX_NUM_BATCHED_TOKENS}" in script
     assert "--max-num-seqs ${SM120_LOCAL_MAX_NUM_SEQS}" in script
+    assert "--distributed-executor-backend mp" in script
     assert "--enable-expert-parallel" in script
+    assert "_sm120_local_expert_parallel_arg" in script
     assert "FULL_AND_PIECEWISE" in script
     assert 'RUN_PREFIX_CACHE_PROBE="${RUN_PREFIX_CACHE_PROBE:-0}"' in script
     assert 'RUN_LONG_CONTEXT_DECODE_CONCURRENCY="${RUN_LONG_CONTEXT_DECODE_CONCURRENCY:-1}"' in script
@@ -874,9 +907,18 @@ def test_sm120_user_feedback_matrix_combines_reported_shapes():
     assert 'USER_FEEDBACK_GPU_MEMORY_UTILIZATION="${USER_FEEDBACK_GPU_MEMORY_UTILIZATION:-0.975}"' in script
     assert 'USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS="${USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS:-4096}"' in script
     assert 'USER_FEEDBACK_MAX_NUM_SEQS="${USER_FEEDBACK_MAX_NUM_SEQS:-4}"' in script
+    assert (
+        'USER_FEEDBACK_ENABLE_EXPERT_PARALLEL="${USER_FEEDBACK_ENABLE_EXPERT_PARALLEL:-0}"'
+        in script
+    )
+    assert (
+        'USER_FEEDBACK_THROUGHPUT_ENABLE_EXPERT_PARALLEL="${USER_FEEDBACK_THROUGHPUT_ENABLE_EXPERT_PARALLEL:-${USER_FEEDBACK_ENABLE_EXPERT_PARALLEL}}"'
+        in script
+    )
     assert "--gpu-memory-utilization ${USER_FEEDBACK_GPU_MEMORY_UTILIZATION}" in script
     assert "--max-num-batched-tokens ${USER_FEEDBACK_MAX_NUM_BATCHED_TOKENS}" in script
     assert "--max-num-seqs ${USER_FEEDBACK_MAX_NUM_SEQS}" in script
+    assert "--distributed-executor-backend mp" in script
     assert "--enable-expert-parallel" in script
     assert "long_context_latency_matrix,frontier_context_sweep,ds4_story_recall_semantic,long_context_decode_concurrency" in script
     assert "frontier_context_sweep" in script
@@ -1546,6 +1588,10 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
 
     assert 'GB10_FORUM53_VARIANTS="${GB10_FORUM53_VARIANTS:-nomtp}"' in script
     assert 'GB10_FORUM53_PROFILE="${GB10_FORUM53_PROFILE:-safe_default}"' in script
+    assert "c4_prefix_cache_pressure" in script
+    assert 'GB10_FORUM53_LABEL="${GB10_FORUM53_LABEL:-gb10_forum53_c4_prefix_cache_pressure}"' in script
+    assert "forum53_c4:4:2:3200:256" in script
+    assert 'GB10_FORUM53_MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-4}"' in script
     assert "long_prefix_400k_c6c8" in script
     assert 'GB10_FORUM53_LABEL="${GB10_FORUM53_LABEL:-gb10_forum53_long_prefix_400k_pressure}"' in script
     assert 'GB10_FORUM53_MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-458752}"' in script
@@ -1553,9 +1599,9 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
     assert "forum53_c6_400k:6:2:16000:64:1800:7200" in script
     assert "forum53_c8_400k:8:2:16000:64:1800:7200" in script
     assert 'GB10_FORUM53_OPTIONAL_MTP2="${GB10_FORUM53_OPTIONAL_MTP2:-0}"' in script
-    assert 'MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-196608}"' in script
-    assert 'MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-4}"' in script
-    assert 'GPU_MEMORY_UTILIZATION="${GB10_FORUM53_GPU_MEMORY_UTILIZATION:-0.80}"' in script
+    assert 'MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-81920}"' in script
+    assert 'MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-2}"' in script
+    assert 'GPU_MEMORY_UTILIZATION="${GB10_FORUM53_GPU_MEMORY_UTILIZATION:-0.685}"' in script
     assert (
         'GB10_FORUM53_BATCHED_TOKEN_SWEEP="${GB10_FORUM53_BATCHED_TOKEN_SWEEP:-4096}"'
         in script
@@ -1573,7 +1619,7 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
     assert "driver_health_summary.json" in script
     assert "GB10_FORUM53_ALLOW_DRIVER_SIGNALS" in script
     assert "driver_health.get(\"ok\", True)" in script
-    assert 'GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c2:2:2:3200:128,forum53_c4:4:2:3200:128}"' in script
+    assert 'GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c2:2:2:3200:256}"' in script
     assert 'GB10_FORUM53_TEMPERATURE="${GB10_FORUM53_TEMPERATURE:-0}"' in script
     assert 'STREAMING_PRESSURE_MATRIX_TEMPERATURE=$(shell_quote "${GB10_FORUM53_TEMPERATURE}")' in script
     assert 'GB10_FORUM53_SAFE_TOTAL_KV_TOKENS="${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS:-2048898}"' in script
@@ -1600,6 +1646,16 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
     assert "SUMMARY_MAX_MODEL_LEN" in script
     assert "SUMMARY_PROFILE" in script
     assert "SUMMARY_EXPERT_PARALLEL_ENABLED" in script
+    assert "SUMMARY_TP_SIZE" in script
+    assert "SUMMARY_PP_SIZE" in script
+    assert "SUMMARY_GPU_MEMORY_UTILIZATION" in script
+    assert "SUMMARY_BLOCK_SIZE" in script
+    assert "SUMMARY_KV_CACHE_DTYPE" in script
+    assert '"tensor_parallel_size": int(os.environ["SUMMARY_TP_SIZE"])' in script
+    assert '"pipeline_parallel_size": int(os.environ["SUMMARY_PP_SIZE"])' in script
+    assert '"gpu_memory_utilization": os.environ["SUMMARY_GPU_MEMORY_UTILIZATION"]' in script
+    assert '"block_size": int(os.environ["SUMMARY_BLOCK_SIZE"])' in script
+    assert '"kv_cache_dtype": os.environ["SUMMARY_KV_CACHE_DTYPE"]' in script
     assert "SUMMARY_SAFE_CONTEXT_LIMIT" in script
     assert "SUMMARY_CASE_SPECS" in script
     assert "running_requests_max" in script
@@ -1612,6 +1668,8 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
 
     assert "scripts/run_gb10_forum53_multi_user_gate.sh" in docs
     assert "forum53 multi-user prefix-cache gate" in docs
+    assert "max_model_len=81920" in docs
+    assert "gpu_memory_utilization=0.685" in docs
     assert "GB10_FORUM53_PROFILE=long_prefix_400k_c6c8" in docs
     assert "GB10_FORUM53_SKIP_CONTEXT_GUARD=1" in docs
     assert "GB10 forum53 safe context limits" in docs
@@ -1702,6 +1760,7 @@ def test_gb10_forum53_high_pressure_profile_requires_guard_override(tmp_path):
         "context_safety_percent=70",
         "configured_max_num_seqs=8",
         "configured_max_model_len=458752",
+        "configured_gpu_memory_utilization=0.685",
         "safe_context_limit=179278",
     ]
 
@@ -2460,6 +2519,9 @@ def test_sm12x_c2_fairness_interference_protocol_reuses_fairness_serve_command()
     assert "long_context_latency_matrix,long_context_decode_concurrency,long_context_mixed_arrival" in script
     assert 'SM12X_C2_LINE_COUNTS="${SM12X_C2_LINE_COUNTS:-1900,4000}"' in script
     assert 'SM12X_C2_CONCURRENCY="${SM12X_C2_CONCURRENCY:-1,2}"' in script
+    assert 'SM12X_C2_ENABLE_EXPERT_PARALLEL="${SM12X_C2_ENABLE_EXPERT_PARALLEL:-0}"' in script
+    assert "--distributed-executor-backend mp" in script
+    assert "_sm12x_c2_expert_parallel_arg" in script
     assert "long_long_c2:4000:4000:fixed_delay:0:128:128" in script
     assert "decode_then_124k:4000:4000:after_first_token:0:256:128" in script
     assert "long_then_short:4000:192:fixed_delay:2:128:64" in script
@@ -2487,9 +2549,10 @@ def test_sm12x_prefill_decode_promotion_gate_covers_fairness_without_nsys():
     assert 'SM12X_PREFILL_DECODE_LINE_COUNTS="${SM12X_PREFILL_DECODE_LINE_COUNTS:-1900,4000}"' in script
     assert 'SM12X_PREFILL_DECODE_CONCURRENCY="${SM12X_PREFILL_DECODE_CONCURRENCY:-1,2}"' in script
     assert (
-        'SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL:-1}"'
+        'SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL:-0}"'
         in script
     )
+    assert "--distributed-executor-backend mp" in script
     assert "_prefill_decode_expert_parallel_arg" in script
     assert (
         "SM12X_PREFILL_DECODE_ENABLE_EXPERT_PARALLEL must be 0/1 or true/false"

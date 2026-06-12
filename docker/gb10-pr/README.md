@@ -84,7 +84,6 @@ node names, addresses, model cache paths, and credentials outside this repo.
     --max-num-batched-tokens 4176 \
     --gpu-memory-utilization 0.70 \
     --kv-cache-dtype fp8 \
-    --enable-expert-parallel \
     --compilation-config '{"cudagraph_mode":"FULL_AND_PIECEWISE","custom_ops":["all"]}'
 ```
 

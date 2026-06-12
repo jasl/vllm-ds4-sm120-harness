@@ -776,9 +776,9 @@ Default safe shape:
 
 - `TP=2`, `PP=1`, MP executor, expert parallel disabled.
 - Prefix cache enabled.
-- `max_model_len=196608`.
-- `max_num_seqs=4`.
-- `gpu_memory_utilization=0.80`.
+- `max_model_len=81920`.
+- `max_num_seqs=2`.
+- `gpu_memory_utilization=0.685`.
 - `FULL_AND_PIECEWISE` CUDA graph mode.
 - `GB10_FORUM53_ENABLE_EXPERT_PARALLEL=0` by default. Set it to `1` only for
   explicit EP-on fallback A/B against older artifacts.
@@ -786,10 +786,17 @@ Default safe shape:
   stability comparison.
 - `max_num_batched_tokens=4096`.
 - Streaming matrix cases:
-  `forum53_c2:2:2:3200:128,forum53_c4:4:2:3200:128`.
+  `forum53_c2:2:2:3200:256`.
   The second round is intentional: the user-facing failure is about
   multi-session behavior with prefix cache enabled, so the gate must include a
   warm-turn prefix-cache reuse path rather than only cold first turns.
+
+The C=4 variant is still important, but it is not the safe default. Run it as
+`GB10_FORUM53_PROFILE=c4_prefix_cache_pressure` after a clean boot when the goal
+is to inspect planned maximum concurrency rather than to run a promotion smoke.
+Likewise, larger C=2 context ceilings such as `131072` or `196608` are capacity
+pressure probes, not review-safe defaults, until they pass on the current PR
+head with clean current-boot driver health.
 
 Use `GB10_FORUM53_BATCHED_TOKEN_SWEEP` for explicit 2048/8192 diagnostics.
 Those shapes are useful for tuning, but the default promotion gate should stay
@@ -807,15 +814,17 @@ the smallest successful no-MTP forum53 startup capacity observed in the
 | `max_num_seqs` | Safe `max_model_len` | Recommended use |
 | ---: | ---: | --- |
 | 1 | 1,434,228 | Capacity probe only; not a multi-user gate. |
-| 2 | 717,114 | Recommended GB10 long-context envelope. |
-| 4 | 358,557 | Planned GB10 maximum concurrency envelope. |
+| 2 | 717,114 | KV guard ceiling; review-safe default remains 81,920 until larger profiles rerun cleanly. |
+| 4 | 358,557 | Planned concurrency pressure only; not a default gate. |
 | 6 | 239,038 | High-risk pressure only; do not use 262K by default. |
 | 8 | 179,278 | High-risk pressure only; do not use 262K by default. |
 
 The script writes `forum53_context_safety.csv` and
-`forum53_context_safety.txt` into the artifact root before serving starts. If a
-profile exceeds the safe limit, it exits with code `2` instead of launching a
-known-risk CUDA graph/KV configuration. Only set
+`forum53_context_safety.txt` into the artifact root before serving starts. The
+guard is a KV-capacity ceiling, not a promise that CUDA graph capture or model
+load memory will be clean at that shape. If a profile exceeds the safe limit, it
+exits with code `2` instead of launching a known-risk CUDA graph/KV
+configuration. Only set
 `GB10_FORUM53_SKIP_CONTEXT_GUARD=1` for a deliberate destructive pressure test
 after a clean reboot and with someone ready to recover the cluster.
 
@@ -843,28 +852,41 @@ zero preemptions, zero driver signals, max TTFT `130.16s`, and ITL p99
 fallback A/B when comparing to older EP-on baselines.
 
 For the newer real-user agent shape, keep this as a development observation
-gate rather than a normal PR hard gate: raise `GB10_FORUM53_MAX_MODEL_LEN` to
-the target envelope within the table above, use `GB10_FORUM53_MAX_NUM_SEQS=4`,
-and set
-`GB10_FORUM53_CASE_SPECS` to a C=4 two-round case with enough deterministic
-lines to approach the target shared-context length. Compare round-2 TTFT,
+gate rather than a normal PR hard gate: run
+`GB10_FORUM53_PROFILE=c4_prefix_cache_pressure`, raise
+`GB10_FORUM53_MAX_MODEL_LEN` only within the target envelope in the table above,
+and override `GB10_FORUM53_CASE_SPECS` with enough deterministic lines to
+approach the target shared-context length. Compare round-2 TTFT,
 `running_requests_max`, `waiting_requests_max`, prefix-cache hit deltas, and KV
 usage against the cold round before deciding whether a scheduling change helps
 agent workloads.
 
 Post-rebase regression note, 2026-06-10:
 
-- The MTP=2 EP-off forum53 C=2/C=4 shape passed cleanly with
+- The earlier MTP=2 EP-off forum53 C=2/C=4 shape passed cleanly with
   `max_tokens=256`: 12/12 requests successful, no current-boot driver signals,
   no preemptions, max TTFT about `127s`, and ITL p99 about `0.117s`.
+- A later promotion recheck showed the C=4 path can still generate current-boot
+  `NV_ERR_NO_MEMORY` signals under otherwise conservative settings. The default
+  forum53 gate is therefore narrowed to the recommended C=2 path; keep C=4 as an
+  explicit pressure profile until it is clean across fresh boots.
 - The same shape with `max_tokens=128` can fail the harness semantic sentinel
   because the generated answer is truncated before the marker appears. Treat
   that as an output-budget false-negative unless runtime metrics or driver
   health also regress.
-- For post-rebase user-regression evidence, prefer overriding
-  `GB10_FORUM53_CASE_SPECS` so the forum53 C=2/C=4 cases use `max_tokens=256`.
-  Keep the shorter default only when runtime cost matters more than semantic
-  sentinel robustness.
+- For post-rebase user-regression evidence, keep `max_tokens=256` for semantic
+  sentinel robustness. The older 128-token shape can truncate before the
+  deterministic sentinel and produce a false semantic failure even when runtime
+  metrics and driver health are clean.
+- The 2026-06-12 final PR-head refresh narrowed the review-safe GB10 forum53
+  MTP=2 evidence further to `max_model_len=81920` and
+  `gpu_memory_utilization=0.685`: artifact
+  `artifacts/codex_pr_stable_preview_f32247a/2x_gb10_sm121/gb10_forum53_mtp2_epoff_c2_gmem0685_mml81920/20260612074113`.
+  It passed with 4/4 requests, no preemptions, and no current-boot driver
+  signals. Same-boot attempts at `196608` and `131072` generated driver-health
+  failures, and `98304` attempts at lower memory utilization did not start
+  cleanly; keep those as failed capacity probes unless rerun cleanly after a
+  fresh reboot.
 
 Optional forum53 high-pressure benchmark:
 

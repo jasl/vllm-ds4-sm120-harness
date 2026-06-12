@@ -138,6 +138,12 @@ GB10_FORUM53_PROFILE="${GB10_FORUM53_PROFILE:-safe_default}"
 case "${GB10_FORUM53_PROFILE}" in
   safe_default|default)
     ;;
+  c4_prefix_cache_pressure)
+    GB10_FORUM53_LABEL="${GB10_FORUM53_LABEL:-gb10_forum53_c4_prefix_cache_pressure}"
+    GB10_FORUM53_CASE_NAME="${GB10_FORUM53_CASE_NAME:-forum53_c4_prefix_cache_pressure}"
+    GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c2:2:2:3200:256,forum53_c4:4:2:3200:256}"
+    GB10_FORUM53_MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-4}"
+    ;;
   long_prefix_400k_c6c8)
     GB10_FORUM53_LABEL="${GB10_FORUM53_LABEL:-gb10_forum53_long_prefix_400k_pressure}"
     GB10_FORUM53_CASE_NAME="${GB10_FORUM53_CASE_NAME:-forum53_long_prefix_400k_pressure}"
@@ -152,7 +158,7 @@ case "${GB10_FORUM53_PROFILE}" in
     ;;
   *)
     printf 'unsupported GB10_FORUM53_PROFILE: %s\n' "${GB10_FORUM53_PROFILE}" >&2
-    printf 'supported profiles: safe_default, long_prefix_400k_c6c8\n' >&2
+    printf 'supported profiles: safe_default, c4_prefix_cache_pressure, long_prefix_400k_c6c8\n' >&2
     exit 2
     ;;
 esac
@@ -172,7 +178,7 @@ if [[ "${GB10_FORUM53_OPTIONAL_MTP2}" == "1" || "${GB10_FORUM53_OPTIONAL_MTP2}" 
 fi
 GB10_FORUM53_BATCHED_TOKEN_SWEEP="${GB10_FORUM53_BATCHED_TOKEN_SWEEP:-4096}"
 GB10_FORUM53_CASE_NAME="${GB10_FORUM53_CASE_NAME:-forum53_multi_user_prefix_cache}"
-GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c2:2:2:3200:128,forum53_c4:4:2:3200:128}"
+GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c2:2:2:3200:256}"
 GB10_FORUM53_TIMEOUT="${GB10_FORUM53_TIMEOUT:-1800}"
 GB10_FORUM53_MAX_TTFT_SECONDS="${GB10_FORUM53_MAX_TTFT_SECONDS:-600}"
 GB10_FORUM53_MAX_ELAPSED_SECONDS="${GB10_FORUM53_MAX_ELAPSED_SECONDS:-1800}"
@@ -203,9 +209,9 @@ MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash}"
 API_PORT="${API_PORT:-8000}"
 TP_SIZE="${GB10_FORUM53_TP_SIZE:-2}"
 PP_SIZE="${GB10_FORUM53_PP_SIZE:-1}"
-MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-196608}"
-GPU_MEMORY_UTILIZATION="${GB10_FORUM53_GPU_MEMORY_UTILIZATION:-0.80}"
-MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-4}"
+MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-81920}"
+GPU_MEMORY_UTILIZATION="${GB10_FORUM53_GPU_MEMORY_UTILIZATION:-0.685}"
+MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-2}"
 BLOCK_SIZE="${GB10_FORUM53_BLOCK_SIZE:-256}"
 KV_CACHE_DTYPE="${GB10_FORUM53_KV_CACHE_DTYPE:-fp8}"
 MIN_AVAILABLE_MEM_GIB="${GB10_FORUM53_MIN_AVAILABLE_MEM_GIB:-96}"
@@ -249,6 +255,7 @@ SAFE_CONTEXT_LIMIT="$(safe_context_limit "${MAX_NUM_SEQS}")"
   printf 'context_safety_percent=%s\n' "${GB10_FORUM53_CONTEXT_SAFETY_PERCENT}"
   printf 'configured_max_num_seqs=%s\n' "${MAX_NUM_SEQS}"
   printf 'configured_max_model_len=%s\n' "${MAX_MODEL_LEN}"
+  printf 'configured_gpu_memory_utilization=%s\n' "${GPU_MEMORY_UTILIZATION}"
   printf 'safe_context_limit=%s\n' "${SAFE_CONTEXT_LIMIT}"
 } > "${OUT_DIR}/forum53_context_safety.txt"
 
@@ -455,8 +462,13 @@ PY
 SUMMARY_ROOT="${OUT_DIR}" \
 SUMMARY_PROFILE="${GB10_FORUM53_PROFILE}" \
 SUMMARY_EXPERT_PARALLEL_ENABLED="${gb10_forum53_enable_expert_parallel}" \
+SUMMARY_TP_SIZE="${TP_SIZE}" \
+SUMMARY_PP_SIZE="${PP_SIZE}" \
 SUMMARY_MAX_MODEL_LEN="${MAX_MODEL_LEN}" \
 SUMMARY_MAX_NUM_SEQS="${MAX_NUM_SEQS}" \
+SUMMARY_GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION}" \
+SUMMARY_BLOCK_SIZE="${BLOCK_SIZE}" \
+SUMMARY_KV_CACHE_DTYPE="${KV_CACHE_DTYPE}" \
 SUMMARY_SAFE_TOTAL_KV_TOKENS="${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS}" \
 SUMMARY_CONTEXT_SAFETY_PERCENT="${GB10_FORUM53_CONTEXT_SAFETY_PERCENT}" \
 SUMMARY_SAFE_CONTEXT_LIMIT="${SAFE_CONTEXT_LIMIT}" \
@@ -538,8 +550,13 @@ payload = {
     "driver_health": driver_health,
     "profile": {
         "name": os.environ["SUMMARY_PROFILE"],
+        "tensor_parallel_size": int(os.environ["SUMMARY_TP_SIZE"]),
+        "pipeline_parallel_size": int(os.environ["SUMMARY_PP_SIZE"]),
         "max_model_len": int(os.environ["SUMMARY_MAX_MODEL_LEN"]),
         "max_num_seqs": int(os.environ["SUMMARY_MAX_NUM_SEQS"]),
+        "gpu_memory_utilization": os.environ["SUMMARY_GPU_MEMORY_UTILIZATION"],
+        "block_size": int(os.environ["SUMMARY_BLOCK_SIZE"]),
+        "kv_cache_dtype": os.environ["SUMMARY_KV_CACHE_DTYPE"],
         "prefix_cache": os.environ["SUMMARY_PREFIX_CACHE"],
         "case_specs": os.environ["SUMMARY_CASE_SPECS"],
         "safe_total_kv_tokens": int(os.environ["SUMMARY_SAFE_TOTAL_KV_TOKENS"]),
@@ -569,10 +586,16 @@ lines = [
     f"- Expert parallel enabled: `{payload['expert_parallel_enabled']}`",
     f"- Driver health OK: `{payload['driver_health'].get('ok', True)}`",
     f"- Driver signal count: `{payload['driver_health'].get('signal_count', 0)}`",
-    "- Profile `{}`: `TP=2`, `max_model_len={}`, `max_num_seqs={}`, prefix cache `{}`.".format(
+    "- Profile `{}`: `TP={}`, `PP={}`, `max_model_len={}`, `max_num_seqs={}`, "
+    "`gpu_memory_utilization={}`, KV `{}`, block size `{}`, prefix cache `{}`.".format(
         payload["profile"]["name"],
+        payload["profile"]["tensor_parallel_size"],
+        payload["profile"]["pipeline_parallel_size"],
         payload["profile"]["max_model_len"],
         payload["profile"]["max_num_seqs"],
+        payload["profile"]["gpu_memory_utilization"],
+        payload["profile"]["kv_cache_dtype"],
+        payload["profile"]["block_size"],
         payload["profile"]["prefix_cache"],
     ),
     "- Safe context limit: `{}` tokens (`{}%` of `{}` observed KV tokens / `max_num_seqs`).".format(

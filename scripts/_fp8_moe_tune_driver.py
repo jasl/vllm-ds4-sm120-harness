@@ -342,12 +342,13 @@ def _tune_one_shape(
 
 
 def main() -> int:
+    default_vllm_repo = Path(__file__).resolve().parents[1] / "vllm"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--vllm-repo",
         type=Path,
-        default=Path(os.environ.get("VLLM_REPO", "/home/jasl/Workspace/vllm")),
-        help="Path to vllm git checkout (default: $VLLM_REPO).",
+        default=Path(os.environ.get("VLLM_REPO", default_vllm_repo)),
+        help="Path to vllm git checkout (default: $VLLM_REPO or repo-local vllm).",
     )
     parser.add_argument(
         "--out-dir",

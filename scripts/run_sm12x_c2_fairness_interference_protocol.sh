@@ -42,7 +42,20 @@ SM12X_C2_NSYS_OUT_DIR="${SM12X_C2_NSYS_OUT_DIR:-${SM12X_C2_PROTOCOL_ROOT}/interf
 SM12X_C2_GPU_MEMORY_UTILIZATION="${SM12X_C2_GPU_MEMORY_UTILIZATION:-0.975}"
 SM12X_C2_MAX_NUM_BATCHED_TOKENS="${SM12X_C2_MAX_NUM_BATCHED_TOKENS:-4096}"
 SM12X_C2_MAX_NUM_SEQS="${SM12X_C2_MAX_NUM_SEQS:-4}"
-_DEFAULT_SM12X_C2_EXTRA_SERVE_ARGS="--gpu-memory-utilization ${SM12X_C2_GPU_MEMORY_UTILIZATION} --max-num-batched-tokens ${SM12X_C2_MAX_NUM_BATCHED_TOKENS} --max-num-seqs ${SM12X_C2_MAX_NUM_SEQS} --enable-expert-parallel --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}'"
+SM12X_C2_ENABLE_EXPERT_PARALLEL="${SM12X_C2_ENABLE_EXPERT_PARALLEL:-0}"
+case "${SM12X_C2_ENABLE_EXPERT_PARALLEL}" in
+  1|true|TRUE|yes|YES)
+    _sm12x_c2_expert_parallel_arg=" --enable-expert-parallel"
+    ;;
+  0|false|FALSE|no|NO)
+    _sm12x_c2_expert_parallel_arg=""
+    ;;
+  *)
+    echo "SM12X_C2_ENABLE_EXPERT_PARALLEL must be 0/1 or true/false; got '${SM12X_C2_ENABLE_EXPERT_PARALLEL}'" >&2
+    exit 2
+    ;;
+esac
+_DEFAULT_SM12X_C2_EXTRA_SERVE_ARGS="--distributed-executor-backend mp --gpu-memory-utilization ${SM12X_C2_GPU_MEMORY_UTILIZATION} --max-num-batched-tokens ${SM12X_C2_MAX_NUM_BATCHED_TOKENS} --max-num-seqs ${SM12X_C2_MAX_NUM_SEQS}${_sm12x_c2_expert_parallel_arg} --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}'"
 B200_EXTRA_SERVE_ARGS="${B200_EXTRA_SERVE_ARGS:-${_DEFAULT_SM12X_C2_EXTRA_SERVE_ARGS}}"
 
 SM12X_C2_FAIRNESS_PHASES="${SM12X_C2_FAIRNESS_PHASES:-long_context_latency_matrix,long_context_decode_concurrency,long_context_mixed_arrival}"

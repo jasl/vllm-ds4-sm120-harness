@@ -400,17 +400,20 @@ artifact to debug.
 
 - **RTX PRO 6000 / SM120:** use the current Dev branch with indexed D512 split
   sparse MLA prefill as the single-instance baseline. The supported
-  optimization target remains edge-style C=1/C=2/C=4, FP8 KV, expert parallel,
-  MTP=2, prefix cache disabled by default, `max_num_batched_tokens=4096`, and
-  `FULL_AND_PIECEWISE` enabled. The latest fixed-protocol C=2 repeat is healthy
-  enough to demote fairness back to a no-regression gate. Do not reopen
-  scheduler-only tuning unless the promotion gate regresses.
+  optimization target remains edge-style C=1/C=2/C=4, MP executor, expert
+  parallel disabled by default, FP8 KV, MTP=2, prefix cache disabled by
+  default, `max_num_batched_tokens=4096`, and `FULL_AND_PIECEWISE` enabled.
+  Compare EP-on and EP-off only in explicit A/B runs and only against matching
+  accepted baselines. The latest fixed-protocol C=2 repeat is healthy enough to
+  demote fairness back to a no-regression gate. Do not reopen scheduler-only
+  tuning unless the promotion gate regresses.
 - **GB10 / SM121:** use the same workload names, but keep GB10 as a
   stability/capacity target until long-C=2 sparse MLA behavior is fixed. The
-  conservative 100K-class profile is `max_num_seqs=1` for concurrent long
-  prefill pressure; it preserves availability and token cadence at the cost of
-  queueing one request. MTP=2 is allowed only after startup, short deterministic
-  generation, KV lifecycle, and bounded 128K-class smoke pass in the same boot.
+  current forum53 review-safe profile is C=2 with `max_model_len=81920`,
+  `max_num_seqs=2`, `gpu_memory_utilization=0.685`, prefix cache enabled, and
+  MTP=2 only after clean startup and current-boot driver health. Larger C=2/C=4
+  profiles are observation pressure tests; do not promote them from capacity
+  evidence alone.
 - **Next retained experiment:** target raw long-prefill sparse-MLA accumulate,
   not another scheduler or chunk-size sweep. A candidate must reduce effective
   candidate visits, score/value workspace traffic, live state, dependency depth,

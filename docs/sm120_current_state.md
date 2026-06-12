@@ -126,15 +126,20 @@ behavior must preserve:
   gate result rather than a post-hoc note.
 - GB10 forum53 multi-user prefix-cache admission gate for scheduler/KV changes:
   use `scripts/run_gb10_forum53_multi_user_gate.sh`. The default gate is now a
-  guarded two-round C=2/C=4 profile with prefix cache enabled,
-  `max_num_seqs=4`, `max_model_len=196608`, `gpu_memory_utilization=0.80`, and
+  guarded two-round C=2 profile with prefix cache enabled, `max_num_seqs=2`,
+  `max_model_len=81920`, `gpu_memory_utilization=0.685`, and
   `max_num_batched_tokens=4096`. The script computes a preflight safe
   context limit from `2048898 * 0.70 / max_num_seqs` and refuses larger
   `max_model_len` values unless `GB10_FORUM53_SKIP_CONTEXT_GUARD=1` is set.
+  That guard is a capacity ceiling only; larger C=2 shapes still need clean
+  startup and post-run driver-health evidence before they can be treated as
+  review baselines.
   Use explicit `GB10_FORUM53_BATCHED_TOKEN_SWEEP` runs for 2048/8192 tuning.
-  Real-user C=4+ long-context agent shapes remain development observation gates
-  because they are too costly for every PR refresh, but they should be run
-  before claiming improvement for prefix-cache-heavy multi-agent workloads.
+  Real-user C=4+ long-context agent shapes should use
+  `GB10_FORUM53_PROFILE=c4_prefix_cache_pressure` or the larger long-prefix
+  profile as development observation gates because they are too costly and too
+  high-risk for every PR refresh, but they should be run before claiming
+  improvement for prefix-cache-heavy multi-agent workloads.
 
 Prefix-cache hits must be reported separately from cold-prefill performance.
 Do not use prefix-cache-enabled numbers as cold-prefill gains.
@@ -673,6 +678,20 @@ prefix-cache-aware:
   semantic sentinel check by truncating before the required marker, so treat
   the 128-token result as a gate false-negative risk rather than a runtime
   regression.
+- 2026-06-12 final PR-head GB10 forum53 refresh:
+  artifact
+  `artifacts/codex_pr_stable_preview_f32247a/2x_gb10_sm121/gb10_forum53_mtp2_epoff_c2_gmem0685_mml81920/20260612074113`.
+  Profile: MP/EP-off, MTP=2, prefix cache enabled, FP8 KV,
+  `FULL_AND_PIECEWISE`, `max_model_len=81920`, `max_num_seqs=2`,
+  `max_num_batched_tokens=4096`, and `gpu_memory_utilization=0.685`.
+  Result: wrapper `ok=true`, serve exit `0`, matrix exit `0`, 4/4 requests,
+  no preemptions, no current-boot driver signals, max TTFT `124.045698s`, ITL
+  p99 `0.144954s`, GPU KV usage avg/max `65.81% / 86.40%`, and prefix hits
+  `79,872`.
+  Same-boot higher-memory probes are not clean evidence: `196608` and `131072`
+  produced driver-health failures, while `98304` at lower memory utilization did
+  not start cleanly. Treat those artifacts as capacity-probe failures unless
+  they are rerun cleanly after a fresh reboot.
 - 2026-06-10 post-rebase GB10 MTP=2 C=8 reduced soak:
   artifact
   `artifacts/main/2x_gb10_sm121/20260610_rebase_user_regression_gb10_mtp2_moe_c8_reduced/20260610_rebase_user_regression_gb10_mtp2_moe_c8_reduced`.

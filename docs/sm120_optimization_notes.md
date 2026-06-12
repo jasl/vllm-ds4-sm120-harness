@@ -10407,12 +10407,13 @@ safety margin:
 | 6 | `239,038` |
 | 8 | `179,278` |
 
-The normal forum53 gate now defaults to `max_num_seqs=4`,
-`max_model_len=196608`, `gpu_memory_utilization=0.80`,
-`max_num_batched_tokens=4096`, and two-round C=2/C=4 prefix-cache cases.
-C=6/C=8 with 262K remains useful as a deliberate destructive pressure test, but
-it must be opt-in via `GB10_FORUM53_SKIP_CONTEXT_GUARD=1` after a clean reboot
-and with driver-health artifacts preserved.
+The normal forum53 gate was first narrowed away from C=6/C=8 after this failure.
+After the later PR-head refresh, the review-safe default is narrower again:
+`max_num_seqs=2`, `max_model_len=81920`,
+`gpu_memory_utilization=0.685`, `max_num_batched_tokens=4096`, and a C=2
+two-round prefix-cache case. Larger C=2 context settings, C=4, and C=6/C=8 with
+262K remain useful as deliberate pressure tests, but they must be opt-in after a
+clean reboot and with driver-health artifacts preserved.
 
 2026-06-09 promotion smoke note: a later same-profile sweep still passed at
 `max_num_batched_tokens=4096`, but the `2048` variant produced one no-MTP C=4
@@ -10623,3 +10624,34 @@ Post-rebase user-regression rerun, 2026-06-10:
   `NV_ERR_NO_MEMORY`. Keep C=8/MTP2 as a diagnostic pressure case, not a
   recommendation, until the driver-health signal is eliminated under the same
   profile.
+
+PR-head stable-preview refresh, 2026-06-12:
+
+- **RTX PRO 6000 / SM120 review artifact roots:**
+  `artifacts/codex_pr_stable_preview_f32247a/2x_rtx_pro_6000_sm120/rtx_current_pr_short_throughput_mtp_noep_20260612084721`
+  and
+  `artifacts/codex_pr_stable_preview_f32247a/2x_rtx_pro_6000_sm120/rtx_current_pr_clean_mtp_noep_20260612080629`.
+  Both use MP/EP-off, TP=2, MTP=2, FP8 KV, prefix cache disabled, and
+  `FULL_AND_PIECEWISE`; the first is the high-concurrency short-throughput
+  refresh, the second is the 128K correctness/reliability profile.
+- **RTX result:** all phase exit codes are `0`. GSM8K limit-200 passed with
+  flexible exact match `0.965` and strict exact match `0.940`. Same-profile
+  short-throughput ratios versus the accepted reference stayed within
+  `0.999x` to `1.030x`; random prefill ratios stayed within `0.996x` to
+  `1.005x`.
+- **GB10 / SM121 review artifact root:**
+  `artifacts/codex_pr_stable_preview_f32247a/2x_gb10_sm121/gb10_forum53_mtp2_epoff_c2_gmem0685_mml81920/20260612074113`.
+  Profile: MP/EP-off, TP=2, MTP=2, prefix cache enabled, FP8 KV, block size
+  256, `max_model_len=81920`, `max_num_seqs=2`,
+  `max_num_batched_tokens=4096`, `gpu_memory_utilization=0.685`,
+  C=2 two-round forum53 case with `max_tokens=256`.
+  Result: `ok=true`, serve exit `0`, matrix exit `0`, 4/4 requests, zero
+  preemptions, zero current-boot driver signals, max TTFT `124.045698s`, ITL
+  p99 `0.144954s`, GPU KV usage avg/max `65.81% / 86.40%`, and prefix-cache
+  hits `79,872`.
+- **Rejected artifacts from the same refresh:** the `unknown_gpu`
+  `20260611_current_pr_user_feedback_full` tree had failed prefix-cache filler
+  cases and local absolute paths; the RTX `20260612084602` short-throughput
+  attempt failed at startup because of bad `--compilation-config` quoting; GB10
+  attempts above the final memory point either recorded current-boot driver
+  signals or failed startup. Do not use those as review or regression baselines.
