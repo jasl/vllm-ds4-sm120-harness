@@ -58,6 +58,8 @@ soak gates were still pending.
 | GB10 D512 multi-prefill forum53 C2 response-capture env-on | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture/20260613055729` |
 | GB10 D512 multi-prefill forum53 C2 response-capture env-on repeat | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture_repeat/20260613060731` |
 | GB10 D512 multi-prefill forum53 C2 response-capture env-off control | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_off_capture_control/20260613061702` |
+| GB10 D512 cached-prefix guard forum53 clean-boot env-on | `d85821b8c4` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_cached_prefix_guard_cleanboot_20260613/20260613064338` |
+| GB10 D512 cached-prefix guard forum53 env-on, gmem 0.678 | `d85821b8c4` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_cached_prefix_guard_gmem0678_20260613/20260613065521` |
 | RTX EP-on attribution comparison | `f32247a5a6` | SM120 RTX PRO 6000 x2 | on | disabled | _pending_ |
 | RTX GSM8K paired/full correctness guard | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | RTX local quality expansion | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
@@ -79,6 +81,8 @@ soak gates were still pending.
 | GB10 D512 multi-prefill forum53 C2 response-capture env-on | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture/20260613055729` | Matrix passed once with response capture enabled, but the repeat failed; use only as nondeterminism evidence. |
 | GB10 D512 multi-prefill forum53 C2 response-capture env-on repeat | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture_repeat/20260613060731` | Matrix failed with 1 marker miss. The captured failed assistant text was the previous assistant status body, which points at a prefix-cache/current-suffix context mix-up rather than empty output or truncation. |
 | GB10 D512 multi-prefill forum53 C2 response-capture env-off control | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_off_capture_control/20260613061702` | Serve preflight refused the run because the current boot already had an NVRM OOM record. Reboot before using this as an env-off capture control. |
+| GB10 D512 cached-prefix guard forum53 clean-boot env-on | `d85821b8c4` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_cached_prefix_guard_cleanboot_20260613/20260613064338` | Matrix passed with 4/4 requests and 0 failures after blocking multi-request D512 on cached-prefix rows, but driver health was dirty with 3 worker-side NVRM OOM signals. Use as correctness-guard evidence only, not as a clean GB10 gate. |
+| GB10 D512 cached-prefix guard forum53 env-on, gmem 0.678 | `d85821b8c4` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_cached_prefix_guard_gmem0678_20260613/20260613065521` | Matrix again passed with 4/4 requests and 0 failures, but one worker-side NVRM OOM signal still appeared during full-model load. Lowering GPU memory utilization did not produce clean driver health. |
 
 ## Latest RTX Attribution Snapshot
 
@@ -139,6 +143,8 @@ soak gates were still pending.
 | GB10 C2 response-capture env-on | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 0 failures | 124.279151 | 0.122834 | not a clean gate | nondeterminism check only |
 | GB10 C2 response-capture env-on repeat | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 1 marker failure | 122.356447 | 0.395746 | dirty, 3 signals | rejected |
 | GB10 C2 response-capture env-off control | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=0` | serve preflight blocked by current-boot driver OOM | n/a | n/a | dirty before serve | blocked control |
+| GB10 cached-prefix guard env-on | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 0 failures | 123.803772 | 0.135363 | dirty, 3 signals | correctness guard only |
+| GB10 cached-prefix guard env-on, gmem 0.678 | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 0 failures | 124.231818 | 0.132553 | dirty, 1 signal | correctness guard only |
 
 The env-off control shows the matrix shape itself still passes on this branch.
 The env-on retries show a correctness/user-gate regression under MTP2
@@ -149,6 +155,15 @@ the failed request emitted the previous assistant status text and stopped
 without the current marker. That makes the next investigation a GB10
 prefix-cache/current-suffix context mapping problem in the env-on route, not a
 simple truncation or empty-response problem.
+
+Commit `d85821b8c4` adds a conservative guard for that failure class: when
+more than one prefill request is present, indexed D512 multi-prefill is used
+only for true cold-prefill rows and is rejected for cached-prefix extend rows.
+Single-request D512 remains allowed. With that guard, the same GB10 forum53 C2
+MTP2 prefix-cache shape passed twice with 4/4 requests and 0 failures. These
+runs are still not clean promotion gates because the worker boot logged NVRM
+OOM during the full-model load path. Reducing GPU memory utilization from
+`0.685` to `0.678` lowered the signal count but did not eliminate it.
 
 ## Latest RTX NCU Snapshot
 

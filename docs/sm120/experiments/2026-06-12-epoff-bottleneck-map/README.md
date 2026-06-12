@@ -164,6 +164,18 @@ memory-margin problem that must be understood before using these forum53 reruns
 as clean positive evidence. Keep using reboot-safe single-case GB10 attribution
 runs until the post-run NVRM OOM state is understood or avoided.
 
+Follow-up commit `d85821b8c4` narrows the risky surface by rejecting indexed
+D512 multi-prefill for multi-request cached-prefix extend rows while preserving
+single-request D512 and true cold multi-prefill. On the same GB10 forum53 C2
+MTP2 prefix-cache shape, the guard produced two matrix passes with 4/4
+requests and 0 failures. This is positive correctness-guard evidence for the
+prefix-cache marker failure. It is not a clean GB10 promotion gate: the worker
+still logged NVRM OOM during full-model load, including after reducing GPU
+memory utilization from `0.685` to `0.678`. The next GB10 reliability task is
+to separate nonfatal full-model-load NVRM OOM from actual inference failure, or
+find a launch profile that keeps driver health clean without falling below the
+80K forum53 context requirement.
+
 The earlier artifact
 `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142`
 is performance-only evidence. Do not use it for sparse-MLA attribution because
@@ -193,9 +205,11 @@ bottleneck as sparse MLA accumulate rather than scheduler/KV admission:
   the same semantic work.
 - The env-gated D512 multi-prefill expansion is still useful as a
   fork-independent performance candidate, but it is blocked for promotion by
-  the GB10 forum53 MTP2 prefix-cache marker failures. Keep it default-off until
-  paired correctness, prefix-cache-enabled lifecycle, and GB10 user/promotion
-  gates are green.
+  the GB10 forum53 MTP2 prefix-cache and driver-health gates. Commit
+  `d85821b8c4` fixes the observed marker-failure shape by excluding
+  multi-request cached-prefix extend rows, but the route remains default-off
+  until paired correctness, prefix-cache-enabled lifecycle, and clean GB10
+  user/promotion gates are green.
 - Public b12x readiness has moved from "missing APIs" to "not yet integrated
   or not fast enough as a direct endpoint route." Keep b12x `0.20.0` no-deps
   available for component probes, but do not port public compressed MLA
@@ -230,11 +244,11 @@ below the gate is rejected for PR promotion.
   black-benediction head change found during explicit upstream review, or any
   endpoint candidate that changes sparse-MLA, MoE, DFlash, scheduler, KV, or
   CUDA graph behavior.
-- Next command: first inspect the D512 multi-prefill GB10 env-on
-  prefix-cache/current-suffix mapping under two-round C2 pressure, using the
-  response-capture failure as the reproducer. Reboot before any fresh GB10
-  env-off capture control, because the latest control attempt was refused by
-  the current-boot NVRM OOM guard. Only after that, prototype or microbench a
-  fused dual-stream sparse-MLA path that preserves the grouped-stream component
-  signal without reintroducing the separate-launch merge/finish overhead that
-  made the earlier endpoint form regress.
+- Next command: treat `d85821b8c4` as the current correctness-guard candidate
+  and decide whether the worker full-model-load NVRM OOM is a launch-profile
+  problem or a harness driver-health accounting problem. Do not promote the
+  route on GB10 until a clean forum53/user gate exists. In parallel on RTX,
+  prototype or microbench a fused dual-stream sparse-MLA path that preserves
+  the grouped-stream component signal without reintroducing the
+  separate-launch merge/finish overhead that made the earlier endpoint form
+  regress.

@@ -181,6 +181,8 @@ streaming-pressure rows:
 | GB10 C2 env-on capture | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 0 failures | `124.279151` | `0.122834` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture/20260613055729` |
 | GB10 C2 env-on capture repeat | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 1 marker failure | `122.356447` | `0.395746` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture_repeat/20260613060731` |
 | GB10 C2 env-off capture control | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=0` | serve preflight blocked by current-boot driver OOM | n/a | n/a | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_off_capture_control/20260613061702` |
+| GB10 cached-prefix guard env-on | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 0 failures | `123.803772` | `0.135363` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_cached_prefix_guard_cleanboot_20260613/20260613064338` |
+| GB10 cached-prefix guard env-on, gmem 0.678 | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 0 failures | `124.231818` | `0.132553` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_cached_prefix_guard_gmem0678_20260613/20260613065521` |
 
 The repeated GB10 env-on failure was `round_02_worker_01`, finish reason
 `stop`, TTFT `9.155373s`, 10 streamed chunks, 22 completion tokens. The
@@ -195,6 +197,17 @@ tokens available for an `81920` max-model-len, or `1.58-1.65x` maximum
 concurrency for one full-length request, so this profile is near the GB10
 capacity boundary; that explains the serialized TTFT shape but not the wrong
 assistant text.
+
+Follow-up commit `d85821b8c4` blocks indexed D512 multi-prefill for
+multi-request cached-prefix extend rows while preserving single-request D512
+and true cold multi-prefill. The same GB10 forum53 C2 MTP2 prefix-cache shape
+then passed twice with 4/4 requests and 0 failures. However, both runs still
+failed the overall gate because worker-side NVRM OOM appeared during the
+full-model load path. The `0.678` GPU-memory-utilization rerun reduced the
+driver signal count from 3 to 1, but did not produce a clean driver-health
+result and reduced available KV cache to about `94724` tokens. Treat
+`d85821b8c4` as positive correctness-guard evidence, not clean GB10 promotion
+evidence.
 
 ## Historical PR3395 GB10 Subset
 
