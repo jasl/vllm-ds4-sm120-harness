@@ -140,6 +140,14 @@ control scored `0.950 / 0.930`. Both passed the fixed floors, and the
 prototype does not show a correctness regression against the paired control or
 the 2026-06-12 stable-preview anchor `0.965 / 0.940`.
 
+GB10 reduced confirmation is positive but currently limited to a single 16K
+case per boot. On SM121 GB10 x2, the 16K C=`1/2` paired run reduced
+`sparse_accumulate` `53976.9 ms -> 42695.2 ms` (`-20.90%`) and improved C=2
+input tok/s `1299.03 -> 1495.23` (`+15.10%`). The same run left an NVRM OOM
+record on the worker node after completion, so the script's safety preflight
+correctly refused the next 65K case until reboot. Treat GB10 as reduced
+positive evidence, not full matrix confirmation yet.
+
 The earlier artifact
 `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142`
 is performance-only evidence. Do not use it for sparse-MLA attribution because

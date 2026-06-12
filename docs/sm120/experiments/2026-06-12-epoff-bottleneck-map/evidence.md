@@ -123,6 +123,30 @@ runs show no correctness regression from multi-prefill D512: the prototype
 matches the 2026-06-12 stable-preview flexible score `0.965` and improves over
 the same-environment multi-prefill-off control.
 
+GB10 reduced confirmation:
+
+| Input length | Metric | Multi-prefill off | Multi-prefill on | Delta |
+| ---: | --- | ---: | ---: | ---: |
+| 16384 | `mla_prefill_chunk` rows | 1516 | 942 | `-37.86%` |
+| 16384 | `mla_prefill_indexed_d512` rows | 1558 | 2132 | `+36.84%` |
+| 16384 | `num_prefills_not_1` gate rows | 738 | 164 | `-77.78%` |
+| 16384 | `sparse_accumulate` ms | 53976.852 | 42695.228 | `-20.90%` |
+| 16384 | sparse ms/M effective visit | 11.471 | 9.074 | `-20.90%` |
+
+| Input length | Concurrency | Input tok/s off -> on | Mean TTFT off -> on | P99 TTFT off -> on |
+| ---: | ---: | --- | --- | --- |
+| 16384 | 1 | `1515.63 -> 1523.38` (`+0.51%`) | `10809.88 -> 10755.20 ms` (`-0.51%`) | `11279.77 -> 11517.51 ms` (`+2.11%`) |
+| 16384 | 2 | `1299.03 -> 1495.23` (`+15.10%`) | `23356.20 -> 20062.23 ms` (`-14.10%`) | `26162.13 -> 22527.41 ms` (`-13.89%`) |
+
+The GB10 result confirms the same mechanism as RTX at 16K: more rows move onto
+indexed D512 and the multi-prefill slow gate shrinks. It is not a full GB10
+confirmation yet. The first paired control completed 16K, then the next 65K
+case was refused by safety preflight because the current boot already had an
+NVRM OOM record. After reboot, the 16K prototype run completed successfully,
+but the post-run safety check again found an NVRM OOM record on the worker
+node. Continue GB10 validation as single-case runs with reboot between cases,
+or first investigate why teardown/serving leaves the worker boot in that state.
+
 ## Historical PR3395 GB10 Subset
 
 The 2026-06-08 GB10 packed FlashInfer promotion subset is the strongest
@@ -163,7 +187,8 @@ mixed arrival, prefix/KV lifecycle, GSM8K limit-200, and a full GB10 soak.
    preserving `FULL_AND_PIECEWISE` graphs and DS4 correctness.
 3. Keep the D512 multi-prefill expansion default-off and use it as the first
    endpoint candidate for paired correctness, prefix-cache-enabled lifecycle,
-   and GB10 confirmation.
+   and GB10 confirmation. GB10 16K is now positive; full GB10 still needs a
+   single-case/reboot-safe workflow or a fix for the post-run NVRM OOM state.
 4. Keep b12x `0.20.0` no-deps as the current public-b12x component-probe
    state, but do not add a DS4 compressed-MLA endpoint adapter unless a newer
    backend/dataflow beats current D512 split+finish.

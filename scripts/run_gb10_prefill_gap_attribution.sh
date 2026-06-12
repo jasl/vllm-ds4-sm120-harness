@@ -242,10 +242,20 @@ GB10_PREFILL_GAP_BENCH_TIMEOUT="${GB10_PREFILL_GAP_BENCH_TIMEOUT:-1800}"
 GB10_PREFILL_GAP_ENABLE_EXPERT_PARALLEL="${GB10_PREFILL_GAP_ENABLE_EXPERT_PARALLEL:-0}"
 GB10_PREFILL_GAP_STATS_OVERLAP_ROWS="${GB10_PREFILL_GAP_STATS_OVERLAP_ROWS:-0}"
 GB10_PREFILL_GAP_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING:-1}"
+GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV="${GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV:-0}"
 GB10_PREFILL_GAP_DEV_DEFAULT_EXTRA_ARGS="${GB10_PREFILL_GAP_DEV_DEFAULT_EXTRA_ARGS:-}"
 GB10_PREFILL_GAP_FLASHINFER_EXTRA_ARGS="${GB10_PREFILL_GAP_FLASHINFER_EXTRA_ARGS:-}"
 GB10_PREFILL_GAP_REDDIT_EXTRA_ARGS="${GB10_PREFILL_GAP_REDDIT_EXTRA_ARGS:-}"
 GB10_PREFILL_GAP_REDDIT_MAX_NUM_BATCHED_TOKENS="${GB10_PREFILL_GAP_REDDIT_MAX_NUM_BATCHED_TOKENS:-8192}"
+
+case "${GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV}" in
+  0|1|default) ;;
+  *)
+    printf 'GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV must be 0, 1, or default; got %s\n' \
+      "${GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV}" >&2
+    exit 2
+    ;;
+esac
 
 MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash}"
 API_PORT="${API_PORT:-8000}"
@@ -312,6 +322,7 @@ for raw_profile in "${profiles[@]}"; do
         CASE_MAX_NUM_BATCHED_TOKENS="${profile_max_batched_tokens}" \
         CASE_SERVE_EXTRA_ARGS="${profile_extra}" \
         CASE_EXPECTED_ATTENTION_MARKER="${expected_attention_marker}" \
+        CASE_D512_MULTI_PREFILL_ENV="${GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV}" \
         "${LOCAL_PYTHON}" - <<'PY'
 import json
 import os
@@ -328,6 +339,7 @@ payload = {
     "max_num_batched_tokens": int(os.environ["CASE_MAX_NUM_BATCHED_TOKENS"]),
     "serve_extra_args": os.environ["CASE_SERVE_EXTRA_ARGS"],
     "expected_attention_marker": os.environ["CASE_EXPECTED_ATTENTION_MARKER"],
+    "d512_multi_prefill_env": os.environ["CASE_D512_MULTI_PREFILL_ENV"],
 }
 Path(os.environ["CASE_METADATA_PATH"]).write_text(
     json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -342,6 +354,9 @@ PY
             VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING; do
           serve_remote_env_vars="$(append_remote_env_var "${serve_remote_env_vars}" "${env_name}")"
         done
+        if [[ "${GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV}" != "default" ]]; then
+          serve_remote_env_vars="$(append_remote_env_var "${serve_remote_env_vars}" "VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL")"
+        fi
 
         stop_remote_vllm "${WORKER_HOST}"
         stop_remote_vllm "${HEAD_HOST}"
@@ -377,6 +392,7 @@ PY
           VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH="${remote_stats_dir}" \
           VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_OVERLAP_ROWS="${GB10_PREFILL_GAP_STATS_OVERLAP_ROWS}" \
           VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING}" \
+          VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL="${GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV}" \
           SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}" \
           SSH_OPTS="${SSH_OPTS:-}" \
           "${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh" \

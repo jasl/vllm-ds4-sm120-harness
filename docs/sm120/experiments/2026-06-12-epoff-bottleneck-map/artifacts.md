@@ -46,6 +46,8 @@ soak gates were still pending.
 | RTX D512 multi-prefill lifecycle guard | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_correctness_gate_20260613032500/20260613032501` |
 | RTX D512 multi-prefill GSM8K 5-shot | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_gsm8k5_on_20260613034101/20260613034102` |
 | RTX D512 multi-prefill-off GSM8K 5-shot control | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_gsm8k5_off_20260613034613/20260613034614` |
+| GB10 D512 multi-prefill-off 16K control | `741ea24c46` | SM121 GB10 x2 | off | disabled | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_control_20260613035658/20260613035658` |
+| GB10 D512 multi-prefill 16K prototype | `741ea24c46` | SM121 GB10 x2 | off | disabled | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_on_16k_20260613040708/20260613040708` |
 | RTX EP-on attribution comparison | `f32247a5a6` | SM120 RTX PRO 6000 x2 | on | disabled | _pending_ |
 | RTX GSM8K paired/full correctness guard | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | RTX local quality expansion | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
@@ -62,6 +64,7 @@ soak gates were still pending.
 | RTX FlashInfer 0.6.13rc1 packed MLA probe | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/flashinfer_packed_mla_probe/20260613_fi0613rc1_matched` | The matched rc1 wheel/jit-cache state imports normally, but both packed cases fail with `ModuleNotFoundError` because `flashinfer.sparse_mla_sm120` is only on the unmerged PR3395 fork branch, not official rc1. |
 | RTX D512 multi-prefill GSM8K 8-shot diagnostic | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_correctness_gate_20260613032500/20260613032501` | The lifecycle run's `eval_gsm8k` phase inherited the baseline driver's 8-shot default and is not comparable to the 5-shot stable-preview anchor. |
 | RTX D512 multi-prefill-off GSM8K 8-shot diagnostic | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_correctness_control_20260613033202/20260613033202` | Same 8-shot mismatch as above. `lm_eval` exit `0`, floor gate exit `1`, GSM8K flexible/strict `0.925 / 0.920`. Use only as a diagnostic for the 8-shot shape. |
+| GB10 D512 multi-prefill 65K continuation | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_control_20260613035658/20260613035658` | The 16K control case passed, but the subsequent 65K case was refused by safety preflight because the current boot already had an NVRM OOM record. Do not treat this as 65K performance evidence. |
 
 ## Latest RTX Attribution Snapshot
 
@@ -93,6 +96,18 @@ soak gates were still pending.
 | prototype lifecycle | multi-prefill on | `prefix_cache_probe` and `kv_lifecycle_probe` phases `0` | n/a | Marker checks and idle KV threshold passed. |
 | prototype GSM8K 5-shot | multi-prefill on | `eval_gsm8k` phase `0` | `0.965 / 0.960` | Floor gate passed. |
 | paired GSM8K 5-shot control | multi-prefill off | `eval_gsm8k` phase `0` | `0.950 / 0.930` | Floor gate passed. |
+
+## Latest GB10 D512 Multi-Prefill Snapshot
+
+| Input length | Gate | Chunk rows | Indexed D512 rows | `num_prefills_not_1` rows | Sparse accumulate ms | Input tok/s C=1 / C=2 |
+| ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 16384 | multi-prefill off | 1516 | 1558 | 738 | 53976.852 | 1515.63 / 1299.03 |
+| 16384 | multi-prefill on | 942 | 2132 | 164 | 42695.228 | 1523.38 / 1495.23 |
+
+| Input length | Gate | Mean TTFT ms C=1 / C=2 | P99 TTFT ms C=1 / C=2 | Notes |
+| ---: | --- | --- | --- | --- |
+| 16384 | multi-prefill off | 10809.88 / 23356.20 | 11279.77 / 26162.13 | 16K case passed; following 65K case blocked by post-run NVRM OOM preflight. |
+| 16384 | multi-prefill on | 10755.20 / 20062.23 | 11517.51 / 22527.41 | 16K case passed; post-run check again found NVRM OOM state on the worker boot. |
 
 ## Latest RTX NCU Snapshot
 

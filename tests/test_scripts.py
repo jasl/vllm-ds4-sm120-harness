@@ -1895,6 +1895,11 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
         in script
     )
     assert 'GB10_PREFILL_GAP_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING:-1}"' in script
+    assert (
+        'GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV="${GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV:-0}"'
+        in script
+    )
+    assert "GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV must be 0, 1, or default" in script
     assert "--attention-backend FLASHINFER_MLA_SPARSE_DSV4" in script
     assert (
         "--attention-backend FLASHINFER_MLA_SPARSE "
@@ -1905,6 +1910,7 @@ def test_gb10_prefill_gap_attribution_uses_mp_serve_and_sparse_stats():
     assert 'CASE_EXPECTED_ATTENTION_MARKER="${expected_attention_marker}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_PATH="${remote_stats_dir}"' in script
     assert 'VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING="${GB10_PREFILL_GAP_STAGE_TIMING}"' in script
+    assert 'VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL="${GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV}"' in script
     assert 'SERVE_ENABLE_EXPERT_PARALLEL="${GB10_PREFILL_GAP_ENABLE_EXPERT_PARALLEL}"' in script
     assert 'SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}"' in script
     assert '"${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh"' in script

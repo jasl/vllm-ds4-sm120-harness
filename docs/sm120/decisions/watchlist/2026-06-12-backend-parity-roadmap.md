@@ -141,7 +141,10 @@ multi-prefill expansion. On RTX it removes the 65K `num_prefills_not_1` gate
 reason, reduces sparse accumulate time by `36.73%` at 65K and `44.19%` at 16K,
 and improves EP-off cold-prefill C=`1/2/4` endpoint throughput. Keep it
 default-off until paired/full correctness, prefix-cache-enabled lifecycle, and
-GB10 confirmation are green.
+GB10 confirmation are green. GB10 16K reduced confirmation is positive
+(`sparse_accumulate` `-20.90%`, C=2 input tok/s `+15.10%`), but full GB10 is
+not green yet because the worker boot records NVRM OOM after a single case and
+the safety preflight refuses the next case until reboot.
 
 DFlash-style speculative/decode optimizations are treated as high-risk until
 they clear GSM8K and semantic gates. RTX PRO 6000 is the development and
