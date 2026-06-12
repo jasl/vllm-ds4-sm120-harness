@@ -70,7 +70,7 @@ decision:
 | --- | --- | --- |
 | `b12x==0.20.0` default resolver | Pulls a Torch/Triton/CUDA runtime set that breaks current `vllm._C`; also downgrades NCCL. | Do not use the default resolver for this dev venv. |
 | `b12x==0.20.0` no-deps | Keeps the current vLLM runtime healthy and exposes DS4 compressed-MLA, sparse-indexer-extend, native MXFP4 MoE helper APIs, WO, mHC, FP8 linear, and PCIe all-reduce imports. | The public API blocker is gone for component probes; vLLM runtime hooks are still absent. |
-| FlashInfer `0.6.13rc1` matched jit-cache | `flashinfer-python/cubin==0.6.13rc1` imports after either `FLASHINFER_DISABLE_VERSION_CHECK=1` bypasses the older jit-cache mismatch or `flashinfer-jit-cache==0.6.13rc1+cu130` is installed. | Official rc1 is usable in the RTX dev venv, but packed SM120 sparse MLA is still unavailable. |
+| FlashInfer `0.6.13rc1` matched jit-cache | `flashinfer-python/cubin==0.6.13rc1` imports after either `FLASHINFER_DISABLE_VERSION_CHECK=1` bypasses the older jit-cache mismatch or `flashinfer-jit-cache==0.6.13rc1+cu130` is installed. | Official rc1 is usable in the RTX dev venv. Packed SM120 sparse MLA requires the PR3395 fork branch, not the official wheel. |
 | b12x compressed MLA `real_c128` | b12x `0.432 ms`, old online packed `5.923 ms`, D512 split+finish `0.209 ms`. | Do not port public b12x compressed MLA directly as the next endpoint path. |
 | grouped-SWA D512, `1152` candidates | split `1.382 ms`, grouped-SWA `0.824 ms`. | Component signal is still real, but the older separate-launch endpoint form regressed. |
 | grouped-stream, `1152` candidates | split `1.320 ms`, grouped stream `0.600 ms`. | Strongest fork-independent signal points to fused dual-stream online processing, not to a direct dependency swap. |
@@ -86,14 +86,19 @@ decision:
 3. Keep b12x `0.20.0` no-deps as the current public-b12x component-probe
    state, but do not add a DS4 compressed-MLA endpoint adapter unless a newer
    backend/dataflow beats current D512 split+finish.
-4. Treat FlashInfer PR3395 packed SM120 sparse MLA as still dependency-gated.
-   The installed FlashInfer route is the plain DS4 sparse MLA path, not the
-   packed 584B/token path. The official `0.6.13rc1` wheel/jit-cache state is
-   now usable, but the packed SM120 module is still absent from that package.
-5. Keep black-benediction DFlash/decode changes as a second-stage reference.
+4. Treat FlashInfer PR3395 packed SM120 sparse MLA as a valuable fork route,
+   not as an official-wheel blocker. Earlier endpoint-shaped probes showed
+   about `10-23%` TTFT improvement, so a new attempt is worth doing, but it
+   must stay behind `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` until the
+   current EP-off correctness and performance matrix passes.
+5. Treat `flashinfer-jit-cache` as optional for PR3395/source builds. Missing
+   jit-cache mainly affects startup/warmup cost; if a source build conflicts
+   with the cache package, omit it and warm up sufficiently before recording
+   performance.
+6. Keep black-benediction DFlash/decode changes as a second-stage reference.
    They may help decode/speculative throughput, but they are high-correctness
    risk and are not the first response to this cold-prefill bottleneck.
-6. The next code-bearing experiment should be a fused dual-stream sparse-MLA
+7. The next code-bearing experiment should be a fused dual-stream sparse-MLA
    component or endpoint prototype that avoids the extra merge/finish launches
    that made the archived grouped-SWA endpoint regress.
 

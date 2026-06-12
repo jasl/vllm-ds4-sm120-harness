@@ -50,12 +50,14 @@ Integrate the active routes in this order:
   split+finish on the refreshed `real_c128` component shape. Official
   FlashInfer `0.6.13rc1` plus matching `flashinfer-jit-cache==0.6.13rc1+cu130`
   is usable in the RTX dev venv and imports without the version-check bypass;
-  it still lacks the packed SM120 sparse-MLA module.
+  it is not expected to include the unmerged packed SM120 sparse-MLA module.
 - Keep the unmerged FlashInfer packed SM120 sparse-MLA route
-  `flashinfer-ai/flashinfer#3395` as an important reference path. The earlier
-  GB10 endpoint-shaped prototype showed about `10-23%` TTFT improvement, but
-  it remains dependency-gated and must be revalidated under the current EP-off
-  matrix before any vLLM PR promotion.
+  `flashinfer-ai/flashinfer#3395` / `lucifer1004/flashinfer:sparse-mla-sm120`
+  as an important candidate path. The earlier GB10 endpoint-shaped prototype
+  showed about `10-23%` TTFT improvement, but the vLLM adapter must stay behind
+  `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` and must be revalidated under
+  the current EP-off correctness and performance matrix before any PR
+  promotion.
 - Treat `local-inference-lab/vllm` `dev/black-benediction` as the external
   performance target and reference implementation. The public remote moved from
   the 2026-06-12 freeze point `c6b2a7b187` to `5fcd00c3d7` on 2026-06-13; the
@@ -83,10 +85,14 @@ Integrate the active routes in this order:
   vLLM upstream/main moved to `053e7daa79`, FlashInfer upstream/main moved to
   `992848ad`, b12x master stayed at `fabb087`, and black-benediction moved to
   `5fcd00c3d7`.
+- FlashInfer PR3395 checked on 2026-06-13:
+  GitHub still shows the PR open from
+  `lucifer1004/flashinfer:sparse-mla-sm120`, and the fork branch head is
+  `b619f0c650`.
 - RTX dependency and component refresh on 2026-06-13:
   b12x `0.20.0` no-deps import/probe state is healthy, FlashInfer `0.6.13rc1`
-  is healthy after installing the matching jit-cache but still lacks
-  `flashinfer.sparse_mla_sm120`, public b12x compressed MLA
+  is healthy after installing the matching jit-cache; `flashinfer.sparse_mla_sm120`
+  remains the PR3395 fork surface, public b12x compressed MLA
   measured `0.432 ms` versus current D512 split+finish `0.209 ms` on
   `real_c128`, and grouped-stream component probes remain the stronger
   fork-independent sparse-MLA direction.
@@ -125,10 +131,10 @@ memory-sensitive environment.
 
 - `vllm-project/vllm#45277` merges or is replaced by another upstream SM12x
   build/runtime coverage change.
-- FlashInfer exposes an official packed SM120 sparse-MLA route or b12x exposes
-  a faster DS4 compressed-MLA/indexer route that changes the prior component
-  results, or the official FlashInfer rc/stable packages expose a matching
-  packed route plus jit-cache state.
+- FlashInfer exposes an official packed SM120 sparse-MLA route, PR3395 changes
+  its public Python surface or build/dependency contract, or b12x exposes a
+  faster DS4 compressed-MLA/indexer route that changes the prior component
+  results.
 - `flashinfer-ai/flashinfer#3395` changes in a way that removes the dependency
   gate or materially changes the packed SM120 sparse-MLA integration contract.
 - `dev/black-benediction` publishes or moves a performance-critical mechanism

@@ -41,7 +41,7 @@ addresses, tokens, or absolute model-cache locations.
 | RTX EP-off performance-only control | `e164b76501` | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142` | Benchmarks passed, but sparse stats row counts were zero because the diagnostics commit was missing from the dev branch. Do not use for sparse-MLA attribution. |
 | RTX b12x 0.20 default dependency resolver | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_b12x_0200_upgrade` | Default install pulled Torch/Triton/CUDA runtime changes and downgraded NCCL; `vllm._C` failed with a Torch ABI symbol error. Runtime packages were restored and b12x was kept as a no-deps experiment variable. |
 | RTX FlashInfer 0.6.13rc1 no-deps probe | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_nodeps` | Superseded mismatch probe: import failed because `flashinfer-jit-cache` stayed at `0.6.12+cu130`. `FLASHINFER_DISABLE_VERSION_CHECK=1` bypasses that check for probing, and installing `flashinfer-jit-cache==0.6.13rc1+cu130` fixes the mismatch. |
-| RTX FlashInfer 0.6.13rc1 packed MLA probe | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/flashinfer_packed_mla_probe/20260613_fi0613rc1_matched` | The matched rc1 wheel/jit-cache state imports normally, but both packed cases fail with `ModuleNotFoundError` because official rc1 does not expose `flashinfer.sparse_mla_sm120`. |
+| RTX FlashInfer 0.6.13rc1 packed MLA probe | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/flashinfer_packed_mla_probe/20260613_fi0613rc1_matched` | The matched rc1 wheel/jit-cache state imports normally, but both packed cases fail with `ModuleNotFoundError` because `flashinfer.sparse_mla_sm120` is only on the unmerged PR3395 fork branch, not official rc1. |
 
 ## Latest RTX Attribution Snapshot
 
@@ -77,7 +77,7 @@ addresses, tokens, or absolute model-cache locations.
 | `public_b12x_sparse_indexer_extend` | yes | b12x `0.20.0` exposes the sparse-indexer extend top-k API. |
 | `public_b12x_vllm_fp8_ds_mla_zero_copy` | yes | Layout probe says vLLM physical page layout can match b12x by a 2D page-byte view. |
 | `public_b12x_paged_indexer` | no | b12x `0.20.0` still does not expose the paged sparse-indexer API expected by black-benediction's B12X indexer path. |
-| `flashinfer_sm120_sparse_mla_packed` | no | PR3395-style packed SM120 sparse MLA path is not available in the installed FlashInfer. |
+| `flashinfer_sm120_sparse_mla_packed` | no | PR3395-style packed SM120 sparse MLA path is not available in the installed official FlashInfer wheel state; use the PR3395 fork branch for that route. |
 | `runtime_ds4_b12x_compressed_mla_adapter` | no | vLLM runtime does not expose the DS4-specific adapter in this branch/venv. |
 
 ## RTX Dependency And Component Refresh
@@ -86,7 +86,7 @@ addresses, tokens, or absolute model-cache locations.
 | --- | --- | --- |
 | b12x `0.20.0` default install | Broke the current vLLM extension by moving Torch/Triton/CUDA runtime packages and downgrading NCCL. | Do not use the default resolver path for the dev venv. Keep the runtime stack pinned and install b12x as a no-deps experiment variable. |
 | b12x `0.20.0` no-deps | `vllm._C` import and focused SM120 fallback tests pass; public DS4 b12x APIs import. | Dependency/API blocker is removed for component probes, but current vLLM still lacks runtime hooks. |
-| FlashInfer `0.6.13rc1` matched jit-cache | `flashinfer-python/cubin==0.6.13rc1` and `flashinfer-jit-cache==0.6.13rc1+cu130` import without the version-check bypass; focused SM120 fallback tests pass. | Official rc1 is usable for component probes, but packed SM120 sparse MLA is still unavailable from official wheels. |
+| FlashInfer `0.6.13rc1` matched jit-cache | `flashinfer-python/cubin==0.6.13rc1` and `flashinfer-jit-cache==0.6.13rc1+cu130` import without the version-check bypass; focused SM120 fallback tests pass. | Official rc1 is usable for component probes. Packed SM120 sparse MLA requires the PR3395 fork branch and an env-gated vLLM adapter. |
 | b12x compressed MLA component | `real_c128`: b12x `0.432 ms`, vLLM old online packed `5.923 ms`, current D512 split+finish `0.209 ms`. | Public b12x compressed MLA is much better than the old packed helper, but still about `2.07x` slower than current D512 split+finish on RTX. Do not port it directly as the next endpoint route. |
 | grouped-SWA D512 component | Candidates `640/1152`: split `0.627/1.382 ms`, grouped-SWA `0.575/0.824 ms`. | Component signal still exists, strongest at wider candidate counts, but the older separate-launch endpoint form already regressed. |
 | grouped-stream component | Candidates `640/1152`: split `0.601/1.320 ms`, grouped stream `0.354/0.600 ms`. | Strong component signal for high-reuse C128A-style shape. Treat as dataflow evidence for a fused dual-stream/finish design, not as a direct endpoint drop-in. |

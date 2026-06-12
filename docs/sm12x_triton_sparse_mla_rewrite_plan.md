@@ -345,7 +345,9 @@ missing" to "public APIs available, endpoint value still unproven":
   `flashinfer-jit-cache==0.6.12+cu130`. `FLASHINFER_DISABLE_VERSION_CHECK=1`
   bypasses that mismatch for probes, and installing the matching
   `flashinfer-jit-cache==0.6.13rc1+cu130` makes the rc state import without the
-  bypass. Official rc1 still does not expose packed SM120 sparse MLA.
+  bypass. Official rc1 is not expected to expose packed SM120 sparse MLA; that
+  surface is in the unmerged PR3395 fork branch
+  `lucifer1004/flashinfer:sparse-mla-sm120`.
 
 Refreshed RTX component results:
 
@@ -363,8 +365,12 @@ Interpretation:
   compressed-MLA endpoint adapter. The dependency is now importable, but the
   component timing does not beat current D512.
 - Do not spend the next implementation slice on official FlashInfer alone:
-  the matching rc1 wheel/jit-cache state is now healthy, but it still does not
-  expose packed SM120 sparse MLA.
+  the matching rc1 wheel/jit-cache state is healthy, but packed SM120 sparse
+  MLA requires the PR3395 fork branch. Any vLLM adapter for that fork route
+  must remain behind `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1`.
+- Treat `flashinfer-jit-cache` as optional for source/git FlashInfer builds.
+  If a git build conflicts with the installed jit-cache package, omit the cache
+  package and increase warmup before comparing performance.
 - The next code-bearing experiment should preserve the grouped-stream dataflow
   win while avoiding the archived endpoint's failure mode: extra compressed,
   grouped-SWA, merge-state, merge-acc, and finish launches.

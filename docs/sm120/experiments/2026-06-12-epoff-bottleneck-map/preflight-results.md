@@ -30,6 +30,9 @@ candidate routes still need a dependency update before endpoint A/B.
   diagnostics for attribution-only runs.
 - FlashInfer PR3395 current snapshot branch:
   `codex/pr3395-sparse-mla-sm120-20260612` at `88539d03`.
+  The live fork branch `lucifer1004/flashinfer:sparse-mla-sm120` was checked on
+  2026-06-13 at `b619f0c650`; use it for the next PR3395 rebuild unless a
+  separate freeze is made.
   The older local `codex/pr3395-sparse-mla-sm120` branch remains preserved as
   the historical route used by earlier tests.
 
@@ -149,7 +152,7 @@ probe:
 | b12x default resolver | Rejected: it moved Torch/Triton/CUDA runtime packages, downgraded NCCL, and made `vllm._C` fail with a Torch ABI symbol error. |
 | b12x current experiment state | `b12x==0.20.0` installed as no-deps while keeping the previous Torch/Triton/NCCL runtime stack. |
 | Focused vLLM smoke | `tests/v1/attention/test_sm120_deepgemm_fallbacks.py -q`: `9 passed`. |
-| FlashInfer rc probe | Corrected: `flashinfer-python/cubin==0.6.13rc1` imports with `FLASHINFER_DISABLE_VERSION_CHECK=1` when paired with an older jit-cache, and imports without the bypass after installing `flashinfer-jit-cache==0.6.13rc1+cu130`. Official rc1 still does not expose `flashinfer.sparse_mla_sm120`. |
+| FlashInfer rc probe | Corrected: `flashinfer-python/cubin==0.6.13rc1` imports with `FLASHINFER_DISABLE_VERSION_CHECK=1` when paired with an older jit-cache, and imports without the bypass after installing `flashinfer-jit-cache==0.6.13rc1+cu130`. `flashinfer.sparse_mla_sm120` is the unmerged PR3395 fork surface, not an official rc1 expectation. |
 | Current public b12x API state | DS4 compressed-MLA scratch/API, sparse-indexer extend, native MXFP4 MoE helper, WO, mHC, FP8 linear, and PCIe all-reduce imports are available. |
 | Current vLLM runtime state | DS4 b12x compressed-MLA adapter, native MXFP4 b12x MoE runtime, b12x WO/mHC runtime hooks, and b12x sparse-indexer hook are still absent. |
 
@@ -172,9 +175,11 @@ evidence. For GB10 confirmation of stable-preview behavior, the current shell
 is ready to run the safe preflight-gated GB10 scripts using the ignored `.env`
 values. For B12X endpoint work, start from the no-deps b12x `0.20.0` component
 state and prove a component win before adding vLLM runtime hooks. For
-FlashInfer packed-SM120 candidates, the matching official rc1 wheel/jit-cache
-state is now usable but still lacks `flashinfer.sparse_mla_sm120`, so the
-packed route remains candidate-gated.
+FlashInfer packed-SM120 candidates, build from the PR3395 fork branch and keep
+the vLLM adapter behind `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1`. The
+official rc1 wheel/jit-cache state is healthy but is only the official-route
+baseline; `flashinfer-jit-cache` can be omitted for source/git experiments if
+it causes version conflicts, provided benchmarks include enough warmup.
 
 Do not refresh upstream heads before the first candidate run. Use the frozen
 reference tags unless an explicit upstream-change review finds a relevant

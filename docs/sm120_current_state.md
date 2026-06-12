@@ -91,12 +91,14 @@ Last updated: 2026-06-13.
   FlashInfer `flashinfer.mla.trtllm_batch_decode_sparse_mla_dsv4` route, which
   targets the plain BF16 / per-tensor-FP8 KV layout. It is not the newer packed
   `584B/token` SM120 sparse-MLA route from the unmerged FlashInfer SM120 work.
-  The current official FlashInfer `0.6.12` wheel still does not expose
-  `flashinfer.sparse_mla_sm120`, and the earlier plain-route startup/API probes
-  fail in `TllmGenFmhaRunner` with `Unsupported architecture`. An isolated GB10
-  build of the unmerged packed SM120 sparse-MLA backend now passes direct DSV4
-  packed single-cache prefill, dual-cache prefill, and decode correctness
-  smokes. The adapter question is now narrower: the tested packed backend
+  The current official FlashInfer wheel line is not expected to expose
+  `flashinfer.sparse_mla_sm120`; that surface belongs to the unmerged PR3395
+  fork branch `lucifer1004/flashinfer:sparse-mla-sm120`. Earlier plain-route
+  startup/API probes failed in `TllmGenFmhaRunner` with
+  `Unsupported architecture`. An isolated GB10 build of the unmerged packed
+  SM120 sparse-MLA backend now passes direct DSV4 packed single-cache prefill,
+  dual-cache prefill, and decode correctness smokes. The adapter question is
+  now narrower: the tested packed backend
   requires a main `page_block_size=64` and only supports secondary
   `page_block_size=64` or `2`. Current code audit shows the actual vLLM
   physical cache shapes are compatible in principle: SWA uses `64`, C4A
@@ -325,8 +327,12 @@ probe failed only because it mismatched the installed
 `flashinfer-jit-cache==0.6.12+cu130`. The correct bypass variable is
 `FLASHINFER_DISABLE_VERSION_CHECK=1`, and installing the matching
 `flashinfer-jit-cache==0.6.13rc1+cu130` makes the rc wheel pair import without
-the bypass. Official rc1 still does not expose packed SM120 sparse MLA. RTX
-component refresh keeps public b12x compressed MLA below the endpoint bar:
+the bypass. Official rc1 is therefore a healthy official-route baseline, not a
+packed-route dependency. Packed SM120 sparse MLA still comes from the PR3395
+fork branch and must stay behind the existing env gate
+`VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` until it clears the current
+matrix. RTX component refresh keeps public b12x compressed MLA below the
+endpoint bar:
 `real_c128` measured b12x at `0.432 ms` versus current D512 split+finish at
 `0.209 ms`. The strongest current
 fork-independent component signals are still grouped-stream dataflow:

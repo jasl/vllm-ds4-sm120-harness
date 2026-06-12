@@ -99,9 +99,11 @@ The first FlashInfer `0.6.13rc1` no-deps probe only showed that the installed
 correct bypass variable is `FLASHINFER_DISABLE_VERSION_CHECK=1`. Installing the
 matching `flashinfer-jit-cache==0.6.13rc1+cu130` makes the rc wheel pair import
 without a bypass, and the RTX dev venv now keeps that matched rc1 state for
-component probing. Official rc1 still does not expose
-`flashinfer.sparse_mla_sm120`, so the packed SM120 sparse-MLA module remains
-unavailable from official wheels.
+component probing. Official rc1 is not expected to expose
+`flashinfer.sparse_mla_sm120`; that module lives in the unmerged PR3395 fork
+branch, currently `lucifer1004/flashinfer:sparse-mla-sm120`. The matched rc1
+state is therefore a healthy official-wheel baseline, while the packed SM120
+sparse-MLA route remains a separate fork dependency.
 
 The refreshed component probes do not make public b12x compressed MLA the next
 endpoint route. On RTX `real_c128`, b12x compressed MLA measured `0.432 ms`
@@ -145,9 +147,14 @@ bottleneck as sparse MLA accumulate rather than scheduler/KV admission:
   directly while it loses to current D512 split+finish.
 - Official FlashInfer `0.6.13rc1` plus matching
   `flashinfer-jit-cache==0.6.13rc1+cu130` is usable in the RTX dev venv and
-  imports without `FLASHINFER_DISABLE_VERSION_CHECK=1`. It still exposes the
-  plain DSV4 sparse-MLA and B12X MoE routes, not the PR3395-style packed SM120
-  sparse-MLA module.
+  imports without `FLASHINFER_DISABLE_VERSION_CHECK=1`. It exposes the plain
+  DSV4 sparse-MLA and B12X MoE routes; the PR3395-style packed SM120 sparse-MLA
+  module belongs to the `lucifer1004/flashinfer:sparse-mla-sm120` fork branch
+  until that work merges upstream.
+- Treat `flashinfer-jit-cache` as optional for source/git FlashInfer
+  experiments. If a git checkout conflicts with the installed jit-cache
+  package, prefer removing the cache package and running enough warmup before
+  reading performance rather than forcing a mismatched cache into the venv.
 - MoE/pipeline and scheduler/KV remain comparison dimensions, but the current
   EP-off cold-prefill evidence does not make them first-order bottlenecks.
 
