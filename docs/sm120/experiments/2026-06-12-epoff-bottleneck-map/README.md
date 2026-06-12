@@ -78,12 +78,35 @@ For `tokens=1024`, `candidates=640`, staggered lens, the profiled kernel used
 throughput, `6.17%` DRAM throughput, and reported `46.36%` no-eligible cycles.
 Treat this as a kernel-shape clue, not endpoint proof by itself.
 
-The current RTX target venv route probe is
+The first RTX target venv route probe is
 `artifacts/main/2x_rtx_pro_6000_sm120/b12x_stack_probe/20260613_route_probe_sm120`.
-It shows `b12x` package `0.15.2`, FlashInfer packages `0.6.12`, and only these
-relevant runtime routes as immediately available: `runtime_flashinfer_mla_sparse_dsv4_plain`
-and `runtime_flashinfer_b12x_moe`. Public b12x sparse-indexer / DS4 compressed
-MLA / WO / native MXFP4 MoE routes are not available in that venv yet.
+It showed `b12x` package `0.15.2`, FlashInfer packages `0.6.12`, and only these
+relevant runtime routes as immediately available:
+`runtime_flashinfer_mla_sparse_dsv4_plain` and
+`runtime_flashinfer_b12x_moe`.
+
+The follow-up dependency refresh is recorded under
+`artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/`.
+Default `b12x==0.20.0` resolution is not usable for this dev venv because it
+moved Torch/Triton/CUDA runtime packages, downgraded NCCL, and made `vllm._C`
+fail with a Torch ABI symbol error. Restoring the original runtime packages and
+installing `b12x==0.20.0` as a no-deps experiment variable gives a healthy
+target venv: `vllm._C` imports, focused SM120 fallback tests pass, and public
+b12x DS4 compressed-MLA / sparse-indexer-extend / native MXFP4 MoE helper APIs
+are importable. Current vLLM still lacks runtime hooks for those routes.
+FlashInfer `0.6.13rc1` no-deps is rejected for this venv because it mismatches
+the installed `flashinfer-jit-cache`; stable FlashInfer `0.6.12` remains the
+current official-wheel route, and the packed SM120 sparse-MLA module is still
+unavailable.
+
+The refreshed component probes do not make public b12x compressed MLA the next
+endpoint route. On RTX `real_c128`, b12x compressed MLA measured `0.432 ms`
+versus current D512 split+finish `0.209 ms`. The stronger fork-independent
+signal remains the grouped stream family: grouped-SWA D512 was `0.824 ms`
+versus split `1.382 ms` at `1152` candidates, and the high-reuse grouped-stream
+probe was `0.600 ms` versus split `1.320 ms`. Because the older separate-launch
+grouped-SWA endpoint regressed, the next prototype must fuse stream processing
+with merge/finish or otherwise avoid the extra launch/workspace traffic.
 
 The earlier artifact
 `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142`
@@ -112,9 +135,13 @@ bottleneck as sparse MLA accumulate rather than scheduler/KV admission:
 - Sparse-MLA/dataflow is the first optimization route. A candidate should
   either reduce real candidate/value visits or improve effective visits/s at
   the same semantic work.
-- Public dependency readiness is currently a blocker for the b12x sparse
-  indexer and DS4 compressed MLA routes in the RTX target venv. Use an
-  isolated, rollbackable dependency environment before endpoint A/B.
+- Public b12x readiness has moved from "missing APIs" to "not yet integrated
+  or not fast enough as a direct endpoint route." Keep b12x `0.20.0` no-deps
+  available for component probes, but do not port public compressed MLA
+  directly while it loses to current D512 split+finish.
+- Official FlashInfer remains at stable `0.6.12` for this target venv. The
+  `0.6.13rc1` wheel pair is not usable without a matching jit-cache package,
+  and neither route exposes the PR3395-style packed SM120 sparse-MLA module.
 - MoE/pipeline and scheduler/KV remain comparison dimensions, but the current
   EP-off cold-prefill evidence does not make them first-order bottlenecks.
 
@@ -135,6 +162,7 @@ below the gate is rejected for PR promotion.
   black-benediction head change found during explicit upstream review, or any
   endpoint candidate that changes sparse-MLA, MoE, DFlash, scheduler, KV, or
   CUDA graph behavior.
-- Next command: analyze the RTX EP-off attribution, then run targeted
-  stage-timing/NCU probes and correctness gates before spending GB10 time on a
-  candidate.
+- Next command: prototype or microbench a fused dual-stream sparse-MLA path
+  that preserves the grouped-stream component signal without reintroducing the
+  separate-launch merge/finish overhead that made the earlier endpoint form
+  regress.

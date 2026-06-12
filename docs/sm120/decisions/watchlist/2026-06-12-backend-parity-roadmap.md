@@ -15,12 +15,13 @@ separate research branches that can be discarded if they fail the matrix.
 
 Use the current PR branch as the base for new vLLM development. The local
 backend-parity development branch is
-`codex/ds4-sm120-backend-parity-dev-20260612` at `7224e68417`, which is the PR
-stable preview `f32247a5a6` plus one signed diagnostic selector commit. When
+`codex/ds4-sm120-backend-parity-dev-20260612` at `591b71bed0`, which is the PR
+stable preview `f32247a5a6` plus signed diagnostic commits for the SM12x
+sparse-MLA selector, warmup stats handling, and sparse-MLA prefill stats. When
 the PR branch is later rebased on upstream/main, rebase or recreate the dev
-branch on top of the new PR tip. Any dev-branch fix that belongs in the PR
-must be split out and replayed onto the PR branch as a reviewable commit before
-it becomes user-facing baseline behavior.
+branch on top of the new PR tip. Any dev-branch fix that belongs in the PR must
+be split out and replayed onto the PR branch as a reviewable commit before it
+becomes user-facing baseline behavior.
 
 Freeze external references for this phase instead of following remote heads on
 every run. Refresh them only during an explicit upstream-change review, or when
@@ -43,7 +44,12 @@ Integrate the active routes in this order:
   profile. The older EP-on dependency notes are no longer sufficient evidence
   because EP-off now wins the routine profile. Use upstream/main or released
   package capabilities where possible, and keep fork-only code behind
-  experiment branches until endpoint evidence justifies promotion.
+  experiment branches until endpoint evidence justifies promotion. The 2026-06-13
+  RTX refresh makes public `b12x==0.20.0` usable as a no-deps component-probe
+  dependency, but direct public b12x compressed MLA still loses to current D512
+  split+finish on the refreshed `real_c128` component shape. Official
+  FlashInfer `0.6.13rc1` is not usable in the target venv without a matching
+  jit-cache package, so stable `0.6.12` remains the official-wheel route.
 - Keep the unmerged FlashInfer packed SM120 sparse-MLA route
   `flashinfer-ai/flashinfer#3395` as an important reference path. The earlier
   GB10 endpoint-shaped prototype showed about `10-23%` TTFT improvement, but
@@ -76,6 +82,12 @@ Integrate the active routes in this order:
   vLLM upstream/main moved to `053e7daa79`, FlashInfer upstream/main moved to
   `992848ad`, b12x master stayed at `fabb087`, and black-benediction moved to
   `5fcd00c3d7`.
+- RTX dependency and component refresh on 2026-06-13:
+  b12x `0.20.0` no-deps import/probe state is healthy, FlashInfer `0.6.13rc1`
+  no-deps is rejected due jit-cache mismatch, public b12x compressed MLA
+  measured `0.432 ms` versus current D512 split+finish `0.209 ms` on
+  `real_c128`, and grouped-stream component probes remain the stronger
+  fork-independent sparse-MLA direction.
 - Local freeze tags:
   `sm120-freeze-vllm-upstream-main-20260612`,
   `sm120-freeze-vllm-pr45277-20260612`,
@@ -113,7 +125,8 @@ memory-sensitive environment.
   build/runtime coverage change.
 - FlashInfer exposes an official packed SM120 sparse-MLA route or b12x exposes
   a faster DS4 compressed-MLA/indexer route that changes the prior component
-  results.
+  results, or the official FlashInfer rc/stable packages expose a matching
+  packed route plus jit-cache state.
 - `flashinfer-ai/flashinfer#3395` changes in a way that removes the dependency
   gate or materially changes the packed SM120 sparse-MLA integration contract.
 - `dev/black-benediction` publishes or moves a performance-critical mechanism

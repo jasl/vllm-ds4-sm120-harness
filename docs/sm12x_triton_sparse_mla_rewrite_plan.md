@@ -323,6 +323,53 @@ Updated direction:
   otherwise remove enough launch/workspace traffic to preserve the component
   win.
 
+## 2026-06-13 Checkpoint: Dependency And Component Refresh
+
+Status: current same-host triage evidence on RTX PRO 6000 / SM120, using the
+backend-parity dev branch at `591b71bed0`.
+
+The dependency refresh changes the b12x integration question from "public APIs
+missing" to "public APIs available, endpoint value still unproven":
+
+- Default `b12x==0.20.0` resolver is rejected for this dev venv. It moved the
+  Torch/Triton/CUDA runtime package set, downgraded NCCL, and made `vllm._C`
+  fail with a Torch ABI symbol error.
+- `b12x==0.20.0` installed as a no-deps experiment variable is healthy on the
+  current runtime stack. `vllm._C` imports and
+  `tests/v1/attention/test_sm120_deepgemm_fallbacks.py -q` passed.
+- Public b12x DS4 compressed-MLA, sparse-indexer-extend, native MXFP4 MoE
+  helper, WO, mHC, FP8 linear, and PCIe all-reduce APIs import in this state.
+  Current Dev still has no vLLM runtime hooks for DS4 b12x compressed MLA,
+  native MXFP4 b12x MoE, b12x WO/mHC, or b12x sparse indexer selection.
+- FlashInfer `0.6.13rc1` no-deps is rejected for the current venv because it
+  mismatches the installed `flashinfer-jit-cache`; stable `0.6.12` remains the
+  official-wheel route and still does not expose packed SM120 sparse MLA.
+
+Refreshed RTX component results:
+
+| Component | Shape | Current split / baseline | Candidate | Interpretation |
+| --- | --- | ---: | ---: | --- |
+| Public b12x compressed MLA | `real_c128` | D512 split+finish `0.209 ms` | b12x `0.432 ms` | Faster than old online packed, but still about `2.07x` slower than current D512. Do not port this direct route next. |
+| Grouped-SWA D512 | `640` candidates | split `0.627 ms` | grouped-SWA `0.575 ms` | Small positive component signal. |
+| Grouped-SWA D512 | `1152` candidates | split `1.382 ms` | grouped-SWA `0.824 ms` | Strong component signal, but the previous separate-launch endpoint form regressed. |
+| Grouped stream online | `640` candidates | split `0.601 ms` | grouped stream `0.354 ms` | Strong signal for high-reuse C128A-style stream dataflow. |
+| Grouped stream online | `1152` candidates | split `1.320 ms` | grouped stream `0.600 ms` | Strongest current fork-independent component signal. |
+
+Interpretation:
+
+- Do not spend the next implementation slice on a direct public b12x
+  compressed-MLA endpoint adapter. The dependency is now importable, but the
+  component timing does not beat current D512.
+- Do not spend the next implementation slice on official FlashInfer rc/git
+  unless a matching wheel/jit-cache state exposes packed SM120 sparse MLA.
+- The next code-bearing experiment should preserve the grouped-stream dataflow
+  win while avoiding the archived endpoint's failure mode: extra compressed,
+  grouped-SWA, merge-state, merge-acc, and finish launches.
+- A plausible first prototype is a component-level fused dual-stream online
+  kernel that emits the final output directly for a conservative D512/C128A
+  shape, then only moves endpointward if the fused component beats current
+  split+finish with exact output and graph-stable workspace assumptions.
+
 ## Work Plan
 
 ### Task 1: Branch And Code Hygiene

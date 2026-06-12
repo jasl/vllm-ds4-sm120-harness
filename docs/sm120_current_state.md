@@ -315,6 +315,24 @@ production endpoint adapter for this direct route unless a newer backend or a
 different sparse-MLA dataflow changes that performance result and then passes
 the promotion matrix.
 
+The 2026-06-13 RTX dependency refresh makes that public-b12x posture current
+for the active dev venv: default `b12x==0.20.0` resolution is rejected because
+it moves Torch/Triton/CUDA runtime packages, downgrades NCCL, and breaks
+`vllm._C` with a Torch ABI symbol error; `b12x==0.20.0` installed as no-deps on
+the existing runtime stack is healthy and exposes the public DS4 helper APIs.
+The same refresh rechecked official FlashInfer `0.6.13rc1` and rejected it for
+this venv because it mismatches the installed `flashinfer-jit-cache`; stable
+FlashInfer `0.6.12` remains the current official-wheel route and still does
+not expose packed SM120 sparse MLA. RTX component refresh keeps public b12x
+compressed MLA below the endpoint bar: `real_c128` measured b12x at `0.432 ms`
+versus current D512 split+finish at `0.209 ms`. The strongest current
+fork-independent component signals are still grouped-stream dataflow:
+grouped-SWA D512 `0.824 ms` versus split `1.382 ms` at `1152` candidates, and
+high-reuse grouped-stream `0.600 ms` versus split `1.320 ms`. Because the
+older separate-launch grouped-SWA endpoint regressed, the next endpoint-shaped
+work must fuse stream processing with merge/finish or otherwise remove the
+extra launch/workspace traffic.
+
 The same 2026-06-08 GB10 recheck also tested public b12x
 `compressed_indexer.index_topk_fp8` on the shared-prefill path. The API is
 runnable and correct against the reference on small shapes, including

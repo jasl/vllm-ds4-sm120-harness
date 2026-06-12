@@ -54,17 +54,26 @@ occupancy, `61.91%` SM throughput, `6.17%` DRAM throughput, and `46.36%`
 no-eligible cycles. This is a kernel-shape clue only; endpoint A/B still has
 priority over microbench wins.
 
-The 2026-06-13 route probe also narrows what can be tested immediately in the
-current RTX target venv:
+The first 2026-06-13 route probe narrowed what could be tested immediately in
+the then-current RTX target venv:
 
 - available now: plain FlashInfer DS4 sparse MLA route and FlashInfer B12X MoE
   route;
 - source/reference only until dependency work: PR3395 packed SM120 FlashInfer
   sparse MLA, public b12x paged sparse indexer, DS4 b12x compressed MLA
-  adapter, DS4 b12x WO, and native MXFP4 MoE;
-- target venv currently has `b12x` `0.15.2`, while the local b12x source is
-  newer. Use an isolated, rollbackable venv or explicit reinstall before
-  claiming public b12x mainline capability.
+  adapter, DS4 b12x WO, and native MXFP4 MoE.
+
+The follow-up dependency refresh changes the b12x read but not the endpoint
+decision:
+
+| Probe | Result | Interpretation |
+| --- | --- | --- |
+| `b12x==0.20.0` default resolver | Pulls a Torch/Triton/CUDA runtime set that breaks current `vllm._C`; also downgrades NCCL. | Do not use the default resolver for this dev venv. |
+| `b12x==0.20.0` no-deps | Keeps the current vLLM runtime healthy and exposes DS4 compressed-MLA, sparse-indexer-extend, native MXFP4 MoE helper APIs, WO, mHC, FP8 linear, and PCIe all-reduce imports. | The public API blocker is gone for component probes; vLLM runtime hooks are still absent. |
+| FlashInfer `0.6.13rc1` no-deps | FlashInfer import fails due `flashinfer-jit-cache` version mismatch. | Stable `0.6.12` remains the official-wheel route; packed SM120 sparse MLA is still unavailable. |
+| b12x compressed MLA `real_c128` | b12x `0.432 ms`, old online packed `5.923 ms`, D512 split+finish `0.209 ms`. | Do not port public b12x compressed MLA directly as the next endpoint path. |
+| grouped-SWA D512, `1152` candidates | split `1.382 ms`, grouped-SWA `0.824 ms`. | Component signal is still real, but the older separate-launch endpoint form regressed. |
+| grouped-stream, `1152` candidates | split `1.320 ms`, grouped stream `0.600 ms`. | Strongest fork-independent signal points to fused dual-stream online processing, not to a direct dependency swap. |
 
 ## Current Direction
 
@@ -74,14 +83,19 @@ current RTX target venv:
 2. First candidate family: sparse MLA accumulate/backend. Prefer a conservative
    route that improves or replaces the slow non-indexed chunk groups while
    preserving `FULL_AND_PIECEWISE` graphs and DS4 correctness.
-3. Before endpoint A/B for b12x mainline, prepare an isolated dependency state
-   where the target venv exposes the public paged-indexer / compressed-MLA APIs.
+3. Keep b12x `0.20.0` no-deps as the current public-b12x component-probe
+   state, but do not add a DS4 compressed-MLA endpoint adapter unless a newer
+   backend/dataflow beats current D512 split+finish.
 4. Treat FlashInfer PR3395 packed SM120 sparse MLA as still dependency-gated.
    The installed FlashInfer route is the plain DS4 sparse MLA path, not the
-   packed 584B/token path.
+   packed 584B/token path, and the latest rc wheel is unusable without a
+   matching jit-cache package.
 5. Keep black-benediction DFlash/decode changes as a second-stage reference.
    They may help decode/speculative throughput, but they are high-correctness
    risk and are not the first response to this cold-prefill bottleneck.
+6. The next code-bearing experiment should be a fused dual-stream sparse-MLA
+   component or endpoint prototype that avoids the extra merge/finish launches
+   that made the archived grouped-SWA endpoint regress.
 
 ## First RTX Commands
 
