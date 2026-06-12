@@ -368,6 +368,10 @@ Interpretation:
   the matching rc1 wheel/jit-cache state is healthy, but packed SM120 sparse
   MLA requires the PR3395 fork branch. Any vLLM adapter for that fork route
   must remain behind `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1`.
+- Use the exact historical vLLM adapter anchors for the PR3395 route:
+  `2b82185506`, `844ee31313`, and `d11b5a708b`. The old
+  `backup/ds4-sm120-preview-dev-before-stack-reorder-20260611190541` branch at
+  `321eda45aa` is pre-reorder context, not the direct adapter head.
 - Treat `flashinfer-jit-cache` as optional for source/git FlashInfer builds.
   If a git build conflicts with the installed jit-cache package, omit the cache
   package and increase warmup before comparing performance.

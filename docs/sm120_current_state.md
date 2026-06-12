@@ -111,11 +111,14 @@ Last updated: 2026-06-13.
   with correct per-stream lengths and zero-KV LSE. The endpoint adapter was
   archived as a local reference branch after the 2026-06-08 GB10 subset because
   it depends on an unmerged FlashInfer packed backend and has not passed the
-  full RTX + GSM8K + lifecycle promotion matrix. Current dev and PR branches
-  should not contain a `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL` runtime
-  path. The current FlashInfer PR `#3395` head is `88539d03`; keep it as a
-  reference candidate because the old GB10 subset showed about `10-23%` TTFT
-  improvement, but revalidate it under EP-off before promotion.
+  full RTX + GSM8K + lifecycle promotion matrix. The stable PR branch and the
+  current backend-parity dev baseline should not contain a default-on
+  `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL` runtime path; future experiment
+  branches may reintroduce that path behind the env gate. The 2026-06-12 local
+  PR3395 freeze is `88539d03`; the live fork branch checked on 2026-06-13 is
+  `b619f0c650`. Keep PR3395 as a reference candidate because the old GB10
+  subset showed about `10-23%` TTFT improvement, but revalidate it under EP-off
+  before promotion.
 - Blocked or rejected as current endpoint backends, in the specific forms that
   were tested: public b12x / FlashInfer wheels as a direct DS4 endpoint
   backend, upstream `FLASHINFER_MLA_SPARSE_DSV4` with the current official
@@ -341,6 +344,15 @@ high-reuse grouped-stream `0.600 ms` versus split `1.320 ms`. Because the
 older separate-launch grouped-SWA endpoint regressed, the next endpoint-shaped
 work must fuse stream processing with merge/finish or otherwise remove the
 extra launch/workspace traffic.
+
+The historical vLLM branch
+`backup/ds4-sm120-preview-dev-before-stack-reorder-20260611190541` exists at
+`321eda45aa` and is useful for pre-reorder stack context, but its current local
+head does not contain the exact `flashinfer.sparse_mla_sm120` env-gated
+adapter. For the next PR3395 port, use the exact adapter/probe anchors
+`2b82185506`, `844ee31313`, and the fuller Lucifer SM120 support commit
+`d11b5a708b`, then rebase the selected pieces onto the current backend-parity
+dev baseline.
 
 The same 2026-06-08 GB10 recheck also tested public b12x
 `compressed_indexer.index_topk_fp8` on the shared-prefill path. The API is

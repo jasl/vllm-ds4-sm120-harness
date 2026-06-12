@@ -89,6 +89,12 @@ Integrate the active routes in this order:
   GitHub still shows the PR open from
   `lucifer1004/flashinfer:sparse-mla-sm120`, and the fork branch head is
   `b619f0c650`.
+- Historical vLLM adapter sources checked on 2026-06-13:
+  `backup/ds4-sm120-preview-dev-before-stack-reorder-20260611190541` exists at
+  `321eda45aa` and is useful pre-reorder stack context, but the exact
+  `flashinfer.sparse_mla_sm120` env-gated adapter is anchored by
+  `2b82185506`, `844ee31313`, and the fuller Lucifer support commit
+  `d11b5a708b`.
 - RTX dependency and component refresh on 2026-06-13:
   b12x `0.20.0` no-deps import/probe state is healthy, FlashInfer `0.6.13rc1`
   is healthy after installing the matching jit-cache; `flashinfer.sparse_mla_sm120`

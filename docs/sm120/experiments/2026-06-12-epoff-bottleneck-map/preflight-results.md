@@ -35,6 +35,15 @@ candidate routes still need a dependency update before endpoint A/B.
   separate freeze is made.
   The older local `codex/pr3395-sparse-mla-sm120` branch remains preserved as
   the historical route used by earlier tests.
+- Historical vLLM FlashInfer-packed adapter anchors:
+  `backup/ds4-sm120-preview-dev-before-stack-reorder-20260611190541` exists at
+  `321eda45aa`, but its current local head does not contain the exact
+  `flashinfer.sparse_mla_sm120` env-gated adapter. Use it as pre-reorder stack
+  context only. The exact adapter/probe anchors are
+  `codex/backup-flashinfer-packed-endpoint-20260608` at `2b82185506`,
+  `codex/flashinfer-packed-prefill-probe-20260608` at `844ee31313`, and
+  `d11b5a708b` (`feat(dsv4): add Lucifer SM120 sparse MLA support`, reachable
+  from the local-inference Lucifer reference branches).
 
 Frozen local reference tags:
 
