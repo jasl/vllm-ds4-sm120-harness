@@ -28,6 +28,10 @@ candidate routes still need a dependency update before endpoint A/B.
   selector diagnostic commit and the warmup fix that keeps sparse-MLA stats out
   of the server startup path. It also restores sparse-MLA prefill stats
   diagnostics for attribution-only runs.
+- Fixed PR3395 packed-route dev branch:
+  `codex/ds4-sm120-pr3395-packed-dev-20260613` at `591b71bed0`, pushed to
+  `origin`, with base tag `sm120-pr3395-packed-dev-base-20260613`. Use this as
+  the long-lived vLLM development branch for env-gated packed FlashInfer work.
 - FlashInfer PR3395 current snapshot branch:
   `codex/pr3395-sparse-mla-sm120-20260612` at `88539d03`.
   The live fork branch `lucifer1004/flashinfer:sparse-mla-sm120` was checked on

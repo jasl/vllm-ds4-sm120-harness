@@ -359,6 +359,12 @@ adapter. For the next PR3395 port, use the exact adapter/probe anchors
 `d11b5a708b`, then rebase the selected pieces onto the current backend-parity
 dev baseline.
 
+The fixed vLLM development branch for this route is now
+`codex/ds4-sm120-pr3395-packed-dev-20260613` at `591b71bed0`, pushed to
+`origin`, with base tag `sm120-pr3395-packed-dev-base-20260613`. Use that
+branch, or a clearly named descendant, for future env-gated packed FlashInfer
+work so new commits remain reachable.
+
 The same 2026-06-08 GB10 recheck also tested public b12x
 `compressed_indexer.index_topk_fp8` on the shared-prefill path. The API is
 runnable and correct against the reference on small shapes, including

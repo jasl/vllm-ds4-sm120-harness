@@ -93,6 +93,11 @@ Integrate the active routes in this order:
   GitHub still shows the PR open from
   `lucifer1004/flashinfer:sparse-mla-sm120`, and the fork branch head is
   `b619f0c650`.
+- Fixed vLLM packed-route dev branch created on 2026-06-13:
+  `codex/ds4-sm120-pr3395-packed-dev-20260613` at `591b71bed0`, with base tag
+  `sm120-pr3395-packed-dev-base-20260613`. Keep future PR3395 packed FlashInfer
+  commits on this branch or descendants so the route does not depend on
+  unreferenced WIP commits.
 - Historical vLLM adapter sources checked on 2026-06-13:
   `backup/ds4-sm120-preview-dev-before-stack-reorder-20260611190541` exists at
   `321eda45aa` and is useful pre-reorder stack context, but the exact
