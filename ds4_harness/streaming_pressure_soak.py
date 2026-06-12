@@ -30,6 +30,7 @@ DEFAULT_MATRIX_CASE_SPECS = (
     "long_c2:2:2:4000:128",
     "long_c4:4:2:2400:128",
 )
+FAILED_ASSISTANT_TEXT_EXCERPT_CHARS = 1024
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,16 @@ class StreamingPressureCaseSpec:
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _assistant_text_artifact(text: str, *, include_excerpt: bool) -> Json:
+    artifact: Json = {
+        "assistant_text_sha256": _sha256(text),
+        "assistant_text_length": len(text),
+    }
+    if include_excerpt:
+        artifact["assistant_text_excerpt"] = text[:FAILED_ASSISTANT_TEXT_EXCERPT_CHARS]
+    return artifact
 
 
 def _parse_positive_int(value: str, field: str) -> int:
@@ -417,6 +428,7 @@ def _run_request(
             "line_count": request["line_count"],
             "required_terms": list(request["required_terms"]),
         }
+        row.update(_assistant_text_artifact(text, include_excerpt=not ok))
         if request.get("matrix_case") is not None:
             row["matrix_case"] = str(request["matrix_case"])
         return row

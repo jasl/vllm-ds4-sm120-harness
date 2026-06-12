@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 from ds4_harness import cli
@@ -95,6 +96,7 @@ def test_run_streaming_pressure_soak_records_concurrent_rounds():
     assert row["summary"]["p99_inter_chunk_seconds"] == 0.2
     assert row["summary"]["max_time_to_last_token_seconds"] == 0.6
     assert row["requests"][0]["p95_inter_chunk_seconds"] in {0.1, 0.2}
+    assert "assistant_text_excerpt" not in row["requests"][0]
     assert set(calls) == {
         (1, 0),
         (1, 1),
@@ -139,6 +141,48 @@ def test_streaming_pressure_soak_can_hard_fail_slow_ttft():
 
     assert row["summary"]["suspect_slow_ttft"] is True
     assert row["ok"] is False
+
+
+def test_streaming_pressure_soak_records_failed_response_excerpt():
+    def fake_stream(base_url, path, payload, timeout, **kwargs):
+        return {
+            "response": {
+                "choices": [
+                    {
+                        "message": {"content": "status: stream completed without marker"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1000, "completion_tokens": 8},
+            },
+            "assistant_text": "status: stream completed without marker",
+            "ttft_seconds": 0.2,
+            "elapsed_seconds": 1.0,
+            "chunks": 2,
+        }
+
+    row = run_streaming_pressure_soak(
+        base_url="http://127.0.0.1:8000",
+        model="model",
+        variant="mtp",
+        concurrency=1,
+        round_count=1,
+        line_count=128,
+        stream_func=fake_stream,
+    )
+
+    request = row["requests"][0]
+    assert row["ok"] is False
+    assert request["detail"] == "missing required terms: STREAM-W00-R01-CHECK"
+    assert request["assistant_text_length"] == len(
+        "status: stream completed without marker"
+    )
+    assert request["assistant_text_sha256"] == hashlib.sha256(
+        b"status: stream completed without marker"
+    ).hexdigest()
+    assert request["assistant_text_excerpt"] == (
+        "status: stream completed without marker"
+    )
 
 
 def test_streaming_pressure_soak_markdown_includes_runtime_guidance(tmp_path):
