@@ -70,7 +70,7 @@ decision:
 | --- | --- | --- |
 | `b12x==0.20.0` default resolver | Pulls a Torch/Triton/CUDA runtime set that breaks current `vllm._C`; also downgrades NCCL. | Do not use the default resolver for this dev venv. |
 | `b12x==0.20.0` no-deps | Keeps the current vLLM runtime healthy and exposes DS4 compressed-MLA, sparse-indexer-extend, native MXFP4 MoE helper APIs, WO, mHC, FP8 linear, and PCIe all-reduce imports. | The public API blocker is gone for component probes; vLLM runtime hooks are still absent. |
-| FlashInfer `0.6.13rc1` no-deps | FlashInfer import fails due `flashinfer-jit-cache` version mismatch. | Stable `0.6.12` remains the official-wheel route; packed SM120 sparse MLA is still unavailable. |
+| FlashInfer `0.6.13rc1` matched jit-cache | `flashinfer-python/cubin==0.6.13rc1` imports after either `FLASHINFER_DISABLE_VERSION_CHECK=1` bypasses the older jit-cache mismatch or `flashinfer-jit-cache==0.6.13rc1+cu130` is installed. | Official rc1 is usable in the RTX dev venv, but packed SM120 sparse MLA is still unavailable. |
 | b12x compressed MLA `real_c128` | b12x `0.432 ms`, old online packed `5.923 ms`, D512 split+finish `0.209 ms`. | Do not port public b12x compressed MLA directly as the next endpoint path. |
 | grouped-SWA D512, `1152` candidates | split `1.382 ms`, grouped-SWA `0.824 ms`. | Component signal is still real, but the older separate-launch endpoint form regressed. |
 | grouped-stream, `1152` candidates | split `1.320 ms`, grouped stream `0.600 ms`. | Strongest fork-independent signal points to fused dual-stream online processing, not to a direct dependency swap. |
@@ -88,8 +88,8 @@ decision:
    backend/dataflow beats current D512 split+finish.
 4. Treat FlashInfer PR3395 packed SM120 sparse MLA as still dependency-gated.
    The installed FlashInfer route is the plain DS4 sparse MLA path, not the
-   packed 584B/token path, and the latest rc wheel is unusable without a
-   matching jit-cache package.
+   packed 584B/token path. The official `0.6.13rc1` wheel/jit-cache state is
+   now usable, but the packed SM120 module is still absent from that package.
 5. Keep black-benediction DFlash/decode changes as a second-stage reference.
    They may help decode/speculative throughput, but they are high-correctness
    risk and are not the first response to this cold-prefill bottleneck.

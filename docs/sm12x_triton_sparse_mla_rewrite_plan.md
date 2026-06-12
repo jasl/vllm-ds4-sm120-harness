@@ -341,9 +341,11 @@ missing" to "public APIs available, endpoint value still unproven":
   helper, WO, mHC, FP8 linear, and PCIe all-reduce APIs import in this state.
   Current Dev still has no vLLM runtime hooks for DS4 b12x compressed MLA,
   native MXFP4 b12x MoE, b12x WO/mHC, or b12x sparse indexer selection.
-- FlashInfer `0.6.13rc1` no-deps is rejected for the current venv because it
-  mismatches the installed `flashinfer-jit-cache`; stable `0.6.12` remains the
-  official-wheel route and still does not expose packed SM120 sparse MLA.
+- FlashInfer `0.6.13rc1` no-deps only fails when it is paired with the older
+  `flashinfer-jit-cache==0.6.12+cu130`. `FLASHINFER_DISABLE_VERSION_CHECK=1`
+  bypasses that mismatch for probes, and installing the matching
+  `flashinfer-jit-cache==0.6.13rc1+cu130` makes the rc state import without the
+  bypass. Official rc1 still does not expose packed SM120 sparse MLA.
 
 Refreshed RTX component results:
 
@@ -360,8 +362,9 @@ Interpretation:
 - Do not spend the next implementation slice on a direct public b12x
   compressed-MLA endpoint adapter. The dependency is now importable, but the
   component timing does not beat current D512.
-- Do not spend the next implementation slice on official FlashInfer rc/git
-  unless a matching wheel/jit-cache state exposes packed SM120 sparse MLA.
+- Do not spend the next implementation slice on official FlashInfer alone:
+  the matching rc1 wheel/jit-cache state is now healthy, but it still does not
+  expose packed SM120 sparse MLA.
 - The next code-bearing experiment should preserve the grouped-stream dataflow
   win while avoiding the archived endpoint's failure mode: extra compressed,
   grouped-SWA, merge-state, merge-acc, and finish launches.

@@ -149,7 +149,7 @@ probe:
 | b12x default resolver | Rejected: it moved Torch/Triton/CUDA runtime packages, downgraded NCCL, and made `vllm._C` fail with a Torch ABI symbol error. |
 | b12x current experiment state | `b12x==0.20.0` installed as no-deps while keeping the previous Torch/Triton/NCCL runtime stack. |
 | Focused vLLM smoke | `tests/v1/attention/test_sm120_deepgemm_fallbacks.py -q`: `9 passed`. |
-| FlashInfer rc probe | Rejected: `flashinfer-python/cubin==0.6.13rc1` mismatched the installed `flashinfer-jit-cache`; restored `flashinfer-python/cubin==0.6.12`. |
+| FlashInfer rc probe | Corrected: `flashinfer-python/cubin==0.6.13rc1` imports with `FLASHINFER_DISABLE_VERSION_CHECK=1` when paired with an older jit-cache, and imports without the bypass after installing `flashinfer-jit-cache==0.6.13rc1+cu130`. Official rc1 still does not expose `flashinfer.sparse_mla_sm120`. |
 | Current public b12x API state | DS4 compressed-MLA scratch/API, sparse-indexer extend, native MXFP4 MoE helper, WO, mHC, FP8 linear, and PCIe all-reduce imports are available. |
 | Current vLLM runtime state | DS4 b12x compressed-MLA adapter, native MXFP4 b12x MoE runtime, b12x WO/mHC runtime hooks, and b12x sparse-indexer hook are still absent. |
 
@@ -157,7 +157,10 @@ Artifacts:
 
 - `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_b12x_0200_nodeps_restore`
 - `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_nodeps`
-- `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_restore_0612`
+- `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_bypass`
+- `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_matched`
+- `artifacts/main/2x_rtx_pro_6000_sm120/flashinfer_packed_mla_probe/20260613_fi0613rc1_bypass`
+- `artifacts/main/2x_rtx_pro_6000_sm120/flashinfer_packed_mla_probe/20260613_fi0613rc1_matched`
 
 This refresh makes public b12x mainline suitable for component probes in the
 RTX dev venv. It does not make b12x a ready endpoint route.
@@ -169,8 +172,9 @@ evidence. For GB10 confirmation of stable-preview behavior, the current shell
 is ready to run the safe preflight-gated GB10 scripts using the ignored `.env`
 values. For B12X endpoint work, start from the no-deps b12x `0.20.0` component
 state and prove a component win before adding vLLM runtime hooks. For
-FlashInfer packed-SM120 candidates, prepare a matching wheel/jit-cache state
-before treating the route as candidate-ready.
+FlashInfer packed-SM120 candidates, the matching official rc1 wheel/jit-cache
+state is now usable but still lacks `flashinfer.sparse_mla_sm120`, so the
+packed route remains candidate-gated.
 
 Do not refresh upstream heads before the first candidate run. Use the frozen
 reference tags unless an explicit upstream-change review finds a relevant

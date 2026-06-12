@@ -48,8 +48,9 @@ Integrate the active routes in this order:
   RTX refresh makes public `b12x==0.20.0` usable as a no-deps component-probe
   dependency, but direct public b12x compressed MLA still loses to current D512
   split+finish on the refreshed `real_c128` component shape. Official
-  FlashInfer `0.6.13rc1` is not usable in the target venv without a matching
-  jit-cache package, so stable `0.6.12` remains the official-wheel route.
+  FlashInfer `0.6.13rc1` plus matching `flashinfer-jit-cache==0.6.13rc1+cu130`
+  is usable in the RTX dev venv and imports without the version-check bypass;
+  it still lacks the packed SM120 sparse-MLA module.
 - Keep the unmerged FlashInfer packed SM120 sparse-MLA route
   `flashinfer-ai/flashinfer#3395` as an important reference path. The earlier
   GB10 endpoint-shaped prototype showed about `10-23%` TTFT improvement, but
@@ -84,7 +85,8 @@ Integrate the active routes in this order:
   `5fcd00c3d7`.
 - RTX dependency and component refresh on 2026-06-13:
   b12x `0.20.0` no-deps import/probe state is healthy, FlashInfer `0.6.13rc1`
-  no-deps is rejected due jit-cache mismatch, public b12x compressed MLA
+  is healthy after installing the matching jit-cache but still lacks
+  `flashinfer.sparse_mla_sm120`, public b12x compressed MLA
   measured `0.432 ms` versus current D512 split+finish `0.209 ms` on
   `real_c128`, and grouped-stream component probes remain the stronger
   fork-independent sparse-MLA direction.

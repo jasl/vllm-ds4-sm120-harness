@@ -20,7 +20,11 @@ addresses, tokens, or absolute model-cache locations.
 | RTX sparse MLA NCU microbench | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_sparse_mla_ncu_first/20260613_sparse_mla_ncu_first` |
 | RTX b12x / FlashInfer route probe | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/b12x_stack_probe/20260613_route_probe_sm120` |
 | RTX dependency refresh, b12x 0.20 no-deps | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_b12x_0200_nodeps_restore` |
-| RTX dependency refresh, FlashInfer 0.6.13rc1 rejected | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_nodeps` |
+| RTX dependency refresh, FlashInfer 0.6.13rc1 no-deps mismatch | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_nodeps` |
+| RTX dependency refresh, FlashInfer 0.6.13rc1 bypass smoke | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_bypass` |
+| RTX dependency refresh, FlashInfer 0.6.13rc1 matched jit-cache | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_matched` |
+| RTX FlashInfer 0.6.13rc1 packed MLA probe, bypass | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/flashinfer_packed_mla_probe/20260613_fi0613rc1_bypass` |
+| RTX FlashInfer 0.6.13rc1 packed MLA probe, matched jit-cache | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/flashinfer_packed_mla_probe/20260613_fi0613rc1_matched` |
 | RTX b12x compressed MLA component refresh | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/b12x_mla_microbench/20260613_b12x0200_nodeps_default` |
 | RTX grouped-SWA D512 component refresh | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/indexed_d512_grouped_swa_microbench/20260613_current_dev_b12x0200_nodeps` |
 | RTX grouped-stream component refresh | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/indexed_d512_grouped_stream_microbench/20260613_current_dev_b12x0200_nodeps` |
@@ -36,7 +40,8 @@ addresses, tokens, or absolute model-cache locations.
 | --- | --- | --- | --- |
 | RTX EP-off performance-only control | `e164b76501` | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142` | Benchmarks passed, but sparse stats row counts were zero because the diagnostics commit was missing from the dev branch. Do not use for sparse-MLA attribution. |
 | RTX b12x 0.20 default dependency resolver | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_b12x_0200_upgrade` | Default install pulled Torch/Triton/CUDA runtime changes and downgraded NCCL; `vllm._C` failed with a Torch ABI symbol error. Runtime packages were restored and b12x was kept as a no-deps experiment variable. |
-| RTX FlashInfer 0.6.13rc1 no-deps probe | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_nodeps` | Import failed because `flashinfer-jit-cache` stayed at `0.6.12+cu130` and the rc wheel requires matching FlashInfer package versions. The target venv was restored to FlashInfer `0.6.12`. |
+| RTX FlashInfer 0.6.13rc1 no-deps probe | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_nodeps` | Superseded mismatch probe: import failed because `flashinfer-jit-cache` stayed at `0.6.12+cu130`. `FLASHINFER_DISABLE_VERSION_CHECK=1` bypasses that check for probing, and installing `flashinfer-jit-cache==0.6.13rc1+cu130` fixes the mismatch. |
+| RTX FlashInfer 0.6.13rc1 packed MLA probe | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/flashinfer_packed_mla_probe/20260613_fi0613rc1_matched` | The matched rc1 wheel/jit-cache state imports normally, but both packed cases fail with `ModuleNotFoundError` because official rc1 does not expose `flashinfer.sparse_mla_sm120`. |
 
 ## Latest RTX Attribution Snapshot
 
@@ -81,7 +86,7 @@ addresses, tokens, or absolute model-cache locations.
 | --- | --- | --- |
 | b12x `0.20.0` default install | Broke the current vLLM extension by moving Torch/Triton/CUDA runtime packages and downgrading NCCL. | Do not use the default resolver path for the dev venv. Keep the runtime stack pinned and install b12x as a no-deps experiment variable. |
 | b12x `0.20.0` no-deps | `vllm._C` import and focused SM120 fallback tests pass; public DS4 b12x APIs import. | Dependency/API blocker is removed for component probes, but current vLLM still lacks runtime hooks. |
-| FlashInfer `0.6.13rc1` no-deps | FlashInfer import fails due `flashinfer-jit-cache` version mismatch. | Official stable `0.6.12` remains the current target venv route; packed SM120 sparse MLA is still unavailable from official wheels. |
+| FlashInfer `0.6.13rc1` matched jit-cache | `flashinfer-python/cubin==0.6.13rc1` and `flashinfer-jit-cache==0.6.13rc1+cu130` import without the version-check bypass; focused SM120 fallback tests pass. | Official rc1 is usable for component probes, but packed SM120 sparse MLA is still unavailable from official wheels. |
 | b12x compressed MLA component | `real_c128`: b12x `0.432 ms`, vLLM old online packed `5.923 ms`, current D512 split+finish `0.209 ms`. | Public b12x compressed MLA is much better than the old packed helper, but still about `2.07x` slower than current D512 split+finish on RTX. Do not port it directly as the next endpoint route. |
 | grouped-SWA D512 component | Candidates `640/1152`: split `0.627/1.382 ms`, grouped-SWA `0.575/0.824 ms`. | Component signal still exists, strongest at wider candidate counts, but the older separate-launch endpoint form already regressed. |
 | grouped-stream component | Candidates `640/1152`: split `0.601/1.320 ms`, grouped stream `0.354/0.600 ms`. | Strong component signal for high-reuse C128A-style shape. Treat as dataflow evidence for a fused dual-stream/finish design, not as a direct endpoint drop-in. |

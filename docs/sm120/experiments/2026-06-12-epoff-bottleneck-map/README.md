@@ -94,10 +94,14 @@ installing `b12x==0.20.0` as a no-deps experiment variable gives a healthy
 target venv: `vllm._C` imports, focused SM120 fallback tests pass, and public
 b12x DS4 compressed-MLA / sparse-indexer-extend / native MXFP4 MoE helper APIs
 are importable. Current vLLM still lacks runtime hooks for those routes.
-FlashInfer `0.6.13rc1` no-deps is rejected for this venv because it mismatches
-the installed `flashinfer-jit-cache`; stable FlashInfer `0.6.12` remains the
-current official-wheel route, and the packed SM120 sparse-MLA module is still
-unavailable.
+The first FlashInfer `0.6.13rc1` no-deps probe only showed that the installed
+`flashinfer-jit-cache==0.6.12+cu130` tripped FlashInfer's version check; the
+correct bypass variable is `FLASHINFER_DISABLE_VERSION_CHECK=1`. Installing the
+matching `flashinfer-jit-cache==0.6.13rc1+cu130` makes the rc wheel pair import
+without a bypass, and the RTX dev venv now keeps that matched rc1 state for
+component probing. Official rc1 still does not expose
+`flashinfer.sparse_mla_sm120`, so the packed SM120 sparse-MLA module remains
+unavailable from official wheels.
 
 The refreshed component probes do not make public b12x compressed MLA the next
 endpoint route. On RTX `real_c128`, b12x compressed MLA measured `0.432 ms`
@@ -139,9 +143,11 @@ bottleneck as sparse MLA accumulate rather than scheduler/KV admission:
   or not fast enough as a direct endpoint route." Keep b12x `0.20.0` no-deps
   available for component probes, but do not port public compressed MLA
   directly while it loses to current D512 split+finish.
-- Official FlashInfer remains at stable `0.6.12` for this target venv. The
-  `0.6.13rc1` wheel pair is not usable without a matching jit-cache package,
-  and neither route exposes the PR3395-style packed SM120 sparse-MLA module.
+- Official FlashInfer `0.6.13rc1` plus matching
+  `flashinfer-jit-cache==0.6.13rc1+cu130` is usable in the RTX dev venv and
+  imports without `FLASHINFER_DISABLE_VERSION_CHECK=1`. It still exposes the
+  plain DSV4 sparse-MLA and B12X MoE routes, not the PR3395-style packed SM120
+  sparse-MLA module.
 - MoE/pipeline and scheduler/KV remain comparison dimensions, but the current
   EP-off cold-prefill evidence does not make them first-order bottlenecks.
 
