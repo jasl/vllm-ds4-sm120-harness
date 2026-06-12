@@ -50,10 +50,12 @@ soak gates were still pending.
 | GB10 D512 multi-prefill 16K prototype | `741ea24c46` | SM121 GB10 x2 | off | disabled | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_on_16k_20260613040708/20260613040708` |
 | GB10 D512 multi-prefill-off 65K control | `741ea24c46` | SM121 GB10 x2 | off | disabled | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_control_65k_20260613042153/20260613042153` |
 | GB10 D512 multi-prefill 65K prototype | `741ea24c46` | SM121 GB10 x2 | off | disabled | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_on_65k_20260613043628/20260613043628` |
+| GB10 D512 multi-prefill forum53 env-on | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_20260613045800/20260613045800` |
+| GB10 D512 multi-prefill forum53 clean-boot env-on retry | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_retry_20260613051100/20260613051042` |
+| GB10 D512 multi-prefill forum53 same-branch env-off control | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_control_20260613052200/20260613052137` |
 | RTX EP-on attribution comparison | `f32247a5a6` | SM120 RTX PRO 6000 x2 | on | disabled | _pending_ |
 | RTX GSM8K paired/full correctness guard | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | RTX local quality expansion | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
-| GB10 forum53 prefix-cache gate | candidate branch | SM121 GB10 x2 | off | enabled | _pending_ |
 
 ## Partial Or Rejected Evidence
 
@@ -66,6 +68,9 @@ soak gates were still pending.
 | RTX D512 multi-prefill GSM8K 8-shot diagnostic | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_correctness_gate_20260613032500/20260613032501` | The lifecycle run's `eval_gsm8k` phase inherited the baseline driver's 8-shot default and is not comparable to the 5-shot stable-preview anchor. |
 | RTX D512 multi-prefill-off GSM8K 8-shot diagnostic | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_correctness_control_20260613033202/20260613033202` | Same 8-shot mismatch as above. `lm_eval` exit `0`, floor gate exit `1`, GSM8K flexible/strict `0.925 / 0.920`. Use only as a diagnostic for the 8-shot shape. |
 | GB10 D512 multi-prefill 65K continuation | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_control_20260613035658/20260613035658` | The 16K control case passed, but the subsequent 65K case was refused by safety preflight because the current boot already had an NVRM OOM record. Do not treat this as 65K performance evidence. |
+| GB10 D512 multi-prefill forum53 env-on | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_20260613045800/20260613045800` | Matrix failed with 1 marker miss out of 4 requests and dirty post-run driver health. Do not use as positive prefix-cache/user gate evidence. |
+| GB10 D512 multi-prefill forum53 clean-boot env-on retry | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_retry_20260613051100/20260613051042` | Clean-boot retry also failed with 1 marker miss out of 4 requests and dirty post-run driver health. This blocks promotion of the env-on route. |
+| GB10 D512 multi-prefill forum53 same-branch env-off control | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_control_20260613052200/20260613052137` | Matrix itself passed with 4/4 requests and 0 failures, but post-run driver health was dirty. Use only to separate env-on marker regression from the broader GB10 driver-health issue. |
 
 ## Latest RTX Attribution Snapshot
 
@@ -113,6 +118,19 @@ soak gates were still pending.
 | 16384 | multi-prefill on | 10755.20 / 20062.23 | 11517.51 / 22527.41 | 16K case passed; post-run check again found NVRM OOM state on the worker boot. |
 | 65536 | multi-prefill off | 46005.07 / 91291.83 | 48097.74 / 109641.26 | 65K control passed as a single-case run after reboot. |
 | 65536 | multi-prefill on | 46071.38 / 82717.21 | 48249.73 / 97377.85 | 65K prototype passed as a single-case run after reboot; after the run, both nodes were rebooted and the new boot was clean. |
+
+## Latest GB10 Forum53 D512 Multi-Prefill Snapshot
+
+| Gate | Env | Matrix | Max TTFT s | ITL p99 s | Driver health | Use |
+| --- | --- | --- | ---: | ---: | --- | --- |
+| forum53 env-on | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 1 marker failure | 124.970255 | 0.223721 | dirty, 1 signal | rejected |
+| forum53 clean-boot env-on retry | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 1 marker failure | 124.697034 | 0.099339 | dirty, 2 signals | rejected |
+| forum53 same-branch env-off control | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=0` | 4 requests, 0 failures | 124.265379 | 0.150068 | dirty, 2 signals | partial attribution control |
+
+The env-off control shows the matrix shape itself still passes on this branch.
+The env-on retries show a correctness/user-gate regression under MTP2
+prefix-cache pressure. Driver-health signals also appear without the env-on
+path, so the GB10 startup/post-run memory signal is tracked separately.
 
 ## Latest RTX NCU Snapshot
 

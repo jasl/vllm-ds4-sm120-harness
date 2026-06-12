@@ -52,8 +52,13 @@ Last updated: 2026-06-13.
   of sparse prefill stage time for 16K and `96.61%` for 65K; slow non-indexed
   `mla_prefill_chunk` groups are the first concrete target. The first
   fork-independent endpoint candidate is the default-off indexed D512
-  multi-prefill expansion, which is now positive on RTX and on reduced GB10
-  16K/65K single-case confirmation. Keep it gated until the remaining
+  multi-prefill expansion, which is positive on RTX and on reduced GB10
+  16K/65K single-case confirmation, but failed the GB10 forum53 MTP2
+  prefix-cache gate twice with marker misses under env-on. A same-branch
+  env-off control passed the matrix but still produced dirty post-run driver
+  health, so there are two separate follow-ups: isolate the env-on marker
+  regression and understand the GB10 startup/post-run NVRM OOM signal. Keep
+  the prototype gated and do not promote it until the remaining
   prefix-cache/user and wider promotion gates are green. Black-benediction
   DFlash/decode work is a second-stage reference, not the first cold-prefill
   route.

@@ -140,14 +140,18 @@ or backend replacement, not DFlash/decode.
 The first endpoint-shaped sparse-MLA route is now the default-off indexed D512
 multi-prefill expansion. On RTX it removes the 65K `num_prefills_not_1` gate
 reason, reduces sparse accumulate time by `36.73%` at 65K and `44.19%` at 16K,
-and improves EP-off cold-prefill C=`1/2/4` endpoint throughput. Keep it
+and improves EP-off cold-prefill C=`1/2/4` endpoint throughput. Reduced GB10
+confirmation is also positive for 16K and 65K single-case runs with reboot
+between cases: 16K improved `sparse_accumulate` by `-20.90%` and C=2 input
+tok/s by `+15.10%`; 65K improved `sparse_accumulate` by `-19.98%` and C=2
+input tok/s by `+9.07%`, with C=1 effectively flat. However, the GB10 forum53
+MTP2 prefix-cache gate is not green: two env-on runs each had 1 marker failure
+out of 4 requests, while a same-branch env-off control passed the matrix with
+4/4 requests. Driver-health signals also appeared in the env-off control, so
+startup/post-run GB10 memory margin is a separate open problem. Keep the route
 default-off until paired/full correctness, prefix-cache-enabled lifecycle, and
-GB10 user/promotion gates are green. Reduced GB10 confirmation is now positive
-for 16K and 65K single-case runs with reboot between cases: 16K improved
-`sparse_accumulate` by `-20.90%` and C=2 input tok/s by `+15.10%`; 65K improved
-`sparse_accumulate` by `-19.98%` and C=2 input tok/s by `+9.07%`, with C=1
-effectively flat. This is enough to continue the route, but not enough to make
-it PR-default behavior.
+GB10 user/promotion gates are green. This is enough to continue debugging the
+route, but not enough to make it PR-default behavior.
 
 DFlash-style speculative/decode optimizations are treated as high-risk until
 they clear GSM8K and semantic gates. RTX PRO 6000 is the development and

@@ -191,8 +191,8 @@ def test_run_context_env_loader_strips_simple_outer_quotes(tmp_path):
     (tmp_path / ".env").write_text(
         '\n'.join(
             [
-                'HEAD_HOST="10.0.0.116"',
-                "WORKER_HOST='10.0.0.118'",
+                'HEAD_HOST="192.0.2.116"',
+                "WORKER_HOST='192.0.2.118'",
                 'SSH_OPTS="-o BatchMode=yes"',
             ]
         )
@@ -220,8 +220,8 @@ printf 'SSH_OPTS=%s\\n' "${{SSH_OPTS}}"
     )
 
     assert result.stdout.splitlines() == [
-        "HEAD_HOST=10.0.0.116",
-        "WORKER_HOST=10.0.0.118",
+        "HEAD_HOST=192.0.2.116",
+        "WORKER_HOST=192.0.2.118",
         "SSH_OPTS=-o BatchMode=yes",
     ]
 
@@ -1688,6 +1688,11 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
     assert "forum53_c6_400k:6:2:16000:64:1800:7200" in script
     assert "forum53_c8_400k:8:2:16000:64:1800:7200" in script
     assert 'GB10_FORUM53_OPTIONAL_MTP2="${GB10_FORUM53_OPTIONAL_MTP2:-0}"' in script
+    assert (
+        'GB10_FORUM53_D512_MULTI_PREFILL_ENV="'
+        '${GB10_FORUM53_D512_MULTI_PREFILL_ENV:-0}"'
+    ) in script
+    assert "GB10_FORUM53_D512_MULTI_PREFILL_ENV must be 0, 1, or default" in script
     assert 'MAX_MODEL_LEN="${GB10_FORUM53_MAX_MODEL_LEN:-81920}"' in script
     assert 'MAX_NUM_SEQS="${GB10_FORUM53_MAX_NUM_SEQS:-2}"' in script
     assert 'GPU_MEMORY_UTILIZATION="${GB10_FORUM53_GPU_MEMORY_UTILIZATION:-0.685}"' in script
@@ -1728,6 +1733,11 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
     )
     assert trace_assignment in script
     assert trace_allowlist in script
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL" in script
+    assert (
+        'VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL="${GB10_FORUM53_D512_MULTI_PREFILL_ENV}"'
+        in script
+    )
     assert script.index(trace_assignment) < script.index(trace_allowlist)
     assert "scheduler_trace.jsonl" in script
     assert "scheduler_trace_summary.json" in script
@@ -1738,6 +1748,8 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
     assert "SUMMARY_TP_SIZE" in script
     assert "SUMMARY_PP_SIZE" in script
     assert "SUMMARY_GPU_MEMORY_UTILIZATION" in script
+    assert "SUMMARY_D512_MULTI_PREFILL_ENV" in script
+    assert '"d512_multi_prefill_env": os.environ["SUMMARY_D512_MULTI_PREFILL_ENV"]' in script
     assert "SUMMARY_BLOCK_SIZE" in script
     assert "SUMMARY_KV_CACHE_DTYPE" in script
     assert '"tensor_parallel_size": int(os.environ["SUMMARY_TP_SIZE"])' in script

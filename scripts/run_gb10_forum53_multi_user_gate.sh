@@ -176,6 +176,15 @@ if [[ "${GB10_FORUM53_OPTIONAL_MTP2}" == "1" || "${GB10_FORUM53_OPTIONAL_MTP2}" 
     GB10_FORUM53_VARIANTS="${GB10_FORUM53_VARIANTS},mtp2"
   fi
 fi
+GB10_FORUM53_D512_MULTI_PREFILL_ENV="${GB10_FORUM53_D512_MULTI_PREFILL_ENV:-0}"
+case "${GB10_FORUM53_D512_MULTI_PREFILL_ENV}" in
+  0|1|default) ;;
+  *)
+    printf 'GB10_FORUM53_D512_MULTI_PREFILL_ENV must be 0, 1, or default; got %s\n' \
+      "${GB10_FORUM53_D512_MULTI_PREFILL_ENV}" >&2
+    exit 2
+    ;;
+esac
 GB10_FORUM53_BATCHED_TOKEN_SWEEP="${GB10_FORUM53_BATCHED_TOKEN_SWEEP:-4096}"
 GB10_FORUM53_CASE_NAME="${GB10_FORUM53_CASE_NAME:-forum53_multi_user_prefix_cache}"
 GB10_FORUM53_CASE_SPECS="${GB10_FORUM53_CASE_SPECS:-forum53_c2:2:2:3200:256}"
@@ -313,6 +322,13 @@ for variant in "${variants[@]}"; do
         "${serve_remote_env_vars}" \
         VLLM_SCHEDULER_TRACE_PATH
     )"
+    if [[ "${GB10_FORUM53_D512_MULTI_PREFILL_ENV}" != "default" ]]; then
+      serve_remote_env_vars="$(
+        append_env_allowlist \
+          "${serve_remote_env_vars}" \
+          VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL
+      )"
+    fi
 
     mkdir -p "${variant_dir}"
     printf '%s\n' "${remote_variant_root}" > "${variant_dir}/remote_variant_root.txt"
@@ -352,6 +368,7 @@ for variant in "${variants[@]}"; do
       SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG}" \
       SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}" \
       VLLM_SCHEDULER_TRACE_PATH="${scheduler_trace_path}" \
+      VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL="${GB10_FORUM53_D512_MULTI_PREFILL_ENV}" \
       SSH_OPTS="${SSH_OPTS:-}" \
       "${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh" \
         > "${variant_dir}/serve_start.stdout.log" \
@@ -469,6 +486,7 @@ SUMMARY_MAX_NUM_SEQS="${MAX_NUM_SEQS}" \
 SUMMARY_GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION}" \
 SUMMARY_BLOCK_SIZE="${BLOCK_SIZE}" \
 SUMMARY_KV_CACHE_DTYPE="${KV_CACHE_DTYPE}" \
+SUMMARY_D512_MULTI_PREFILL_ENV="${GB10_FORUM53_D512_MULTI_PREFILL_ENV}" \
 SUMMARY_SAFE_TOTAL_KV_TOKENS="${GB10_FORUM53_SAFE_TOTAL_KV_TOKENS}" \
 SUMMARY_CONTEXT_SAFETY_PERCENT="${GB10_FORUM53_CONTEXT_SAFETY_PERCENT}" \
 SUMMARY_SAFE_CONTEXT_LIMIT="${SAFE_CONTEXT_LIMIT}" \
@@ -558,6 +576,7 @@ payload = {
         "block_size": int(os.environ["SUMMARY_BLOCK_SIZE"]),
         "kv_cache_dtype": os.environ["SUMMARY_KV_CACHE_DTYPE"],
         "prefix_cache": os.environ["SUMMARY_PREFIX_CACHE"],
+        "d512_multi_prefill_env": os.environ["SUMMARY_D512_MULTI_PREFILL_ENV"],
         "case_specs": os.environ["SUMMARY_CASE_SPECS"],
         "safe_total_kv_tokens": int(os.environ["SUMMARY_SAFE_TOTAL_KV_TOKENS"]),
         "context_safety_percent": int(

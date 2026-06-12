@@ -154,6 +154,22 @@ the new boot had no NVRM OOM/Xid records. Continue GB10 validation as
 single-case runs with reboot between cases, or first investigate why
 teardown/serving leaves the worker boot in that state.
 
+GB10 forum53 MTP2 prefix-cache gate:
+
+| Run | Env | Matrix result | Max TTFT s | ITL p99 s | Driver health | Artifact |
+| --- | --- | --- | ---: | ---: | --- | --- |
+| first env-on | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 1 marker failure, matrix exit `1` | `124.970255` | `0.223721` | dirty, 1 signal | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_20260613045800/20260613045800` |
+| clean-boot env-on retry | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 1 marker failure, matrix exit `1` | `124.697034` | `0.099339` | dirty, 2 signals | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_retry_20260613051100/20260613051042` |
+| same-branch env-off control | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=0` | 4 requests, 0 failures, matrix exit `0` | `124.265379` | `0.150068` | dirty, 2 signals | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_control_20260613052200/20260613052137` |
+
+Interpretation: the matrix correctness failure is specific to the env-on runs
+in this sample, because the same-branch env-off control produced 4/4 marker
+successes. The driver-health failure is not env-specific, because it also
+appeared in the env-off control after a clean-boot start. Do not promote the
+D512 multi-prefill expansion, and do not use these forum53 runs as clean
+positive GB10 evidence until both the marker failure and the startup/post-run
+driver-health signals are understood.
+
 ## Historical PR3395 GB10 Subset
 
 The 2026-06-08 GB10 packed FlashInfer promotion subset is the strongest
@@ -192,11 +208,12 @@ mixed arrival, prefix/KV lifecycle, GSM8K limit-200, and a full GB10 soak.
 2. First candidate family: sparse MLA accumulate/backend. Prefer a conservative
    route that improves or replaces the slow non-indexed chunk groups while
    preserving `FULL_AND_PIECEWISE` graphs and DS4 correctness.
-3. Keep the D512 multi-prefill expansion default-off and use it as the first
-   endpoint candidate for paired correctness, prefix-cache-enabled lifecycle,
-   and GB10 user/promotion gates. GB10 16K/65K single-case confirmation is now
-   positive; full GB10 still needs prefix-cache/forum53, sustained soak, and a
-   fix or operating rule for the post-run NVRM OOM state.
+3. Keep the D512 multi-prefill expansion default-off. GB10 16K/65K single-case
+   confirmation is positive, but forum53 MTP2 prefix-cache failed twice with
+   marker misses under env-on. The same-branch env-off control passed the
+   matrix but still had dirty driver health. Full GB10 still needs
+   prefix-cache/forum53, sustained soak, and a fix or operating rule for the
+   post-run NVRM OOM state before this route can be promoted.
 4. Keep b12x `0.20.0` no-deps as the current public-b12x component-probe
    state, but do not add a DS4 compressed-MLA endpoint adapter unless a newer
    backend/dataflow beats current D512 split+finish.

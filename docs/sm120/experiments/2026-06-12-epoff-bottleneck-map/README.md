@@ -147,9 +147,17 @@ boot. On SM121 GB10 x2, the 16K C=`1/2` paired run reduced
 input tok/s `1299.03 -> 1495.23` (`+15.10%`). The 65K paired run reduced
 `sparse_accumulate` `172870.3 ms -> 138329.5 ms` (`-19.98%`) and improved C=2
 input tok/s `1277.57 -> 1393.42` (`+9.07%`) while leaving C=1 effectively
-flat. Keep using reboot-safe single-case GB10 runs until the post-run NVRM OOM
-state is understood or avoided. Treat this as reduced positive evidence, not
-full matrix confirmation yet.
+flat.
+
+The same prototype does not pass the GB10 forum53 MTP2 prefix-cache gate. Two
+env-on runs produced 1 marker failure out of 4 requests and dirty post-run
+driver health. A same-branch env-off control completed the matrix itself
+with 4/4 requests and 0 failures, but also produced post-run driver-health
+signals. Treat the env-on marker failures as a promotion blocker for this
+prototype, and treat the driver-health signals as a separate GB10 memory-margin
+problem that must be understood before using these forum53 reruns as clean
+positive evidence. Keep using reboot-safe single-case GB10 attribution runs
+until the post-run NVRM OOM state is understood or avoided.
 
 The earlier artifact
 `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142`
@@ -178,9 +186,11 @@ bottleneck as sparse MLA accumulate rather than scheduler/KV admission:
 - Sparse-MLA/dataflow is the first optimization route. A candidate should
   either reduce real candidate/value visits or improve effective visits/s at
   the same semantic work.
-- The env-gated D512 multi-prefill expansion is now the first conservative
-  fork-independent candidate. Keep it default-off until paired correctness,
-  prefix-cache-enabled lifecycle, and GB10 user/promotion gates are green.
+- The env-gated D512 multi-prefill expansion is still useful as a
+  fork-independent performance candidate, but it is blocked for promotion by
+  the GB10 forum53 MTP2 prefix-cache marker failures. Keep it default-off until
+  paired correctness, prefix-cache-enabled lifecycle, and GB10 user/promotion
+  gates are green.
 - Public b12x readiness has moved from "missing APIs" to "not yet integrated
   or not fast enough as a direct endpoint route." Keep b12x `0.20.0` no-deps
   available for component probes, but do not port public compressed MLA
@@ -215,7 +225,8 @@ below the gate is rejected for PR promotion.
   black-benediction head change found during explicit upstream review, or any
   endpoint candidate that changes sparse-MLA, MoE, DFlash, scheduler, KV, or
   CUDA graph behavior.
-- Next command: prototype or microbench a fused dual-stream sparse-MLA path
-  that preserves the grouped-stream component signal without reintroducing the
-  separate-launch merge/finish overhead that made the earlier endpoint form
-  regress.
+- Next command: first isolate the D512 multi-prefill forum53 marker failure and
+  the GB10 startup/driver-health OOM signal. Only after that, prototype or
+  microbench a fused dual-stream sparse-MLA path that preserves the
+  grouped-stream component signal without reintroducing the separate-launch
+  merge/finish overhead that made the earlier endpoint form regress.
