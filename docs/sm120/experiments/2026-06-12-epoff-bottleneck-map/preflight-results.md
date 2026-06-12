@@ -1,9 +1,9 @@
 # Preflight Results
 
 Date: 2026-06-12
-Status: ready for RTX/SM120 EP-off control and GB10/SM121 stable-preview
-remote gates; B12X/packed-SM120 candidate routes need a dependency update
-before endpoint A/B.
+Status: ready for RTX/SM120 development and GB10/SM121 stable-preview remote
+gates; first RTX EP-off attribution evidence has completed. B12X/packed-SM120
+candidate routes still need a dependency update before endpoint A/B.
 
 ## Local Git State
 
@@ -23,9 +23,11 @@ before endpoint A/B.
 - PR fallback tag:
   `sm120-pr-41834-fallback-before-replacement-20260612053720`.
 - Backend-parity dev branch:
-  `codex/ds4-sm120-backend-parity-dev-20260612` at `7224e68417`.
+  `codex/ds4-sm120-backend-parity-dev-20260612` at `591b71bed0`.
   It is based on the PR control branch plus the signed SM12x sparse-MLA
-  selector diagnostic commit.
+  selector diagnostic commit and the warmup fix that keeps sparse-MLA stats out
+  of the server startup path. It also restores sparse-MLA prefill stats
+  diagnostics for attribution-only runs.
 - FlashInfer PR3395 current snapshot branch:
   `codex/pr3395-sparse-mla-sm120-20260612` at `88539d03`.
   The older local `codex/pr3395-sparse-mla-sm120` branch remains preserved as
@@ -50,6 +52,8 @@ Frozen local reference tags:
   `SM120_VLLM_REPO`, `SM120_VLLM_VENV`, `SM120_PYTHON`, and
   `SM120_VLLM_BIN`. Legacy `B200_VLLM_REPO` and `B200_VLLM_VENV` are present
   only as compatibility aliases for older harness scripts.
+- Ignored `.env` also contains SM120 remote SSH aliases and remote vLLM/harness
+  path aliases for the RTX host. Values are intentionally not recorded here.
 - The stale/literal-home remote `VLLM_ROOT` and `VLLM_VENV` values from the
   handoff note were corrected in ignored `.env` to remote absolute paths. GB10
   wrappers source `.env` locally before building SSH commands, so `$HOME/...`
@@ -67,7 +71,21 @@ Local macOS note:
 
 ## Remote Readiness
 
-Head node:
+RTX / SM120 node:
+
+- SSH batch-mode connectivity: OK.
+- Target harness root: OK.
+- Target vLLM root: OK.
+- Target vLLM venv Python: OK.
+- Target `vllm` CLI: OK.
+- `nvidia-smi`: OK; dual RTX PRO 6000 SM120 GPUs detected.
+- Remote harness checkout synced to `5eccf83424`.
+- Remote vLLM checkout synced to `591b71bed0`.
+- Warmup and sparse-stats diagnostics focused tests on the target venv: OK.
+- EP-off bottleneck attribution control completed with nonzero sparse stats
+  under the relative path listed in `artifacts.md`.
+
+GB10 / SM121 head node:
 
 - SSH batch-mode connectivity: OK.
 - Target vLLM root: OK.
@@ -78,7 +96,7 @@ Head node:
 - `nvidia-smi`: OK.
 - Existing vLLM serve process count: `0`.
 
-Worker node:
+GB10 / SM121 worker node:
 
 - SSH batch-mode connectivity: OK.
 - Target vLLM root: OK.
@@ -123,12 +141,11 @@ dependency update or rebuilt candidate environment.
 
 ## Next Run
 
-Start with the RTX/SM120 EP-off attribution control when the RTX shell has its
-target vLLM venv exported. For GB10 confirmation of stable-preview behavior,
-the current shell is ready to run the safe preflight-gated GB10 scripts using
-the ignored `.env` values. For B12X or FlashInfer packed-SM120 candidates,
-prepare a separate updated dependency environment before treating GB10 as
-candidate-ready.
+Use the completed RTX/SM120 EP-off attribution control as the first bottleneck
+evidence. For GB10 confirmation of stable-preview behavior, the current shell
+is ready to run the safe preflight-gated GB10 scripts using the ignored `.env`
+values. For B12X or FlashInfer packed-SM120 candidates, prepare a separate
+updated dependency environment before treating GB10 as candidate-ready.
 
 Do not refresh upstream heads before the first candidate run. Use the frozen
 reference tags unless an explicit upstream-change review finds a relevant

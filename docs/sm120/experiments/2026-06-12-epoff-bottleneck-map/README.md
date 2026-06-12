@@ -18,7 +18,7 @@ scheduler/KV admission behavior?
   two-node GB10 / SM121 for final confirmation and user-feedback gates.
 - vLLM branch/commit: PR stable preview `f32247a5a6` as the control; current
   backend-parity dev branch `codex/ds4-sm120-backend-parity-dev-20260612` at
-  `7224e68417` only for opt-in diagnostics.
+  `591b71bed0` only for opt-in diagnostics.
 - Dependency or image identity: vLLM upstream/main `b7f9b6a`,
   FlashInfer upstream/main `d65c3eb`,
   `flashinfer-ai/flashinfer#3395` head `88539d03`, b12x master `fabb087`,
@@ -41,8 +41,28 @@ scheduler/KV admission behavior?
 
 ## Result
 
-Pending. This package starts the bottleneck phase; it does not promote a new
-backend.
+First RTX EP-off attribution evidence captured. This package does not promote
+a new backend.
+
+Latest RTX attribution artifact:
+`artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260613000055`.
+
+Summary:
+
+- vLLM dev commit: `591b71bed0`.
+- EP: off; MTP=2; prefix cache disabled; stage timing disabled.
+- Exit: OK; every `4096/16384/65536/124000` input length passed
+  server startup and C=`1/2/4` random prefill sweep.
+- Sparse stats are present for all lengths: row counts
+  `2370 / 8706 / 34050 / 64850`.
+- 124K C=4 is reliable in this shape but slow: mean TTFT `66063.01 ms`,
+  p99 TTFT `81513.1 ms`.
+
+The earlier artifact
+`artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142`
+is performance-only evidence. Do not use it for sparse-MLA attribution because
+the dev branch was missing the sparse stats diagnostics and wrote zero stats
+rows.
 
 Baseline anchors are inherited from
 `docs/sm120/experiments/2026-06-12-epoff-backend-revalidation/`:
@@ -89,5 +109,6 @@ below the gate is rejected for PR promotion.
   black-benediction head change found during explicit upstream review, or any
   endpoint candidate that changes sparse-MLA, MoE, DFlash, scheduler, KV, or
   CUDA graph behavior.
-- Next command: run RTX EP-off attribution and correctness gates first; use
-  GB10 only after a candidate has an explained RTX signal.
+- Next command: analyze the RTX EP-off attribution, then run targeted
+  stage-timing/NCU probes and correctness gates before spending GB10 time on a
+  candidate.
