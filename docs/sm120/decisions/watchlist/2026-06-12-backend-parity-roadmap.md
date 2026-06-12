@@ -136,11 +136,27 @@ gain without correctness or lifecycle regressions. After the 2026-06-13
 stage-timing pass, the first promotion route should be sparse MLA accumulate
 or backend replacement, not DFlash/decode.
 
+The first endpoint-shaped sparse-MLA route is now the default-off indexed D512
+multi-prefill expansion. On RTX it removes the 65K `num_prefills_not_1` gate
+reason, reduces sparse accumulate time by `36.73%` at 65K and `44.19%` at 16K,
+and improves EP-off cold-prefill C=`1/2/4` endpoint throughput. Keep it
+default-off until paired/full correctness, prefix-cache-enabled lifecycle, and
+GB10 confirmation are green.
+
 DFlash-style speculative/decode optimizations are treated as high-risk until
 they clear GSM8K and semantic gates. RTX PRO 6000 is the development and
 profiling target; GB10 validation remains mandatory before claiming a candidate
 as the next user-facing baseline because GB10 is the weaker and more
 memory-sensitive environment.
+
+Single GSM8K limit-200 runs are not sufficient as promotion proof. The first
+D512 multi-prefill lifecycle run accidentally inherited the baseline driver's
+8-shot default, so correctness comparison uses the paired 5-shot reruns:
+multi-prefill on scored `0.965 / 0.960`, and multi-prefill off scored
+`0.950 / 0.930`. That is positive relative evidence for the prototype and does
+not regress the 2026-06-12 stable-preview anchor `0.965 / 0.940`, but the next
+promotion step still needs paired/full correctness rather than relying on a
+single limited slice.
 
 ## Reopen If
 

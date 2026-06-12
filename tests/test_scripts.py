@@ -279,6 +279,14 @@ def test_sm120_epoff_bottleneck_attribution_wrapper_is_narrow_control():
         'SM120_EPOFF_BOTTLENECK_DRY_RUN="'
         '${SM120_EPOFF_BOTTLENECK_DRY_RUN:-0}"'
     ) in script
+    assert (
+        'SM120_EPOFF_BOTTLENECK_D512_MULTI_PREFILL_ENV="'
+        '${SM120_EPOFF_BOTTLENECK_D512_MULTI_PREFILL_ENV:-0}"'
+    ) in script
+    assert (
+        'SM12X_PREFILL_GAP_D512_MULTI_PREFILL_ENV="'
+        '${SM120_EPOFF_BOTTLENECK_D512_MULTI_PREFILL_ENV}"'
+    ) in script
     assert 'run_case "epoff_control" 0 "${SM120_EPOFF_BOTTLENECK_INPUT_LENS}"' in script
     assert 'run_case "epon_comparison" 1 "${SM120_EPOFF_BOTTLENECK_EPON_INPUT_LENS}"' in script
     assert 'SERVE_PREFIX_CACHE_MODE=disabled' in script
@@ -416,6 +424,10 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert 'SM12X_PREFILL_GAP_STAGE_TIMING="${SM12X_PREFILL_GAP_STAGE_TIMING:-0}"' in script
     assert 'SM12X_PREFILL_GAP_D512_ENV="${SM12X_PREFILL_GAP_D512_ENV:-0}"' in script
     assert (
+        'SM12X_PREFILL_GAP_D512_MULTI_PREFILL_ENV="${SM12X_PREFILL_GAP_D512_MULTI_PREFILL_ENV:-0}"'
+        in script
+    )
+    assert (
         'SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL="${SM12X_PREFILL_GAP_ENABLE_EXPERT_PARALLEL:-0}"'
         in script
     )
@@ -434,6 +446,7 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert 'PYTHONPATH="$(harness_pythonpath)"' in script
     assert '"${_prefill_gap_d512_env[@]}"' in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL" in script
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL" in script
     assert "sparse-mla-stats-report" in script
     assert "prefill_gap_attribution_summary.json" in script
     assert "prefill_gap_attribution_summary.md" in script
@@ -2174,6 +2187,7 @@ def test_b200_baseline_preserves_chunked_d512_prefill_env():
 
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL" in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL" in script
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL" in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_FUSED_SINK_PREFILL" in script
 
 

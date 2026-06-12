@@ -9,6 +9,10 @@ from typing import Any
 Json = dict[str, Any]
 
 EXPECTED_KIND = "deepseek_v4_sparse_mla_prefill_stats"
+INDEXED_D512_MIN_TOKENS = 8192
+INDEXED_D512_MIN_TOPK = 256
+INDEXED_D512_SPLIT_MAX_TOPK = 1152
+INDEXED_D512_COMPRESS_RATIOS = (4, 128)
 
 
 def _round_float(value: float | None) -> float | None:
@@ -275,6 +279,128 @@ def _summarize_stage_efficiency(work: Json, timings: Json) -> Json:
             sparse_ms_per_million
         ),
         "candidate_slots_per_s": visits_per_s(slots, total_ms),
+    }
+
+
+def _row_sparse_accumulate_ms(row: Json) -> float:
+    timings = row.get("stage_timings_ms")
+    if not isinstance(timings, dict):
+        return 0.0
+    return _float_value(timings.get("sparse_accumulate")) or 0.0
+
+
+def _indexed_d512_primary_reason(row: Json) -> tuple[str, str | None]:
+    layer_type = _str_key(row.get("layer_type")) or "unknown"
+    if layer_type == "mla_prefill_indexed_d512":
+        return "already_indexed_d512", None
+    if layer_type == "mla_prefill_indexed_d512_chunked":
+        return "already_indexed_d512_chunked", None
+    if layer_type != "mla_prefill_chunk":
+        return "not_chunk_prefill", None
+
+    compress_ratio = _int_value(row.get("compress_ratio"))
+    num_prefills = _int_value(row.get("num_prefills"))
+    max_prefill_seq_len = _int_value(row.get("max_prefill_seq_len"))
+    combined_topk = _int_value(row.get("combined_topk"))
+    head_dim = _int_value(row.get("head_dim"))
+
+    if compress_ratio is None or compress_ratio <= 1:
+        return "chunk_blocked", "swa_only"
+    if compress_ratio not in INDEXED_D512_COMPRESS_RATIOS:
+        return "chunk_blocked", "unsupported_compress_ratio"
+    if head_dim is not None and head_dim != 512:
+        return "chunk_blocked", "head_dim_not_512"
+    if num_prefills != 1:
+        return "chunk_blocked", "num_prefills_not_1"
+    if combined_topk is None or combined_topk < INDEXED_D512_MIN_TOPK:
+        return "chunk_blocked", "combined_topk_below_split_min"
+    if (
+        max_prefill_seq_len is not None
+        and max_prefill_seq_len < INDEXED_D512_MIN_TOKENS
+    ):
+        return "chunk_blocked", "prefill_seq_len_below_min"
+    if combined_topk > INDEXED_D512_SPLIT_MAX_TOPK:
+        return "chunk_blocked", "combined_topk_requires_chunked_d512"
+    return "chunk_unexplained", "unknown_or_env_disabled"
+
+
+def _summarize_indexed_d512_gate(rows: list[Json]) -> Json:
+    status_counts: Counter[str] = Counter()
+    reason_counts: Counter[str] = Counter()
+    reason_rows: dict[str, list[Json]] = {}
+
+    for row in rows:
+        status, reason = _indexed_d512_primary_reason(row)
+        status_counts[status] += 1
+        if reason is not None:
+            reason_counts[reason] += 1
+            reason_rows.setdefault(reason, []).append(row)
+
+    primary_reasons: list[Json] = []
+    for reason, group_rows in sorted(reason_rows.items()):
+        work = _summarize_candidate_work(group_rows)
+        sparse_ms = sum(_row_sparse_accumulate_ms(row) for row in group_rows)
+        effective = int(work["effective_candidate_visits"])
+        primary_reasons.append(
+            {
+                "reason": reason,
+                "row_count": len(group_rows),
+                "effective_candidate_visits": effective,
+                "sparse_accumulate_ms": _round_float(sparse_ms),
+                "sparse_accumulate_ms_per_million_effective_visits": (
+                    _round_float(sparse_ms / (effective / 1_000_000.0))
+                    if effective and sparse_ms > 0
+                    else None
+                ),
+                "counts_by_compress_ratio": dict(
+                    sorted(
+                        Counter(
+                            str(ratio)
+                            for row in group_rows
+                            if (ratio := _str_key(row.get("compress_ratio")))
+                            is not None
+                        ).items()
+                    )
+                ),
+                "counts_by_num_prefills": dict(
+                    sorted(
+                        Counter(
+                            str(count)
+                            for row in group_rows
+                            if (count := _str_key(row.get("num_prefills")))
+                            is not None
+                        ).items()
+                    )
+                ),
+                "counts_by_combined_topk": dict(
+                    sorted(
+                        Counter(
+                            str(topk)
+                            for row in group_rows
+                            if (topk := _str_key(row.get("combined_topk")))
+                            is not None
+                        ).items()
+                    )
+                ),
+            }
+        )
+
+    return {
+        "policy": {
+            "min_tokens": INDEXED_D512_MIN_TOKENS,
+            "min_topk": INDEXED_D512_MIN_TOPK,
+            "split_max_topk": INDEXED_D512_SPLIT_MAX_TOPK,
+            "supported_compress_ratios": list(INDEXED_D512_COMPRESS_RATIOS),
+            "note": (
+                "Older stats rows do not carry max_prefill_seq_len; "
+                "query_tokens is the current chunk size, not a safe sequence "
+                "length proxy, so rows missing max_prefill_seq_len are not "
+                "classified as below the token threshold."
+            ),
+        },
+        "counts_by_status": dict(sorted(status_counts.items())),
+        "primary_reason_counts": dict(sorted(reason_counts.items())),
+        "primary_reasons": primary_reasons,
     }
 
 
@@ -829,6 +955,14 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
         row_duplicates = _summarize_candidate_row_duplicates(group_rows)
         accumulate_work = _summarize_accumulate_work(group_rows)
         mqa_topk_work = _summarize_mqa_topk_work(group_rows)
+        gate = _summarize_indexed_d512_gate(group_rows)
+        primary_reason = None
+        primary_reasons = gate.get("primary_reasons")
+        if isinstance(primary_reasons, list) and primary_reasons:
+            primary_reason = max(
+                primary_reasons,
+                key=lambda row: int(row.get("effective_candidate_visits", 0)),
+            ).get("reason")
         groups.append(
             {
                 "layer_type": layer_type,
@@ -853,6 +987,11 @@ def _group_sparse_mla_stats(rows: list[Json]) -> list[Json]:
                     )
                 ),
                 "candidate_region_work": region_work,
+                "indexed_d512_gate": {
+                    "counts_by_status": gate["counts_by_status"],
+                    "primary_reason": primary_reason,
+                    "primary_reason_counts": gate["primary_reason_counts"],
+                },
                 "layer_prefixes": sorted(
                     {
                         _safe_prefix(row.get("layer_prefix"))
@@ -920,6 +1059,7 @@ def build_sparse_mla_stats_report(stats_path: Path) -> Json:
             region_work,
         ),
         "candidate_region_work": region_work,
+        "indexed_d512_gate": _summarize_indexed_d512_gate(rows),
         "groups": _group_sparse_mla_stats(rows),
     }
 
@@ -1028,6 +1168,15 @@ def _candidate_row_duplicate_rows(duplicates: Any) -> list[tuple[str, Json]]:
     return rows
 
 
+def _indexed_d512_gate_reason_rows(gate: Any) -> list[Json]:
+    if not isinstance(gate, dict):
+        return []
+    reasons = gate.get("primary_reasons")
+    if not isinstance(reasons, list):
+        return []
+    return [row for row in reasons if isinstance(row, dict)]
+
+
 def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
     work = report.get("candidate_work", {})
     timings = report.get("stage_timings_ms", {})
@@ -1036,6 +1185,7 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
     reuse = report.get("cross_query_reuse_potential", {})
     row_duplicates = report.get("candidate_row_duplicates", {})
     region_work = report.get("candidate_region_work", {})
+    indexed_d512_gate = report.get("indexed_d512_gate", {})
     accumulate_work = report.get("accumulate_work", {})
     mqa_topk_work = report.get("mqa_topk_work", {})
     mqa_weight_sign = mqa_topk_work.get("weight_sign", {})
@@ -1197,6 +1347,42 @@ def write_sparse_mla_stats_markdown(path: Path, report: Json) -> None:
         )
     if not region_work_rows:
         lines.append("| n/a | n/a | n/a | n/a | n/a |")
+    lines.extend(
+        [
+            "",
+            "## Indexed D512 Gate",
+            "",
+            (
+                "- Status counts: "
+                f"{_format_counts(indexed_d512_gate.get('counts_by_status', {}))}"
+            ),
+            (
+                "- Primary reason counts: "
+                f"{_format_counts(indexed_d512_gate.get('primary_reason_counts', {}))}"
+            ),
+            "",
+            (
+                "| Primary reason | Rows | Effective visits | Sparse accumulate ms | "
+                "Sparse ms/Mvisit | Compress ratios | Num prefills | Combined top-k |"
+            ),
+            "| --- | ---: | ---: | ---: | ---: | --- | --- | --- |",
+        ]
+    )
+    gate_reason_rows = _indexed_d512_gate_reason_rows(indexed_d512_gate)
+    for values in gate_reason_rows:
+        lines.append(
+            "| "
+            f"`{_format_number(values.get('reason'))}` | "
+            f"`{_format_number(values.get('row_count'))}` | "
+            f"`{_format_number(values.get('effective_candidate_visits'))}` | "
+            f"`{_format_number(values.get('sparse_accumulate_ms'))}` | "
+            f"`{_format_number(values.get('sparse_accumulate_ms_per_million_effective_visits'))}` | "
+            f"{_format_counts(values.get('counts_by_compress_ratio', {}))} | "
+            f"{_format_counts(values.get('counts_by_num_prefills', {}))} | "
+            f"{_format_counts(values.get('counts_by_combined_topk', {}))} |"
+        )
+    if not gate_reason_rows:
+        lines.append("| n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
     lines.extend(
         [
             "",

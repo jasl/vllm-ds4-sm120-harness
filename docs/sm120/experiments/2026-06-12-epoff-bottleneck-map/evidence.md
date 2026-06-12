@@ -75,6 +75,54 @@ decision:
 | grouped-SWA D512, `1152` candidates | split `1.382 ms`, grouped-SWA `0.824 ms`. | Component signal is still real, but the older separate-launch endpoint form regressed. |
 | grouped-stream, `1152` candidates | split `1.320 ms`, grouped stream `0.600 ms`. | Strongest fork-independent signal points to fused dual-stream online processing, not to a direct dependency swap. |
 
+## First D512 Multi-Prefill Endpoint Prototype
+
+The first conservative fork-independent prototype expands the existing indexed
+D512 prefill path to multi-prefill batches behind
+`VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1`. It does not require
+FlashInfer PR3395 or a source FlashInfer fork.
+
+Same-profile RTX stage-timing A/B:
+
+| Input length | Metric | Current gate | Multi-prefill D512 | Delta |
+| ---: | --- | ---: | ---: | ---: |
+| 16384 | `mla_prefill_chunk` rows | 2432 | 1284 | `-47.20%` |
+| 16384 | `mla_prefill_indexed_d512` rows | 2050 | 3198 | `+56.00%` |
+| 16384 | `num_prefills_not_1` gate rows | 1558 | 328 | `-78.95%` |
+| 16384 | `sparse_accumulate` ms | 21219.778 | 11843.018 | `-44.19%` |
+| 16384 | sparse ms/M effective visit | 3.065 | 1.711 | `-44.19%` |
+| 65536 | `mla_prefill_chunk` rows | 3788 | 1820 | `-51.95%` |
+| 65536 | `mla_prefill_indexed_d512` rows | 13366 | 15334 | `+14.72%` |
+| 65536 | `num_prefills_not_1` gate rows | 1968 | 0 | `-100.00%` |
+| 65536 | `sparse_accumulate` ms | 54004.115 | 34165.937 | `-36.73%` |
+| 65536 | sparse ms/M effective visit | 1.598 | 1.011 | `-36.73%` |
+
+Endpoint prefill sweep A/B:
+
+| Input length | Concurrency | Input tok/s current -> prototype | Mean TTFT current -> prototype | P99 TTFT current -> prototype |
+| ---: | ---: | --- | --- | --- |
+| 16384 | 1 | `7656.07 -> 8051.11` (`+5.16%`) | `2139.13 -> 2035.67 ms` (`-4.84%`) | `2437.91 -> 2045.78 ms` (`-16.08%`) |
+| 16384 | 2 | `6905.80 -> 8253.90` (`+19.52%`) | `4403.76 -> 3630.80 ms` (`-17.55%`) | `4781.85 -> 4123.95 ms` (`-13.76%`) |
+| 16384 | 4 | `6265.39 -> 8131.02` (`+29.78%`) | `7281.53 -> 5503.94 ms` (`-24.41%`) | `10416.96 -> 8013.27 ms` (`-23.07%`) |
+| 65536 | 1 | `7140.94 -> 7607.20` (`+6.53%`) | `9178.19 -> 8615.16 ms` (`-6.13%`) | `10808.87 -> 8670.99 ms` (`-19.78%`) |
+| 65536 | 2 | `6775.50 -> 7658.31` (`+13.03%`) | `17364.65 -> 15130.20 ms` (`-12.87%`) | `20795.07 -> 17794.23 ms` (`-14.43%`) |
+| 65536 | 4 | `6752.81 -> 7611.61` (`+12.72%`) | `25287.98 -> 22015.59 ms` (`-12.94%`) | `38576.61 -> 34201.24 ms` (`-11.34%`) |
+
+Correctness and lifecycle guard:
+
+| Run | Env | Phases | Result |
+| --- | --- | --- | --- |
+| prototype lifecycle guard | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | `prefix_cache_probe`, `kv_lifecycle_probe` | both phase exit codes `0`; marker checks and idle KV threshold passed |
+| prototype GSM8K 5-shot | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | `eval_gsm8k` | exit `0`; GSM8K flexible/strict `0.965 / 0.960`; floor gate passed |
+| paired GSM8K 5-shot control | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=0` | `eval_gsm8k` | exit `0`; GSM8K flexible/strict `0.950 / 0.930`; floor gate passed |
+
+The first lifecycle run also included an accidental 8-shot GSM8K slice because
+the baseline driver defaulted to `LM_EVAL_NUM_FEWSHOT=8`; keep that as a
+diagnostic only, not as the 5-shot stable-preview comparison. The paired 5-shot
+runs show no correctness regression from multi-prefill D512: the prototype
+matches the 2026-06-12 stable-preview flexible score `0.965` and improves over
+the same-environment multi-prefill-off control.
+
 ## Historical PR3395 GB10 Subset
 
 The 2026-06-08 GB10 packed FlashInfer promotion subset is the strongest
@@ -113,24 +161,28 @@ mixed arrival, prefix/KV lifecycle, GSM8K limit-200, and a full GB10 soak.
 2. First candidate family: sparse MLA accumulate/backend. Prefer a conservative
    route that improves or replaces the slow non-indexed chunk groups while
    preserving `FULL_AND_PIECEWISE` graphs and DS4 correctness.
-3. Keep b12x `0.20.0` no-deps as the current public-b12x component-probe
+3. Keep the D512 multi-prefill expansion default-off and use it as the first
+   endpoint candidate for paired correctness, prefix-cache-enabled lifecycle,
+   and GB10 confirmation.
+4. Keep b12x `0.20.0` no-deps as the current public-b12x component-probe
    state, but do not add a DS4 compressed-MLA endpoint adapter unless a newer
    backend/dataflow beats current D512 split+finish.
-4. Treat FlashInfer PR3395 packed SM120 sparse MLA as a valuable fork route,
+5. Treat FlashInfer PR3395 packed SM120 sparse MLA as a valuable fork route,
    not as an official-wheel blocker. Earlier endpoint-shaped probes showed
    about `10-23%` TTFT improvement, so a new attempt is worth doing, but it
    must stay behind `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` until the
    current EP-off correctness and performance matrix passes.
-5. Treat `flashinfer-jit-cache` as optional for PR3395/source builds. Missing
+6. Treat `flashinfer-jit-cache` as optional for PR3395/source builds. Missing
    jit-cache mainly affects startup/warmup cost; if a source build conflicts
    with the cache package, omit it and warm up sufficiently before recording
    performance.
-6. Keep black-benediction DFlash/decode changes as a second-stage reference.
+7. Keep black-benediction DFlash/decode changes as a second-stage reference.
    They may help decode/speculative throughput, but they are high-correctness
    risk and are not the first response to this cold-prefill bottleneck.
-7. The next code-bearing experiment should be a fused dual-stream sparse-MLA
-   component or endpoint prototype that avoids the extra merge/finish launches
-   that made the archived grouped-SWA endpoint regress.
+8. The next code-bearing experiment after D512 multi-prefill validation should
+   be a fused dual-stream sparse-MLA component or endpoint prototype that
+   avoids the extra merge/finish launches that made the archived grouped-SWA
+   endpoint regress.
 
 ## First RTX Commands
 
@@ -202,7 +254,7 @@ VLLM_VENV=./vllm/.venv \
 LM_EVAL_BIN=./vllm/.venv/bin/lm_eval \
 LM_EVAL_NUM_FEWSHOT=5 \
 LM_EVAL_LIMIT=200 \
-LM_EVAL_GATE_FLOORS=exact_match_flexible:0.94,exact_match_strict:0.925 \
+LM_EVAL_GATE_FLOORS=exact_match_flexible=0.94,exact_match_strict=0.925 \
 OUT_DIR=artifacts/local/epoff_bottleneck_gsm8k \
 scripts/run_lm_eval.sh
 ```

@@ -114,6 +114,32 @@ probe was `0.600 ms` versus split `1.320 ms`. Because the older separate-launch
 grouped-SWA endpoint regressed, the next prototype must fuse stream processing
 with merge/finish or otherwise avoid the extra launch/workspace traffic.
 
+The first fork-independent endpoint prototype is the env-gated
+`VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` expansion. It does not depend
+on FlashInfer PR3395. On RTX, the same-profile stage-timing A/B moved more
+work from the slow non-indexed `mla_prefill_chunk` path onto the indexed D512
+path:
+
+- 16K: `mla_prefill_chunk` rows `2432 -> 1284`,
+  `mla_prefill_indexed_d512` rows `2050 -> 3198`,
+  `sparse_accumulate` `21219.8 ms -> 11843.0 ms` (`-44.19%`).
+- 65K: `mla_prefill_chunk` rows `3788 -> 1820`,
+  `mla_prefill_indexed_d512` rows `13366 -> 15334`, and the
+  `num_prefills_not_1` gate reason `1968 -> 0`,
+  `sparse_accumulate` `54004.1 ms -> 34165.9 ms` (`-36.73%`).
+- Endpoint input tok/s improved at 16K by C=`1/2/4`
+  `+5.16% / +19.52% / +29.78%`, and at 65K by
+  `+6.53% / +13.03% / +12.72%`.
+
+The first RTX lifecycle gate for that prototype passed `prefix_cache_probe`
+and `kv_lifecycle_probe`. Its initial GSM8K slice accidentally inherited the
+baseline driver's 8-shot default, so correctness comparison uses the later
+paired 5-shot limit-200 runs instead: multi-prefill on scored
+flexible/strict `0.965 / 0.960`, while the same-environment multi-prefill-off
+control scored `0.950 / 0.930`. Both passed the fixed floors, and the
+prototype does not show a correctness regression against the paired control or
+the 2026-06-12 stable-preview anchor `0.965 / 0.940`.
+
 The earlier artifact
 `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142`
 is performance-only evidence. Do not use it for sparse-MLA attribution because
@@ -141,6 +167,9 @@ bottleneck as sparse MLA accumulate rather than scheduler/KV admission:
 - Sparse-MLA/dataflow is the first optimization route. A candidate should
   either reduce real candidate/value visits or improve effective visits/s at
   the same semantic work.
+- The env-gated D512 multi-prefill expansion is now the first conservative
+  fork-independent candidate. Keep it default-off until paired correctness,
+  prefix-cache-enabled lifecycle, and GB10 confirmation are green.
 - Public b12x readiness has moved from "missing APIs" to "not yet integrated
   or not fast enough as a direct endpoint route." Keep b12x `0.20.0` no-deps
   available for component probes, but do not port public compressed MLA

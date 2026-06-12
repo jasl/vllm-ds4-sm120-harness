@@ -387,6 +387,102 @@ def test_sparse_mla_stats_report_summarizes_candidate_work(tmp_path):
     assert report["groups"][0]["mqa_topk_work"]["valid_kv_visits"] == 8_388_608
 
 
+def test_sparse_mla_stats_report_classifies_indexed_d512_gate_reasons(tmp_path):
+    stats_path = tmp_path / "stats.jsonl"
+    _write_jsonl(
+        stats_path,
+        [
+            _stats_row(
+                layer_type="mla_prefill_chunk",
+                compress_ratio=4,
+                num_prefills=2,
+                query_tokens=32768,
+                combined_topk=640,
+                effective_candidate_visits=2_000_000,
+                stage_timings_ms={"sparse_accumulate": 20.0},
+            ),
+            _stats_row(
+                layer_type="mla_prefill_chunk",
+                compress_ratio=1,
+                num_prefills=1,
+                query_tokens=32768,
+                combined_topk=128,
+                effective_candidate_visits=1_000_000,
+                stage_timings_ms={"sparse_accumulate": 10.0},
+            ),
+            _stats_row(
+                layer_type="mla_prefill_indexed_d512",
+                compress_ratio=128,
+                num_prefills=1,
+                query_tokens=32768,
+                combined_topk=256,
+                effective_candidate_visits=500_000,
+                stage_timings_ms={"sparse_accumulate": 1.0},
+            ),
+            _stats_row(
+                layer_type="mla_prefill_chunk",
+                compress_ratio=128,
+                num_prefills=1,
+                query_tokens=32768,
+                combined_topk=256,
+                effective_candidate_visits=250_000,
+                stage_timings_ms={"sparse_accumulate": 5.0},
+            ),
+            _stats_row(
+                layer_type="mla_prefill_chunk",
+                compress_ratio=4,
+                num_prefills=1,
+                query_tokens=4096,
+                combined_topk=640,
+                effective_candidate_visits=125_000,
+                stage_timings_ms={"sparse_accumulate": 2.0},
+            ),
+            _stats_row(
+                layer_type="mla_prefill_chunk",
+                compress_ratio=128,
+                num_prefills=1,
+                max_prefill_seq_len=4096,
+                query_tokens=4096,
+                combined_topk=256,
+                effective_candidate_visits=64_000,
+                stage_timings_ms={"sparse_accumulate": 1.0},
+            ),
+        ],
+    )
+
+    report = build_sparse_mla_stats_report(stats_path)
+
+    gate = report["indexed_d512_gate"]
+    assert gate["counts_by_status"] == {
+        "already_indexed_d512": 1,
+        "chunk_blocked": 3,
+        "chunk_unexplained": 2,
+    }
+    assert gate["primary_reason_counts"] == {
+        "num_prefills_not_1": 1,
+        "prefill_seq_len_below_min": 1,
+        "swa_only": 1,
+        "unknown_or_env_disabled": 2,
+    }
+    reasons = {row["reason"]: row for row in gate["primary_reasons"]}
+    assert reasons["num_prefills_not_1"]["row_count"] == 1
+    assert reasons["num_prefills_not_1"]["effective_candidate_visits"] == 2_000_000
+    assert reasons["num_prefills_not_1"]["sparse_accumulate_ms"] == 20.0
+    assert (
+        reasons["num_prefills_not_1"][
+            "sparse_accumulate_ms_per_million_effective_visits"
+        ]
+        == 10.0
+    )
+    assert reasons["prefill_seq_len_below_min"]["row_count"] == 1
+    assert reasons["unknown_or_env_disabled"]["row_count"] == 2
+    assert reasons["unknown_or_env_disabled"]["effective_candidate_visits"] == 375_000
+    group_by_ratio = {row["compress_ratio"]: row for row in report["groups"]}
+    assert group_by_ratio["4"]["indexed_d512_gate"]["primary_reason"] == (
+        "num_prefills_not_1"
+    )
+
+
 def test_sparse_mla_stats_report_skips_invalid_lines_and_unknown_kinds(tmp_path):
     stats_path = tmp_path / "stats.jsonl"
     stats_path.write_text(
@@ -426,6 +522,8 @@ def test_sparse_mla_stats_markdown_does_not_leak_absolute_paths(tmp_path):
     assert "## Cross-Query Reuse Potential" in text
     assert "## Candidate Row Duplicates" in text
     assert "## Candidate Region Work" in text
+    assert "## Indexed D512 Gate" in text
+    assert "`num_prefills_not_1`" in text
     assert "## Sparse Accumulate Work" in text
     assert "- Accumulate paths: `triton_chunked`=1" in text
     assert "- Accumulate value-read bytes estimate: `201326592`" in text

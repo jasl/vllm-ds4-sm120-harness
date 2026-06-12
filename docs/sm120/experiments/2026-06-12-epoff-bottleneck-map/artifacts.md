@@ -41,8 +41,13 @@ soak gates were still pending.
 | RTX b12x compressed MLA component refresh | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/b12x_mla_microbench/20260613_b12x0200_nodeps_default` |
 | RTX grouped-SWA D512 component refresh | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/indexed_d512_grouped_swa_microbench/20260613_current_dev_b12x0200_nodeps` |
 | RTX grouped-stream component refresh | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/indexed_d512_grouped_stream_microbench/20260613_current_dev_b12x0200_nodeps` |
+| RTX current D512 gate stage-timing control | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_stage_timing_current_gate/20260613030142` |
+| RTX D512 multi-prefill stage-timing prototype | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_stage_timing_d512_multi_prefill/20260613031257` |
+| RTX D512 multi-prefill lifecycle guard | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_correctness_gate_20260613032500/20260613032501` |
+| RTX D512 multi-prefill GSM8K 5-shot | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_gsm8k5_on_20260613034101/20260613034102` |
+| RTX D512 multi-prefill-off GSM8K 5-shot control | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_gsm8k5_off_20260613034613/20260613034614` |
 | RTX EP-on attribution comparison | `f32247a5a6` | SM120 RTX PRO 6000 x2 | on | disabled | _pending_ |
-| RTX GSM8K correctness guard | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
+| RTX GSM8K paired/full correctness guard | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | RTX local quality expansion | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | GB10 sparse attribution confirmation | candidate branch | SM121 GB10 x2 | off | disabled | _pending_ |
 | GB10 forum53 prefix-cache gate | candidate branch | SM121 GB10 x2 | off | enabled | _pending_ |
@@ -55,6 +60,8 @@ soak gates were still pending.
 | RTX b12x 0.20 default dependency resolver | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_b12x_0200_upgrade` | Default install pulled Torch/Triton/CUDA runtime changes and downgraded NCCL; `vllm._C` failed with a Torch ABI symbol error. Runtime packages were restored and b12x was kept as a no-deps experiment variable. |
 | RTX FlashInfer 0.6.13rc1 no-deps probe | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/dependency_snapshots/20260613_flashinfer_0613rc1_nodeps` | Superseded mismatch probe: import failed because `flashinfer-jit-cache` stayed at `0.6.12+cu130`. `FLASHINFER_DISABLE_VERSION_CHECK=1` bypasses that check for probing, and installing `flashinfer-jit-cache==0.6.13rc1+cu130` fixes the mismatch. |
 | RTX FlashInfer 0.6.13rc1 packed MLA probe | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/flashinfer_packed_mla_probe/20260613_fi0613rc1_matched` | The matched rc1 wheel/jit-cache state imports normally, but both packed cases fail with `ModuleNotFoundError` because `flashinfer.sparse_mla_sm120` is only on the unmerged PR3395 fork branch, not official rc1. |
+| RTX D512 multi-prefill GSM8K 8-shot diagnostic | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_correctness_gate_20260613032500/20260613032501` | The lifecycle run's `eval_gsm8k` phase inherited the baseline driver's 8-shot default and is not comparable to the 5-shot stable-preview anchor. |
+| RTX D512 multi-prefill-off GSM8K 8-shot diagnostic | `591b71bed0` | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_correctness_control_20260613033202/20260613033202` | Same 8-shot mismatch as above. `lm_eval` exit `0`, floor gate exit `1`, GSM8K flexible/strict `0.925 / 0.920`. Use only as a diagnostic for the 8-shot shape. |
 
 ## Latest RTX Attribution Snapshot
 
@@ -71,6 +78,21 @@ soak gates were still pending.
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 16384 | 4482 | 6922746338 | 20689.546385 | 19310.570236 | 0.933349 | 2.789438 |
 | 65536 | 17154 | 33788234210 | 53144.091214 | 51343.7 | 0.966123 | 1.519574 |
+
+## Latest RTX D512 Multi-Prefill Snapshot
+
+| Input length | Gate | Chunk rows | Indexed D512 rows | `num_prefills_not_1` rows | Sparse accumulate ms | Input tok/s C=1 / C=2 / C=4 |
+| ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 16384 | current | 2432 | 2050 | 1558 | 21219.778 | 7656.07 / 6905.80 / 6265.39 |
+| 16384 | multi-prefill on | 1284 | 3198 | 328 | 11843.018 | 8051.11 / 8253.90 / 8131.02 |
+| 65536 | current | 3788 | 13366 | 1968 | 54004.115 | 7140.94 / 6775.50 / 6752.81 |
+| 65536 | multi-prefill on | 1820 | 15334 | 0 | 34165.937 | 7607.20 / 7658.31 / 7611.61 |
+
+| Guard | Env | Exit | GSM8K flexible / strict | Notes |
+| --- | --- | --- | --- | --- |
+| prototype lifecycle | multi-prefill on | `prefix_cache_probe` and `kv_lifecycle_probe` phases `0` | n/a | Marker checks and idle KV threshold passed. |
+| prototype GSM8K 5-shot | multi-prefill on | `eval_gsm8k` phase `0` | `0.965 / 0.960` | Floor gate passed. |
+| paired GSM8K 5-shot control | multi-prefill off | `eval_gsm8k` phase `0` | `0.950 / 0.930` | Floor gate passed. |
 
 ## Latest RTX NCU Snapshot
 
