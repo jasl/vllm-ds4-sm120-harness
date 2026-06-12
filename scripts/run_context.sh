@@ -13,6 +13,15 @@ load_harness_env() {
         continue
       fi
       if [[ -z "${!key+x}" ]]; then
+        if (( ${#value} >= 2 )); then
+          local first last
+          first="${value:0:1}"
+          last="${value: -1}"
+          if [[ ( "${first}" == '"' && "${last}" == '"' ) \
+             || ( "${first}" == "'" && "${last}" == "'" ) ]]; then
+            value="${value:1:${#value}-2}"
+          fi
+        fi
         export "${key}=${value}"
       fi
     done < "${REPO_ROOT}/.env"

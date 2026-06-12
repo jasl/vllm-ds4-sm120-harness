@@ -187,6 +187,45 @@ def test_run_context_configures_sm120_vllm_env_with_compat_aliases():
     assert "export SM120_VLLM_REPO SM120_VLLM_VENV SM120_PYTHON SM120_VLLM_BIN" in script
 
 
+def test_run_context_env_loader_strips_simple_outer_quotes(tmp_path):
+    (tmp_path / ".env").write_text(
+        '\n'.join(
+            [
+                'HEAD_HOST="10.0.0.116"',
+                "WORKER_HOST='10.0.0.118'",
+                'SSH_OPTS="-o BatchMode=yes"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    script = f"""
+set -euo pipefail
+REPO_ROOT="{tmp_path}"
+unset HEAD_HOST WORKER_HOST SSH_OPTS
+source "{ROOT / "scripts" / "run_context.sh"}"
+load_harness_env
+printf 'HEAD_HOST=%s\\n' "${{HEAD_HOST}}"
+printf 'WORKER_HOST=%s\\n' "${{WORKER_HOST}}"
+printf 'SSH_OPTS=%s\\n' "${{SSH_OPTS}}"
+"""
+
+    result = subprocess.run(
+        ["bash", "-c", script],
+        check=True,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "HEAD_HOST=10.0.0.116",
+        "WORKER_HOST=10.0.0.118",
+        "SSH_OPTS=-o BatchMode=yes",
+    ]
+
+
 def test_sm120_pr_performance_regression_gate_is_hard_gate():
     script = (ROOT / "scripts" / "run_sm120_pr_performance_regression_gate.sh").read_text(
         encoding="utf-8"
