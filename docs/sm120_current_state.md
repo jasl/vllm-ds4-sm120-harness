@@ -2,22 +2,27 @@
 
 Start here before reading the longer historical notes. This file is the compact
 working entrypoint for DeepSeek V4 SM12x optimization status, current gates, and
-next-step decisions. Treat `docs/sm120_optimization_notes.md` as the append-only
-evidence archive.
+next-step decisions. New experiment notes and durable decisions should use the
+framework in `docs/sm120/`. Treat `docs/sm120_optimization_notes.md` as the
+legacy evidence archive.
 
-Last updated: 2026-06-10.
+Last updated: 2026-06-12.
 
 ## Read Order
 
 1. Read this file for the current branch posture and next target.
-2. Read `docs/vllm_correctness_gates.md` for promotion requirements.
-3. Read `docs/sm12x_triton_sparse_mla_rewrite_plan.md` before starting the
+2. Read `docs/sm120/README.md` for the new note structure and writing rules.
+3. Read `docs/sm120/index.md` for framework-era decisions and experiment
+   packages.
+4. Read `docs/vllm_correctness_gates.md` for promotion requirements.
+5. Read `docs/sm12x_triton_sparse_mla_rewrite_plan.md` before starting the
    next fork-independent sparse-MLA prefill kernel/backend iteration.
-4. Read `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup and
+6. Read `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup and
    reduced long-context gates.
-5. Use `docs/sm120_experiment_index.md` to jump into historical experiments.
-6. Use `docs/sm120_optimization_notes.md` only when you need the detailed
-   artifact trail or rejected-route rationale.
+7. Use `docs/sm120_experiment_index.md` to jump into pre-framework historical
+   experiments.
+8. Use `docs/sm120_optimization_notes.md` only when you need the detailed
+   legacy artifact trail or rejected-route rationale.
 
 ## Current Posture
 

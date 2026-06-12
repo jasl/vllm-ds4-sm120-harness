@@ -52,3 +52,13 @@ exploration related to this repository and the associated vLLM work.
   `PYTHON=/path/to/python` so the harness can run against a target vLLM venv.
 - Treat local macOS results as harness validation only. GPU-path validation must
   run on an appropriate remote SM120/SM121 environment.
+
+## SM120 Documentation
+
+- For new SM120 / SM121 optimization notes, follow `docs/sm120/README.md`.
+- Do not append new detailed experiment narratives to
+  `docs/sm120_optimization_notes.md`; treat it as the legacy evidence archive.
+- Put new experiment packages under `docs/sm120/experiments/` and durable
+  conclusions under `docs/sm120/decisions/`.
+- Keep EP-on/off and prefix-cache-on/off profile sensitivity explicit in new
+  experiment and decision notes.

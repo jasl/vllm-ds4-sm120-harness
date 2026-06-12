@@ -1,9 +1,14 @@
 # SM120 Optimization Notes
 
 Start with `docs/sm120_current_state.md` for the live branch posture, promotion
-rules, and next target. Use `docs/sm120_experiment_index.md` to find historical
-evidence by topic. This file is now the append-only detailed archive; do not
-start here unless you need the full artifact trail.
+rules, and next target. For new work from 2026-06-12 onward, use
+`docs/sm120/README.md` and `docs/sm120/index.md`: new experiments live under
+`docs/sm120/experiments/`, and durable conclusions live under
+`docs/sm120/decisions/`.
+
+This file is now the legacy detailed archive. Do not append new experiment
+details here unless you are preserving a compatibility note for older anchors;
+create a new experiment package instead.
 
 These notes are the current working assumptions for DeepSeek V4 SM120
 performance work. They are intentionally separate from historical baseline

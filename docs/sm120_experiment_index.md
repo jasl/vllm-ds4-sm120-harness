@@ -1,8 +1,13 @@
 # SM120 Experiment Index
 
-Use this index to find the relevant historical evidence in
+Use this index to find the relevant pre-framework historical evidence in
 `docs/sm120_optimization_notes.md` without rereading the whole archive. Start
 with `docs/sm120_current_state.md` for the live decision state.
+
+For new work from 2026-06-12 onward, use `docs/sm120/README.md` and
+`docs/sm120/index.md`. New experiments should live under
+`docs/sm120/experiments/`, and durable conclusions should live under
+`docs/sm120/decisions/`.
 
 ## Current Checkpoints
 

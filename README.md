@@ -202,8 +202,17 @@ tool-call turn.
     run `scripts/run_needle_position_matrix.sh` against an already-started
     server
 - SM120 optimization notes:
+  - use
+    [`docs/sm120/README.md`](docs/sm120/README.md)
+    for the current note structure and writing rules
   - keep the current hardware assumptions and tuning priorities in
+    [`docs/sm120_current_state.md`](docs/sm120_current_state.md)
+    and route new detailed experiments through
+    [`docs/sm120/experiments/`](docs/sm120/experiments/)
+  - treat
     [`docs/sm120_optimization_notes.md`](docs/sm120_optimization_notes.md)
+    as a legacy evidence archive rather than the place for new experiment
+    narratives
   - treat RTX PRO 6000 / SM120 workstation runs as GDDR7 memory-subsystem
     evidence, not HBM evidence
   - use external DeepGEMM SM120 work as design input only unless a measured,

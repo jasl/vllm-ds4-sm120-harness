@@ -1,6 +1,6 @@
 # DeepSeek V4 SM12x Handoff
 
-Last updated: 2026-06-08
+Last updated: 2026-06-12
 
 This harness is the repo-independent validation and evidence workspace for
 DeepSeek V4 SM12x work. Keep this handoff public-safe: do not record private
@@ -15,16 +15,20 @@ Read these files in order before changing either the harness or a vLLM branch:
 1. `AGENTS.md` for repository rules and public-safety constraints.
 2. `docs/sm120_current_state.md` for the current technical posture and next
    target.
-3. `docs/vllm_correctness_gates.md` for promotion and regression gates.
-4. `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup, cache
+3. `docs/sm120/README.md` for the framework-era note structure.
+4. `docs/sm120/index.md` for new decisions and experiment packages.
+5. `docs/vllm_correctness_gates.md` for promotion and regression gates.
+6. `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup, cache
    hygiene, distributed startup, and driver-health checks.
-5. `docs/sm120_experiment_index.md` to find historical evidence in the long
-   notes.
-6. `docs/sm120_optimization_notes.md` only when the detailed artifact trail or
-   rejected-route rationale is needed.
+7. `docs/sm120_experiment_index.md` to find pre-framework historical evidence
+   in the long notes.
+8. `docs/sm120_optimization_notes.md` only when the detailed legacy artifact
+   trail or rejected-route rationale is needed.
 
-The long optimization notes are an evidence archive, not the primary entrypoint.
-If they conflict with `docs/sm120_current_state.md`, refresh the compact current
+The long optimization notes are a legacy evidence archive, not the primary
+entrypoint. New experiment details should go under `docs/sm120/experiments/`,
+and durable conclusions should go under `docs/sm120/decisions/`. If legacy
+notes conflict with `docs/sm120_current_state.md`, refresh the compact current
 state first.
 
 ## Source Of Truth
