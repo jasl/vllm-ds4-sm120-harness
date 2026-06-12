@@ -6,7 +6,7 @@ next-step decisions. New experiment notes and durable decisions should use the
 framework in `docs/sm120/`. Treat `docs/sm120_optimization_notes.md` as the
 legacy evidence archive.
 
-Last updated: 2026-06-12.
+Last updated: 2026-06-13.
 
 ## Read Order
 
@@ -45,21 +45,22 @@ Last updated: 2026-06-12.
   FP8 KV, MTP=2 when exercising the production path, and
   `FULL_AND_PIECEWISE`. Keep EP as an environment-controlled fallback A/B
   dimension only.
-- Active next task: run the EP-off backend-parity program described in
-  `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/README.md` and
-  `docs/sm120/experiments/2026-06-12-black-benediction-map/README.md`. Develop
-  and profile on dual RTX PRO 6000 / SM120 first, then confirm promising
-  candidates on GB10 / SM121. The next integration should be a conservative,
-  easy-to-deploy branch based on explained bottleneck evidence and public
-  upstream dependency capabilities where possible. The Triton sparse-MLA
-  rewrite plan remains a candidate route if attribution shows sparse dataflow
-  or cost-per-effective-visit is the bottleneck.
+- Active next task: optimize the EP-off sparse MLA accumulate bottleneck
+  described in
+  `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/README.md`.
+  The 2026-06-13 RTX stage-timing pass shows `sparse_accumulate` at `93.33%`
+  of sparse prefill stage time for 16K and `96.61%` for 65K; slow non-indexed
+  `mla_prefill_chunk` groups are the first concrete target. Develop and
+  profile on dual RTX PRO 6000 / SM120 first, then confirm promising candidates
+  on GB10 / SM121. Black-benediction DFlash/decode work is a second-stage
+  reference, not the first cold-prefill route.
 - Branch posture: keep `codex/ds4-sm120-min-enable` as the PR/user-facing
-  base. Use `codex/ds4-sm120-backend-parity-dev-20260612` at `7224e68417` as
-  the next dev starting point; it is based on PR stable preview `f32247a5a6`
-  plus one signed SM12x sparse-MLA selector diagnostic commit. When the PR
-  branch is rebased later, recreate or rebase dev on the new PR tip and split
-  any PR-worthy dev fix into reviewable PR-branch commits.
+  base. Use `codex/ds4-sm120-backend-parity-dev-20260612` at `591b71bed0` as
+  the current dev starting point; it is based on PR stable preview `f32247a5a6`
+  plus signed diagnostic commits for the SM12x sparse-MLA selector, warmup
+  stats handling, and sparse-MLA prefill stats. When the PR branch is rebased
+  later, recreate or rebase dev on the new PR tip and split any PR-worthy dev
+  fix into reviewable PR-branch commits.
 - Naming posture: use SM120 for RTX PRO 6000 work and SM121 for GB10 work.
   B200 is an older SM10x baseline name and should appear only in historical
   notes or as a compatibility variable for older harness scripts.
@@ -68,7 +69,10 @@ Last updated: 2026-06-12.
   FlashInfer upstream/main `d65c3eb`, FlashInfer PR `#3395` `88539d03`, and
   b12x master `fabb087`. Do not chase remote heads during routine candidate
   runs; refresh only during an explicit upstream-change review or when a
-  dependency change is likely to affect SM12x behavior.
+  dependency change is likely to affect SM12x behavior. A 2026-06-13 check
+  found vLLM `#45277` still open at `e57d3b78`, b12x still at `fabb087`,
+  FlashInfer upstream/main at `992848ad`, and black-benediction at
+  `5fcd00c3d7`; these are reference deltas, not an automatic new base.
 - Newly promoted work: exact chunked D512 online merge for
   `combined_topk > 1152`. It is now default-on because the RTX promotion subset,
   GSM8K limit-200, prefix/KV lifecycle checks, and GB10 reduced long-C2 gate are

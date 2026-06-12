@@ -21,6 +21,68 @@
 | Scheduler/KV admission | Mixed-arrival or prefix-cache pressure changes TTFT/fairness | `scripts/run_sm12x_prefill_decode_interference_profiles.sh` | `scripts/run_gb10_forum53_multi_user_gate.sh` |
 | Public dependency route | Stack probe says route is importable and serve logs prove dispatch | `scripts/run_b12x_stack_probe.sh` plus route-specific smoke | same probe in GB10 venv before endpoint A/B |
 
+## Current RTX Observations
+
+The 2026-06-13 stage-timing pass makes sparse MLA accumulate the first
+optimization target for the EP-off cold-prefill profile.
+
+| Signal | 16K | 65K | Interpretation |
+| --- | ---: | ---: | --- |
+| `sparse_accumulate` share of sparse prefill stage time | `93.33%` | `96.61%` | Gather/combine and scheduler/KV admission are not the first-order cold-prefill bottleneck. |
+| Sparse accumulate ms per million effective visits | `2.789438` | `1.519574` | Endpoint work is dominated by effective candidate/value visits and their kernel efficiency. |
+| Compressed padding ratio | `0.151421` | `0.098817` | Padding exists, but long-context waste is not high enough to explain the full gap by itself. |
+| SWA padding ratio | `0.004085` | `0.001052` | SWA candidate padding is negligible in these shapes. |
+
+At 65K, the group breakdown is the most actionable clue:
+
+| Layer type | Compress | Effective visits | Stage total ms | Sparse visits/s |
+| --- | ---: | ---: | ---: | ---: |
+| `mla_prefill_chunk` | 1 | 607556768 | 3853.09 | 1.79215e8 |
+| `mla_prefill_chunk` | 128 | 1951493440 | 10345.7 | 1.97086e8 |
+| `mla_prefill_chunk` | 4 | 3122141442 | 15185.3 | 2.1181e8 |
+| `mla_prefill_indexed_d512` | 128 | 10160664320 | 9542.22 | 1.09188e9 |
+| `mla_prefill_indexed_d512` | 4 | 17946378240 | 14217.8 | 1.28134e9 |
+
+So the immediate route is not "make all of prefill a little faster"; it is to
+either move more work onto the indexed D512-style path, replace the slow
+non-indexed chunk path, or reduce its real visits without changing semantics.
+
+The first NCU microbench, `tokens=1024` and `candidates=640`, is consistent
+with an occupancy / issue-efficiency problem rather than a raw DRAM bandwidth
+wall: the profiled kernel reported `118` registers/thread, `32.60%` achieved
+occupancy, `61.91%` SM throughput, `6.17%` DRAM throughput, and `46.36%`
+no-eligible cycles. This is a kernel-shape clue only; endpoint A/B still has
+priority over microbench wins.
+
+The 2026-06-13 route probe also narrows what can be tested immediately in the
+current RTX target venv:
+
+- available now: plain FlashInfer DS4 sparse MLA route and FlashInfer B12X MoE
+  route;
+- source/reference only until dependency work: PR3395 packed SM120 FlashInfer
+  sparse MLA, public b12x paged sparse indexer, DS4 b12x compressed MLA
+  adapter, DS4 b12x WO, and native MXFP4 MoE;
+- target venv currently has `b12x` `0.15.2`, while the local b12x source is
+  newer. Use an isolated, rollbackable venv or explicit reinstall before
+  claiming public b12x mainline capability.
+
+## Current Direction
+
+1. Keep the stable PR branch and current dev branch pinned. Do not chase
+   upstream/main or black-benediction head unless a specific mechanism is being
+   reviewed.
+2. First candidate family: sparse MLA accumulate/backend. Prefer a conservative
+   route that improves or replaces the slow non-indexed chunk groups while
+   preserving `FULL_AND_PIECEWISE` graphs and DS4 correctness.
+3. Before endpoint A/B for b12x mainline, prepare an isolated dependency state
+   where the target venv exposes the public paged-indexer / compressed-MLA APIs.
+4. Treat FlashInfer PR3395 packed SM120 sparse MLA as still dependency-gated.
+   The installed FlashInfer route is the plain DS4 sparse MLA path, not the
+   packed 584B/token path.
+5. Keep black-benediction DFlash/decode changes as a second-stage reference.
+   They may help decode/speculative throughput, but they are high-correctness
+   risk and are not the first response to this cold-prefill bottleneck.
+
 ## First RTX Commands
 
 Run these on an SM120 host with the target vLLM venv. Keep all machine-specific

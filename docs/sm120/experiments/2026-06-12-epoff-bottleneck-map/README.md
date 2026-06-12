@@ -41,8 +41,8 @@ scheduler/KV admission behavior?
 
 ## Result
 
-First RTX EP-off attribution evidence captured. This package does not promote
-a new backend.
+First RTX EP-off attribution and stage-timing evidence captured. This package
+does not promote a new backend.
 
 Latest RTX attribution artifact:
 `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260613000055`.
@@ -57,6 +57,33 @@ Summary:
   `2370 / 8706 / 34050 / 64850`.
 - 124K C=4 is reliable in this shape but slow: mean TTFT `66063.01 ms`,
   p99 TTFT `81513.1 ms`.
+
+Latest RTX stage-timing artifact:
+`artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_stage_timing_attribution/20260613_stage_timing_epoff_16k_65k`.
+
+Stage timing keeps the bottleneck squarely in sparse MLA accumulate:
+
+- 16K: `sparse_accumulate` is `19310.6 ms` of `20689.5 ms` (`93.33%`),
+  with `2.789438 ms` per million effective visits.
+- 65K: `sparse_accumulate` is `51343.7 ms` of `53144.1 ms` (`96.61%`),
+  with `1.519574 ms` per million effective visits.
+- Non-indexed `mla_prefill_chunk` groups are much slower than indexed D512
+  groups. At 65K, chunk groups are about `1.79e8-2.12e8` visits/s while
+  indexed D512 groups are about `1.09e9-1.28e9` visits/s.
+
+The first NCU microbench artifact is
+`artifacts/main/2x_rtx_pro_6000_sm120/sm120_sparse_mla_ncu_first/20260613_sparse_mla_ncu_first`.
+For `tokens=1024`, `candidates=640`, staggered lens, the profiled kernel used
+`118` registers/thread, reached `32.60%` achieved occupancy, `61.91%` SM
+throughput, `6.17%` DRAM throughput, and reported `46.36%` no-eligible cycles.
+Treat this as a kernel-shape clue, not endpoint proof by itself.
+
+The current RTX target venv route probe is
+`artifacts/main/2x_rtx_pro_6000_sm120/b12x_stack_probe/20260613_route_probe_sm120`.
+It shows `b12x` package `0.15.2`, FlashInfer packages `0.6.12`, and only these
+relevant runtime routes as immediately available: `runtime_flashinfer_mla_sparse_dsv4_plain`
+and `runtime_flashinfer_b12x_moe`. Public b12x sparse-indexer / DS4 compressed
+MLA / WO / native MXFP4 MoE routes are not available in that venv yet.
 
 The earlier artifact
 `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142`
@@ -79,18 +106,17 @@ Baseline anchors are inherited from
 ## Interpretation
 
 EP-off currently wins the routine profile, so old EP-on dependency conclusions
-are not enough. The first phase should classify the bottleneck before porting
-code:
+are not enough. The first stage-timing pass classifies the immediate
+bottleneck as sparse MLA accumulate rather than scheduler/KV admission:
 
-- Sparse-MLA/dataflow bottleneck: endpoint throughput improves only when real
-  candidate/value visits fall or effective visits/s improves at the same work.
-- MoE/pipeline bottleneck: EP-off vs EP-on, no-MTP vs MTP, and decode
-  interference change endpoint behavior without changing sparse-MLA work.
-- Scheduler/KV bottleneck: prefill/decode interference, prefix-cache admission,
-  or CUDA graph memory pressure explains the gap.
-- Dependency bottleneck: released FlashInfer or b12x cannot expose the needed
-  route under the current public package stack, so the route must remain
-  research-only.
+- Sparse-MLA/dataflow is the first optimization route. A candidate should
+  either reduce real candidate/value visits or improve effective visits/s at
+  the same semantic work.
+- Public dependency readiness is currently a blocker for the b12x sparse
+  indexer and DS4 compressed MLA routes in the RTX target venv. Use an
+  isolated, rollbackable dependency environment before endpoint A/B.
+- MoE/pipeline and scheduler/KV remain comparison dimensions, but the current
+  EP-off cold-prefill evidence does not make them first-order bottlenecks.
 
 Correctness is a hard constraint, not a final polish step. DFlash-style
 speculative/decode optimizations are treated as high-risk until GSM8K

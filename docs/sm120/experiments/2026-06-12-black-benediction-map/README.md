@@ -37,8 +37,11 @@ public dependency deployability, and reviewable branch history?
 
 ## Result
 
-Pending. Local refs were confirmed at `c6b2a7b187` on 2026-06-12. The branch is
-not a clean patch queue for our PR line:
+Pending. Local refs were confirmed at `c6b2a7b187` on 2026-06-12. On
+2026-06-13, the public remote moved to `5fcd00c3d7`, but the new commits are
+still concentrated in DFlash/spec-decode and Triton MLA decode rather than the
+DS4 sparse prefill accumulate path. The branch is not a clean patch queue for
+our PR line:
 
 - Compared with the PR stable preview, the full diff spans hundreds of files
   and includes unrelated upstream drift, model support, parser/tooling churn,
@@ -46,8 +49,12 @@ not a clean patch queue for our PR line:
 - Compared with `local-inference/main`, the black-benediction-specific stack is
   narrower and currently centers on B12X indexer/MLA/MoE updates plus
   DFlash/SWA/spec-decode fixes.
-- The latest commit, `c6b2a7b187 Fix DFlash long-context decode slowdown`,
-  touches Triton unified attention helpers rather than DS4 sparse-MLA directly.
+- The 2026-06-13 latest commit,
+  `5fcd00c3d7 Support DFlash on the V2 model runner`, touches DFlash runtime
+  plumbing. The most relevant intermediate commit is
+  `39e25654f8 Port tuned TRITON_MLA decode from glm51-v6 branch`, which is a
+  decode MLA route with per-bucket tuning, not a cold-prefill sparse accumulate
+  replacement.
 
 ## Interpretation
 
@@ -65,6 +72,11 @@ that DFlash-style optimizations can damage GSM8K correctness. Any DFlash,
 speculative decode, or Triton attention helper change must pass GSM8K
 limit-200, semantic gates, and the standard vLLM focused tests before it can be
 used as a basis for performance claims.
+
+The current EP-off stage-timing evidence points first to sparse MLA accumulate,
+especially slow non-indexed chunk groups. Therefore black-benediction's
+DFlash/decode changes are a second-stage reference after the sparse-prefill
+backend route is explored.
 
 ## Follow-Up
 

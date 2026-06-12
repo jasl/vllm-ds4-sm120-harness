@@ -1,7 +1,7 @@
 # SM12x Backend Parity Roadmap
 
 Status: watchlist
-Last reviewed: 2026-06-12
+Last reviewed: 2026-06-13
 Applies to: SM120 RTX PRO 6000, SM121 GB10, vLLM PR stable preview and
 external backend branches
 Profile sensitivity: EP-off is the current default comparison profile; EP-on,
@@ -27,12 +27,13 @@ every run. Refresh them only during an explicit upstream-change review, or when
 a rerun trigger below fires and the new upstream commit is relevant to SM12x
 coverage, FlashInfer/b12x backend capability, or black-benediction parity.
 
-Integrate the three active routes in this order:
+Integrate the active routes in this order:
 
-- First identify the current EP-off bottleneck on dual RTX PRO 6000. Use
-  sparse attribution, MoE/EP A/B, decode/interference profiles, and GSM8K
-  correctness before deciding which mechanism deserves a port. GB10 should
-  confirm narrowed candidates, not absorb every exploratory run.
+- First optimize the current EP-off sparse MLA accumulate bottleneck on dual
+  RTX PRO 6000. The first valid stage-timing pass shows `sparse_accumulate` at
+  `93.33%` of sparse prefill stage time for 16K and `96.61%` for 65K. Slow
+  non-indexed `mla_prefill_chunk` groups are the first concrete target. GB10
+  should confirm narrowed candidates, not absorb every exploratory run.
 - Watch upstream CUDA arch coverage work in `vllm-project/vllm#45277`. Rebase
   only when the merged upstream changes affect SM12x build/runtime coverage or
   conflict with our stack. After that rebase, drop any local build workaround
@@ -49,9 +50,11 @@ Integrate the three active routes in this order:
   it remains dependency-gated and must be revalidated under the current EP-off
   matrix before any vLLM PR promotion.
 - Treat `local-inference-lab/vllm` `dev/black-benediction` as the external
-  performance target and reference implementation. Reproduce it with the
-  harness before porting ideas. Port only isolated mechanisms whose dependency,
-  licensing, DCO, and promotion-gate story is clear.
+  performance target and reference implementation. The public remote moved from
+  the 2026-06-12 freeze point `c6b2a7b187` to `5fcd00c3d7` on 2026-06-13; the
+  new commits are DFlash/spec-decode and Triton MLA decode work, so they are a
+  second-stage reference rather than the first sparse-prefill route. Reproduce
+  any chosen mechanism with the harness before porting ideas.
 
 ## Evidence
 
@@ -68,6 +71,11 @@ Integrate the three active routes in this order:
   `local-inference-lab/vllm dev/black-benediction` head `c6b2a7b`,
   FlashInfer upstream/main `d65c3eb`,
   `flashinfer-ai/flashinfer#3395` head `88539d03`, b12x master `fabb087`.
+- External deltas checked on 2026-06-13:
+  `vllm-project/vllm#45277` remained open at `e57d3b78`,
+  vLLM upstream/main moved to `053e7daa79`, FlashInfer upstream/main moved to
+  `992848ad`, b12x master stayed at `fabb087`, and black-benediction moved to
+  `5fcd00c3d7`.
 - Local freeze tags:
   `sm120-freeze-vllm-upstream-main-20260612`,
   `sm120-freeze-vllm-pr45277-20260612`,
@@ -89,7 +97,9 @@ on backend ideas is appropriate, but not on the PR branch itself. New code must
 show one of these before promotion: fewer real sparse-MLA candidate/value
 visits, better effective sparse visits/s at the same work, lower memory
 pressure that expands a guarded workload, or a measurable MoE/decode-pipeline
-gain without correctness or lifecycle regressions.
+gain without correctness or lifecycle regressions. After the 2026-06-13
+stage-timing pass, the first promotion route should be sparse MLA accumulate
+or backend replacement, not DFlash/decode.
 
 DFlash-style speculative/decode optimizations are treated as high-risk until
 they clear GSM8K and semantic gates. RTX PRO 6000 is the development and

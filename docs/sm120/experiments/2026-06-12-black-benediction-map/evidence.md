@@ -11,6 +11,14 @@ Local and remote state checked on 2026-06-12:
 | Public remote `dev/black-benediction` | `c6b2a7b18747ba467d25dd6d72be3559aaf7a341` | Confirmed by `git ls-remote`. |
 | Latest commit | `c6b2a7b187 Fix DFlash long-context decode slowdown` | Touches Triton unified attention helper code. |
 
+Remote state rechecked on 2026-06-13:
+
+| Ref | Head | Notes |
+| --- | --- | --- |
+| Public remote `dev/black-benediction` | `5fcd00c3d797e3e8b132eda5eabf80168b4aca47` | Remote moved after the 2026-06-12 freeze point. Do not automatically adopt as the new base. |
+| New latest commit | `5fcd00c3d7 Support DFlash on the V2 model runner` | DFlash/spec-decode runtime plumbing. High correctness risk for DS4 promotion. |
+| Most relevant new non-DFlash-only commit | `39e25654f8 Port tuned TRITON_MLA decode from glm51-v6 branch` | Per-bucket Triton MLA decode tuning; relevant to decode/speculative route, not the first sparse-prefill bottleneck. |
+
 ## Diff Scope
 
 The full diff from PR stable preview to black-benediction is too broad for
@@ -51,6 +59,10 @@ Key commits in that range:
 | `346ad6f3aa` Route b12x MXFP4 MoE to DeepSeek-style method | MoE quantization | research; requires endpoint MoE evidence |
 | `841798ccc8` Fix DFlash draft fidelity to reference semantics | DFlash correctness | correctness reference, not speed-first |
 | `c6b2a7b187` Fix DFlash long-context decode slowdown | Triton attention/DFlash decode | high correctness risk |
+| `b0abf2972f` Allow DFlash SWA drafts beside MLA target models | DFlash/SWA | high correctness risk |
+| `00fe1e8a5c` Avoid MLA decode smem overflow on 99KB-limit GPUs | Triton decode attention | decode-path reference only for current sparse-prefill phase |
+| `39e25654f8` Port tuned TRITON_MLA decode from glm51-v6 branch | Triton MLA decode | second-stage decode/speculative route; not a cold-prefill sparse accumulate fix |
+| `5fcd00c3d7` Support DFlash on the V2 model runner | DFlash/spec decode | high correctness risk |
 
 ## Mechanism Map
 
@@ -62,6 +74,21 @@ Key commits in that range:
 | DFlash/SWA/spec decode | `vllm/v1/spec_decode/dflash.py`, `vllm/v1/spec_decode/llm_base_proposer.py`, `tests/v1/spec_decode/test_dflash_swa.py` | Metadata, slot mapping, per-KV-group block table, and long-context decode handling. | Very high; run correctness before performance claims. |
 | Triton unified attention helper changes | `vllm/v1/attention/ops/triton_attention_helpers.py`, `vllm/v1/attention/ops/triton_unified_attention.py` | Why the latest DFlash long-context decode slowdown fix works. | Very high if ported outside the exact DFlash shape. |
 | CUDA graph/warmup behavior | B12X warmup and scratch reservation commits | Whether graph profiling startup pressure can be reduced without disabling `FULL_AND_PIECEWISE`. | Medium; must preserve graph mode and GB10 driver health. |
+
+## 2026-06-13 Interpretation
+
+The new remote head does not change the first optimization priority. The
+current EP-off stage timing in the bottleneck-map package shows cold-prefill
+time dominated by sparse MLA accumulate, while the new black-benediction commits
+are DFlash/spec-decode and Triton MLA decode work. Keep them as references for
+the second-stage decode/speculative route.
+
+The useful black-benediction idea to revisit later is the tuned decode table in
+`vllm/v1/attention/backends/mla/triton_mla_tuning.py`: it chooses
+`num_kv_splits`, `BLOCK_N`, `BLOCK_H`, stages, and warps by
+`(q_num_heads, max_model_len, B)`. That shape of tuning may inspire a sparse
+prefill accumulate tuner, but it should not be copied directly into DS4
+cold-prefill without endpoint attribution and correctness gates.
 
 ## Read-Only Study Commands
 

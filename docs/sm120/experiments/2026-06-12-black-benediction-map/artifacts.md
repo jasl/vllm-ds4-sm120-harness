@@ -15,8 +15,8 @@ addresses, tokens, or absolute model-cache locations.
 
 | Run | Branch/commit | Hardware | EP | Prefix cache | Artifact |
 | --- | --- | --- | --- | --- | --- |
-| black-benediction RTX endpoint reproduction | `c6b2a7b187` | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
-| black-benediction RTX correctness guard | `c6b2a7b187` | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
+| black-benediction RTX endpoint reproduction | frozen `c6b2a7b187` or reviewed newer head | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
+| black-benediction RTX correctness guard | frozen `c6b2a7b187` or reviewed newer head | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | isolated B12X sparse-indexer probe | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | isolated B12X MoE probe | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | DFlash/SWA semantics probe | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |

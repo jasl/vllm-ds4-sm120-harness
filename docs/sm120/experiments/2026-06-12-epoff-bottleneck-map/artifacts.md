@@ -16,6 +16,9 @@ addresses, tokens, or absolute model-cache locations.
 | Run | Branch/commit | Hardware | EP | Prefix cache | Artifact |
 | --- | --- | --- | --- | --- | --- |
 | RTX EP-off sparse attribution control | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260613000055` |
+| RTX EP-off sparse stage timing | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_stage_timing_attribution/20260613_stage_timing_epoff_16k_65k` |
+| RTX sparse MLA NCU microbench | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_sparse_mla_ncu_first/20260613_sparse_mla_ncu_first` |
+| RTX b12x / FlashInfer route probe | `591b71bed0` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/b12x_stack_probe/20260613_route_probe_sm120` |
 | RTX EP-on attribution comparison | `f32247a5a6` | SM120 RTX PRO 6000 x2 | on | disabled | _pending_ |
 | RTX GSM8K correctness guard | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | RTX local quality expansion | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
@@ -36,6 +39,31 @@ addresses, tokens, or absolute model-cache locations.
 | 16384 | 8706 | 8080.89 / 7104.17 / 5938.92 | 2027.05 / 4444.21 / 9439.91 | 2037.59 / 4647.73 / 12000.63 |
 | 65536 | 34050 | 7576.42 / 6610.62 / 6541.33 | 8649.86 / 18819.34 / 33233.61 | 8774.34 / 20791.38 / 41515.80 |
 | 124000 | 64850 | 6835.25 / 6179.15 / 6185.31 | 18141.62 / 37957.72 / 66063.01 | 18357.06 / 41619.08 / 81513.10 |
+
+## Latest RTX Stage-Timing Snapshot
+
+| Input length | Sparse rows | Effective visits | Stage total ms | Sparse accumulate ms | Sparse accumulate ratio | Sparse ms/Mvisit |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 16384 | 4482 | 6922746338 | 20689.546385 | 19310.570236 | 0.933349 | 2.789438 |
+| 65536 | 17154 | 33788234210 | 53144.091214 | 51343.7 | 0.966123 | 1.519574 |
+
+## Latest RTX NCU Snapshot
+
+| Case | Tokens | Candidates | Mean ms | Candidate visits/s | SM % | DRAM % | Registers/thread | Achieved occupancy | No eligible % |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| sparse MLA chunk microbench | 1024 | 640 | 2.718 | 1.543e10 | 61.91 | 6.17 | 118 | 32.60 | 46.36 |
+
+## Latest RTX Route Probe Snapshot
+
+| Route | Ready | Note |
+| --- | --- | --- |
+| `runtime_flashinfer_mla_sparse_dsv4_plain` | yes | Plain FlashInfer DS4 sparse MLA route; not the PR3395 packed SM120 route. |
+| `runtime_flashinfer_b12x_moe` | yes | Upstream FlashInfer B12X MoE route is importable. |
+| `public_b12x_mla` | yes | Public b12x MLA front door is importable, but endpoint DS4 wiring is not present. |
+| `public_b12x_vllm_fp8_ds_mla_zero_copy` | yes | Layout probe says vLLM physical page layout can match b12x by a 2D page-byte view. |
+| `public_b12x_paged_indexer` | no | Target venv b12x package does not expose the current paged sparse-indexer API. |
+| `flashinfer_sm120_sparse_mla_packed` | no | PR3395-style packed SM120 sparse MLA path is not available in the installed FlashInfer. |
+| `runtime_ds4_b12x_compressed_mla_adapter` | no | vLLM runtime does not expose the DS4-specific adapter in this branch/venv. |
 
 ## Artifact Review Checklist
 
