@@ -53,6 +53,11 @@ soak gates were still pending.
 | GB10 D512 multi-prefill forum53 env-on | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_20260613045800/20260613045800` |
 | GB10 D512 multi-prefill forum53 clean-boot env-on retry | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_retry_20260613051100/20260613051042` |
 | GB10 D512 multi-prefill forum53 same-branch env-off control | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_control_20260613052200/20260613052137` |
+| RTX D512 multi-prefill forum53 C2 response-capture env-on | `741ea24c46` | SM120 RTX PRO 6000 x2 | off | enabled | `artifacts/main/2x_rtx_pro_6000_sm120/rtx_forum53_mtp2_epoff_d512_on/20260613055203` |
+| RTX D512 multi-prefill forum53 C2 response-capture env-off | `741ea24c46` | SM120 RTX PRO 6000 x2 | off | enabled | `artifacts/main/2x_rtx_pro_6000_sm120/rtx_forum53_mtp2_epoff_d512_off/20260613055203` |
+| GB10 D512 multi-prefill forum53 C2 response-capture env-on | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture/20260613055729` |
+| GB10 D512 multi-prefill forum53 C2 response-capture env-on repeat | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture_repeat/20260613060731` |
+| GB10 D512 multi-prefill forum53 C2 response-capture env-off control | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_off_capture_control/20260613061702` |
 | RTX EP-on attribution comparison | `f32247a5a6` | SM120 RTX PRO 6000 x2 | on | disabled | _pending_ |
 | RTX GSM8K paired/full correctness guard | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | RTX local quality expansion | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
@@ -71,6 +76,9 @@ soak gates were still pending.
 | GB10 D512 multi-prefill forum53 env-on | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_20260613045800/20260613045800` | Matrix failed with 1 marker miss out of 4 requests and dirty post-run driver health. Do not use as positive prefix-cache/user gate evidence. |
 | GB10 D512 multi-prefill forum53 clean-boot env-on retry | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_retry_20260613051100/20260613051042` | Clean-boot retry also failed with 1 marker miss out of 4 requests and dirty post-run driver health. This blocks promotion of the env-on route. |
 | GB10 D512 multi-prefill forum53 same-branch env-off control | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_multi_prefill_control_20260613052200/20260613052137` | Matrix itself passed with 4/4 requests and 0 failures, but post-run driver health was dirty. Use only to separate env-on marker regression from the broader GB10 driver-health issue. |
+| GB10 D512 multi-prefill forum53 C2 response-capture env-on | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture/20260613055729` | Matrix passed once with response capture enabled, but the repeat failed; use only as nondeterminism evidence. |
+| GB10 D512 multi-prefill forum53 C2 response-capture env-on repeat | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture_repeat/20260613060731` | Matrix failed with 1 marker miss. The captured failed assistant text was the previous assistant status body, which points at a prefix-cache/current-suffix context mix-up rather than empty output or truncation. |
+| GB10 D512 multi-prefill forum53 C2 response-capture env-off control | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_off_capture_control/20260613061702` | Serve preflight refused the run because the current boot already had an NVRM OOM record. Reboot before using this as an env-off capture control. |
 
 ## Latest RTX Attribution Snapshot
 
@@ -126,11 +134,21 @@ soak gates were still pending.
 | forum53 env-on | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 1 marker failure | 124.970255 | 0.223721 | dirty, 1 signal | rejected |
 | forum53 clean-boot env-on retry | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 1 marker failure | 124.697034 | 0.099339 | dirty, 2 signals | rejected |
 | forum53 same-branch env-off control | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=0` | 4 requests, 0 failures | 124.265379 | 0.150068 | dirty, 2 signals | partial attribution control |
+| RTX C2 response-capture env-on | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 0 failures | 27.212879 | 0.180494 | clean | RTX non-repro |
+| RTX C2 response-capture env-off | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=0` | 4 requests, 0 failures | 26.497937 | 0.049509 | clean | RTX control |
+| GB10 C2 response-capture env-on | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 0 failures | 124.279151 | 0.122834 | not a clean gate | nondeterminism check only |
+| GB10 C2 response-capture env-on repeat | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 1 marker failure | 122.356447 | 0.395746 | dirty, 3 signals | rejected |
+| GB10 C2 response-capture env-off control | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=0` | serve preflight blocked by current-boot driver OOM | n/a | n/a | dirty before serve | blocked control |
 
 The env-off control shows the matrix shape itself still passes on this branch.
 The env-on retries show a correctness/user-gate regression under MTP2
 prefix-cache pressure. Driver-health signals also appear without the env-on
-path, so the GB10 startup/post-run memory signal is tracked separately.
+path, so the GB10 startup/post-run memory signal is tracked separately. The
+response-capture repeat narrowed the marker miss to a wrong assistant body:
+the failed request emitted the previous assistant status text and stopped
+without the current marker. That makes the next investigation a GB10
+prefix-cache/current-suffix context mapping problem in the env-on route, not a
+simple truncation or empty-response problem.
 
 ## Latest RTX NCU Snapshot
 

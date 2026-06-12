@@ -150,14 +150,19 @@ input tok/s `1277.57 -> 1393.42` (`+9.07%`) while leaving C=1 effectively
 flat.
 
 The same prototype does not pass the GB10 forum53 MTP2 prefix-cache gate. Two
-env-on runs produced 1 marker failure out of 4 requests and dirty post-run
-driver health. A same-branch env-off control completed the matrix itself
-with 4/4 requests and 0 failures, but also produced post-run driver-health
-signals. Treat the env-on marker failures as a promotion blocker for this
-prototype, and treat the driver-health signals as a separate GB10 memory-margin
-problem that must be understood before using these forum53 reruns as clean
-positive evidence. Keep using reboot-safe single-case GB10 attribution runs
-until the post-run NVRM OOM state is understood or avoided.
+initial env-on runs produced 1 marker failure out of 4 requests and dirty
+post-run driver health. A same-branch env-off control completed the matrix
+itself with 4/4 requests and 0 failures, but also produced post-run
+driver-health signals. Follow-up response-capture runs then showed RTX C2
+env-on/off passing 4/4, while GB10 env-on remained nondeterministic: one
+capture pass was green and the repeat failed 1/4. The failed GB10 response was
+not empty or truncated; it stopped after emitting the previous assistant status
+body without the current marker. Treat this as a GB10 prefix-cache/current
+suffix context-mapping bug in the env-on route and as a promotion blocker for
+this prototype. Treat the driver-health signals as a separate GB10
+memory-margin problem that must be understood before using these forum53 reruns
+as clean positive evidence. Keep using reboot-safe single-case GB10 attribution
+runs until the post-run NVRM OOM state is understood or avoided.
 
 The earlier artifact
 `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142`
@@ -225,8 +230,11 @@ below the gate is rejected for PR promotion.
   black-benediction head change found during explicit upstream review, or any
   endpoint candidate that changes sparse-MLA, MoE, DFlash, scheduler, KV, or
   CUDA graph behavior.
-- Next command: first isolate the D512 multi-prefill forum53 marker failure and
-  the GB10 startup/driver-health OOM signal. Only after that, prototype or
-  microbench a fused dual-stream sparse-MLA path that preserves the
-  grouped-stream component signal without reintroducing the separate-launch
-  merge/finish overhead that made the earlier endpoint form regress.
+- Next command: first inspect the D512 multi-prefill GB10 env-on
+  prefix-cache/current-suffix mapping under two-round C2 pressure, using the
+  response-capture failure as the reproducer. Reboot before any fresh GB10
+  env-off capture control, because the latest control attempt was refused by
+  the current-boot NVRM OOM guard. Only after that, prototype or microbench a
+  fused dual-stream sparse-MLA path that preserves the grouped-stream component
+  signal without reintroducing the separate-launch merge/finish overhead that
+  made the earlier endpoint form regress.

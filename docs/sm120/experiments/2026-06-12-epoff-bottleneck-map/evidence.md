@@ -170,6 +170,32 @@ D512 multi-prefill expansion, and do not use these forum53 runs as clean
 positive GB10 evidence until both the marker failure and the startup/post-run
 driver-health signals are understood.
 
+Follow-up response-capture runs added `assistant_text_length`,
+`assistant_text_sha256`, and failure-only `assistant_text_excerpt` to the
+streaming-pressure rows:
+
+| Run | Env | Matrix result | Max TTFT s | ITL p99 s | Artifact |
+| --- | --- | --- | ---: | ---: | --- |
+| RTX C2 env-on | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 0 failures | `27.212879` | `0.180494` | `artifacts/main/2x_rtx_pro_6000_sm120/rtx_forum53_mtp2_epoff_d512_on/20260613055203` |
+| RTX C2 env-off | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=0` | 4 requests, 0 failures | `26.497937` | `0.049509` | `artifacts/main/2x_rtx_pro_6000_sm120/rtx_forum53_mtp2_epoff_d512_off/20260613055203` |
+| GB10 C2 env-on capture | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 0 failures | `124.279151` | `0.122834` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture/20260613055729` |
+| GB10 C2 env-on capture repeat | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` | 4 requests, 1 marker failure | `122.356447` | `0.395746` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_on_capture_repeat/20260613060731` |
+| GB10 C2 env-off capture control | `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=0` | serve preflight blocked by current-boot driver OOM | n/a | n/a | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_off_capture_control/20260613061702` |
+
+The repeated GB10 env-on failure was `round_02_worker_01`, finish reason
+`stop`, TTFT `9.155373s`, 10 streamed chunks, 22 completion tokens. The
+captured assistant excerpt was only the previous assistant status body:
+`status: previous streaming response completed. status: content remained
+readable. status: worker context was preserved.` It did not contain the
+current required marker `STREAM-W01-R02-CHECK`. This rules out an empty
+response or simple length truncation and points at a prefix-cache/current-suffix
+context mix-up in the env-on path on GB10. The RTX C2 probe did not reproduce
+the marker miss. GB10 serve logs also showed only about `129800-134895` KV
+tokens available for an `81920` max-model-len, or `1.58-1.65x` maximum
+concurrency for one full-length request, so this profile is near the GB10
+capacity boundary; that explains the serialized TTFT shape but not the wrong
+assistant text.
+
 ## Historical PR3395 GB10 Subset
 
 The 2026-06-08 GB10 packed FlashInfer promotion subset is the strongest
@@ -210,10 +236,13 @@ mixed arrival, prefix/KV lifecycle, GSM8K limit-200, and a full GB10 soak.
    preserving `FULL_AND_PIECEWISE` graphs and DS4 correctness.
 3. Keep the D512 multi-prefill expansion default-off. GB10 16K/65K single-case
    confirmation is positive, but forum53 MTP2 prefix-cache failed twice with
-   marker misses under env-on. The same-branch env-off control passed the
-   matrix but still had dirty driver health. Full GB10 still needs
-   prefix-cache/forum53, sustained soak, and a fix or operating rule for the
-   post-run NVRM OOM state before this route can be promoted.
+   marker misses under env-on. Response-capture follow-up reproduced the GB10
+   failure as the previous assistant status body being returned without the
+   current marker, while RTX C2 env-on/off did not reproduce it. Full GB10
+   still needs a prefix-cache/current-suffix mapping fix, a clean env-off
+   response-capture control after reboot, sustained soak, and a fix or
+   operating rule for the post-run NVRM OOM state before this route can be
+   promoted.
 4. Keep b12x `0.20.0` no-deps as the current public-b12x component-probe
    state, but do not add a DS4 compressed-MLA endpoint adapter unless a newer
    backend/dataflow beats current D512 split+finish.

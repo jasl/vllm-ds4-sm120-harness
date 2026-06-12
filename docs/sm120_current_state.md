@@ -54,14 +54,18 @@ Last updated: 2026-06-13.
   fork-independent endpoint candidate is the default-off indexed D512
   multi-prefill expansion, which is positive on RTX and on reduced GB10
   16K/65K single-case confirmation, but failed the GB10 forum53 MTP2
-  prefix-cache gate twice with marker misses under env-on. A same-branch
-  env-off control passed the matrix but still produced dirty post-run driver
-  health, so there are two separate follow-ups: isolate the env-on marker
-  regression and understand the GB10 startup/post-run NVRM OOM signal. Keep
-  the prototype gated and do not promote it until the remaining
-  prefix-cache/user and wider promotion gates are green. Black-benediction
-  DFlash/decode work is a second-stage reference, not the first cold-prefill
-  route.
+  prefix-cache gate twice with marker misses under env-on. Response-capture
+  follow-up did not reproduce the miss on RTX C2, but did reproduce it on GB10
+  env-on: the failed request emitted the previous assistant status body and
+  stopped without the current marker. Treat this as a GB10
+  prefix-cache/current-suffix context-mapping bug in the env-on route, not as
+  empty output or truncation. A same-branch env-off control passed the matrix
+  but still produced dirty post-run driver health, and a fresh env-off capture
+  control was later blocked by the current-boot NVRM OOM guard. Keep the
+  prototype gated and do not promote it until the remaining prefix-cache/user
+  and wider promotion gates are green, with a reboot before the next GB10
+  env-off capture control. Black-benediction DFlash/decode work is a
+  second-stage reference, not the first cold-prefill route.
 - Branch posture: keep `codex/ds4-sm120-min-enable` as the PR/user-facing
   base. Use `codex/ds4-sm120-pr3395-packed-dev-20260613` at `741ea24c46` as
   the current code-bearing dev branch; it descends from PR stable preview

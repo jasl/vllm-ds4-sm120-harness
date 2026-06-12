@@ -145,13 +145,19 @@ confirmation is also positive for 16K and 65K single-case runs with reboot
 between cases: 16K improved `sparse_accumulate` by `-20.90%` and C=2 input
 tok/s by `+15.10%`; 65K improved `sparse_accumulate` by `-19.98%` and C=2
 input tok/s by `+9.07%`, with C=1 effectively flat. However, the GB10 forum53
-MTP2 prefix-cache gate is not green: two env-on runs each had 1 marker failure
-out of 4 requests, while a same-branch env-off control passed the matrix with
-4/4 requests. Driver-health signals also appeared in the env-off control, so
-startup/post-run GB10 memory margin is a separate open problem. Keep the route
-default-off until paired/full correctness, prefix-cache-enabled lifecycle, and
-GB10 user/promotion gates are green. This is enough to continue debugging the
-route, but not enough to make it PR-default behavior.
+MTP2 prefix-cache gate is not green: two initial env-on runs each had 1 marker
+failure out of 4 requests, while a same-branch env-off control passed the
+matrix with 4/4 requests. Response-capture follow-up did not reproduce the miss
+on RTX C2, but did reproduce it on GB10 env-on. The captured failed GB10
+response stopped after emitting the previous assistant status body and never
+included the current marker, which points at a prefix-cache/current-suffix
+context mapping bug in the env-on route rather than empty output or simple
+truncation. Driver-health signals also appeared in the env-off control and
+later blocked a fresh env-off capture control until reboot, so startup/post-run
+GB10 memory margin is a separate open problem. Keep the route default-off until
+paired/full correctness, prefix-cache-enabled lifecycle, and GB10
+user/promotion gates are green. This is enough to continue debugging the route,
+but not enough to make it PR-default behavior.
 
 DFlash-style speculative/decode optimizations are treated as high-risk until
 they clear GSM8K and semantic gates. RTX PRO 6000 is the development and
