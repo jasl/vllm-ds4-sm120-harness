@@ -168,9 +168,23 @@ def test_bench_script_defaults_to_representative_hf_dataset():
 def test_b200_baseline_exports_harness_pythonpath_for_target_vllm_python():
     script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(encoding="utf-8")
 
-    assert 'VLLM_ROOT="${VLLM_ROOT:-${B200_VLLM_REPO}}"' in script
+    assert "configure_sm120_vllm_env" in script
     assert 'PYTHONPATH="$(harness_pythonpath)"' in script
     assert 'export VLLM_ROOT PYTHONPATH' in script
+
+
+def test_run_context_configures_sm120_vllm_env_with_compat_aliases():
+    script = (ROOT / "scripts" / "run_context.sh").read_text(encoding="utf-8")
+
+    assert 'SM120_VLLM_REPO="${SM120_VLLM_REPO:-${B200_VLLM_REPO:-/workspace/vllm}}"' in script
+    assert 'SM120_VLLM_VENV="${SM120_VLLM_VENV:-${B200_VLLM_VENV:-${SM120_VLLM_REPO}/.venv}}"' in script
+    assert 'SM120_PYTHON="${SM120_PYTHON:-${PYTHON:-${SM120_VLLM_VENV}/bin/python}}"' in script
+    assert 'SM120_VLLM_BIN="${SM120_VLLM_BIN:-${VLLM_BIN:-${SM120_VLLM_VENV}/bin/vllm}}"' in script
+    assert 'B200_VLLM_REPO="${B200_VLLM_REPO:-${SM120_VLLM_REPO}}"' in script
+    assert 'B200_VLLM_VENV="${B200_VLLM_VENV:-${SM120_VLLM_VENV}}"' in script
+    assert 'PYTHON="${PYTHON:-${SM120_PYTHON}}"' in script
+    assert 'VLLM_BIN="${VLLM_BIN:-${SM120_VLLM_BIN}}"' in script
+    assert "export SM120_VLLM_REPO SM120_VLLM_VENV SM120_PYTHON SM120_VLLM_BIN" in script
 
 
 def test_sm120_pr_performance_regression_gate_is_hard_gate():
@@ -209,6 +223,29 @@ def test_sm120_pr_performance_regression_gate_is_hard_gate():
     assert "--min-tpot-speedup" in script
     assert "--min-spec-acceptance-ratio" in script
     assert "--min-spec-acceptance-percent" in script
+
+
+def test_sm120_epoff_bottleneck_attribution_wrapper_is_narrow_control():
+    script = (
+        ROOT / "scripts" / "run_sm120_epoff_bottleneck_attribution.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "configure_sm120_vllm_env" in script
+    assert 'GPU_TOPOLOGY_SLUG="${GPU_TOPOLOGY_SLUG:-2x_rtx_pro_6000_sm120}"' in script
+    assert (
+        'SM120_EPOFF_BOTTLENECK_RUN_EPON_COMPARISON="'
+        '${SM120_EPOFF_BOTTLENECK_RUN_EPON_COMPARISON:-0}"'
+    ) in script
+    assert (
+        'SM120_EPOFF_BOTTLENECK_DRY_RUN="'
+        '${SM120_EPOFF_BOTTLENECK_DRY_RUN:-0}"'
+    ) in script
+    assert 'run_case "epoff_control" 0 "${SM120_EPOFF_BOTTLENECK_INPUT_LENS}"' in script
+    assert 'run_case "epon_comparison" 1 "${SM120_EPOFF_BOTTLENECK_EPON_INPUT_LENS}"' in script
+    assert 'SERVE_PREFIX_CACHE_MODE=disabled' in script
+    assert '"${SCRIPT_DIR}/run_sm12x_prefill_gap_attribution.sh"' in script
+    assert "run_sm120_local_quality_gates.sh" not in script
+    assert "run_gb10_forum53_multi_user_gate.sh" not in script
 
 
 def test_sm12x_sparse_mla_ncu_microbench_targets_current_chunk_path():

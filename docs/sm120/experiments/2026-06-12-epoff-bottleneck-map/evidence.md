@@ -26,6 +26,15 @@
 Run these on an SM120 host with the target vLLM venv. Keep all machine-specific
 paths in the local shell environment or ignored local notes.
 Run the preflight in `preflight.md` first, then start with the EP-off control.
+Prefer the narrow wrapper for routine starts:
+
+```bash
+scripts/run_sm120_epoff_bottleneck_attribution.sh
+```
+
+Set `SM120_EPOFF_BOTTLENECK_RUN_EPON_COMPARISON=1` only when separating
+MoE/EP imbalance from sparse-MLA work. The expanded commands below are kept for
+manual reproduction or one-off overrides.
 
 ### 1. Stable EP-Off Sparse Attribution Control
 
