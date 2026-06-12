@@ -9,8 +9,8 @@ candidate routes still need a dependency update before endpoint A/B.
 
 - Harness checkout has the backend-parity preparation and first-run wrapper
   committed on `main`.
-- vLLM checkout is clean on
-  `codex/ds4-sm120-backend-parity-dev-20260612`.
+- vLLM checkout for new code-bearing work is
+  `codex/ds4-sm120-pr3395-packed-dev-20260613` at `741ea24c46`.
 - FlashInfer checkout is clean on `main`; local `main` was fast-forwarded to
   upstream/main `d65c3eb`.
 - b12x checkout is clean on `master`.
@@ -29,9 +29,10 @@ candidate routes still need a dependency update before endpoint A/B.
   of the server startup path. It also restores sparse-MLA prefill stats
   diagnostics for attribution-only runs.
 - Fixed PR3395 packed-route dev branch:
-  `codex/ds4-sm120-pr3395-packed-dev-20260613` at `591b71bed0`, pushed to
+  `codex/ds4-sm120-pr3395-packed-dev-20260613` at `741ea24c46`, pushed to
   `origin`, with base tag `sm120-pr3395-packed-dev-base-20260613`. Use this as
-  the long-lived vLLM development branch for env-gated packed FlashInfer work.
+  the long-lived vLLM development branch for env-gated packed FlashInfer work
+  and default-off sparse-prefill prototypes.
 - FlashInfer PR3395 current snapshot branch:
   `codex/pr3395-sparse-mla-sm120-20260612` at `88539d03`.
   The live fork branch `lucifer1004/flashinfer:sparse-mla-sm120` was checked on
@@ -96,7 +97,8 @@ RTX / SM120 node:
 - Target `vllm` CLI: OK.
 - `nvidia-smi`: OK; dual RTX PRO 6000 SM120 GPUs detected.
 - Remote harness checkout synced to `5eccf83424`.
-- Remote vLLM checkout synced to `591b71bed0`.
+- Remote vLLM checkout synced to `741ea24c46` for the latest D512
+  multi-prefill prototype runs.
 - Warmup and sparse-stats diagnostics focused tests on the target venv: OK.
 - EP-off bottleneck attribution control completed with nonzero sparse stats
   under the relative path listed in `artifacts.md`.

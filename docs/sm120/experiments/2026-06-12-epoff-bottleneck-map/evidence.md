@@ -132,20 +132,27 @@ GB10 reduced confirmation:
 | 16384 | `num_prefills_not_1` gate rows | 738 | 164 | `-77.78%` |
 | 16384 | `sparse_accumulate` ms | 53976.852 | 42695.228 | `-20.90%` |
 | 16384 | sparse ms/M effective visit | 11.471 | 9.074 | `-20.90%` |
+| 65536 | `mla_prefill_chunk` rows | 2578 | 1430 | `-44.53%` |
+| 65536 | `mla_prefill_indexed_d512` rows | 8856 | 10004 | `+12.96%` |
+| 65536 | `num_prefills_not_1` gate rows | 1148 | 0 | `-100.00%` |
+| 65536 | `sparse_accumulate` ms | 172870.259 | 138329.454 | `-19.98%` |
+| 65536 | sparse ms/M effective visit | 7.644 | 6.117 | `-19.98%` |
 
 | Input length | Concurrency | Input tok/s off -> on | Mean TTFT off -> on | P99 TTFT off -> on |
 | ---: | ---: | --- | --- | --- |
 | 16384 | 1 | `1515.63 -> 1523.38` (`+0.51%`) | `10809.88 -> 10755.20 ms` (`-0.51%`) | `11279.77 -> 11517.51 ms` (`+2.11%`) |
 | 16384 | 2 | `1299.03 -> 1495.23` (`+15.10%`) | `23356.20 -> 20062.23 ms` (`-14.10%`) | `26162.13 -> 22527.41 ms` (`-13.89%`) |
+| 65536 | 1 | `1424.54 -> 1422.45` (`-0.15%`) | `46005.07 -> 46071.38 ms` (`+0.14%`) | `48097.74 -> 48249.73 ms` (`+0.32%`) |
+| 65536 | 2 | `1277.57 -> 1393.42` (`+9.07%`) | `91291.83 -> 82717.21 ms` (`-9.39%`) | `109641.26 -> 97377.85 ms` (`-11.19%`) |
 
-The GB10 result confirms the same mechanism as RTX at 16K: more rows move onto
-indexed D512 and the multi-prefill slow gate shrinks. It is not a full GB10
-confirmation yet. The first paired control completed 16K, then the next 65K
-case was refused by safety preflight because the current boot already had an
-NVRM OOM record. After reboot, the 16K prototype run completed successfully,
-but the post-run safety check again found an NVRM OOM record on the worker
-node. Continue GB10 validation as single-case runs with reboot between cases,
-or first investigate why teardown/serving leaves the worker boot in that state.
+The GB10 result confirms the same mechanism as RTX at 16K and 65K: more rows
+move onto indexed D512 and the multi-prefill slow gate shrinks. The 65K
+confirmation had to be run as one case per boot because earlier 16K runs left a
+current-boot NVRM OOM record and the safety preflight correctly refused the
+next case until reboot. After the 65K prototype, both nodes were rebooted and
+the new boot had no NVRM OOM/Xid records. Continue GB10 validation as
+single-case runs with reboot between cases, or first investigate why
+teardown/serving leaves the worker boot in that state.
 
 ## Historical PR3395 GB10 Subset
 
@@ -187,8 +194,9 @@ mixed arrival, prefix/KV lifecycle, GSM8K limit-200, and a full GB10 soak.
    preserving `FULL_AND_PIECEWISE` graphs and DS4 correctness.
 3. Keep the D512 multi-prefill expansion default-off and use it as the first
    endpoint candidate for paired correctness, prefix-cache-enabled lifecycle,
-   and GB10 confirmation. GB10 16K is now positive; full GB10 still needs a
-   single-case/reboot-safe workflow or a fix for the post-run NVRM OOM state.
+   and GB10 user/promotion gates. GB10 16K/65K single-case confirmation is now
+   positive; full GB10 still needs prefix-cache/forum53, sustained soak, and a
+   fix or operating rule for the post-run NVRM OOM state.
 4. Keep b12x `0.20.0` no-deps as the current public-b12x component-probe
    state, but do not add a DS4 compressed-MLA endpoint adapter unless a newer
    backend/dataflow beats current D512 split+finish.

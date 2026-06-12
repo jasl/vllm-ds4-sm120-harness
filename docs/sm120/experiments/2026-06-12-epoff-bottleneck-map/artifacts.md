@@ -48,10 +48,11 @@ soak gates were still pending.
 | RTX D512 multi-prefill-off GSM8K 5-shot control | `591b71bed0` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/sm120_d512_multi_prefill_gsm8k5_off_20260613034613/20260613034614` |
 | GB10 D512 multi-prefill-off 16K control | `741ea24c46` | SM121 GB10 x2 | off | disabled | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_control_20260613035658/20260613035658` |
 | GB10 D512 multi-prefill 16K prototype | `741ea24c46` | SM121 GB10 x2 | off | disabled | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_on_16k_20260613040708/20260613040708` |
+| GB10 D512 multi-prefill-off 65K control | `741ea24c46` | SM121 GB10 x2 | off | disabled | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_control_65k_20260613042153/20260613042153` |
+| GB10 D512 multi-prefill 65K prototype | `741ea24c46` | SM121 GB10 x2 | off | disabled | `artifacts/main/2x_gb10_sm121/gb10_d512_multi_prefill_on_65k_20260613043628/20260613043628` |
 | RTX EP-on attribution comparison | `f32247a5a6` | SM120 RTX PRO 6000 x2 | on | disabled | _pending_ |
 | RTX GSM8K paired/full correctness guard | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | RTX local quality expansion | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
-| GB10 sparse attribution confirmation | candidate branch | SM121 GB10 x2 | off | disabled | _pending_ |
 | GB10 forum53 prefix-cache gate | candidate branch | SM121 GB10 x2 | off | enabled | _pending_ |
 
 ## Partial Or Rejected Evidence
@@ -103,11 +104,15 @@ soak gates were still pending.
 | ---: | --- | ---: | ---: | ---: | ---: | --- |
 | 16384 | multi-prefill off | 1516 | 1558 | 738 | 53976.852 | 1515.63 / 1299.03 |
 | 16384 | multi-prefill on | 942 | 2132 | 164 | 42695.228 | 1523.38 / 1495.23 |
+| 65536 | multi-prefill off | 2578 | 8856 | 1148 | 172870.259 | 1424.54 / 1277.57 |
+| 65536 | multi-prefill on | 1430 | 10004 | 0 | 138329.454 | 1422.45 / 1393.42 |
 
 | Input length | Gate | Mean TTFT ms C=1 / C=2 | P99 TTFT ms C=1 / C=2 | Notes |
 | ---: | --- | --- | --- | --- |
 | 16384 | multi-prefill off | 10809.88 / 23356.20 | 11279.77 / 26162.13 | 16K case passed; following 65K case blocked by post-run NVRM OOM preflight. |
 | 16384 | multi-prefill on | 10755.20 / 20062.23 | 11517.51 / 22527.41 | 16K case passed; post-run check again found NVRM OOM state on the worker boot. |
+| 65536 | multi-prefill off | 46005.07 / 91291.83 | 48097.74 / 109641.26 | 65K control passed as a single-case run after reboot. |
+| 65536 | multi-prefill on | 46071.38 / 82717.21 | 48249.73 / 97377.85 | 65K prototype passed as a single-case run after reboot; after the run, both nodes were rebooted and the new boot was clean. |
 
 ## Latest RTX NCU Snapshot
 

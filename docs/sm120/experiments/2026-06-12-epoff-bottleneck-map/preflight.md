@@ -5,11 +5,11 @@ branch, dependency, driver, or machine reboot change.
 
 ## 1. Preserve Branch Isolation
 
-- Keep the PR stable preview and backend-parity dev checkout separate from
-  disposable reproduction work.
+- Keep the PR stable preview, backend-parity diagnostic base, and current
+  code-bearing dev checkout separate from disposable reproduction work.
 - Use `codex/ds4-sm120-min-enable` / stable preview `f32247a5a6` as the
-  control. Use `codex/ds4-sm120-backend-parity-dev-20260612` for opt-in
-  diagnostics and backend experiments.
+  control. Use `codex/ds4-sm120-pr3395-packed-dev-20260613` for current
+  opt-in diagnostics, sparse-prefill prototypes, and backend experiments.
 - Use a worktree or clean clone for black-benediction reproduction.
 - Do not run optimization experiments directly on the PR branch unless the
   candidate is already narrow and reversible.
@@ -25,8 +25,11 @@ git -C vllm rev-parse --verify sm120-pr-41834-stable-preview-20260612075245
 git -C vllm rev-parse --verify sm120-pr-41834-fallback-before-replacement-20260612053720
 git -C vllm rev-parse --verify codex/ds4-sm120-min-enable
 git -C vllm rev-parse --verify codex/ds4-sm120-backend-parity-dev-20260612
+git -C vllm rev-parse --verify codex/ds4-sm120-pr3395-packed-dev-20260613
 git -C vllm merge-base --is-ancestor codex/ds4-sm120-min-enable \
   codex/ds4-sm120-backend-parity-dev-20260612
+git -C vllm merge-base --is-ancestor codex/ds4-sm120-backend-parity-dev-20260612 \
+  codex/ds4-sm120-pr3395-packed-dev-20260613
 ```
 
 ## 2. Confirm Frozen External References

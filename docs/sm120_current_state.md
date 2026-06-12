@@ -50,17 +50,20 @@ Last updated: 2026-06-13.
   `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/README.md`.
   The 2026-06-13 RTX stage-timing pass shows `sparse_accumulate` at `93.33%`
   of sparse prefill stage time for 16K and `96.61%` for 65K; slow non-indexed
-  `mla_prefill_chunk` groups are the first concrete target. Develop and
-  profile on dual RTX PRO 6000 / SM120 first, then confirm promising candidates
-  on GB10 / SM121. Black-benediction DFlash/decode work is a second-stage
-  reference, not the first cold-prefill route.
+  `mla_prefill_chunk` groups are the first concrete target. The first
+  fork-independent endpoint candidate is the default-off indexed D512
+  multi-prefill expansion, which is now positive on RTX and on reduced GB10
+  16K/65K single-case confirmation. Keep it gated until the remaining
+  prefix-cache/user and wider promotion gates are green. Black-benediction
+  DFlash/decode work is a second-stage reference, not the first cold-prefill
+  route.
 - Branch posture: keep `codex/ds4-sm120-min-enable` as the PR/user-facing
-  base. Use `codex/ds4-sm120-backend-parity-dev-20260612` at `591b71bed0` as
-  the current dev starting point; it is based on PR stable preview `f32247a5a6`
-  plus signed diagnostic commits for the SM12x sparse-MLA selector, warmup
-  stats handling, and sparse-MLA prefill stats. When the PR branch is rebased
-  later, recreate or rebase dev on the new PR tip and split any PR-worthy dev
-  fix into reviewable PR-branch commits.
+  base. Use `codex/ds4-sm120-pr3395-packed-dev-20260613` at `741ea24c46` as
+  the current code-bearing dev branch; it descends from PR stable preview
+  `f32247a5a6`, the backend-parity diagnostics at `591b71bed0`, and the
+  default-off indexed D512 multi-prefill prototype. When the PR branch is
+  rebased later, recreate or rebase dev on the new PR tip and split any
+  PR-worthy dev fix into reviewable PR-branch commits.
 - Naming posture: use SM120 for RTX PRO 6000 work and SM121 for GB10 work.
   B200 is an older SM10x baseline name and should appear only in historical
   notes or as a compatibility variable for older harness scripts.
@@ -360,10 +363,12 @@ adapter. For the next PR3395 port, use the exact adapter/probe anchors
 dev baseline.
 
 The fixed vLLM development branch for this route is now
-`codex/ds4-sm120-pr3395-packed-dev-20260613` at `591b71bed0`, pushed to
-`origin`, with base tag `sm120-pr3395-packed-dev-base-20260613`. Use that
-branch, or a clearly named descendant, for future env-gated packed FlashInfer
-work so new commits remain reachable.
+`codex/ds4-sm120-pr3395-packed-dev-20260613` at `741ea24c46`, pushed to
+`origin`, with base tag `sm120-pr3395-packed-dev-base-20260613`. It currently
+contains the default-off indexed D512 multi-prefill prototype as the first
+fork-independent sparse-prefill candidate. Use that branch, or a clearly named
+descendant, for future env-gated packed FlashInfer work so new commits remain
+reachable.
 
 The same 2026-06-08 GB10 recheck also tested public b12x
 `compressed_indexer.index_topk_fp8` on the shared-prefill path. The API is

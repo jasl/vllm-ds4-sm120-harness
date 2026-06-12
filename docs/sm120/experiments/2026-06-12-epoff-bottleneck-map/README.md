@@ -16,9 +16,10 @@ scheduler/KV admission behavior?
 
 - Hardware: dual RTX PRO 6000 / SM120 for development and profiling first;
   two-node GB10 / SM121 for final confirmation and user-feedback gates.
-- vLLM branch/commit: PR stable preview `f32247a5a6` as the control; current
-  backend-parity dev branch `codex/ds4-sm120-backend-parity-dev-20260612` at
-  `591b71bed0` only for opt-in diagnostics.
+- vLLM branch/commit: PR stable preview `f32247a5a6` as the control;
+  backend-parity diagnostic base `591b71bed0`; current code-bearing dev branch
+  `codex/ds4-sm120-pr3395-packed-dev-20260613` at `741ea24c46` for the
+  default-off indexed D512 multi-prefill prototype.
 - Dependency or image identity: vLLM upstream/main `b7f9b6a`,
   FlashInfer upstream/main `d65c3eb`,
   `flashinfer-ai/flashinfer#3395` head `88539d03`, b12x master `fabb087`,
@@ -140,13 +141,15 @@ control scored `0.950 / 0.930`. Both passed the fixed floors, and the
 prototype does not show a correctness regression against the paired control or
 the 2026-06-12 stable-preview anchor `0.965 / 0.940`.
 
-GB10 reduced confirmation is positive but currently limited to a single 16K
-case per boot. On SM121 GB10 x2, the 16K C=`1/2` paired run reduced
+GB10 reduced confirmation is positive for 16K and 65K when run as one case per
+boot. On SM121 GB10 x2, the 16K C=`1/2` paired run reduced
 `sparse_accumulate` `53976.9 ms -> 42695.2 ms` (`-20.90%`) and improved C=2
-input tok/s `1299.03 -> 1495.23` (`+15.10%`). The same run left an NVRM OOM
-record on the worker node after completion, so the script's safety preflight
-correctly refused the next 65K case until reboot. Treat GB10 as reduced
-positive evidence, not full matrix confirmation yet.
+input tok/s `1299.03 -> 1495.23` (`+15.10%`). The 65K paired run reduced
+`sparse_accumulate` `172870.3 ms -> 138329.5 ms` (`-19.98%`) and improved C=2
+input tok/s `1277.57 -> 1393.42` (`+9.07%`) while leaving C=1 effectively
+flat. Keep using reboot-safe single-case GB10 runs until the post-run NVRM OOM
+state is understood or avoided. Treat this as reduced positive evidence, not
+full matrix confirmation yet.
 
 The earlier artifact
 `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142`
@@ -177,7 +180,7 @@ bottleneck as sparse MLA accumulate rather than scheduler/KV admission:
   the same semantic work.
 - The env-gated D512 multi-prefill expansion is now the first conservative
   fork-independent candidate. Keep it default-off until paired correctness,
-  prefix-cache-enabled lifecycle, and GB10 confirmation are green.
+  prefix-cache-enabled lifecycle, and GB10 user/promotion gates are green.
 - Public b12x readiness has moved from "missing APIs" to "not yet integrated
   or not fast enough as a direct endpoint route." Keep b12x `0.20.0` no-deps
   available for component probes, but do not port public compressed MLA

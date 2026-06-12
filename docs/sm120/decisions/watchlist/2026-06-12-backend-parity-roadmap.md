@@ -13,11 +13,11 @@ The next phase is a backend-parity program, not a PR-branch rewrite. Keep the
 validated PR stable preview as the user-facing base and run optimization work on
 separate research branches that can be discarded if they fail the matrix.
 
-Use the current PR branch as the base for new vLLM development. The local
-backend-parity development branch is
-`codex/ds4-sm120-backend-parity-dev-20260612` at `591b71bed0`, which is the PR
-stable preview `f32247a5a6` plus signed diagnostic commits for the SM12x
-sparse-MLA selector, warmup stats handling, and sparse-MLA prefill stats. When
+Use the current PR branch as the base for new vLLM development. The current
+code-bearing development branch is
+`codex/ds4-sm120-pr3395-packed-dev-20260613` at `741ea24c46`, which descends
+from the PR stable preview `f32247a5a6`, the backend-parity diagnostic stack at
+`591b71bed0`, and the default-off indexed D512 multi-prefill prototype. When
 the PR branch is later rebased on upstream/main, rebase or recreate the dev
 branch on top of the new PR tip. Any dev-branch fix that belongs in the PR must
 be split out and replayed onto the PR branch as a reviewable commit before it
@@ -94,10 +94,11 @@ Integrate the active routes in this order:
   `lucifer1004/flashinfer:sparse-mla-sm120`, and the fork branch head is
   `b619f0c650`.
 - Fixed vLLM packed-route dev branch created on 2026-06-13:
-  `codex/ds4-sm120-pr3395-packed-dev-20260613` at `591b71bed0`, with base tag
-  `sm120-pr3395-packed-dev-base-20260613`. Keep future PR3395 packed FlashInfer
-  commits on this branch or descendants so the route does not depend on
-  unreferenced WIP commits.
+  `codex/ds4-sm120-pr3395-packed-dev-20260613`, with base tag
+  `sm120-pr3395-packed-dev-base-20260613`. It is now at `741ea24c46` after the
+  default-off indexed D512 multi-prefill prototype commit. Keep future PR3395
+  packed FlashInfer commits on this branch or descendants so the route does not
+  depend on unreferenced WIP commits.
 - Historical vLLM adapter sources checked on 2026-06-13:
   `backup/ds4-sm120-preview-dev-before-stack-reorder-20260611190541` exists at
   `321eda45aa` and is useful pre-reorder stack context, but the exact
@@ -141,10 +142,12 @@ multi-prefill expansion. On RTX it removes the 65K `num_prefills_not_1` gate
 reason, reduces sparse accumulate time by `36.73%` at 65K and `44.19%` at 16K,
 and improves EP-off cold-prefill C=`1/2/4` endpoint throughput. Keep it
 default-off until paired/full correctness, prefix-cache-enabled lifecycle, and
-GB10 confirmation are green. GB10 16K reduced confirmation is positive
-(`sparse_accumulate` `-20.90%`, C=2 input tok/s `+15.10%`), but full GB10 is
-not green yet because the worker boot records NVRM OOM after a single case and
-the safety preflight refuses the next case until reboot.
+GB10 user/promotion gates are green. Reduced GB10 confirmation is now positive
+for 16K and 65K single-case runs with reboot between cases: 16K improved
+`sparse_accumulate` by `-20.90%` and C=2 input tok/s by `+15.10%`; 65K improved
+`sparse_accumulate` by `-19.98%` and C=2 input tok/s by `+9.07%`, with C=1
+effectively flat. This is enough to continue the route, but not enough to make
+it PR-default behavior.
 
 DFlash-style speculative/decode optimizations are treated as high-risk until
 they clear GSM8K and semantic gates. RTX PRO 6000 is the development and
