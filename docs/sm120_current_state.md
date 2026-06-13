@@ -78,6 +78,16 @@ Last updated: 2026-06-13.
   on the overlapping 16K/65K/124K points, so treat it as a mechanism reference
   for sparse-MLA/indexer/MoE investigation, not as directly promotable PR
   behavior or an RTX endpoint performance target.
+- First direct-paged sparse-prefill prototype:
+  `codex/ds4-sm120-sparse-prefill-dev-20260613` at `620c651203d` proves the
+  route can be reached without FlashInfer PR3395, but rejects the current
+  serial paged kernel shape. On RTX / SM120 the paired smoke dropped input
+  tok/s from `4096.00` to `1796.49`, raised mean TTFT from `248.58 ms` to
+  `571.11 ms`, and slowed sparse accumulate from `2.88178` to `12.1998`
+  ms/M effective visit. Keep the env gate as branch-local evidence only; the
+  next prototype should be a tiled/indexed-D512-style paged kernel, not a
+  decode-style serial direct loop. See
+  `docs/sm120/experiments/2026-06-13-direct-paged-prefill-prototype/README.md`.
 - Branch posture: keep `codex/ds4-sm120-min-enable` as the PR/user-facing
   base. Use `codex/ds4-sm120-sparse-prefill-dev-20260613`, based on
   `codex/ds4-sm120-pr3395-packed-dev-20260613` at `61966ba471`, as the current

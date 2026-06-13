@@ -77,6 +77,16 @@ Integrate the active routes in this order:
   at the overlapping 16K/65K/124K points, so study the B12X sparse
   MLA/indexer/MoE mechanisms as portability and workload references before
   spending effort on black-benediction's DFlash-specific line.
+- Rejected the first direct-paged sparse-prefill prototype on RTX / SM120.
+  `codex/ds4-sm120-sparse-prefill-dev-20260613` at `620c651203d` successfully
+  routes compressed non-indexed rows through a default-off
+  `mla_prefill_direct_paged` path without FlashInfer PR3395, but the current
+  serial per-candidate paged kernel regresses the paired smoke from `4096.00`
+  to `1796.49` input tok/s and from `248.58 ms` to `571.11 ms` mean TTFT.
+  Direct rows reached only about `4.0e7` sparse visits/s, below both existing
+  chunk rows and indexed-D512 rows. The next fork-independent prototype should
+  preserve indexed-D512-style parallel scoring/value reduction while loading
+  selected candidates from page tables.
 - Keep DeepGEMM `33a715e3d9634b64a351855c74ad64e2d9359c7e` as a separate
   alternate MoE / EP-decode candidate, not as part of the first sparse-prefill
   route. The commit title is `SM120: fp4-A x fp8-B mixed GEMM (kAIsFP4,
@@ -97,6 +107,7 @@ Integrate the active routes in this order:
 - `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/preflight.md`
 - `docs/sm120/experiments/2026-06-12-black-benediction-map/README.md`
 - `docs/sm120/experiments/2026-06-13-local-inference-main-baseline/README.md`
+- `docs/sm120/experiments/2026-06-13-direct-paged-prefill-prototype/README.md`
 - Local PR stable preview tag:
   `sm120-pr-41834-stable-preview-20260612075245`
 - Local fallback tag:
