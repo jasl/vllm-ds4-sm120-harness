@@ -24,14 +24,17 @@ Last updated: 2026-06-13.
    rerun preflight.
 7. Read `docs/sm120/experiments/2026-06-12-black-benediction-map/README.md`
    before porting or imitating the external black-benediction line.
-8. Read `docs/vllm_correctness_gates.md` for promotion requirements.
-9. Read `docs/sm12x_triton_sparse_mla_rewrite_plan.md` before starting the
+8. Read
+   `docs/sm120/experiments/2026-06-13-local-inference-main-baseline/README.md`
+   before using `local-inference-lab/vllm main` as a performance target.
+9. Read `docs/vllm_correctness_gates.md` for promotion requirements.
+10. Read `docs/sm12x_triton_sparse_mla_rewrite_plan.md` before starting the
    next fork-independent sparse-MLA prefill kernel/backend iteration.
-10. Read `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup and
+11. Read `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup and
    reduced long-context gates.
-11. Use `docs/sm120_experiment_index.md` to jump into pre-framework historical
+12. Use `docs/sm120_experiment_index.md` to jump into pre-framework historical
    experiments.
-12. Use `docs/sm120_optimization_notes.md` only when you need the detailed
+13. Use `docs/sm120_optimization_notes.md` only when you need the detailed
    legacy artifact trail or rejected-route rationale.
 
 ## Current Posture
@@ -66,13 +69,24 @@ Last updated: 2026-06-13.
   and wider promotion gates are green, with a reboot before the next GB10
   env-off capture control. Black-benediction DFlash/decode work is a
   second-stage reference, not the first cold-prefill route.
+- External fork baseline: `local-inference-lab/vllm main`
+  `183726aaa8e7` was reproduced on RTX / SM120 with the current EP-off MTP=2
+  profile after a temporary mixed page-size KV cache accounting patch. It
+  reaches `6687.35 / 6579.92 / 6425.10 / 6149.28 / 5709.02` input tok/s for
+  `8K / 16K / 32K / 65K / 124K` C=1 prefill, and GSM8K limit-200 8-shot scores
+  `0.965 / 0.965` flexible/strict. This is below our current RTX C=1 baseline
+  on the overlapping 16K/65K/124K points, so treat it as a mechanism reference
+  for sparse-MLA/indexer/MoE investigation, not as directly promotable PR
+  behavior or an RTX endpoint performance target.
 - Branch posture: keep `codex/ds4-sm120-min-enable` as the PR/user-facing
-  base. Use `codex/ds4-sm120-pr3395-packed-dev-20260613` at `741ea24c46` as
-  the current code-bearing dev branch; it descends from PR stable preview
-  `f32247a5a6`, the backend-parity diagnostics at `591b71bed0`, and the
-  default-off indexed D512 multi-prefill prototype. When the PR branch is
-  rebased later, recreate or rebase dev on the new PR tip and split any
-  PR-worthy dev fix into reviewable PR-branch commits.
+  base. Use `codex/ds4-sm120-sparse-prefill-dev-20260613`, based on
+  `codex/ds4-sm120-pr3395-packed-dev-20260613` at `61966ba471`, as the current
+  first-stage sparse-prefill development branch. The base descends from PR
+  stable preview `f32247a5a6`, the backend-parity diagnostics at `591b71bed0`,
+  the default-off indexed D512 multi-prefill prototype at `741ea24c46`, and
+  later prefix-guard / fused-sink fixes. When the PR branch is rebased later,
+  recreate or rebase dev on the new PR tip and split any PR-worthy dev fix into
+  reviewable PR-branch commits.
 - Naming posture: use SM120 for RTX PRO 6000 work and SM121 for GB10 work.
   B200 is an older SM10x baseline name and should appear only in historical
   notes or as a compatibility variable for older harness scripts.
@@ -150,7 +164,15 @@ Last updated: 2026-06-13.
   production profile: full top-k microbench was flat, and enabling the route
   caused startup failure during FULL_AND_PIECEWISE CUDA graph memory profiling
   with custom all-reduce. Do not add a DeepGEMM MQA env switch to Dev/PR unless
-  that startup failure and full top-k cost are solved.
+  that startup failure and full top-k cost are solved. This does not reject the
+  newer DeepGEMM `33a715e3d9634b64a351855c74ad64e2d9359c7e` MoE / EP-decode
+  candidate, which adds an SM120 `fp4-A x fp8-B` mixed-GEMM swapAB orientation.
+  Keep it as a backup study item after the sparse-prefill dataflow route: the
+  external claim is a `2x` MoE EP-decode kernel-speed bump from the commit plus
+  an optional swapAB gain around `6%`, while the commit note itself frames
+  swapAB as a smaller `3-6%` add-on and points at empty-tile skip as the larger
+  EP-decode lever. Reproduce on the same RTX and GB10 profiles before using it
+  as endpoint evidence.
 
 ## Promotion Matrix
 

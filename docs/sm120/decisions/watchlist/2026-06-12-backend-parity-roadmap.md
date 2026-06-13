@@ -68,6 +68,27 @@ Integrate the active routes in this order:
   new commits are DFlash/spec-decode and Triton MLA decode work, so they are a
   second-stage reference rather than the first sparse-prefill route. Reproduce
   any chosen mechanism with the harness before porting ideas.
+- Reproduced `local-inference-lab/vllm main` `183726aaa8e7` as the first
+  external endpoint baseline on RTX / SM120. With a temporary mixed page-size
+  KV cache accounting patch, EP-off MTP=2 prefill C=1 reached
+  `6687.35 / 6579.92 / 6425.10 / 6149.28 / 5709.02` input tok/s for
+  `8K / 16K / 32K / 65K / 124K`, and GSM8K limit-200 8-shot scored
+  `0.965 / 0.965` flexible/strict. This is below our current RTX C=1 baseline
+  at the overlapping 16K/65K/124K points, so study the B12X sparse
+  MLA/indexer/MoE mechanisms as portability and workload references before
+  spending effort on black-benediction's DFlash-specific line.
+- Keep DeepGEMM `33a715e3d9634b64a351855c74ad64e2d9359c7e` as a separate
+  alternate MoE / EP-decode candidate, not as part of the first sparse-prefill
+  route. The commit title is `SM120: fp4-A x fp8-B mixed GEMM (kAIsFP4,
+  swapAB orientation)` and it updates six SM120 mixed-GEMM files plus tests.
+  An external author recommendation says this commit is worth switching to for
+  better MoE EP performance, especially decode, with a claimed `2x` kernel
+  speedup from the commit bump and an optional swapAB add-on around `6%`.
+  Treat that as a same-host reproduction target, not as evidence yet. The
+  commit note itself says the swapAB orientation is only about `3-6%` faster
+  for MoE decode and that empty-tile skip is the more important EP-decode
+  lever, so the follow-up should measure both component kernels and endpoint
+  decode / mixed-arrival behavior before considering any vLLM route.
 
 ## Evidence
 
@@ -75,6 +96,7 @@ Integrate the active routes in this order:
 - `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/README.md`
 - `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/preflight.md`
 - `docs/sm120/experiments/2026-06-12-black-benediction-map/README.md`
+- `docs/sm120/experiments/2026-06-13-local-inference-main-baseline/README.md`
 - Local PR stable preview tag:
   `sm120-pr-41834-stable-preview-20260612075245`
 - Local fallback tag:
@@ -112,6 +134,9 @@ Integrate the active routes in this order:
   measured `0.432 ms` versus current D512 split+finish `0.209 ms` on
   `real_c128`, and grouped-stream component probes remain the stronger
   fork-independent sparse-MLA direction.
+- DeepGEMM alternate checked on 2026-06-13:
+  `deepseek-ai/DeepGEMM` commit `33a715e3d9634b64a351855c74ad64e2d9359c7e`
+  was fetched locally as a fixed reference for later MoE / EP-decode study.
 - Local freeze tags:
   `sm120-freeze-vllm-upstream-main-20260612`,
   `sm120-freeze-vllm-pr45277-20260612`,
@@ -186,6 +211,9 @@ single limited slice.
   gate or materially changes the packed SM120 sparse-MLA integration contract.
 - `dev/black-benediction` publishes or moves a performance-critical mechanism
   that our local harness cannot explain.
+- DeepGEMM `33a715e` or a successor becomes easy to route through the current
+  vLLM MoE path, or same-host component evidence confirms the claimed EP-decode
+  improvement without hurting correctness, memory margin, or GB10 stability.
 - A same-profile EP-off endpoint A/B contradicts the current route ordering.
 
 ## Supersedes

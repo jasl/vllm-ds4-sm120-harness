@@ -32,6 +32,7 @@ link them here after the package has at least a `README.md` and `evidence.md`.
 | [EP-Off Backend Revalidation](experiments/2026-06-12-epoff-backend-revalidation/README.md) | 2026-06-12 PR stable preview baseline and next backend A/B matrix | watchlist | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 | [EP-Off Bottleneck Map](experiments/2026-06-12-epoff-bottleneck-map/README.md) | RTX-first bottleneck attribution, correctness guard, GB10 confirmation plan, [preflight](experiments/2026-06-12-epoff-bottleneck-map/preflight.md), and [latest preflight result](experiments/2026-06-12-epoff-bottleneck-map/preflight-results.md) | watchlist | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 | [Black-Benediction Mechanism Map](experiments/2026-06-12-black-benediction-map/README.md) | External black-benediction reference split into portable, high-risk, and reference-only mechanisms | watchlist | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
+| [Local-Inference Main RTX Baseline](experiments/2026-06-13-local-inference-main-baseline/README.md) | External `local-inference-lab/vllm main` endpoint baseline for RTX / SM120 EP-off prefill and GSM8K | observation | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 
 ## Legacy Notes
 
