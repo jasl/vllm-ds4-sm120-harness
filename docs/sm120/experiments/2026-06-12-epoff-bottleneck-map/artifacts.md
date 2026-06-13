@@ -60,6 +60,12 @@ soak gates were still pending.
 | GB10 D512 multi-prefill forum53 C2 response-capture env-off control | `741ea24c46` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_off_capture_control/20260613061702` |
 | GB10 D512 cached-prefix guard forum53 clean-boot env-on | `d85821b8c4` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_cached_prefix_guard_cleanboot_20260613/20260613064338` |
 | GB10 D512 cached-prefix guard forum53 env-on, gmem 0.678 | `d85821b8c4` | SM121 GB10 x2 | off | enabled | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_cached_prefix_guard_gmem0678_20260613/20260613065521` |
+| RTX D512 fused sink component microbench | `d85821b8c4 + fused-sink patch` | SM120 RTX PRO 6000 x2 | n/a | n/a | `artifacts/main/2x_rtx_pro_6000_sm120/indexed_d512_fused_sink_component/20260613_d85821b_fused_sink` |
+| RTX D512 fused sink clean 124K control | `9e1bcfb6e` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/rtx_fused_sink_clean_off_124k_retry/20260613_fused_sink_clean_off_124k_retry` |
+| RTX D512 fused sink clean 124K prototype | `9e1bcfb6e` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/main/2x_rtx_pro_6000_sm120/rtx_fused_sink_clean_on_124k_retry/20260613_fused_sink_clean_on_124k_retry` |
+| RTX D512 fused sink prefix-cache guard | `61966ba471` | SM120 RTX PRO 6000 x2 | off | enabled | `artifacts/HEAD/2x_rtx_pro_6000_sm120/rtx_fused_sink_fixed_prefix_probe_retry/20260613_fused_sink_fixed_prefix_probe_retry` |
+| RTX D512 fused sink KV lifecycle guard | `61966ba471` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/HEAD/2x_rtx_pro_6000_sm120/rtx_fused_sink_fixed_kv_lifecycle/20260613_fused_sink_fixed_kv_lifecycle` |
+| RTX D512 fused sink GSM8K 5-shot | `61966ba471` | SM120 RTX PRO 6000 x2 | off | disabled | `artifacts/HEAD/2x_rtx_pro_6000_sm120/rtx_fused_sink_fixed_gsm8k_limit200/20260613_fused_sink_fixed_gsm8k_limit200` |
 | RTX EP-on attribution comparison | `f32247a5a6` | SM120 RTX PRO 6000 x2 | on | disabled | _pending_ |
 | RTX GSM8K paired/full correctness guard | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
 | RTX local quality expansion | candidate branch | SM120 RTX PRO 6000 x2 | off | disabled | _pending_ |
@@ -83,6 +89,7 @@ soak gates were still pending.
 | GB10 D512 multi-prefill forum53 C2 response-capture env-off control | `741ea24c46` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_off_capture_control/20260613061702` | Serve preflight refused the run because the current boot already had an NVRM OOM record. Reboot before using this as an env-off capture control. |
 | GB10 D512 cached-prefix guard forum53 clean-boot env-on | `d85821b8c4` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_cached_prefix_guard_cleanboot_20260613/20260613064338` | Matrix passed with 4/4 requests and 0 failures after blocking multi-request D512 on cached-prefix rows, but driver health was dirty with 3 worker-side NVRM OOM signals. Use as correctness-guard evidence only, not as a clean GB10 gate. |
 | GB10 D512 cached-prefix guard forum53 env-on, gmem 0.678 | `d85821b8c4` | `artifacts/main/2x_gb10_sm121/gb10_forum53_mtp2_epoff_d512_cached_prefix_guard_gmem0678_20260613/20260613065521` | Matrix again passed with 4/4 requests and 0 failures, but one worker-side NVRM OOM signal still appeared during full-model load. Lowering GPU memory utilization did not produce clean driver health. |
+| RTX D512 fused sink combined correctness before guard fix | `9e1bcfb6e` | `artifacts/main/2x_rtx_pro_6000_sm120/rtx_fused_sink_correctness_prefix_kv_gsm8k/20260613_fused_sink_correctness_prefix_kv_gsm8k` | Superseded diagnostic. Prefix-cache probe passed, but the later KV/GSM8K sequence exposed a cached-prefix guard crash in `_prefill_has_cached_prefix` when `seq_lens_cpu` was prefill-only. Fixed by `61966ba471`; use the separate clean guards instead. |
 
 ## Latest RTX Attribution Snapshot
 
@@ -164,6 +171,21 @@ MTP2 prefix-cache shape passed twice with 4/4 requests and 0 failures. These
 runs are still not clean promotion gates because the worker boot logged NVRM
 OOM during the full-model load path. Reducing GPU memory utilization from
 `0.685` to `0.678` lowered the signal count but did not eliminate it.
+
+## Latest RTX D512 Fused Sink Snapshot
+
+| Gate | Input tok/s | Mean TTFT ms | P99 TTFT ms | Sparse accumulate ms | Guard result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 124K fused sink off | 6946.78 | 17848.74 | 18013.99 | 24491.340 | n/a |
+| 124K fused sink on | 7037.46 | 17619.41 | 17829.53 | 21900.707 | n/a |
+| prefix-cache guard | n/a | n/a | n/a | n/a | 7 requests, 0 failures |
+| KV lifecycle guard | n/a | n/a | n/a | n/a | 4 requests, 0 failures, max idle KV 0.000% |
+| GSM8K 5-shot limit-200 | n/a | n/a | n/a | n/a | flexible/strict `0.960 / 0.935`, floor gate passed |
+
+Component production-with-sink microbench showed exact output match and
+`1.123x / 1.096x` speedup for candidates `640 / 1152`. Clean endpoint gain is
+positive but small, so this remains a default-off component candidate rather
+than a promotion-ready route.
 
 ## Latest RTX NCU Snapshot
 

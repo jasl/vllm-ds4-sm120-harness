@@ -19,7 +19,9 @@ scheduler/KV admission behavior?
 - vLLM branch/commit: PR stable preview `f32247a5a6` as the control;
   backend-parity diagnostic base `591b71bed0`; current code-bearing dev branch
   `codex/ds4-sm120-pr3395-packed-dev-20260613` at `741ea24c46` for the
-  default-off indexed D512 multi-prefill prototype.
+  default-off indexed D512 multi-prefill prototype and `61966ba471` for the
+  follow-up default-off D512 fused sink-finish prototype plus cached-prefix
+  guard fix.
 - Dependency or image identity: vLLM upstream/main `b7f9b6a`,
   FlashInfer upstream/main `d65c3eb`,
   `flashinfer-ai/flashinfer#3395` head `88539d03`, b12x master `fabb087`,
@@ -176,6 +178,33 @@ to separate nonfatal full-model-load NVRM OOM from actual inference failure, or
 find a launch profile that keeps driver health clean without falling below the
 80K forum53 context requirement.
 
+The second fork-independent endpoint prototype is the narrower env-gated
+`VLLM_DEEPSEEK_V4_INDEXED_D512_FUSED_SINK_PREFILL=1` D512 value+sink-finish
+fusion. It does not depend on FlashInfer PR3395. Component evidence is exact:
+for production split+finish with sink, the fused helper matched output with
+max diff `0` and improved candidates `640 / 1152` by `1.123x / 1.096x`.
+Clean RTX 124K C=1 endpoint evidence is positive but modest: input tok/s
+`6946.78 -> 7037.46` (`+1.31%`), mean TTFT
+`17848.74 -> 17619.41 ms` (`-1.28%`), and `sparse_accumulate`
+`24491.34 -> 21900.71 ms` (`-10.58%`). Treat it as a valid default-off
+candidate and a useful kernel-shape reduction, not as enough by itself to
+close the Aiden/unholy gap.
+
+The first combined correctness run for the fused-sink prototype exposed a real
+cached-prefix guard bug from the earlier `d85821b8c4` guard: in one metadata
+layout `seq_lens_cpu` is prefill-only, while `_prefill_has_cached_prefix`
+assumed decode+prefill indexing and crashed on a mismatched tensor length.
+Commit `61966ba471` fixes that guard by accepting both full and prefill-only
+`seq_lens_cpu` layouts and failing closed for inconsistent metadata. On clean
+RTX source after that fix:
+
+- `prefix_cache_probe`: phase exit `0`, 7/7 requests OK, no suspect prefix
+  regression.
+- `kv_lifecycle_probe`: phase exit `0`, 4 requests, 0 failures, max idle KV
+  `0.000%` under the `2.000%` threshold.
+- GSM8K 5-shot limit-200: phase exit `0`, flexible/strict
+  `0.960 / 0.935`, floor gate passed.
+
 The earlier artifact
 `artifacts/main/2x_rtx_pro_6000_sm120/sm120_epoff_bottleneck_attribution/20260612233142`
 is performance-only evidence. Do not use it for sparse-MLA attribution because
@@ -210,6 +239,12 @@ bottleneck as sparse MLA accumulate rather than scheduler/KV admission:
   multi-request cached-prefix extend rows, but the route remains default-off
   until paired correctness, prefix-cache-enabled lifecycle, and clean GB10
   user/promotion gates are green.
+- The env-gated fused sink-finish route is lower risk than multi-prefill
+  because it does not change which rows enter indexed D512; it only removes one
+  finish launch/work pass from the existing split path. RTX correctness guards
+  are now green after `61966ba471`. Its endpoint win is too small/noisy to make
+  it the main performance answer, so keep it default-off and use it as one
+  composable piece for the next fused dual-stream/finish prototype.
 - Public b12x readiness has moved from "missing APIs" to "not yet integrated
   or not fast enough as a direct endpoint route." Keep b12x `0.20.0` no-deps
   available for component probes, but do not port public compressed MLA

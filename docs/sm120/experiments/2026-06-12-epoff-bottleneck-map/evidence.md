@@ -123,6 +123,46 @@ runs show no correctness regression from multi-prefill D512: the prototype
 matches the 2026-06-12 stable-preview flexible score `0.965` and improves over
 the same-environment multi-prefill-off control.
 
+## D512 Fused Sink-Finish Prototype
+
+The follow-up fork-independent prototype fuses the indexed D512 split value
+stage with sink finish behind
+`VLLM_DEEPSEEK_V4_INDEXED_D512_FUSED_SINK_PREFILL=1`. It does not change which
+prefill rows are eligible for indexed D512; it only removes a finish pass from
+the existing split path.
+
+Component production-with-sink microbench:
+
+| Candidates | Split+finish ms | Fused-with-sink ms | Speedup | Max abs diff |
+| ---: | ---: | ---: | ---: | ---: |
+| 640 | 0.266 | 0.237 | `1.123x` | 0.000000 |
+| 1152 | 0.485 | 0.443 | `1.096x` | 0.000000 |
+
+Clean RTX 124K C=1 endpoint A/B, EP-off, MTP=2, prefix cache disabled,
+`FULL_AND_PIECEWISE`:
+
+| Gate | Input tok/s | Mean TTFT ms | P99 TTFT ms | Sparse accumulate ms | Sparse visits/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| fused sink off | 6946.78 | 17848.74 | 18013.99 | 24491.340 | 1.062e9 |
+| fused sink on | 7037.46 | 17619.41 | 17829.53 | 21900.707 | 1.188e9 |
+| delta | `+1.31%` | `-1.28%` | `-1.02%` | `-10.58%` | `+11.83%` |
+
+The endpoint gain is real in sparse-stage accounting but modest at request
+level. This route is therefore useful as a default-off component for a later
+fused dual-stream/finish design, not as the whole performance answer.
+
+The first combined correctness run found a separate cached-prefix guard bug:
+`_prefill_has_cached_prefix` assumed a full decode+prefill `seq_lens_cpu`
+layout, while the failing runtime shape provided prefill-only sequence lengths.
+Commit `61966ba471` fixes this by accepting both layouts and failing closed for
+inconsistent metadata. Clean RTX guards after that fix:
+
+| Guard | Env | Result |
+| --- | --- | --- |
+| prefix-cache probe | `VLLM_DEEPSEEK_V4_INDEXED_D512_FUSED_SINK_PREFILL=1` | phase exit `0`; 7 requests, 0 failures; no suspect prefix regression |
+| KV lifecycle | `VLLM_DEEPSEEK_V4_INDEXED_D512_FUSED_SINK_PREFILL=1` | phase exit `0`; 4 requests, 0 failures; max idle KV `0.000%` under `2.000%` |
+| GSM8K 5-shot limit-200 | `VLLM_DEEPSEEK_V4_INDEXED_D512_FUSED_SINK_PREFILL=1` | phase exit `0`; flexible/strict `0.960 / 0.935`; floor gate passed |
+
 GB10 reduced confirmation:
 
 | Input length | Metric | Multi-prefill off | Multi-prefill on | Delta |
@@ -256,10 +296,14 @@ mixed arrival, prefix/KV lifecycle, GSM8K limit-200, and a full GB10 soak.
    response-capture control after reboot, sustained soak, and a fix or
    operating rule for the post-run NVRM OOM state before this route can be
    promoted.
-4. Keep b12x `0.20.0` no-deps as the current public-b12x component-probe
+4. Keep the fused sink-finish route default-off. It has green RTX correctness
+   and a clean sparse-stage win, but its clean endpoint gain is too small to
+   prioritize GB10 promotion before a broader fused dual-stream/finish
+   prototype.
+5. Keep b12x `0.20.0` no-deps as the current public-b12x component-probe
    state, but do not add a DS4 compressed-MLA endpoint adapter unless a newer
    backend/dataflow beats current D512 split+finish.
-5. Treat FlashInfer PR3395 packed SM120 sparse MLA as a valuable fork route,
+6. Treat FlashInfer PR3395 packed SM120 sparse MLA as a valuable fork route,
    not as an official-wheel blocker. Earlier endpoint-shaped probes showed
    about `10-23%` TTFT improvement, so a new attempt is worth doing, but it
    must stay behind `VLLM_DEEPSEEK_V4_FLASHINFER_PACKED_PREFILL=1` until the
