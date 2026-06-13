@@ -1723,6 +1723,7 @@ def test_gb10_forum53_multi_user_gate_matches_user_report_shape():
     assert 'FULL_AND_PIECEWISE' in script
     assert '{"method":"mtp","num_speculative_tokens":2}' in script
     assert '"${REMOTE_HARNESS_ROOT}/scripts/run_streaming_pressure_matrix.sh"' in script
+    assert 'VLLM_ROOT=$(shell_quote "${VLLM_ROOT}")' in script
     assert "gb10_forum53_multi_user_gate_summary.json" in script
     assert "gb10_forum53_multi_user_gate_summary.md" in script
     trace_assignment = '    VLLM_SCHEDULER_TRACE_PATH="${scheduler_trace_path}"'

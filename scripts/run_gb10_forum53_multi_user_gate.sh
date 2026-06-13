@@ -96,6 +96,7 @@ run_remote_streaming_matrix() {
   run_remote "${HEAD_HOST}" \
     "cd $(shell_quote "${REMOTE_HARNESS_ROOT}") && env \
       PYTHON=$(shell_quote "${VLLM_VENV}/bin/python") \
+      VLLM_ROOT=$(shell_quote "${VLLM_ROOT}") \
       BASE_URL=$(shell_quote "http://127.0.0.1:${API_PORT}") \
       MODEL=$(shell_quote "${MODEL_ID}") \
       GPU_TOPOLOGY_SLUG=$(shell_quote "${GPU_TOPOLOGY_SLUG}") \
