@@ -137,21 +137,29 @@ Last updated: 2026-06-14.
   `+25%` at C8 and `+32%` at C64, closing `~72%` of the gap (residual is the
   `flashinfer_cutlass` MoE), and is GSM8K-neutral vs the FlashMLA-decode
   baseline. Keep GSM8K and GB10 lifecycle gates as promotion requirements.
-- 2026-06-14 upstream rebase: the PR stack `codex/ds4-sm120-min-enable` was
-  rebased onto upstream/main `c621af1690` (was `8a91228dbe`) to absorb
-  `vllm-project/vllm#45277`; the dev branch
-  `codex/ds4-sm120-lucifer-decode-gap-20260614` (`0b0b9ea830`) sits on top with
-  the packed prefill + SM120 decode. Only one manual conflict (the sparse-MLA
-  `indexer.py use_flattening` block vs `#45322`, resolved by adding the SM12x
-  family exclusion). `#45277` is build hygiene only -- it does NOT change SM120
-  runtime behavior (the newly-covered `DSV3_FUSED_A_GEMM` 12.0 kernel is not
-  dispatched on SM120; `scaled_mm`/`cutlass_moe` SM120 archs were already
-  covered). DeepSeek V4 stays on the V1 model runner after `#42667` (absent from
-  the v2 default arch set and excluded by the fp8 `is_quantized` gate). The
-  rebased+rebuilt dev stack revalidated clean on dual RTX PRO 6000 / SM120:
-  ctx0 decode no regression (`2650 tok/s` at C64, temp 0) and GSM8K 5-shot
-  limit-500 temp-0 `0.92/0.892` gate-on vs `0.914/0.884` gate-off (decode kernel
-  correctness-neutral). Backup tags `sm120-*-before-upstream-rebase-20260614`.
+- 2026-06-14 upstream rebase: the authoritative PR `codex/ds4-sm120-min-enable`
+  (`531807c34b`, 162 commits) was rebased onto upstream/main `c621af1690` ->
+  `f031e4206d`, ZERO conflicts (its newer indexer merges cleanly with `#45322`).
+  The dev branch `codex/ds4-sm120-lucifer-decode-gap-20260614` (`2bae3318b0`) =
+  rebased PR + the SM120 decode port (cherry-picked; one trivial `envs.py`
+  conflict). The 8 packed-prefill commits were NOT replayed: they are parallel
+  SM12x prefill work to 531807c's own D512 prefill and are not needed for the
+  decode port (which reuses the FlashMLA backend's packed cache); reconciling
+  them onto 531807c is deferred. `#45277` is build hygiene only -- it does NOT
+  change SM120 runtime behavior (the newly-covered `DSV3_FUSED_A_GEMM` 12.0
+  kernel is not dispatched on SM120; `scaled_mm`/`cutlass_moe` SM120 archs were
+  already covered). DeepSeek V4 stays on the V1 model runner after `#42667`
+  (absent from the v2 default arch set and excluded by the fp8 `is_quantized`
+  gate). Rebuilt SM120-only (`TORCH_CUDA_ARCH_LIST=12.0`; FlashMLA is
+  arch-skipped on SM120 so its `.so` are reused) and revalidated clean on dual
+  RTX PRO 6000 / SM120: ctx0 decode no regression (`2661 tok/s` at C64, temp 0)
+  and GSM8K 5-shot limit-500 temp-0 `0.938/0.920` (at the promotion floors;
+  decode kernel correctness-neutral vs a gate-off control). Pushed to
+  `origin` (force-with-lease). Process note: an initial attempt rebased a STALE
+  local PR base (`f32247a5a`, 96 commits) and force-pushed it over the
+  authoritative `531807c`; origin was restored from local objects (no work lost)
+  and the rebase redone on `531807c`. Backup tags
+  `sm120-*-before-upstream-rebase-20260614` and `sm120-pr-authoritative-531807c-20260614`.
 - Aiden/unholy-fusion external route: keep the NVIDIA forum Aiden recipe as a
   separate GB10 / SM121 watchlist item, not as evidence that the public
   black-benediction branch should be ported whole. The thread reports a
