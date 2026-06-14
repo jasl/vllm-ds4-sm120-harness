@@ -847,15 +847,31 @@ Pure C=1 median TTFT (ms), stats OFF, baseline drift `<=0.5%`:
 | 32K | 1110.3 | 1100.8 | -0.9% | ~flat (gate inactive) |
 | 65K | 2403.3 | 2362.1 | -1.7% | ~flat (gate inactive) |
 
-Packed: a real but tiny `-1.7%` best case, far below the stale-base `+22%`. The
-`STATS_STAGE_TIMING` breakdown (instrumentation overhead is only ~`1.7%`, so the
-warm instrumented run agrees with pure) shows why: packed collapses the
-`sparse_accumulate` stage `277 -> 24 ms` (`-91%`, and `by_compress_ratio` drops
-from `{1,4,128}` to `{1}` only), but end-to-end TTFT is flat because packed and
-the base D512-split path are mutually exclusive on the cr-4/128 prefill regions
-(per-chunk `_try_forward_flashinfer_packed_prefill` then `continue`), so the work
-relocates into the `flashinfer_packed_attention` stage at ~equal cost. This is
-stage-relocation, not a speedup.
+Packed: a real but tiny `-1.7%` best case, far below the stale-base `+22%`.
+Packed collapses the `sparse_accumulate` stage `277 -> 24 ms` (`-91%`, and
+`by_compress_ratio` drops from `{1,4,128}` to `{1}` only) yet end-to-end TTFT is
+flat. A same-build SPLIT x PACKED 2x2 (archived `fa8f7b222`, toggling the base
+`INDEXED_D512_SPLIT`/`CHUNKED` gates and `PACKED`) explains why -- packed and the
+base default indexed-D512 are two routes to the SAME prefill TTFT gain, and the
+base now ships that route on by default, so packed is redundant:
+
+| 16K / 65K median TTFT (ms) | indexed-D512 OFF | indexed-D512 ON (531807c default) |
+| :--- | ---: | ---: |
+| packed OFF | 181 / 330 | 161 / 299 |
+| packed ON  | 160 / 301 | 161 / 309 |
+
+On the unoptimized base packed is a real `-11.5% / -8.6%` (181->160, 330->301);
+the base default indexed-D512 alone is the same `-10.9% / -9.2%` (181->161,
+330->299); packed ON TOP of the base default is `-0.4% / +3.3%` (i.e. nothing).
+So it is NOT stage-relocation at equal cost (packed actually cuts the stage
+harder than the base default, `12 ms` vs `277 ms`); it is that the rebased base
+already moved prefill TTFT past the point where `sparse_accumulate` is the
+bottleneck, so packed's (genuine) extra stage reduction no longer translates.
+This vindicates "the base absorbed the gain" at the end-to-end level. (Absolute
+TTFT in this 2x2 run is ~5.8x lower than the C=1 pure table above for the same
+config -- an unexplained run-to-run delta, likely warmup/autotune state or
+partial prefix-cache reuse across repeated requests; it does not change the
+relative within-run conclusion, which agrees with the pure C=1 `-1.7%`.)
 
 D512 multi-prefill: `_allow_indexed_d512_prefill_request_count` returns true for
 `request_count == 1` regardless of the gate, so the gate only changes behavior at

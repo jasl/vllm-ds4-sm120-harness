@@ -170,11 +170,16 @@ Last updated: 2026-06-14.
   expectation on this base, so per the measured-drop rule both were dropped.
   (1) Packed FlashInfer prefill gives only `-0.9% / -0.9% / -1.7%` median TTFT
   vs baseline (drift `<=0.5%`), NOT the stale-base `+22%`. Its `sparse_accumulate`
-  stage collapses `277 -> 24 ms` (`-91%`) but end-to-end TTFT barely moves,
-  because packed and the base D512-split path are mutually exclusive (per-chunk
-  try-packed-then-fall-through) and the work just relocates into
-  `flashinfer_packed_attention` at ~equal cost -- stage-relocation, not a
-  speedup. (2) The D512 *multi*-prefill gate only changes behavior at
+  stage collapses `277 -> 24 ms` (`-91%`) but end-to-end TTFT barely moves. A
+  same-build SPLIT x PACKED 2x2 proves the mechanism: packed and the base default
+  indexed-D512 are two routes to the SAME ~`10%` prefill TTFT gain -- on the
+  unoptimized base (indexed-D512 off) packed is `-11.5% / -8.6%` (16K/65K) and the
+  base default indexed-D512 alone is the same `-10.9% / -9.2%`, but packed ON TOP
+  of the base default is `-0.4% / +3.3%` (nothing). The base now ships that route
+  on by default, so packed is redundant (NOT stage-relocation at equal cost --
+  packed cuts the stage harder, but the base already moved prefill past the point
+  where `sparse_accumulate` is the bottleneck). (2) The D512 *multi*-prefill gate
+  only changes behavior at
   `num_prefills > 1` (the `request_count == 1` branch uses the base path
   regardless), so it is inactive under the C=1 spec; and its only active regime
   (co-batching >=2 prefills of >=8192 tokens) is memory-infeasible on 2x RTX PRO
