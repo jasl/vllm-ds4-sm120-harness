@@ -111,12 +111,13 @@ Last updated: 2026-06-14.
   C4 crossover, but lags locally reproduced Lucifer+PR3395 by `16-42%` from
   C8 through C64. The coupled Lucifer stack passed GSM8K 5-shot limit-200 at
   C=1 and C=4, so it is real headroom, not a dismissed benchmark artifact.
-  The opt-in PR3395 reintegration improves the local cold-prefill attribution
-  gate by about `+22%` at 16K/65K, but the community-shaped prefill-only scout
-  only improves warm gate-on by `+0.8% / +1.2% / +8.3%` at 8K/64K/128K and
-  still lags published Lucifer prefill by `27-35%`. Treat this as useful
-  prefill dataflow evidence and a dev-branch route, not as solved decode or
-  prefill parity. See
+  The opt-in PR3395 reintegration improved the local cold-prefill attribution
+  gate by about `+22%` at 16K/65K on the *stale* pre-rebase base; this is
+  SUPERSEDED -- on the authoritative `531807c` it is only `-1.7%` and was dropped
+  (see the 2026-06-15 prefill attribution bullet). The community-shaped
+  prefill-only scout only improved warm gate-on by `+0.8% / +1.2% / +8.3%` at
+  8K/64K/128K and still lags published Lucifer prefill by `27-35%`. Treat this as
+  useful prefill dataflow evidence, not as solved decode or prefill parity. See
   `docs/sm120/experiments/2026-06-14-rtx-llm-decode-bench/README.md`.
   A 2026-06-14 same-session 2x2 attribution pass (Lucifer vs current, MTP
   on/off, on a clean reboot) root-caused the C8-C64 ctx0 decode gap to the
@@ -145,7 +146,9 @@ Last updated: 2026-06-14.
   conflict). The 8 packed-prefill commits were NOT replayed: they are parallel
   SM12x prefill work to 531807c's own D512 prefill and are not needed for the
   decode port (which reuses the FlashMLA backend's packed cache); reconciling
-  them onto 531807c is deferred. `#45277` is build hygiene only -- it does NOT
+  them onto 531807c was completed on 2026-06-15 and both feature pairs were
+  measured and DROPPED (see the 2026-06-15 prefill attribution bullet below).
+  `#45277` is build hygiene only -- it does NOT
   change SM120 runtime behavior (the newly-covered `DSV3_FUSED_A_GEMM` 12.0
   kernel is not dispatched on SM120; `scaled_mm`/`cutlass_moe` SM120 archs were
   already covered). DeepSeek V4 stays on the V1 model runner after `#42667`
@@ -160,6 +163,36 @@ Last updated: 2026-06-14.
   authoritative `531807c`; origin was restored from local objects (no work lost)
   and the rebase redone on `531807c`. Backup tags
   `sm120-*-before-upstream-rebase-20260614` and `sm120-pr-authoritative-531807c-20260614`.
+- 2026-06-15 prefill attribution on authoritative `531807c` (both features
+  DROPPED): the 4 packed/D512-multi prefill commits were cherry-picked onto the
+  decode dev and measured per-feature with warm, repeated, drift-checked pure
+  (uninstrumented) cold-prefill at C=1 OSL=1, 16K/32K/65K. Verdict: neither meets
+  expectation on this base, so per the measured-drop rule both were dropped.
+  (1) Packed FlashInfer prefill gives only `-0.9% / -0.9% / -1.7%` median TTFT
+  vs baseline (drift `<=0.5%`), NOT the stale-base `+22%`. Its `sparse_accumulate`
+  stage collapses `277 -> 24 ms` (`-91%`) but end-to-end TTFT barely moves,
+  because packed and the base D512-split path are mutually exclusive (per-chunk
+  try-packed-then-fall-through) and the work just relocates into
+  `flashinfer_packed_attention` at ~equal cost -- stage-relocation, not a
+  speedup. (2) The D512 *multi*-prefill gate only changes behavior at
+  `num_prefills > 1` (the `request_count == 1` branch uses the base path
+  regardless), so it is inactive under the C=1 spec; and its only active regime
+  (co-batching >=2 prefills of >=8192 tokens) is memory-infeasible on 2x RTX PRO
+  6000 -- the 148 GiB model on 2x95 GiB leaves only ~4 GiB KV after the large
+  prefill-batch activations, so 5 multi-request serve attempts all OOM'd
+  (`No available memory for the cache blocks` / KV starvation). Root cause for
+  both: the rebase onto `531807c` already absorbed the prefill work into base
+  defaults (`ab66ecf7` enables indexed-D512 sparse-MLA prefill BY DEFAULT, plus
+  retuned tiles and the multi-head accumulate kernel), so the hand-ported
+  features are redundant on the new base. The dev branch
+  `codex/ds4-sm120-lucifer-decode-gap-20260614` is now `75a7118086d` = rebased PR
+  + decode port + the 3 kept sparse-MLA stats diagnostics only; pushed to origin
+  as a clean fast-forward (no force needed -- the 4 prefill commits were never on
+  origin). Dropped work is archived at tag
+  `sm120-prefill-cherrypick-archived-20260615` (`fa8f7b222f6`). Instrumentation
+  note: `VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING=1` overhead is only
+  ~`1.7%` (pure C=1 16K TTFT `934 ms` vs instrumented `950 ms`), so the kept
+  stats diagnostics are cheap enough to leave default-off-but-available.
 - Aiden/unholy-fusion external route: keep the NVIDIA forum Aiden recipe as a
   separate GB10 / SM121 watchlist item, not as evidence that the public
   black-benediction branch should be ported whole. The thread reports a

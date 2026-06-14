@@ -829,3 +829,63 @@ is identical to the baseline and Lucifer's same kernel scores `0.955 / 0.955`.
 Promotion still requires a tighter GSM8K (higher limit or temperature 0), the
 full RTX promotion matrix, and the GB10 long-context / lifecycle gates; keep the
 route default-off behind the env gate until those pass.
+
+## Phase 3b: Prefill Feature Attribution On Authoritative 531807c (both dropped)
+
+After the decode port, the 4 packed/D512-multi prefill commits (cherry-picked
+onto the decode dev as `fa8f7b222` = decode + 3 diagnostics + `f19e6311`/
+`fb07785d` D512-multi + `338b6c37`/`fa8f7b22` packed) were measured per-feature
+on the authoritative `531807c` base to decide keep/drop. The decisive metric is
+pure (uninstrumented) median TTFT at C=1 OSL=1, warm and repeated (n=8), with a
+baseline re-measured last as a drift check. Both pairs were dropped.
+
+Pure C=1 median TTFT (ms), stats OFF, baseline drift `<=0.5%`:
+
+| ISL | baseline (avg) | packed | delta | d512multi |
+| ---: | ---: | ---: | ---: | :--- |
+| 16K | 935.4 | 926.7 | -0.9% | ~flat (gate inactive) |
+| 32K | 1110.3 | 1100.8 | -0.9% | ~flat (gate inactive) |
+| 65K | 2403.3 | 2362.1 | -1.7% | ~flat (gate inactive) |
+
+Packed: a real but tiny `-1.7%` best case, far below the stale-base `+22%`. The
+`STATS_STAGE_TIMING` breakdown (instrumentation overhead is only ~`1.7%`, so the
+warm instrumented run agrees with pure) shows why: packed collapses the
+`sparse_accumulate` stage `277 -> 24 ms` (`-91%`, and `by_compress_ratio` drops
+from `{1,4,128}` to `{1}` only), but end-to-end TTFT is flat because packed and
+the base D512-split path are mutually exclusive on the cr-4/128 prefill regions
+(per-chunk `_try_forward_flashinfer_packed_prefill` then `continue`), so the work
+relocates into the `flashinfer_packed_attention` stage at ~equal cost. This is
+stage-relocation, not a speedup.
+
+D512 multi-prefill: `_allow_indexed_d512_prefill_request_count` returns true for
+`request_count == 1` regardless of the gate, so the gate only changes behavior at
+`num_prefills > 1`. Under the C=1 OSL=1 spec the gate is therefore inactive (the
+base default-on `VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL` handles single
+prefills). Its only active regime -- co-batching `>=2` prefills of `>=8192`
+tokens (`_INDEXED_D512_SPLIT_PREFILL_MIN_TOKENS = 8192`) in one forward -- is
+memory-infeasible on 2x RTX PRO 6000: at the raised `max-num-batched-tokens`
+needed to co-schedule two long prefills, the 148 GiB model on 2x95 GiB leaves
+only ~`4.1 GiB` for KV, but one `>=8192`-token request needs ~`8 GiB`, so five
+serve configurations (batched 49152/20480, gpu-util 0.90/0.85, cudagraph and
+enforce-eager, max-model-len 131072/24576) all failed engine init with
+`No available memory for the cache blocks` / KV starvation. So on this exact
+deployment hardware d512multi can never engage.
+
+Root cause for both: the upstream rebase onto `531807c` already absorbed the
+prefill work into base defaults -- `ab66ecf7` enables indexed-D512 sparse-MLA
+prefill BY DEFAULT, plus the retuned split tiles, empty-tail skip, and the
+multi-head accumulate kernel -- so the hand-ported features (validated earlier on
+the stale pre-rebase base) are redundant on the new base. The dev branch is now
+`75a7118086d` = rebased PR + decode port + the 3 kept sparse-MLA stats
+diagnostics; pushed to origin as a clean fast-forward. Dropped work is archived
+at tag `sm120-prefill-cherrypick-archived-20260615` (`fa8f7b222f6`).
+
+Methodology pitfalls recorded for reuse: (1) a single cold request gives noisy
+TTFT (an early run showed a spurious 2x baseline-16K outlier that the n=8 warm
+repeat erased); warm + repeat + a baseline drift control are required. (2) The
+sparse-MLA stats key is `stage_timings_ms.sparse_accumulate`, not
+`timing_stages`; per-ISL attribution needs the stats files truncated between
+ISLs since one serve appends all requests' layers. (3) Passing env-var
+assignments through a bash function via `"$@"` is not re-recognized as an
+assignment prefix after expansion (`VAR=1: command not found`); wrap the command
+in `env "$@"`.

@@ -100,7 +100,15 @@ packed kernel's fixed overhead loses at small batch). See the
 
 A PR3395 packed-prefill reintegration check showed two different prefill
 signals. The attribution gate improved 16K/65K cold prefill by about +22% and
-cut the isolated sparse stage sharply. However, the community-shaped
+cut the isolated sparse stage sharply ON THE STALE PRE-REBASE BASE. This is
+SUPERSEDED: a 2026-06-15 per-feature re-measurement on the authoritative
+`531807c` (warm, repeated, pure C=1 OSL=1) found packed only `-1.7%` end-to-end
+(the `-91%` `sparse_accumulate` is stage-relocation into
+`flashinfer_packed_attention`, not a speedup) and D512-multi inactive at C=1 /
+memory-infeasible multi-request on 2x RTX, so both prefill feature pairs were
+DROPPED -- the rebased base already enables indexed-D512 prefill by default. See
+the "Phase 3b" section in [evidence.md](evidence.md). However, the
+community-shaped
 `llm_decode_bench.py --prefill-only --prefill-contexts 8k,64k,128k` scout only
 improved the warm reintegrated branch by `+0.8% / +1.2% / +8.3%` versus gate
 off and still lagged the published Lucifer TP2 MTP-on prefill row by
