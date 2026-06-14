@@ -6,7 +6,7 @@ next-step decisions. New experiment notes and durable decisions should use the
 framework in `docs/sm120/`. Treat `docs/sm120_optimization_notes.md` as the
 legacy evidence archive.
 
-Last updated: 2026-06-13.
+Last updated: 2026-06-14.
 
 ## Read Order
 
@@ -27,14 +27,31 @@ Last updated: 2026-06-13.
 8. Read
    `docs/sm120/experiments/2026-06-13-local-inference-main-baseline/README.md`
    before using `local-inference-lab/vllm main` as a performance target.
-9. Read `docs/vllm_correctness_gates.md` for promotion requirements.
-10. Read `docs/sm12x_triton_sparse_mla_rewrite_plan.md` before starting the
+9. Read
+   `docs/sm120/experiments/2026-06-13-black-benediction-rtx-public-stack/README.md`
+   before using `local-inference-lab/vllm dev/black-benediction` as an endpoint
+   performance target.
+10. Read
+   `docs/sm120/experiments/2026-06-13-aiden-recipe-forum-watch/README.md`
+   before treating Aiden/unholy-fusion forum results as an implementation
+   target.
+11. Read
+   `docs/sm120/decisions/watchlist/2026-06-13-upstream-mrv2-cudagraph-watch.md`
+   before rebasing over upstream Model Runner v2 changes or testing breakable
+   CUDA graph.
+12. Read
+   `docs/sm120/experiments/2026-06-14-rtx-llm-decode-bench/README.md`
+   before comparing against community `llm_decode_bench.py` rows, Lucifer plus
+   PR3395, FlashInfer CUTLASS MoE, DeepGEMM, or the PR3395 reintegration
+   scouts.
+13. Read `docs/vllm_correctness_gates.md` for promotion requirements.
+14. Read `docs/sm12x_triton_sparse_mla_rewrite_plan.md` before starting the
    next fork-independent sparse-MLA prefill kernel/backend iteration.
-11. Read `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup and
+15. Read `docs/dgx_spark_bare_metal_cluster.md` for GB10 / SM121 setup and
    reduced long-context gates.
-12. Use `docs/sm120_experiment_index.md` to jump into pre-framework historical
+16. Use `docs/sm120_experiment_index.md` to jump into pre-framework historical
    experiments.
-13. Use `docs/sm120_optimization_notes.md` only when you need the detailed
+17. Use `docs/sm120_optimization_notes.md` only when you need the detailed
    legacy artifact trail or rejected-route rationale.
 
 ## Current Posture
@@ -47,7 +64,9 @@ Last updated: 2026-06-13.
   disabled by default, FlashInfer autotune left on the current vLLM default,
   FP8 KV, MTP=2 when exercising the production path, and
   `FULL_AND_PIECEWISE`. Keep EP as an environment-controlled fallback A/B
-  dimension only.
+  dimension only. Breakable CUDA graph is a replacement candidate for
+  `FULL_AND_PIECEWISE`, but it remains gated because prior GB10 testing produced
+  a semantic correctness failure on a trivial arithmetic prompt.
 - Active next task: optimize the EP-off sparse MLA accumulate bottleneck
   described in
   `docs/sm120/experiments/2026-06-12-epoff-bottleneck-map/README.md`.
@@ -78,6 +97,60 @@ Last updated: 2026-06-13.
   on the overlapping 16K/65K/124K points, so treat it as a mechanism reference
   for sparse-MLA/indexer/MoE investigation, not as directly promotable PR
   behavior or an RTX endpoint performance target.
+- External black-benediction endpoint baseline:
+  `local-inference-lab/vllm dev/black-benediction` `5fcd00c3d7` now starts on
+  the public RTX dependency stack with B12X PCIe oneshot allreduce active, but
+  the clean same-server no-prefix OSL=128 comparison is slower than the current
+  RTX PR stable preview C=1 anchor: `5407.26` vs `6209.00` input tok/s at 16K
+  and `5867.14` vs `7049.72` at 65K. C=2 passed but had poor ITL tail. Treat
+  the branch as a mechanism source for isolated decode work, not as a
+  whole-endpoint port target. See
+  `docs/sm120/experiments/2026-06-13-black-benediction-rtx-public-stack/README.md`.
+- Community decode/prefill comparison: the public `llm_decode_bench.py`
+  ctx0 shape shows that the current branch is close at C1/C2, wins the isolated
+  C4 crossover, but lags locally reproduced Lucifer+PR3395 by `16-42%` from
+  C8 through C64. The coupled Lucifer stack passed GSM8K 5-shot limit-200 at
+  C=1 and C=4, so it is real headroom, not a dismissed benchmark artifact.
+  The opt-in PR3395 reintegration improves the local cold-prefill attribution
+  gate by about `+22%` at 16K/65K, but the community-shaped prefill-only scout
+  only improves warm gate-on by `+0.8% / +1.2% / +8.3%` at 8K/64K/128K and
+  still lags published Lucifer prefill by `27-35%`. Treat this as useful
+  prefill dataflow evidence and a dev-branch route, not as solved decode or
+  prefill parity. See
+  `docs/sm120/experiments/2026-06-14-rtx-llm-decode-bench/README.md`.
+- Aiden/unholy-fusion external route: keep the NVIDIA forum Aiden recipe as a
+  separate GB10 / SM121 watchlist item, not as evidence that the public
+  black-benediction branch should be ported whole. The thread reports a
+  two-node GB10 Aiden image with b12x MoE, FP8 KV, MTP=2, prefix caching, 1M
+  context, and multiple community success reports, but it also reports
+  long-running KV-cache bloat / decode slowdown and possible block-pool
+  eviction issues. Existing local Aiden parity evidence already shows a real
+  integrated image gap over current Dev that is not explained by B12X MoE
+  alone or a single sparse-indexer env switch. Treat this as an integrated
+  image/overlay investigation: record image digest, bundled FlashInfer/b12x,
+  NCCL/RDMA setup, packed sparse-MLA wrapper behavior, prefix-cache lifecycle,
+  and driver health before porting code. See
+  `docs/sm120/experiments/2026-06-13-aiden-recipe-forum-watch/README.md`.
+- Upstream Model Runner v2 / CUDA graph watch: upstream/main has advanced past
+  the phase freeze, and the largest relevant change is `vllm-project/vllm#42667`.
+  It merged on 2026-06-12 and makes DeepseekV2/Qwen2Moe architectures eligible
+  for default V2 runner selection while keeping quantized models excluded and
+  marking elastic EP unsupported for V2. Treat any rebase containing this PR as
+  a runner-route review, not a routine dependency bump. Breakable CUDA graph may
+  have more optimization space than `FULL_AND_PIECEWISE`, but on GB10 / SM121 it
+  is blocked by the prior simple-prompt correctness failure until same-profile
+  RTX and GB10 gates prove it safe. See
+  `docs/sm120/decisions/watchlist/2026-06-13-upstream-mrv2-cudagraph-watch.md`.
+- Latest PR rebase candidate: `codex/ds4-sm120-min-enable-upstream-rebase-20260613`
+  rebases the PR stable preview onto upstream/main `470229c37`. It preserves the
+  96-commit PR stack at `71cbb6b33`, with fallback tag
+  `sm120-pr-41834-fallback-before-upstream-rebase-20260613202236` pointing to
+  the pre-rebase stable preview `f32247a5a`. The only manual conflict was in the
+  sparse-MLA indexer decode flattening logic; the resolved form keeps upstream's
+  SM100 native `next_n > 2` path and preserves non-SM100 flattening for
+  `next_n > 2`. Static checks and the RTX focused unit subset passed, then the
+  PR branch `codex/ds4-sm120-min-enable` was force-updated with
+  `--force-with-lease` to this rebased head.
 - First direct-paged sparse-prefill prototype:
   `codex/ds4-sm120-sparse-prefill-dev-20260613` at `620c651203d` proves the
   route can be reached without FlashInfer PR3395, but rejects the current
@@ -88,15 +161,30 @@ Last updated: 2026-06-13.
   next prototype should be a tiled/indexed-D512-style paged kernel, not a
   decode-style serial direct loop. See
   `docs/sm120/experiments/2026-06-13-direct-paged-prefill-prototype/README.md`.
+- Latest fused grouped-SWA result: the component microbench remains positive,
+  but the default-off endpoint prototype is rejected. On RTX / SM120, the
+  component mode `--grouped-swa-fused-merge` measured `0.498 ms` at 640
+  candidates and `0.743 ms` at 1152 candidates, versus split `0.630 ms` and
+  `1.383 ms`. The endpoint route later reached
+  `mla_prefill_indexed_d512_grouped_swa` for 280 C128 rows after fixing
+  internal chunk absolute-position handling, but C128 sparse accumulate
+  regressed from `289.962 ms` to `1283.237 ms`, and total sparse accumulate
+  regressed from `2697.948 ms` to `3691.097 ms` in the 16K/C=1 smoke. Do not
+  promote the current manual grouped-SWA endpoint form. Reopen only for a
+  packed-attention style implementation, FlashInfer PR3395-derived path, or a
+  materially different D512 SWA kernel; otherwise return to slow non-indexed
+  `mla_prefill_chunk` work. See
+  `docs/sm120/experiments/2026-06-13-fused-grouped-swa-microbench/README.md`.
 - Branch posture: keep `codex/ds4-sm120-min-enable` as the PR/user-facing
-  base. Use `codex/ds4-sm120-sparse-prefill-dev-20260613`, based on
-  `codex/ds4-sm120-pr3395-packed-dev-20260613` at `61966ba471`, as the current
-  first-stage sparse-prefill development branch. The base descends from PR
-  stable preview `f32247a5a6`, the backend-parity diagnostics at `591b71bed0`,
-  the default-off indexed D512 multi-prefill prototype at `741ea24c46`, and
-  later prefix-guard / fused-sink fixes. When the PR branch is rebased later,
-  recreate or rebase dev on the new PR tip and split any PR-worthy dev fix into
-  reviewable PR-branch commits.
+  base; after the 2026-06-13 upstream rebase it points to `71cbb6b33` on top of
+  upstream/main `470229c37`. Start the next optimization attempt from this PR
+  head, either by creating a fresh dev branch or by explicitly replaying only the
+  still-useful commits from older dev branches. Treat
+  `codex/ds4-sm120-pr3395-packed-dev-20260613`,
+  `codex/ds4-sm120-sparse-prefill-dev-20260613`, and the grouped-SWA endpoint
+  worktree as reference branches until their changes are intentionally replayed;
+  do not continue them as-is on the old base. Any dev-branch fix that belongs in
+  the PR must be split out and replayed as a reviewable PR-branch commit.
 - Naming posture: use SM120 for RTX PRO 6000 work and SM121 for GB10 work.
   B200 is an older SM10x baseline name and should appear only in historical
   notes or as a compatibility variable for older harness scripts.
@@ -108,7 +196,11 @@ Last updated: 2026-06-13.
   dependency change is likely to affect SM12x behavior. A 2026-06-13 check
   found vLLM `#45277` still open at `e57d3b78`, b12x still at `fabb087`,
   FlashInfer upstream/main at `992848ad`, and black-benediction at
-  `5fcd00c3d7`; these are reference deltas, not an automatic new base.
+  `5fcd00c3d7`. A later 2026-06-13 check found upstream/main at
+  `470229c37ef` and confirmed `vllm-project/vllm#42667` merged at
+  `78739c1946`. A PR-stack rebase candidate on top of that upstream point now
+  exists as `codex/ds4-sm120-min-enable-upstream-rebase-20260613`, and the PR
+  branch `codex/ds4-sm120-min-enable` now points to the same `71cbb6b33` head.
 - Newly promoted work: exact chunked D512 online merge for
   `combined_topk > 1152`. It is now default-on because the RTX promotion subset,
   GSM8K limit-200, prefix/KV lifecycle checks, and GB10 reduced long-C2 gate are

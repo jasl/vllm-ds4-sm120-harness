@@ -219,3 +219,15 @@ def test_indexed_d512_microbench_exposes_grouped_swa_online_mode():
     assert "grouped_swa_online_mean_ms" in script
     assert "grouped_swa_online_speedup" in script
     assert "grouped_swa_online_swa_reuse_ratio" in script
+
+
+def test_indexed_d512_microbench_exposes_grouped_swa_fused_merge_mode():
+    script = (ROOT / "scripts" / "run_sm12x_indexed_d512_split_microbench.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--grouped-swa-fused-merge" in script
+    assert "_grouped_swa_fused_merge_kernel" in script
+    assert "grouped_swa_fused_merge_mean_ms" in script
+    assert "grouped_swa_fused_merge_speedup" in script
+    assert "grouped_swa_fused_merge_max_abs_diff" in script

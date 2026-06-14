@@ -227,6 +227,7 @@ STREAMING_PRESSURE_MATRIX_REQUEST_RETRIES="${STREAMING_PRESSURE_MATRIX_REQUEST_R
 STREAMING_PRESSURE_MATRIX_MAX_TTFT_SECONDS="${STREAMING_PRESSURE_MATRIX_MAX_TTFT_SECONDS:-120}"
 STREAMING_PRESSURE_MATRIX_MAX_ELAPSED_SECONDS="${STREAMING_PRESSURE_MATRIX_MAX_ELAPSED_SECONDS:-900}"
 STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW="${STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW:-0}"
+RUN_LLM_DECODE_BENCH="${RUN_LLM_DECODE_BENCH:-0}"
 RUN_EXTERNAL_COMMAND="${RUN_EXTERNAL_COMMAND:-0}"
 EXTERNAL_COMMAND="${EXTERNAL_COMMAND:-}"
 EXTERNAL_COMMAND_LABEL="${EXTERNAL_COMMAND_LABEL:-external_command}"
@@ -403,6 +404,7 @@ export STREAMING_PRESSURE_TEMPERATURE STREAMING_PRESSURE_TOP_P
 export STREAMING_PRESSURE_THINKING_MODE STREAMING_PRESSURE_TIMEOUT
 export STREAMING_PRESSURE_REQUEST_RETRIES STREAMING_PRESSURE_MAX_TTFT_SECONDS
 export STREAMING_PRESSURE_MAX_ELAPSED_SECONDS STREAMING_PRESSURE_FAIL_ON_SLOW
+export RUN_LLM_DECODE_BENCH
 export RUN_EXTERNAL_COMMAND EXTERNAL_COMMAND EXTERNAL_COMMAND_LABEL
 export EXTERNAL_COMMAND_TIMEOUT
 export RUN_KV_LAYOUT_PROBE KV_LAYOUT_CASE_NAME KV_LAYOUT_NUM_BLOCKS
@@ -441,6 +443,7 @@ VALID_BASELINE_PHASES=(
   kv_lifecycle_probe
   streaming_pressure_soak
   streaming_pressure_matrix
+  llm_decode_bench
   external_command
   bench_hf_mt_bench
   eval_gsm8k
@@ -471,6 +474,7 @@ phase_run_flag() {
     kv_lifecycle_probe) printf '%s\n' RUN_KV_LIFECYCLE_PROBE ;;
     streaming_pressure_soak) printf '%s\n' RUN_STREAMING_PRESSURE_SOAK ;;
     streaming_pressure_matrix) printf '%s\n' RUN_STREAMING_PRESSURE_MATRIX ;;
+    llm_decode_bench) printf '%s\n' RUN_LLM_DECODE_BENCH ;;
     external_command) printf '%s\n' RUN_EXTERNAL_COMMAND ;;
     bench_hf_mt_bench) printf '%s\n' RUN_BENCH_HF ;;
     eval_gsm8k) printf '%s\n' RUN_LM_EVAL ;;
@@ -513,7 +517,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,very_long_context_capacity,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,kv_lifecycle_probe,streaming_pressure_soak,streaming_pressure_matrix,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_256x256,bench_random_1024x1024_c256,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,very_long_context_capacity,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,kv_lifecycle_probe,streaming_pressure_soak,streaming_pressure_matrix,llm_decode_bench,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_256x256,bench_random_1024x1024_c256,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
     run_flag="$(phase_run_flag "${item}")"
@@ -722,9 +726,11 @@ write_command_file() {
       VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_OVERLAP_ROWS \
       VLLM_DEEPSEEK_V4_SPARSE_MLA_STATS_STAGE_TIMING \
       VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL \
+      VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL_MIN_TOKENS \
       VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL \
       VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL \
       VLLM_DEEPSEEK_V4_INDEXED_D512_FUSED_SINK_PREFILL \
+      VLLM_DEEPSEEK_V4_INDEXED_D512_GROUPED_SWA_PREFILL \
       VLLM_DEBUG_WORKSPACE \
       CUDA_LAUNCH_BLOCKING; do
       if [[ -n "${!optional_env:-}" ]]; then
@@ -1317,6 +1323,20 @@ for variant in ${variant_list}; do
         SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
         SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
         "${SCRIPT_DIR}/run_external_command_gate.sh"
+  fi
+
+  if phase_enabled "llm_decode_bench" && { [[ "${RUN_LLM_DECODE_BENCH}" == "1" ]] || [[ "${RUN_LLM_DECODE_BENCH}" == "true" ]]; }; then
+    run_phase "${variant}" "llm_decode_bench" "${variant_dir}/llm_decode_bench" \
+      env OUT_DIR="${variant_dir}/llm_decode_bench" \
+        BASE_URL="${BASE_URL}" HOST="${HOST}" PORT="${PORT}" MODEL="${MODEL}" \
+        PYTHON="${PYTHON}" SERVE_LOG="${serve_log}" \
+        LLM_DECODE_BENCH_VARIANT="${variant}" \
+        SERVER_STARTUP_TIMEOUT="${SERVER_STARTUP_TIMEOUT}" \
+        SERVER_STARTUP_INTERVAL_SECONDS="${SERVER_STARTUP_INTERVAL_SECONDS}" \
+        SERVER_HEALTH_TIMEOUT="${SERVER_HEALTH_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_TIMEOUT="${SERVER_FAILURE_GRACE_TIMEOUT}" \
+        SERVER_FAILURE_GRACE_INTERVAL_SECONDS="${SERVER_FAILURE_GRACE_INTERVAL_SECONDS}" \
+        "${SCRIPT_DIR}/run_llm_decode_bench.sh"
   fi
 
   case "${variant}" in

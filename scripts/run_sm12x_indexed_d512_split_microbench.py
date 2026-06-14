@@ -203,6 +203,32 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
                 ).format(**row)
             )
         lines.append("")
+    if payload.get("grouped_swa_fused_merge"):
+        lines.extend(
+            [
+                "## Grouped SWA Fused Merge",
+                "",
+                (
+                    "| candidates | fused ms | split/fused speedup | "
+                    "current/fused speedup | total reuse ratio | "
+                    "SWA reuse ratio | max abs diff |"
+                ),
+                "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for row in payload["rows"]:
+            lines.append(
+                (
+                    "| {num_candidates} | "
+                    "{grouped_swa_fused_merge_mean_ms:.3f} | "
+                    "{grouped_swa_fused_merge_speedup:.3f}x | "
+                    "{grouped_swa_fused_merge_vs_current_speedup:.3f}x | "
+                    "{grouped_swa_fused_merge_total_reuse_ratio:.3f} | "
+                    "{grouped_swa_fused_merge_swa_reuse_ratio:.3f} | "
+                    "{grouped_swa_fused_merge_max_abs_diff:.6f} |"
+                ).format(**row)
+            )
+        lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -364,6 +390,15 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--grouped-swa-fused-merge",
+        action="store_true",
+        help=(
+            "Also benchmark a real-D512 component probe that keeps compressed "
+            "top-k on the current per-token split path, but fuses grouped "
+            "SWA online accumulation with the final compressed/SWA state merge."
+        ),
+    )
+    parser.add_argument(
         "--grouped-swa-block-c",
         type=int,
         default=32,
@@ -426,7 +461,7 @@ def main() -> int:
                 )
             except ValueError as exc:
                 parser.error(str(exc))
-    if args.grouped_swa_online:
+    if args.grouped_swa_online or args.grouped_swa_fused_merge:
         if args.grouped_swa_block_c <= 0:
             parser.error("--grouped-swa-block-c must be positive")
         for candidate_len in args.candidate_lens:
@@ -859,6 +894,144 @@ def main() -> int:
         )
 
     @triton.jit
+    def _grouped_swa_fused_merge_kernel(
+        q_ptr,
+        kv_ptr,
+        compressed_max_ptr,
+        compressed_denom_ptr,
+        compressed_out_ptr,
+        out_ptr,
+        stride_q_t: tl.constexpr,
+        stride_q_h: tl.constexpr,
+        stride_q_d: tl.constexpr,
+        stride_kv_t,
+        stride_kv_d: tl.constexpr,
+        stride_state_t: tl.constexpr,
+        stride_state_h: tl.constexpr,
+        stride_compressed_out_t: tl.constexpr,
+        stride_compressed_out_h: tl.constexpr,
+        stride_compressed_out_d: tl.constexpr,
+        stride_out_t: tl.constexpr,
+        stride_out_h: tl.constexpr,
+        stride_out_d: tl.constexpr,
+        swa_candidates: tl.constexpr,
+        scale: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
+        HEAD_DIM: tl.constexpr,
+        BLOCK_C: tl.constexpr,
+    ):
+        group_idx = tl.program_id(0)
+        head_idx = tl.program_id(1)
+        group_offsets = tl.arange(0, GROUP_SIZE)
+        dim_offsets = tl.arange(0, HEAD_DIM)
+        candidate_offsets = tl.arange(0, BLOCK_C)
+        token_offsets = group_idx * GROUP_SIZE + group_offsets
+
+        q = tl.load(
+            q_ptr
+            + token_offsets[:, None] * stride_q_t
+            + head_idx * stride_q_h
+            + dim_offsets[None, :] * stride_q_d,
+            mask=True,
+            other=0.0,
+        )
+        swa_max = tl.full((GROUP_SIZE,), -float("inf"), tl.float32)
+        swa_denom = tl.zeros((GROUP_SIZE,), tl.float32)
+        swa_acc = tl.zeros((GROUP_SIZE, HEAD_DIM), tl.float32)
+
+        swa_union_candidates: tl.constexpr = swa_candidates + GROUP_SIZE - 1
+        for union_start in range(0, swa_union_candidates, BLOCK_C):
+            union_offsets = union_start + candidate_offsets
+            union_mask = union_offsets < swa_union_candidates
+            kv_indices = group_idx * GROUP_SIZE + union_offsets
+            kv = tl.load(
+                kv_ptr
+                + kv_indices[None, :].to(tl.int64) * stride_kv_t
+                + dim_offsets[:, None] * stride_kv_d,
+                mask=union_mask[None, :],
+                other=0.0,
+            )
+            scores = tl.dot(q, kv) * scale
+            member_mask = (
+                union_mask[None, :]
+                & (union_offsets[None, :] >= group_offsets[:, None])
+                & (union_offsets[None, :] < group_offsets[:, None] + swa_candidates)
+            )
+            scores = tl.where(member_mask, scores, -float("inf"))
+            block_max = tl.max(scores, axis=1)
+            next_swa_max = tl.maximum(swa_max, block_max)
+            safe_next_swa_max = tl.where(
+                next_swa_max > -float("inf"), next_swa_max, 0.0
+            )
+            previous_scale = tl.where(
+                swa_denom > 0.0,
+                tl.exp(swa_max - safe_next_swa_max),
+                0.0,
+            )
+            weights = tl.where(
+                member_mask,
+                tl.exp(scores - safe_next_swa_max[:, None]),
+                0.0,
+            )
+            block_denom = tl.sum(weights, axis=1)
+            swa_acc = (
+                swa_acc * previous_scale[:, None]
+                + tl.dot(weights.to(tl.bfloat16), tl.trans(kv))
+            )
+            swa_denom = swa_denom * previous_scale + block_denom
+            swa_max = next_swa_max
+
+        compressed_max = tl.load(
+            compressed_max_ptr
+            + token_offsets * stride_state_t
+            + head_idx * stride_state_h,
+            mask=True,
+            other=-float("inf"),
+        ).to(tl.float32)
+        compressed_denom = tl.load(
+            compressed_denom_ptr
+            + token_offsets * stride_state_t
+            + head_idx * stride_state_h,
+            mask=True,
+            other=0.0,
+        ).to(tl.float32)
+        compressed_out = tl.load(
+            compressed_out_ptr
+            + token_offsets[:, None] * stride_compressed_out_t
+            + head_idx * stride_compressed_out_h
+            + dim_offsets[None, :] * stride_compressed_out_d,
+            mask=True,
+            other=0.0,
+        ).to(tl.float32)
+
+        final_max = tl.maximum(compressed_max, swa_max)
+        safe_final_max = tl.where(final_max > -float("inf"), final_max, 0.0)
+        compressed_scale = tl.where(
+            compressed_denom > 0.0,
+            tl.exp(compressed_max - safe_final_max),
+            0.0,
+        )
+        swa_scale = tl.where(
+            swa_denom > 0.0,
+            tl.exp(swa_max - safe_final_max),
+            0.0,
+        )
+        final_denom = compressed_denom * compressed_scale + swa_denom * swa_scale
+        safe_final_denom = tl.where(final_denom > 0.0, final_denom, 1.0)
+        output = (
+            compressed_out * (compressed_denom * compressed_scale)[:, None]
+            + swa_acc * swa_scale[:, None]
+        ) / safe_final_denom[:, None]
+        tl.store(
+            out_ptr
+            + token_offsets[:, None] * stride_out_t
+            + head_idx * stride_out_h
+            + dim_offsets[None, :] * stride_out_d,
+            output,
+            mask=True,
+        )
+
+    @triton.jit
     def _indexed_merge_normalized_chunk_kernel(
         running_max_ptr,
         running_denom_ptr,
@@ -1147,6 +1320,7 @@ def main() -> int:
         production_fused_with_sink_samples_ms: list[float] = []
         grouped_stream_online_samples_ms: list[float] = []
         grouped_swa_online_samples_ms: list[float] = []
+        grouped_swa_fused_merge_samples_ms: list[float] = []
         if args.production_with_sink:
             attn_sink = torch.randn(
                 args.num_heads,
@@ -1216,7 +1390,7 @@ def main() -> int:
         else:
             grouped_stream_online_out = None
             grouped_stream_online_reuse_ratio = 0.0
-        if args.grouped_swa_online:
+        if args.grouped_swa_online or args.grouped_swa_fused_merge:
             assert compressed_indices_for_grouped_swa is not None
             grouped_swa_scores = torch.empty(
                 args.num_tokens,
@@ -1231,6 +1405,7 @@ def main() -> int:
             grouped_swa_final_max = torch.empty_like(split_max)
             grouped_swa_final_denom = torch.empty_like(split_denom)
             grouped_swa_final_out = torch.empty_like(split_out)
+            grouped_swa_fused_merge_out = torch.empty_like(split_out)
             grouped_swa_total_reuse_ratio = 1.0 - (
                 args.group_size * args.compressed_candidates
                 + swa_candidates
@@ -1248,6 +1423,7 @@ def main() -> int:
             grouped_swa_final_max = None
             grouped_swa_final_denom = None
             grouped_swa_final_out = None
+            grouped_swa_fused_merge_out = None
             grouped_swa_total_reuse_ratio = 0.0
             grouped_swa_swa_reuse_ratio = 0.0
 
@@ -1427,12 +1603,9 @@ def main() -> int:
                 num_stages=3,
             )
 
-        def run_grouped_swa_online() -> None:
+        def run_grouped_swa_compressed_state() -> None:
             assert compressed_indices_for_grouped_swa is not None
             assert grouped_swa_scores is not None
-            assert grouped_swa_max is not None
-            assert grouped_swa_denom is not None
-            assert grouped_swa_out is not None
             assert grouped_swa_final_max is not None
             assert grouped_swa_final_denom is not None
             assert grouped_swa_final_out is not None
@@ -1455,6 +1628,12 @@ def main() -> int:
                 out_tensor=grouped_swa_final_out,
                 candidate_count=args.compressed_candidates,
             )
+
+        def run_grouped_swa_online() -> None:
+            assert grouped_swa_max is not None
+            assert grouped_swa_denom is not None
+            assert grouped_swa_out is not None
+            run_grouped_swa_compressed_state()
             _grouped_swa_online_kernel[
                 (args.num_tokens // args.group_size, args.num_heads)
             ](
@@ -1509,6 +1688,43 @@ def main() -> int:
                 grouped_swa_final_max.stride(1),
                 args.num_heads,
                 num_warps=4,
+                num_stages=3,
+            )
+
+        def run_grouped_swa_fused_merge() -> None:
+            assert grouped_swa_final_max is not None
+            assert grouped_swa_final_denom is not None
+            assert grouped_swa_final_out is not None
+            assert grouped_swa_fused_merge_out is not None
+            run_grouped_swa_compressed_state()
+            _grouped_swa_fused_merge_kernel[
+                (args.num_tokens // args.group_size, args.num_heads)
+            ](
+                q,
+                kv_flat,
+                grouped_swa_final_max,
+                grouped_swa_final_denom,
+                grouped_swa_final_out,
+                grouped_swa_fused_merge_out,
+                q.stride(0),
+                q.stride(1),
+                q.stride(2),
+                kv_flat.stride(0),
+                kv_flat.stride(1),
+                grouped_swa_final_max.stride(0),
+                grouped_swa_final_max.stride(1),
+                grouped_swa_final_out.stride(0),
+                grouped_swa_final_out.stride(1),
+                grouped_swa_final_out.stride(2),
+                grouped_swa_fused_merge_out.stride(0),
+                grouped_swa_fused_merge_out.stride(1),
+                grouped_swa_fused_merge_out.stride(2),
+                swa_candidates,
+                args.scale,
+                GROUP_SIZE=args.group_size,
+                HEAD_DIM=args.head_dim,
+                BLOCK_C=args.grouped_swa_block_c,
+                num_warps=8,
                 num_stages=3,
             )
 
@@ -1618,6 +1834,8 @@ def main() -> int:
                 run_grouped_stream_online()
             if args.grouped_swa_online:
                 run_grouped_swa_online()
+            if args.grouped_swa_fused_merge:
+                run_grouped_swa_fused_merge()
             if wide_split_enabled:
                 run_wide_split()
         torch.cuda.synchronize()
@@ -1649,6 +1867,10 @@ def main() -> int:
                 )
             if args.grouped_swa_online:
                 grouped_swa_online_samples_ms.append(time_call(run_grouped_swa_online))
+            if args.grouped_swa_fused_merge:
+                grouped_swa_fused_merge_samples_ms.append(
+                    time_call(run_grouped_swa_fused_merge)
+                )
             if wide_split_enabled:
                 wide_split_samples_ms.append(time_call(run_wide_split))
 
@@ -1725,6 +1947,42 @@ def main() -> int:
                     ),
                 }
             )
+        if args.grouped_swa_fused_merge:
+            assert grouped_swa_fused_merge_out is not None
+            grouped_swa_fused_diff = (
+                split_out - grouped_swa_fused_merge_out
+            ).abs()
+            grouped_swa_fused_summary = _summarize_ms(
+                grouped_swa_fused_merge_samples_ms
+            )
+            row.update(
+                {
+                    "grouped_swa_fused_merge": grouped_swa_fused_summary,
+                    "grouped_swa_fused_merge_mean_ms": (
+                        grouped_swa_fused_summary["mean_ms"]
+                    ),
+                    "grouped_swa_fused_merge_speedup": (
+                        split_summary["mean_ms"]
+                        / grouped_swa_fused_summary["mean_ms"]
+                    ),
+                    "grouped_swa_fused_merge_vs_current_speedup": (
+                        current_chunk_summary["mean_ms"]
+                        / grouped_swa_fused_summary["mean_ms"]
+                    ),
+                    "grouped_swa_fused_merge_total_reuse_ratio": (
+                        grouped_swa_total_reuse_ratio
+                    ),
+                    "grouped_swa_fused_merge_swa_reuse_ratio": (
+                        grouped_swa_swa_reuse_ratio
+                    ),
+                    "grouped_swa_fused_merge_max_abs_diff": float(
+                        grouped_swa_fused_diff.max().item()
+                    ),
+                    "grouped_swa_fused_merge_mean_abs_diff": float(
+                        grouped_swa_fused_diff.mean().item()
+                    ),
+                }
+            )
         if args.grouped_stream_online:
             assert grouped_stream_online_out is not None
             grouped_diff = (split_out - grouped_stream_online_out).abs()
@@ -1753,6 +2011,9 @@ def main() -> int:
             )
         if args.grouped_swa_online:
             assert grouped_swa_final_out is not None
+            if args.grouped_swa_fused_merge:
+                run_grouped_swa_online()
+                torch.cuda.synchronize()
             grouped_swa_diff = (split_out - grouped_swa_final_out).abs()
             grouped_swa_summary = _summarize_ms(grouped_swa_online_samples_ms)
             row.update(
@@ -1832,6 +2093,19 @@ def main() -> int:
                 "grouped_swa_online_max_diff="
                 "{grouped_swa_online_max_abs_diff:.6f}"
             ).format(**row)
+        if args.grouped_swa_fused_merge:
+            line += (
+                " grouped_swa_fused_merge="
+                "{grouped_swa_fused_merge_mean_ms:.3f}ms "
+                "grouped_swa_fused_merge_speedup="
+                "{grouped_swa_fused_merge_speedup:.3f}x "
+                "grouped_swa_fused_merge_total_reuse_ratio="
+                "{grouped_swa_fused_merge_total_reuse_ratio:.3f} "
+                "grouped_swa_fused_merge_swa_reuse_ratio="
+                "{grouped_swa_fused_merge_swa_reuse_ratio:.3f} "
+                "grouped_swa_fused_merge_max_diff="
+                "{grouped_swa_fused_merge_max_abs_diff:.6f}"
+            ).format(**row)
         print(line)
 
     payload = {
@@ -1874,6 +2148,7 @@ def main() -> int:
         "group_size": args.group_size,
         "grouped_stream_block_c": args.grouped_stream_block_c,
         "grouped_swa_online": args.grouped_swa_online,
+        "grouped_swa_fused_merge": args.grouped_swa_fused_merge,
         "grouped_swa_block_c": args.grouped_swa_block_c,
         "index_pattern": args.index_pattern,
         "warmup": args.warmup,

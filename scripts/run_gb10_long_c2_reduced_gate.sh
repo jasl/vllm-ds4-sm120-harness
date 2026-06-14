@@ -198,6 +198,7 @@ for variant in "${variants[@]}"; do
   serve_remote_env_vars="$(
     append_env_allowlist \
       "${serve_remote_env_vars}" \
+      VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL_MIN_TOKENS \
       VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL
   )"
   if [[ "${GB10_LONG_C2_SCHEDULER_TRACE}" == "1" || "${GB10_LONG_C2_SCHEDULER_TRACE}" == "true" ]]; then

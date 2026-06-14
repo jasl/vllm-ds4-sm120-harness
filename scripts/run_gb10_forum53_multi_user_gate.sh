@@ -316,6 +316,7 @@ for variant in "${variants[@]}"; do
     serve_remote_env_vars="$(
       append_env_allowlist \
         "${serve_remote_env_vars}" \
+        VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL_MIN_TOKENS \
         VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL
     )"
     serve_remote_env_vars="$(
@@ -371,7 +372,7 @@ for variant in "${variants[@]}"; do
       VLLM_SCHEDULER_TRACE_PATH="${scheduler_trace_path}" \
       VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL="${GB10_FORUM53_D512_MULTI_PREFILL_ENV}" \
       SSH_OPTS="${SSH_OPTS:-}" \
-      "${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh" \
+      /bin/bash "${SCRIPT_DIR}/dgx_spark_start_mp_serve.sh" \
         > "${variant_dir}/serve_start.stdout.log" \
         2> "${variant_dir}/serve_start.stderr.log"
     start_code="$?"
@@ -446,6 +447,8 @@ DRIVER_HEALTH_SIGNAL_COUNT="${driver_health_signal_count}" \
 DRIVER_HEALTH_ALLOW="${GB10_FORUM53_ALLOW_DRIVER_SIGNALS}" \
 LOCAL_PYTHON="${LOCAL_PYTHON:-python3}" \
 "${LOCAL_PYTHON:-python3}" - <<'PY'
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
@@ -495,6 +498,8 @@ SUMMARY_PREFIX_CACHE="enabled" \
 SUMMARY_CASE_SPECS="${GB10_FORUM53_CASE_SPECS}" \
 LOCAL_PYTHON="${LOCAL_PYTHON:-python3}" \
 "${LOCAL_PYTHON:-python3}" - <<'PY'
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path

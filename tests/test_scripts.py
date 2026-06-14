@@ -122,6 +122,39 @@ def test_gb10_decode_throughput_probe_wrapper_defaults_to_safe_smoke_profile():
     assert "run_decode_throughput_probe.sh" in script
 
 
+def test_llm_decode_bench_wrapper_defaults_to_public_aggressive_matrix():
+    script = (ROOT / "scripts" / "run_llm_decode_bench.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "llm-inference-bench/main/llm_decode_bench.py" in script
+    assert 'LLM_DECODE_BENCH_CONCURRENCY="${LLM_DECODE_BENCH_CONCURRENCY:-1,2,4,8,16,32,64,128}"' in script
+    assert 'LLM_DECODE_BENCH_CONTEXTS="${LLM_DECODE_BENCH_CONTEXTS:-0,16k,32k,64k,124k}"' in script
+    assert 'LLM_DECODE_BENCH_PREFILL_CONTEXTS="${LLM_DECODE_BENCH_PREFILL_CONTEXTS:-8k,64k,124k}"' in script
+    assert 'LLM_DECODE_BENCH_MAX_TOKENS="${LLM_DECODE_BENCH_MAX_TOKENS:-4096}"' in script
+    assert 'LLM_DECODE_BENCH_DURATION="${LLM_DECODE_BENCH_DURATION:-30}"' in script
+    assert 'LLM_DECODE_BENCH_DISPLAY_MODE="${LLM_DECODE_BENCH_DISPLAY_MODE:-plain}"' in script
+    assert '--output "${OUT_DIR}/llm_decode_bench.json"' in script
+    assert '--concurrency "${LLM_DECODE_BENCH_CONCURRENCY}"' in script
+    assert '--contexts "${LLM_DECODE_BENCH_CONTEXTS}"' in script
+    assert '--max-tokens "${LLM_DECODE_BENCH_MAX_TOKENS}"' in script
+    assert 'if [[ -n "${LLM_DECODE_BENCH_KV_BUDGET}" ]]; then' in script
+    assert 'if [[ -n "${LLM_DECODE_BENCH_MAX_TOTAL_TOKENS}" ]]; then' in script
+    assert "llm_decode_bench.stdout" in script
+    assert "llm_decode_bench_summary.json" in script
+
+
+def test_b200_baseline_can_run_public_llm_decode_bench_phase():
+    script = (ROOT / "scripts" / "run_b200_baseline.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "RUN_LLM_DECODE_BENCH" in script
+    assert "llm_decode_bench" in script
+    assert "run_llm_decode_bench.sh" in script
+    assert 'LLM_DECODE_BENCH_VARIANT="${variant}"' in script
+
+
 def test_lm_eval_script_uses_vllm_venv_binary_by_default():
     script = (ROOT / "scripts" / "run_lm_eval.sh").read_text(encoding="utf-8")
 
@@ -446,6 +479,7 @@ def test_sm12x_prefill_gap_attribution_collects_bench_and_sparse_stats():
     assert 'PYTHONPATH="$(harness_pythonpath)"' in script
     assert '"${_prefill_gap_d512_env[@]}"' in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL" in script
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL_MIN_TOKENS" in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL" in script
     assert "sparse-mla-stats-report" in script
     assert "prefill_gap_attribution_summary.json" in script
@@ -2155,6 +2189,7 @@ def test_gb10_long_c2_gate_forwards_chunked_d512_env_when_set():
         "VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL"
         in script
     )
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL_MIN_TOKENS" in script
     assert 'SERVE_REMOTE_ENV_VARS="${serve_remote_env_vars}"' in script
 
 
@@ -2205,6 +2240,7 @@ def test_b200_baseline_preserves_chunked_d512_prefill_env():
     )
 
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL" in script
+    assert "VLLM_DEEPSEEK_V4_INDEXED_D512_SPLIT_PREFILL_MIN_TOKENS" in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_CHUNKED_PREFILL" in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL" in script
     assert "VLLM_DEEPSEEK_V4_INDEXED_D512_FUSED_SINK_PREFILL" in script

@@ -20,7 +20,8 @@ they are useful as active navigation points.
 
 | Decision | Status | Scope | Last reviewed |
 | --- | --- | --- | --- |
-| [SM12x Backend Parity Roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) | watchlist | EP-off backend parity, upstream arch coverage, FlashInfer/b12x, black-benediction | 2026-06-12 |
+| [SM12x Backend Parity Roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) | watchlist | EP-off backend parity, upstream arch coverage, FlashInfer/b12x, black-benediction | 2026-06-14 |
+| [Upstream MRv2 And Breakable CUDA Graph Watch](decisions/watchlist/2026-06-13-upstream-mrv2-cudagraph-watch.md) | watchlist | upstream `#42667`, Model Runner v2 MoE routing, breakable CUDA graph correctness | 2026-06-13 |
 
 ## Current Experiment Packages
 
@@ -33,7 +34,12 @@ link them here after the package has at least a `README.md` and `evidence.md`.
 | [EP-Off Bottleneck Map](experiments/2026-06-12-epoff-bottleneck-map/README.md) | RTX-first bottleneck attribution, correctness guard, GB10 confirmation plan, [preflight](experiments/2026-06-12-epoff-bottleneck-map/preflight.md), and [latest preflight result](experiments/2026-06-12-epoff-bottleneck-map/preflight-results.md) | watchlist | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 | [Black-Benediction Mechanism Map](experiments/2026-06-12-black-benediction-map/README.md) | External black-benediction reference split into portable, high-risk, and reference-only mechanisms | watchlist | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 | [Local-Inference Main RTX Baseline](experiments/2026-06-13-local-inference-main-baseline/README.md) | External `local-inference-lab/vllm main` endpoint baseline for RTX / SM120 EP-off prefill and GSM8K | observation | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
+| [Black-Benediction RTX Public-Stack Baseline](experiments/2026-06-13-black-benediction-rtx-public-stack/README.md) | External `dev/black-benediction` endpoint baseline for RTX / SM120 public dependency stack | observation | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
+| [Aiden Recipe Forum Watch](experiments/2026-06-13-aiden-recipe-forum-watch/README.md) | Public GB10 Aiden image / unholy-fusion continuation claims and reproducibility notes | watchlist | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 | [Direct-Paged Sparse Prefill Prototype](experiments/2026-06-13-direct-paged-prefill-prototype/README.md) | Default-off fork-independent direct page-table prefill route on RTX / SM120 | rejected | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
+| [Fused Grouped-SWA Microbench](experiments/2026-06-13-fused-grouped-swa-microbench/README.md) | Component-level fused grouped-SWA plus compressed-state merge, plus rejected endpoint follow-up on RTX / SM120 | component watchlist, endpoint rejected | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
+| [Indexed D512 Min-Token Gate](experiments/2026-06-13-indexed-d512-min-token-gate/README.md) | Fork-independent min-token admission sweep for existing indexed D512 sparse prefill on RTX / SM120 | observation | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
+| [RTX LLM Decode Bench](experiments/2026-06-14-rtx-llm-decode-bench/README.md) | Community `llm_decode_bench.py` optional harness integration, RTX / SM120 decode and prefill comparison, Lucifer+PR3395 reproduction, and pitfall log | observation | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 
 ## Legacy Notes
 

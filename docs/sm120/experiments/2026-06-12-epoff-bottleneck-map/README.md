@@ -117,6 +117,15 @@ probe was `0.600 ms` versus split `1.320 ms`. Because the older separate-launch
 grouped-SWA endpoint regressed, the next prototype must fuse stream processing
 with merge/finish or otherwise avoid the extra launch/workspace traffic.
 
+The first fused grouped-SWA component follow-up is positive on RTX / SM120. The
+new `--grouped-swa-fused-merge` microbench mode keeps compressed top-k on the
+current exact D512 split path and folds grouped-SWA online accumulation plus
+compressed/SWA merge into one component kernel. Group32/block-C32 fused-only
+measured `0.498 ms` at 640 candidates and `0.743 ms` at 1152 candidates, versus
+split `0.630 ms` and `1.383 ms`, with max diff `0.002607` / `0.000953`. This
+is the next endpoint-prototype target; it does not by itself prove endpoint
+TTFT or input-token improvement.
+
 The first fork-independent endpoint prototype is the env-gated
 `VLLM_DEEPSEEK_V4_INDEXED_D512_MULTI_PREFILL=1` expansion. It does not depend
 on FlashInfer PR3395. On RTX, the same-profile stage-timing A/B moved more
