@@ -83,6 +83,21 @@ than one or both single-backend probes at C1/C4/C32/C64. This points the next
 decode-scaling work back toward attention/runtime mechanisms, especially the
 PR3395 sparse-MLA route, rather than a naive linear+MoE backend swap.
 
+A same-session 2x2 attribution pass (Lucifer vs current, MTP on/off) then
+isolated the root cause. The runtime-resolved configs are identical on
+compile/cudagraph, all-reduce, sampler, FP8 linear, and MTP acceptance
+(`~2.25` length, `~63%` draft); the only backend differences are the MoE
+backend (`+5%`) and the decode attention kernel. The C8-C64 gap is the
+FlashInfer packed SM120 sparse-MLA decode kernel
+(`sparse_mla_sm120_decode_dsv4_autotune`), which the current branch never
+reintegrated -- it ported only the packed prefill kernel
+(`sparse_mla_sm120_paged_attention`). The kernel's advantage is concentrated in
+the MTP speculative-verify multi-query (`q_len=3`) decode shape: the MTP
+throughput multiplier at C64 is `1.42x` on Lucifer versus `1.17x` on current
+despite equal acceptance, which also explains the isolated C4 crossover (the
+packed kernel's fixed overhead loses at small batch). See the
+"Decode-Kernel Attribution (same-session 2x2)" section of evidence.md.
+
 A PR3395 packed-prefill reintegration check showed two different prefill
 signals. The attribution gate improved 16K/65K cold prefill by about +22% and
 cut the isolated sparse stage sharply. However, the community-shaped

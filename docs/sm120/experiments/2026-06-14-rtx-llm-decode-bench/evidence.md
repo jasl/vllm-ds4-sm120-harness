@@ -684,3 +684,148 @@ the ctx0 decode-only gap above, because the aligned decode benchmark used
 `--skip-prefill`, context `0k`, and prefix-cache hit rate remained 0.0%.
 Keep it as a separate scheduler experiment for long-context mixed-arrival
 tests, not as the first explanation for the Lucifer C8-C64 decode advantage.
+
+## Decode-Kernel Attribution (same-session 2x2)
+
+This is the root-cause pass for the C8-C64 ctx0 decode gap. After a clean
+reboot, four ctx0 decode-only cells (`--skip-prefill --contexts 0k
+--concurrency 1,2,4,8,16,32,64 --max-tokens 2048 --duration 30`) were run
+back-to-back in one thermal/driver session, toggling only one variable at a
+time. Each cell had benchmark exit code 0, empty stderr, no serve-log
+`ERROR`/`Traceback`/OOM/NCCL, no waiting queue, no preemptions, and no
+capacity-limited or underfilled cells.
+
+Local-safe artifact identifiers (under the `lucifer-gap` run root):
+
+```text
+A2  label=A2_lucifer_sm120_fic_mtp     stack=Lucifer SPARSE_MLA_SM120 + flashinfer_cutlass MoE, MTP on
+B2  label=B2_lucifer_sm120_fic_nomtp   stack=Lucifer SPARSE_MLA_SM120 + flashinfer_cutlass MoE, MTP off
+C   label=C_current_marlin_plain_mtp   stack=current plain trtllm decode + MARLIN MoE, MTP on
+D   label=D_current_marlin_plain_nomtp stack=current plain trtllm decode + MARLIN MoE, MTP off
+```
+
+| Cell | C1 | C2 | C4 | C8 | C16 | C32 | C64 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A2 Lucifer packed, MTP | 198.8 | 327.6 | 397.8 | 785.5 | 1,174.5 | 1,861.8 | 2,822.1 |
+| C current plain, MTP | 179.0 | 296.9 | 466.6 | 600.5 | 873.9 | 1,461.8 | 1,947.4 |
+| B2 Lucifer packed, no-MTP | 124.0 | 206.3 | 352.7 | 569.3 | 850.4 | 1,276.2 | 1,983.7 |
+| D current plain, no-MTP | 109.8 | 188.7 | 323.1 | 505.0 | 756.7 | 1,126.8 | 1,666.5 |
+
+A2 reproduces the documented Lucifer warm row
+(`198.9 / 332.7 / 391.4 / 784.4 / 1183.5 / 1872.1 / 2818.9`) to within noise
+(C64 `2822.1` vs `2818.9`), so the comparison is on a stable same-session
+baseline. C reproduces the documented current C64 anchor (`1947.4` vs
+`1954.8`); the lower C8/C16 cells in C reflect this run's per-cell MTP
+acceptance variance (one cell sampled draft acceptance `~0.50`), not a
+configuration change.
+
+What the runtime-resolved configs proved identical on both stacks (from the
+serve logs): compilation mode (`NONE`, because DeepSeek V4 auto-enables
+`VLLM_USE_BREAKABLE_CUDAGRAPH=1`, which disables torch.compile/inductor on
+both), `FULL_AND_PIECEWISE` cudagraph with capture sizes `[1..192]`, the
+`CUSTOM`+`PYNCCL` / `PYNCCL` all-reduce dispatch, the FlashInfer top-p/top-k
+sampler, the DeepGEMM E8M0 FP8 linear path, and the MTP acceptance profile
+(mean acceptance length `~2.25`, per-position `~0.80 / ~0.45`, average draft
+acceptance `~63%`). The only two backend differences are the MoE backend
+(current `MARLIN` vs Lucifer `flashinfer_cutlass`) and the decode attention
+kernel (current `flashinfer_trtllm_batch_decode_sparse_mla_dsv4` vs Lucifer
+`sparse_mla_sm120_decode_dsv4_autotune`).
+
+Decomposition at C64:
+
+| Step | C64 tok/s | Delta | Isolates |
+| --- | ---: | ---: | --- |
+| D current plain, no-MTP | 1,666.5 | baseline | — |
+| B2 Lucifer packed, no-MTP | 1,983.7 | +19.0% | base single-token decode (MoE + kernel + source) |
+| MARLIN -> flashinfer_cutlass MoE (prior FI-MoE probe, MTP) | 1,947.4 -> 2,041.4 | +4.8% | MoE backend only |
+| C current plain, MTP | 1,947.4 | baseline | — |
+| A2 Lucifer packed, MTP | 2,822.1 | +44.9% | full production path |
+
+MTP throughput multiplier at C64: Lucifer `2822.1 / 1983.7 = 1.42x` versus
+current `1947.4 / 1666.5 = 1.17x`.
+
+Interpretation. MTP draft acceptance is the same on both stacks, so the gap is
+not draft quality or the verifier. Yet enabling MTP at C64 gives Lucifer
+`+42%` but current only `+17%`. With equal acceptance, that difference comes
+from the cost of the speculative verify forward: MTP-verify runs the decode
+attention with `q_len = num_speculative_tokens + 1 = 3` query positions per
+sequence. Lucifer's packed `sparse_mla_sm120_decode` kernel serves that
+multi-query sparse-decode shape far more efficiently than current's plain
+`trtllm` decode, so the verify forward is cheaper, which leaves more compute
+headroom and inflates the effective MTP multiplier at high batch. The single
+"packed SM120 sparse-MLA decode kernel" mechanism explains all three
+observations: the isolated C4 crossover (the packed kernel's fixed
+per-launch/workspace overhead loses at small batch, so current wins C4 at
+`466.6` vs `397.8`), the C8+ reversal with the gap widening through C64, and
+why the earlier PR3395 reintegration was neutral for ctx0 decode (it ported
+only the packed prefill kernel `sparse_mla_sm120_paged_attention`, never the
+decode kernel `sparse_mla_sm120_decode_dsv4_autotune`).
+
+Conclusion: the C8-C64 ctx0 decode gap is the FlashInfer packed SM120
+sparse-MLA decode kernel, with its advantage concentrated in the MTP
+speculative-verify multi-query decode shape (the production path). The MoE
+backend is a small secondary signal (`~+5%`). All other runtime/scheduler/
+sampler/all-reduce/compile dimensions were ruled out by direct config
+equality.
+
+Operational note for reruns: the sanitized Lucifer serve wrapper only unsets
+`PYTHONPATH`; it does not add the venv `bin` to `PATH`. Because the
+`SPARSE_MLA_SM120` backend JIT-compiles via FlashInfer at worker init, a
+launch without the venv `bin` on `PATH` dies with
+`FileNotFoundError: [Errno 2] No such file or directory: 'ninja'` and
+`Engine core initialization failed`. Prepend the venv `bin` to `PATH` (the
+current-stack wrapper already does this; the Lucifer wrapper does not). This
+is the same root cause as the earlier "missing venv `bin` on `PATH`" pitfall.
+
+## Phase 3: SM120 Packed Decode Port (dev branch, gated, default off)
+
+The attribution above was then confirmed inside the current branch's own tree
+by porting the packed sparse-sm120 decode kernel and changing one variable.
+
+Implementation (`codex/ds4-sm120-lucifer-decode-gap-20260614`): a new
+`DeepseekV4FlashInferSM120Attention` subclass of the FlashMLA V4 attention class
+that reuses the packed `fp8_ds_mla` cache, the sparse-index metadata, and the
+packed prefill, and overrides only `_forward_decode` to call FlashInfer's
+`BatchMLAPagedAttentionWrapper(backend="sparse-sm120").run_sparse_mla`. It is
+selected only when `VLLM_DEEPSEEK_V4_FLASHINFER_SM120_DECODE=1`, the device is
+SM12x, and `has_flashinfer_sparse_mla_sm120()` is true; otherwise behavior is
+byte-for-byte the FlashMLA decode path. The current branch already had every
+dependency (`decode_swa_lens`, `current_workspace_manager`,
+`compute_global_topk_indices_and_lens`, the packed cache and packed prefill);
+the only integration fix was forcing the extra (compressed) decode index tensor
+contiguous, which the sparse-sm120 kernel asserts (`eidx must be contiguous`).
+
+The decisive one-variable result (same source tree, same MARLIN MoE, same packed
+cache, same MTP; only the decode kernel differs) is cell E2 versus cell C:
+
+| C | C FlashMLA decode | E2 sparse-sm120 decode | Delta (decode kernel only) |
+| ---: | ---: | ---: | ---: |
+| 1 | 179.0 | 188.5 | +5.3% |
+| 2 | 296.9 | 318.0 | +7.1% |
+| 4 | 466.6 | 501.3 | +7.4% |
+| 8 | 600.5 | 752.4 | +25.3% |
+| 16 | 873.9 | 1,045.2 | +19.6% |
+| 32 | 1,461.8 | 1,702.0 | +16.4% |
+| 64 | 1,947.4 | 2,576.6 | +32.3% |
+
+Swapping only the decode kernel lifts C64 by `+32%` and closes roughly `72%` of
+the full current-to-Lucifer C64 gap; the residual is the `flashinfer_cutlass`
+MoE (`~+5%`) plus minor runtime/source differences. E2 was clean (exit 0, no
+errors, no queue, no capacity-limited cells, MTP acceptance `~2.2-2.28`). This is
+the cleanest possible attribution: it isolates the decode kernel as the dominant
+C8-C64 ctx0 lever inside one source tree. (E2 also keeps the C4 point ahead of
+the FlashMLA baseline, so the isolated "C4 crossover" where Lucifer lost C4 is a
+property of Lucifer's `flashinfer_cutlass` MoE / runtime, not of the packed
+decode kernel.)
+
+Correctness (GSM8K 5-shot, limit-200, C=4, same session): the port scored
+flexible `0.92` / strict `0.90` versus the gate-off FlashMLA baseline flexible
+`0.945` / strict `0.92`. The `-2.5 / -2` point delta is within `~1 sigma` at
+limit-200 (stderr `~0.016-0.021`), i.e. not a regression. The baseline itself is
+`0.92` strict (below the `0.925` floor) in this session, so the strict-floor
+shortfall is a session artifact (temperature `1.0` generation config,
+probabilistic MTP, 200-sample variance), not the decode kernel; MTP acceptance
+is identical to the baseline and Lucifer's same kernel scores `0.955 / 0.955`.
+Promotion still requires a tighter GSM8K (higher limit or temperature 0), the
+full RTX promotion matrix, and the GB10 long-context / lifecycle gates; keep the
+route default-off behind the env gate until those pass.

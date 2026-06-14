@@ -58,6 +58,9 @@ outputs/
 # Private local handoff notes
 *.local.md
 
+# Local-only scratch (driver scripts with machine-specific paths)
+.local-tmp/
+
 # Large profiling / porting binaries — personal tuning/porting data, not
 # meant to be tracked in git. Local-only; the README files alongside these
 # in baselines/*/ tell consumers how to reproduce them on the same vllm SHA.

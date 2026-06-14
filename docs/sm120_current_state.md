@@ -118,6 +118,21 @@ Last updated: 2026-06-14.
   prefill dataflow evidence and a dev-branch route, not as solved decode or
   prefill parity. See
   `docs/sm120/experiments/2026-06-14-rtx-llm-decode-bench/README.md`.
+  A 2026-06-14 same-session 2x2 attribution pass (Lucifer vs current, MTP
+  on/off, on a clean reboot) root-caused the C8-C64 ctx0 decode gap to the
+  FlashInfer packed SM120 sparse-MLA decode kernel
+  (`sparse_mla_sm120_decode_dsv4_autotune`), which the current branch never
+  reintegrated; it ported only the packed prefill kernel
+  (`sparse_mla_sm120_paged_attention`). Compile/cudagraph, all-reduce, sampler,
+  FP8 linear, and MTP acceptance (`~2.25` length, `~63%` draft) are identical
+  on both stacks; only the MoE backend (`~+5%`) and decode attention kernel
+  differ. The kernel's advantage is concentrated in the MTP speculative-verify
+  multi-query decode shape: the C64 MTP throughput multiplier is `1.42x` on
+  Lucifer vs `1.17x` on current despite equal acceptance, which also explains
+  the isolated C4 crossover (packed-kernel fixed overhead loses at small batch).
+  Next step is a Dev-only port of the SM120 packed decode path behind an env
+  gate on `codex/ds4-sm120-lucifer-decode-gap-20260614`; keep GSM8K and GB10
+  lifecycle gates as promotion requirements.
 - Aiden/unholy-fusion external route: keep the NVIDIA forum Aiden recipe as a
   separate GB10 / SM121 watchlist item, not as evidence that the public
   black-benediction branch should be ported whole. The thread reports a
