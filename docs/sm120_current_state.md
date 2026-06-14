@@ -130,9 +130,28 @@ Last updated: 2026-06-14.
   multi-query decode shape: the C64 MTP throughput multiplier is `1.42x` on
   Lucifer vs `1.17x` on current despite equal acceptance, which also explains
   the isolated C4 crossover (packed-kernel fixed overhead loses at small batch).
-  Next step is a Dev-only port of the SM120 packed decode path behind an env
-  gate on `codex/ds4-sm120-lucifer-decode-gap-20260614`; keep GSM8K and GB10
-  lifecycle gates as promotion requirements.
+  The SM120 packed decode path is now implemented behind
+  `VLLM_DEEPSEEK_V4_FLASHINFER_SM120_DECODE` (default off) as a
+  `DeepseekV4FlashInferSM120Attention` subclass that overrides only
+  `_forward_decode`. One-variable (decode kernel only) it lifts ctx0 decode
+  `+25%` at C8 and `+32%` at C64, closing `~72%` of the gap (residual is the
+  `flashinfer_cutlass` MoE), and is GSM8K-neutral vs the FlashMLA-decode
+  baseline. Keep GSM8K and GB10 lifecycle gates as promotion requirements.
+- 2026-06-14 upstream rebase: the PR stack `codex/ds4-sm120-min-enable` was
+  rebased onto upstream/main `c621af1690` (was `8a91228dbe`) to absorb
+  `vllm-project/vllm#45277`; the dev branch
+  `codex/ds4-sm120-lucifer-decode-gap-20260614` (`0b0b9ea830`) sits on top with
+  the packed prefill + SM120 decode. Only one manual conflict (the sparse-MLA
+  `indexer.py use_flattening` block vs `#45322`, resolved by adding the SM12x
+  family exclusion). `#45277` is build hygiene only -- it does NOT change SM120
+  runtime behavior (the newly-covered `DSV3_FUSED_A_GEMM` 12.0 kernel is not
+  dispatched on SM120; `scaled_mm`/`cutlass_moe` SM120 archs were already
+  covered). DeepSeek V4 stays on the V1 model runner after `#42667` (absent from
+  the v2 default arch set and excluded by the fp8 `is_quantized` gate). The
+  rebased+rebuilt dev stack revalidated clean on dual RTX PRO 6000 / SM120:
+  ctx0 decode no regression (`2650 tok/s` at C64, temp 0) and GSM8K 5-shot
+  limit-500 temp-0 `0.92/0.892` gate-on vs `0.914/0.884` gate-off (decode kernel
+  correctness-neutral). Backup tags `sm120-*-before-upstream-rebase-20260614`.
 - Aiden/unholy-fusion external route: keep the NVIDIA forum Aiden recipe as a
   separate GB10 / SM121 watchlist item, not as evidence that the public
   black-benediction branch should be ported whole. The thread reports a
