@@ -277,6 +277,17 @@ run_live_gate smoke_quick "${PYTHON}" -m ds4_harness.cli chat-smoke \
   --jsonl-output "${OUT_DIR}/smoke_quick.jsonl" \
   --markdown-output "${OUT_DIR}/smoke_quick.md"
 
+# User-reported regression cases (e.g. jasl/vllm#19 instruction-following:
+# thinking-off must return JSON only, no prose preamble). Kept in the standard
+# acceptance suite so every re-test guards against the reported regressions.
+run_live_gate smoke_regression "${PYTHON}" -m ds4_harness.cli chat-smoke \
+  --base-url "${BASE_URL}" \
+  --model "${MODEL}" \
+  --tag regression \
+  --request-retries "${API_REQUEST_RETRIES}" \
+  --jsonl-output "${OUT_DIR}/smoke_regression.jsonl" \
+  --markdown-output "${OUT_DIR}/smoke_regression.md"
+
 generation_args=()
 IFS=',' read -r -a generation_languages <<< "${GENERATION_LANGUAGES}"
 for language in "${generation_languages[@]}"; do

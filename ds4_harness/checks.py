@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +13,7 @@ class Expectation:
     forbidden_terms: tuple[str, ...] = ()
     min_chars: int = 0
     require_html_artifact: bool = False
+    require_json_only: bool = False
     tool_name: str | None = None
     finish_reason: str | None = None
 
@@ -64,6 +66,43 @@ def _has_html_artifact(text: str) -> bool:
         and has_closed_style
         and has_closed_script
     )
+
+
+def _strip_optional_code_fence(text: str) -> str:
+    """Return the inner body of a single surrounding ``` fence, else the text.
+
+    Tolerates an optional language tag (``` ```json ```) on the opening line so a
+    cleanly fenced JSON payload is still recognised as JSON-only. Anything that
+    is not a single self-contained fence is returned unchanged.
+    """
+    stripped = text.strip()
+    if not (stripped.startswith("```") and stripped.endswith("```") and len(stripped) > 6):
+        return stripped
+    inner = stripped[3:-3].strip()
+    newline = inner.find("\n")
+    if newline != -1:
+        first_line = inner[:newline].strip()
+        if first_line and " " not in first_line and first_line[0] not in "[{\"":
+            inner = inner[newline + 1 :].strip()
+    return inner
+
+
+def _is_json_only(text: str) -> bool:
+    """True when the whole response is a single JSON object/array and nothing else.
+
+    The #19 regression manifests as a prose preamble (often plus a ```json fence)
+    in front of the requested JSON, so a leading explanation makes json.loads fail
+    on the full body. A bare scalar is rejected: the instruction-following cases
+    ask for a JSON array/object, and prose-free models do not emit lone scalars.
+    """
+    candidate = _strip_optional_code_fence(text)
+    if not candidate:
+        return False
+    try:
+        parsed = json.loads(candidate)
+    except (ValueError, TypeError):
+        return False
+    return isinstance(parsed, (list, dict))
 
 
 def check_chat_response(
@@ -124,5 +163,12 @@ def check_chat_response(
 
     if expectation.require_html_artifact and not _has_html_artifact(text):
         return CheckResult(False, "missing complete HTML artifact")
+
+    if expectation.require_json_only and not _is_json_only(text):
+        preview = text.strip()[:80].replace("\n", "\\n")
+        return CheckResult(
+            False,
+            f"expected JSON-only response (no prose preamble), got: {preview!r}",
+        )
 
     return CheckResult(True, "matched expectation")

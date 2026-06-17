@@ -71,6 +71,54 @@ def test_html_expectation_rejects_unclosed_artifact():
     assert result.detail == "missing complete HTML artifact"
 
 
+def test_json_only_accepts_bare_and_fenced_json_array():
+    expectation = Expectation(require_json_only=True)
+
+    assert check_chat_response(
+        expectation, _chat_response('["vLLM", "NVIDIA", "CUDA"]')
+    ).ok
+    assert check_chat_response(
+        expectation, _chat_response('```json\n["vLLM", "NVIDIA"]\n```')
+    ).ok
+
+
+def test_json_only_rejects_prose_preamble_issue19_shape():
+    expectation = Expectation(require_json_only=True)
+
+    result = check_chat_response(
+        expectation,
+        _chat_response(
+            "好的，这是根据您提供的笔记内容生成的分类标签。\n"
+            '```json\n["vLLM", "NVIDIA"]\n```'
+        ),
+    )
+
+    assert not result.ok
+    assert "JSON-only" in result.detail
+
+
+def test_json_only_rejects_bare_scalar_and_empty():
+    expectation = Expectation(require_json_only=True)
+
+    assert not check_chat_response(expectation, _chat_response("56")).ok
+    assert not check_chat_response(expectation, _chat_response("   ")).ok
+
+
+def test_issue19_regression_case_present_and_thinking_off():
+    case = next(
+        case
+        for case in build_cases("deepseek-ai/DeepSeek-V4-Flash")
+        if case.name == "issue19_instruction_following_json_only"
+    )
+
+    assert case.expectation.require_json_only
+    assert {"regression", "issue19"} <= set(case.tags)
+    assert case.temperature == 0.0
+    payload = case.to_payload(default_max_tokens=256, default_temperature=0.0)
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+    assert payload["messages"][0]["role"] == "system"
+
+
 def test_malformed_empty_choices_response_is_failed_check():
     result = check_chat_response(Expectation(all_terms=("anything",)), {"choices": []})
 

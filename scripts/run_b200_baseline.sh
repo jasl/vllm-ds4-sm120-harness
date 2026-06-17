@@ -56,14 +56,6 @@ NUM_PROMPTS="${NUM_PROMPTS:-80}"
 BENCH_TIMEOUT="${BENCH_TIMEOUT:-1800}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
 RUN_RANDOM_LONG="${RUN_RANDOM_LONG:-1}"
-RUN_KV_LAYOUT_PROBE="${RUN_KV_LAYOUT_PROBE:-1}"
-KV_LAYOUT_CASE_NAME="${KV_LAYOUT_CASE_NAME:-packed_fp8_indexer_cache_layout}"
-KV_LAYOUT_NUM_BLOCKS="${KV_LAYOUT_NUM_BLOCKS:-2}"
-KV_LAYOUT_BLOCK_SIZE="${KV_LAYOUT_BLOCK_SIZE:-${B200_BLOCK_SIZE}}"
-KV_LAYOUT_HEAD_DIM="${KV_LAYOUT_HEAD_DIM:-448}"
-KV_LAYOUT_SCALE_BYTES="${KV_LAYOUT_SCALE_BYTES:-8}"
-KV_LAYOUT_REQUIRE_HELPER_MATCH="${KV_LAYOUT_REQUIRE_HELPER_MATCH:-1}"
-KV_LAYOUT_TIMEOUT="${KV_LAYOUT_TIMEOUT:-120}"
 RUN_LONG_CONTEXT_PROBE="${RUN_LONG_CONTEXT_PROBE:-1}"
 RUN_LONG_CONTEXT_LATENCY_MATRIX="${RUN_LONG_CONTEXT_LATENCY_MATRIX:-1}"
 LONG_CONTEXT_LATENCY_CASE_NAME="${LONG_CONTEXT_LATENCY_CASE_NAME:-long_context_mtp_reliability}"
@@ -407,9 +399,6 @@ export STREAMING_PRESSURE_MAX_ELAPSED_SECONDS STREAMING_PRESSURE_FAIL_ON_SLOW
 export RUN_LLM_DECODE_BENCH
 export RUN_EXTERNAL_COMMAND EXTERNAL_COMMAND EXTERNAL_COMMAND_LABEL
 export EXTERNAL_COMMAND_TIMEOUT
-export RUN_KV_LAYOUT_PROBE KV_LAYOUT_CASE_NAME KV_LAYOUT_NUM_BLOCKS
-export KV_LAYOUT_BLOCK_SIZE KV_LAYOUT_HEAD_DIM KV_LAYOUT_SCALE_BYTES
-export KV_LAYOUT_REQUIRE_HELPER_MATCH KV_LAYOUT_TIMEOUT
 
 if [[ -z "${MTP_SPECULATIVE_CONFIG+x}" ]]; then
   MTP_SPECULATIVE_CONFIG='{"method":"mtp","num_speculative_tokens":2}'
@@ -429,7 +418,6 @@ fi
 ACTIVE_SERVER_PID=""
 failures=0
 VALID_BASELINE_PHASES=(
-  kv_layout_probe
   acceptance
   long_context_probe
   long_context_latency_matrix
@@ -460,7 +448,6 @@ VALID_BASELINE_PHASES=(
 phase_run_flag() {
   local phase="$1"
   case "${phase}" in
-    kv_layout_probe) printf '%s\n' RUN_KV_LAYOUT_PROBE ;;
     acceptance) printf '%s\n' RUN_ACCEPTANCE ;;
     long_context_probe) printf '%s\n' RUN_LONG_CONTEXT_PROBE ;;
     long_context_latency_matrix) printf '%s\n' RUN_LONG_CONTEXT_LATENCY_MATRIX ;;
@@ -517,7 +504,7 @@ validate_requested_phases() {
     if [[ "${matched}" != "1" ]]; then
       printf 'unsupported B200 baseline phase: %s\n' "${item}" >&2
       printf '%s\n' \
-        'valid phases: all,kv_layout_probe,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,very_long_context_capacity,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,kv_lifecycle_probe,streaming_pressure_soak,streaming_pressure_matrix,llm_decode_bench,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_256x256,bench_random_1024x1024_c256,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
+        'valid phases: all,acceptance,long_context_probe,long_context_latency_matrix,frontier_context_sweep,very_long_context_capacity,ds4_story_recall_semantic,long_context_decode_concurrency,long_context_mixed_arrival,prefix_cache_probe,prefix_cache_stress,kv_lifecycle_probe,streaming_pressure_soak,streaming_pressure_matrix,llm_decode_bench,external_command,bench_hf_mt_bench,eval_gsm8k,bench_random_prefill_sweep,bench_random_8000x1000,bench_random_256x256,bench_random_1024x1024_c256,bench_random_8192x512,oracle_export,decode_profile,eval_longbench2' >&2
       return 2
     fi
     run_flag="$(phase_run_flag "${item}")"
@@ -917,9 +904,6 @@ write_summary() {
     printf -- '- mtp_concurrency: `%s`\n' "${MTP_CONCURRENCY}"
     printf -- '- num_prompts: `%s`\n' "${NUM_PROMPTS}"
     printf -- '- acceptance: `%s`\n' "${RUN_ACCEPTANCE}"
-    printf -- '- kv_layout_probe: `%s`, shape `%s x %s x (%s + %s)`, require helper `%s`\n' \
-      "${RUN_KV_LAYOUT_PROBE}" "${KV_LAYOUT_NUM_BLOCKS}" "${KV_LAYOUT_BLOCK_SIZE}" \
-      "${KV_LAYOUT_HEAD_DIM}" "${KV_LAYOUT_SCALE_BYTES}" "${KV_LAYOUT_REQUIRE_HELPER_MATCH}"
     printf -- '- long_context_probe: `%s`, lines `%s`, max tokens `%s`, thinking `%s`\n' \
       "${RUN_LONG_CONTEXT_PROBE}" "${LONG_CONTEXT_LINE_COUNT:-1900}" \
       "${LONG_CONTEXT_MAX_TOKENS:-128}" "${LONG_CONTEXT_THINKING_MODE:-non-thinking}"
@@ -1235,21 +1219,6 @@ for variant in ${variant_list}; do
   serve_log="${variant_dir}/serve.log"
   startup_dir="${variant_dir}/server_startup"
   mkdir -p "${variant_dir}"
-
-  if phase_enabled "kv_layout_probe" && { [[ "${RUN_KV_LAYOUT_PROBE}" == "1" ]] || [[ "${RUN_KV_LAYOUT_PROBE}" == "true" ]]; }; then
-    run_phase "${variant}" "kv_layout_probe" "${variant_dir}/kv_layout_probe" \
-      env OUT_DIR="${variant_dir}/kv_layout_probe" \
-        PYTHON="${PYTHON}" \
-        KV_LAYOUT_VARIANT="${variant}" \
-        KV_LAYOUT_CASE_NAME="${KV_LAYOUT_CASE_NAME}" \
-        KV_LAYOUT_NUM_BLOCKS="${KV_LAYOUT_NUM_BLOCKS}" \
-        KV_LAYOUT_BLOCK_SIZE="${KV_LAYOUT_BLOCK_SIZE}" \
-        KV_LAYOUT_HEAD_DIM="${KV_LAYOUT_HEAD_DIM}" \
-        KV_LAYOUT_SCALE_BYTES="${KV_LAYOUT_SCALE_BYTES}" \
-        KV_LAYOUT_REQUIRE_HELPER_MATCH="${KV_LAYOUT_REQUIRE_HELPER_MATCH}" \
-        KV_LAYOUT_TIMEOUT="${KV_LAYOUT_TIMEOUT}" \
-        "${SCRIPT_DIR}/run_kv_layout_probe.sh"
-  fi
 
   start_server "${variant}" "${variant_dir}" "${serve_log}"
   if wait_for_started_server "${variant}" "${startup_dir}"; then

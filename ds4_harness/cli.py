@@ -26,6 +26,7 @@ from ds4_harness.bench import (
 from ds4_harness.cases import SmokeCase, build_cases, select_cases
 from ds4_harness.checks import CheckResult, assistant_text, check_chat_response, tool_call_names
 from ds4_harness.client import get_json, get_status, post_json, post_json_with_retries
+from ds4_harness.coherence_gate import run_long_context_coherence_gate
 from ds4_harness.decode_throughput_probe import (
     DEFAULT_CASE_NAME as DEFAULT_DECODE_THROUGHPUT_CASE_NAME,
     DEFAULT_MAX_TOKENS as DEFAULT_DECODE_THROUGHPUT_MAX_TOKENS,
@@ -59,15 +60,6 @@ from ds4_harness.frontier_context_sweep import (
     write_frontier_context_sweep_markdown,
 )
 from ds4_harness.gpu_stats import summarize_gpu_csv, write_gpu_json, write_gpu_markdown
-from ds4_harness.kv_layout_probe import (
-    DEFAULT_BLOCK_SIZE as DEFAULT_KV_LAYOUT_BLOCK_SIZE,
-    DEFAULT_CASE_NAME as DEFAULT_KV_LAYOUT_CASE_NAME,
-    DEFAULT_HEAD_DIM as DEFAULT_KV_LAYOUT_HEAD_DIM,
-    DEFAULT_NUM_BLOCKS as DEFAULT_KV_LAYOUT_NUM_BLOCKS,
-    DEFAULT_SCALE_BYTES as DEFAULT_KV_LAYOUT_SCALE_BYTES,
-    run_kv_layout_probe,
-    write_kv_layout_markdown,
-)
 from ds4_harness.kv_lifecycle_probe import (
     DEFAULT_CASE_NAME as DEFAULT_KV_LIFECYCLE_CASE_NAME,
     DEFAULT_LINE_COUNT as DEFAULT_KV_LIFECYCLE_LINE_COUNT,
@@ -934,6 +926,53 @@ def _cmd_long_context_probe(args: argparse.Namespace) -> int:
     return 0 if row.get("ok") else 1
 
 
+def _cmd_long_context_coherence_gate(args: argparse.Namespace) -> int:
+    if not _validate_request_retries(args.request_retries):
+        print("--request-retries must be >= 0", file=sys.stderr)
+        return 2
+
+    try:
+        extra_body = _parse_extra_body_json(args.extra_body_json)
+        row = run_long_context_coherence_gate(
+            base_url=args.base_url,
+            model=args.model,
+            line_count=args.line_count,
+            concurrency=args.concurrency,
+            repeat_count=args.repeat_count,
+            max_tokens=args.max_tokens,
+            temperature=args.temperature,
+            timeout=args.timeout,
+            request_retries=args.request_retries,
+            max_non_latin_fraction=args.max_non_latin_fraction,
+            extra_body=extra_body,
+        )
+    except (KeyError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json_output is not None:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    for item in row.get("rows", []):
+        if not item.get("ok"):
+            detail = item.get("detail") or (
+                f"recall={item.get('recall_detail')} "
+                f"coherence={item.get('coherence_detail')}"
+            )
+            print(f"  FAIL request#{item.get('index')}: {detail}", file=sys.stderr)
+    status = "PASS" if row.get("ok") else "FAIL"
+    print(
+        f"{status} {row.get('case')}: "
+        f"passed={row.get('passed')}/{row.get('total_requests')} "
+        f"concurrency={row.get('concurrency')} line_count={row.get('line_count')}"
+    )
+    return 0 if row.get("ok") else 1
+
+
 def _cmd_prefix_cache_probe(args: argparse.Namespace) -> int:
     if not _validate_request_retries(args.request_retries):
         print("--request-retries must be >= 0", file=sys.stderr)
@@ -1502,38 +1541,6 @@ def _cmd_decode_throughput_probe(args: argparse.Namespace) -> int:
             slow=summary.get("slow_request_count", "n/a"),
         )
     )
-    return 0 if row.get("ok") else 1
-
-
-def _cmd_kv_layout_probe(args: argparse.Namespace) -> int:
-    try:
-        row = run_kv_layout_probe(
-            target_python=args.target_python,
-            variant=args.variant,
-            case_name=args.case_name,
-            num_blocks=args.num_blocks,
-            block_size=args.block_size,
-            head_dim=args.head_dim,
-            scale_bytes=args.scale_bytes,
-            raw_output=args.raw_output,
-            require_helper_match=args.require_helper_match,
-            timeout=args.timeout,
-        )
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-
-    if args.json_output is not None:
-        args.json_output.parent.mkdir(parents=True, exist_ok=True)
-        args.json_output.write_text(
-            json.dumps(row, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-    if args.markdown_output is not None:
-        write_kv_layout_markdown(args.markdown_output, row)
-
-    status = "PASS" if row.get("ok") else "FAIL"
-    print(f"{status} {row.get('case')} variant={args.variant}: {row.get('detail')}")
     return 0 if row.get("ok") else 1
 
 
@@ -2348,6 +2355,21 @@ def build_parser() -> argparse.ArgumentParser:
     long_context.add_argument("--markdown-output", type=Path)
     long_context.set_defaults(func=_cmd_long_context_probe)
 
+    coherence_gate = subparsers.add_parser("long-context-coherence-gate")
+    coherence_gate.add_argument("--base-url", default="http://127.0.0.1:8000")
+    coherence_gate.add_argument("--model", default=DEFAULT_MODEL)
+    coherence_gate.add_argument("--line-count", type=int, default=280)
+    coherence_gate.add_argument("--concurrency", type=int, default=8)
+    coherence_gate.add_argument("--repeat-count", type=int, default=1)
+    coherence_gate.add_argument("--max-tokens", type=int, default=384)
+    coherence_gate.add_argument("--temperature", type=float, default=0.0)
+    coherence_gate.add_argument("--max-non-latin-fraction", type=float, default=0.15)
+    coherence_gate.add_argument("--timeout", type=float, default=900.0)
+    coherence_gate.add_argument("--request-retries", type=int, default=1)
+    coherence_gate.add_argument("--extra-body-json")
+    coherence_gate.add_argument("--json-output", type=Path)
+    coherence_gate.set_defaults(func=_cmd_long_context_coherence_gate)
+
     prefix_cache = subparsers.add_parser("prefix-cache-probe")
     prefix_cache.add_argument("--base-url", default="http://127.0.0.1:8000")
     prefix_cache.add_argument("--model", default=DEFAULT_MODEL)
@@ -2748,25 +2770,6 @@ def build_parser() -> argparse.ArgumentParser:
     decode_probe.add_argument("--json-output", type=Path)
     decode_probe.add_argument("--markdown-output", type=Path)
     decode_probe.set_defaults(func=_cmd_decode_throughput_probe)
-
-    kv_layout = subparsers.add_parser("kv-layout-probe")
-    kv_layout.add_argument("--target-python", default=sys.executable)
-    kv_layout.add_argument("--variant", default="manual")
-    kv_layout.add_argument("--case-name", default=DEFAULT_KV_LAYOUT_CASE_NAME)
-    kv_layout.add_argument("--num-blocks", type=int, default=DEFAULT_KV_LAYOUT_NUM_BLOCKS)
-    kv_layout.add_argument("--block-size", type=int, default=DEFAULT_KV_LAYOUT_BLOCK_SIZE)
-    kv_layout.add_argument("--head-dim", type=int, default=DEFAULT_KV_LAYOUT_HEAD_DIM)
-    kv_layout.add_argument("--scale-bytes", type=int, default=DEFAULT_KV_LAYOUT_SCALE_BYTES)
-    kv_layout.add_argument(
-        "--require-helper-match",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    kv_layout.add_argument("--timeout", type=float, default=120.0)
-    kv_layout.add_argument("--json-output", type=Path)
-    kv_layout.add_argument("--markdown-output", type=Path)
-    kv_layout.add_argument("--raw-output", type=Path)
-    kv_layout.set_defaults(func=_cmd_kv_layout_probe)
 
     bench = subparsers.add_parser("bench-matrix")
     bench.add_argument("--vllm-bin", default="vllm")

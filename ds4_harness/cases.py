@@ -1,9 +1,30 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ds4_harness.checks import Expectation
+
+_DATA_DIR = Path(__file__).resolve().parent / "data"
+
+
+def _load_request_messages(filename: str) -> list[dict[str, Any]]:
+    """Load the ``messages`` array from a bundled request fixture."""
+    payload = json.loads((_DATA_DIR / filename).read_text(encoding="utf-8"))
+    messages = payload["messages"]
+    if not isinstance(messages, list) or not messages:
+        raise ValueError(f"fixture {filename} has no messages")
+    return messages
+
+
+# Reporter aqua001's exact jasl/vllm#19 request (system + user note, the verbatim
+# repro that triggers the SM12x indexer non-contiguous-topk bug: the prompt is
+# short enough that the compressed-KV count stays below the top-k width, so the
+# buggy path drops the distant context carrying the "Output ONLY a JSON array"
+# instruction). Kept as a fixture so the prompt is the single source of truth.
+ISSUE19_AQUA001_MESSAGES = _load_request_messages("issue19_aqua001_request.json")
 
 
 @dataclass(frozen=True)
@@ -152,6 +173,19 @@ def build_cases(model: str) -> list[SmokeCase]:
             max_tokens=512,
             temperature=0.0,
             extra_body={"top_p": 1.0, "seed": 1},
+        ),
+        SmokeCase(
+            name="issue19_instruction_following_json_only",
+            model=model,
+            messages=ISSUE19_AQUA001_MESSAGES,
+            expectation=Expectation(require_json_only=True),
+            tags=("regression", "issue19", "instruction-following", "deterministic"),
+            max_tokens=512,
+            temperature=0.0,
+            extra_body={
+                "top_p": 1.0,
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
         ),
     ]
 
