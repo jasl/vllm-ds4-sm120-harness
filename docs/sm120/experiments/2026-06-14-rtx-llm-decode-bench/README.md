@@ -98,6 +98,66 @@ despite equal acceptance, which also explains the isolated C4 crossover (the
 packed kernel's fixed overhead loses at small batch). See the
 "Decode-Kernel Attribution (same-session 2x2)" section of evidence.md.
 
+2026-06-16 RESOLUTION (on OFFICIAL FlashInfer, no fork dependency). PR3395 is
+merged into FlashInfer main `>= 0.6.13`, but main DROPPED the fork API
+(`run_sparse_mla`, `sparse_mla_sm120` module); it exposes the kernel via the
+public `trtllm_batch_decode_sparse_mla_dsv4` wrapper and the low-level
+`_SparseMLAPagedAttentionRunner`. Measured on the post-rebase dev base (dual RTX
+PRO 6000 / SM120, TP2, MTP2, in128/out512), the public wrapper is a REGRESSION,
+`-17%`/`-20%` at C32/C64 vs the FlashMLA/Triton default: its
+`_sparse_mla_decode_workspace` returns no scratch for `num_tokens > 64`, so it
+reallocates the split-K `mid_out`/`mid_lse` (hundreds of MB) fresh every decode
+step, and the MTP `q_len=3` decode shape exceeds 64 tokens at C32 (T~96) and C64
+(T~192) -- the gap jumps exactly at that boundary. Driving the same kernel
+through the low-level runner (built once) with graph-stable `mid_out`/`mid_lse`
+reserved once from the vLLM workspace manager and reused each step closes it.
+Final tok/s `582 / 833 / 981 / 1683` at C8/16/32/64 vs default
+`542 / 771 / 790 / 1345` (`+7% / +8% / +24% / +25%`), which also beats the fork
+baseline `569 / 804 / 866 / 1555` by `+2%` to `+13%`. The cached scratch is the
+entire win; a decode-shaped autotune-the-`chunks_per_block` warmup added `0%` and
+was dropped. GSM8K 5-shot limit-300 flexible `0.953` / strict `0.927`. Landed as
+3 source files on `codex/ds4-sm120-flashinfer-decode-dev-20260616` (`b51cb3722`).
+
+2026-06-16 PREFILL re-measurement (gap is real on the current base, no kernel
+lever). The current post-rebase default was re-run through the SAME tool the
+gap was recorded with (`llm_decode_bench.py --prefill-only --prefill-contexts
+8k,64k,128k`, serve as full HF name, TP2 / MTP2, `max_model_len=131072`):
+`8k 9,409 / 64k 7,666` client tok/s (128k skipped on KV capacity), versus the
+old pre-rebase reintegrated default `9,368 / 8,122 / 6,799` and the published
+community Lucifer `12,956 / 12,348 / 11,318`. So the rebase's indexed-D512
+default did NOT move standalone prefill and the gap PERSISTS at `-27%` (8k) /
+`-38%` (64k). Caution: a `vllm bench serve --dataset-name random
+--random-input-len 65536 --random-output-len 1` probe reported about `14.3K`
+tok/s at 64k, which is INFLATED because random-content prefill is cheaper for
+the sparse indexer's top-k; use `llm_decode_bench` content for prefill
+comparisons. Unlike decode, prefill has no identified single-kernel fix on this
+base: packed FlashInfer prefill is redundant here (`-1.7%` stage-relocation),
+and grouped-SWA / direct-paged / public-b12x prefill routes were all rejected.
+The Lucifer prefill advantage is unattributed locally (the Lucifer prefill-only
+scout never reached `/health`); the most likely remaining levers are the
+FlashInfer CUTLASS MoE prefill contribution or a full-stack dataflow difference,
+which needs a controlled Lucifer-stack reproduction to attribute.
+
+2026-06-16 LUCIFER PREFILL REPRODUCED (controlled, the prior `/health` failure
+was a config issue, now resolved). The full Lucifer stack
+(`local-inference-lab/vllm` `7c6bbf4c5a4`, own built `_C.so`, fork FlashInfer
+0.6.12, served with `--attention-backend FLASHINFER_MLA_SPARSE` and otherwise the
+same TP2 / MTP2 / FP8-KV / `max_model_len=131072` config as ours) was run through
+the same `llm_decode_bench.py --prefill-only` tool on the same host:
+`8k 12,601 / 64k 11,720` client tok/s, which matches the published community
+Lucifer row (`12,956 / 12,348`). So the gap is REAL and reproduced: our default
+(`9,409 / 7,666`) is `-25%` (8k) / `-35%` (64k) behind local Lucifer. The
+advantage is attributed to the Lucifer stack (the `FLASHINFER_MLA_SPARSE`
+sparse-sm120 prefill backend plus FI CUTLASS MXFP4 MoE, versus our FlashMLA
+indexed-D512 prefill plus MARLIN MoE). Note the apparent tension with the earlier
+"packed FI prefill = `-1.7%` redundant" result: that probed OUR packed-prefill
+env gate on OUR base, whereas Lucifer's full sparse-sm120 backend behaves
+differently. The remaining work is component isolation (MoE vs sparse-sm120
+prefill kernel) and porting the winning lever onto our official-FlashInfer stack.
+On SM12x note the backend priority is `[TRITON_MLA, FLASHINFER_MLA_SPARSE]`, so
+the explicit `--attention-backend FLASHINFER_MLA_SPARSE` flag is required to
+select the packed route.
+
 A PR3395 packed-prefill reintegration check showed two different prefill
 signals. The attribution gate improved 16K/65K cold prefill by about +22% and
 cut the isolated sparse stage sharply ON THE STALE PRE-REBASE BASE. This is

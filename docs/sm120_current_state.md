@@ -6,7 +6,7 @@ next-step decisions. New experiment notes and durable decisions should use the
 framework in `docs/sm120/`. Treat `docs/sm120_optimization_notes.md` as the
 legacy evidence archive.
 
-Last updated: 2026-06-14.
+Last updated: 2026-06-16.
 
 ## Read Order
 
@@ -119,6 +119,18 @@ Last updated: 2026-06-14.
   8K/64K/128K and still lags published Lucifer prefill by `27-35%`. Treat this as
   useful prefill dataflow evidence, not as solved decode or prefill parity. See
   `docs/sm120/experiments/2026-06-14-rtx-llm-decode-bench/README.md`.
+  PREFILL PARITY -- DEFINITIVELY CLOSED 2026-06-18: source verification (Lucifer's
+  actual `DeepseekV4FlashInferSM120Attention` is the same two-pool `run_sparse_mla`
+  route we already ship env-gated, re-tested perf-neutral twice; the "merged
+  single-pool" was the V3.2/DSA decoy backend) shows the residual Lucifer prefill
+  lead is a **flashinfer-kernel gap (the fork's hand-tuned `sparse_mla_sm120`
+  prefill kernel, dropped from flashinfer-main), NOT vLLM-side-closable** on this
+  base. Closing it needs an upstream flashinfer prefill-kernel contribution
+  (mirroring how PR3395 upstreamed the decode kernel that gave us the shipped
+  decode win); flashinfer main as of 2026-06-17 (`9c5ed7c`) has no new sparse-MLA
+  SM120 prefill kernel. Full writeup + watch criteria:
+  `docs/sm120/experiments/2026-06-17-flashinfer-prefill-parity/README.md`
+  (the two 2026-06-18-LATER entries).
   A 2026-06-14 same-session 2x2 attribution pass (Lucifer vs current, MTP
   on/off, on a clean reboot) root-caused the C8-C64 ctx0 decode gap to the
   FlashInfer packed SM120 sparse-MLA decode kernel
@@ -131,13 +143,37 @@ Last updated: 2026-06-14.
   multi-query decode shape: the C64 MTP throughput multiplier is `1.42x` on
   Lucifer vs `1.17x` on current despite equal acceptance, which also explains
   the isolated C4 crossover (packed-kernel fixed overhead loses at small batch).
-  The SM120 packed decode path is now implemented behind
+  The SM120 packed decode path is implemented behind
   `VLLM_DEEPSEEK_V4_FLASHINFER_SM120_DECODE` (default off) as a
   `DeepseekV4FlashInferSM120Attention` subclass that overrides only
-  `_forward_decode`. One-variable (decode kernel only) it lifts ctx0 decode
-  `+25%` at C8 and `+32%` at C64, closing `~72%` of the gap (residual is the
-  `flashinfer_cutlass` MoE), and is GSM8K-neutral vs the FlashMLA-decode
-  baseline. Keep GSM8K and GB10 lifecycle gates as promotion requirements.
+  `_forward_decode`. The `+25%`/`+32%` C8/C64 numbers above were the original
+  measurement against the *fork* FlashInfer (`run_sparse_mla` +
+  `sparse_mla_sm120_decode_dsv4_autotune`) on the older default.
+  2026-06-16 UPDATE -- SOLVED on OFFICIAL FlashInfer (no fork dependency):
+  FlashInfer main `>= 0.6.13` ships the merged PR3395 kernel but DROPPED the
+  fork API; it exposes the kernel via the public
+  `trtllm_batch_decode_sparse_mla_dsv4` wrapper and the low-level
+  `flashinfer.mla._sparse_mla_sm120._SparseMLAPagedAttentionRunner`. The public
+  wrapper is a REGRESSION (`-17%` to `-20%` at C32/C64 vs the FlashMLA/Triton
+  default): its `_sparse_mla_decode_workspace` returns no scratch when
+  `num_tokens > 64`, so it reallocates the split-K `mid_out`/`mid_lse` (hundreds
+  of MB) fresh on every decode step, and the MTP multi-query decode shape
+  routinely exceeds 64 tokens (C32 T~96, C64 T~192). The decode path now drives
+  the kernel through the low-level runner (built once) with graph-stable
+  `mid_out`/`mid_lse` reserved once from the vLLM workspace manager and reused
+  every step. That cached scratch IS the entire win; a decode-shaped
+  autotune-the-`chunks_per_block` warmup added `0%` and was dropped. Re-measured
+  one-variable (decode kernel only) ctx0 decode in128/out512 on dual RTX PRO
+  6000 / SM120 vs the FlashMLA/Triton default:
+  `582 / 833 / 981 / 1683` vs `542 / 771 / 790 / 1345` tok/s at C8/16/32/64
+  (`+7% / +8% / +24% / +25%`), which also BEATS the fork baseline
+  (`569 / 804 / 866 / 1555`) by `+2%` to `+13%`. GSM8K 5-shot limit-300 flexible
+  `0.953` / strict `0.927` (matches the MXFP4 baseline). Final diff is 3 source
+  files (`flashinfer_sm120_decode.py` runner + cached scratch, `model.py` gate
+  -> `has_flashinfer_trtllm_sparse_mla_dsv4()`, `flashinfer.py` detector) on
+  `codex/ds4-sm120-flashinfer-decode-dev-20260616` (`b51cb3722`, local). Keep
+  GSM8K and GB10 lifecycle gates as promotion requirements; the GB10 / SM121
+  re-measure is still pending.
 - 2026-06-14 upstream rebase: the authoritative PR `codex/ds4-sm120-min-enable`
   (`531807c34b`, 162 commits) was rebased onto upstream/main `c621af1690` ->
   `f031e4206d`, ZERO conflicts (its newer indexer merges cleanly with `#45322`).
