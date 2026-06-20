@@ -149,6 +149,13 @@ GB10_LONG_C2_SERVER_STARTUP_TIMEOUT="${GB10_LONG_C2_SERVER_STARTUP_TIMEOUT:-30}"
 GB10_LONG_C2_SCHEDULER_TRACE="${GB10_LONG_C2_SCHEDULER_TRACE:-0}"
 GB10_LONG_C2_ENABLE_EXPERT_PARALLEL="${GB10_LONG_C2_ENABLE_EXPERT_PARALLEL:-0}"
 GB10_LONG_C2_ALLOW_DRIVER_SIGNALS="${GB10_LONG_C2_ALLOW_DRIVER_SIGNALS:-0}"
+# Known-benign driver signals to allowlist: excluded from the fail count but still
+# recorded (NOT silently masked). Default = the non-fatal NCCL 2.30.7 communicator-init
+# cuMem descriptor OOM (NV_ERR_NO_MEMORY from _memdescAllocInternal) -- irreducible cost
+# of the REQUIRED NCCL >=2.30.7 upgrade (see docs/dgx_spark_bare_metal_cluster.md), not a
+# quality regression. Real signals (Xid, illegal access, device-side assert, GPU lost,
+# other-site OOMs) do NOT match and still fail the gate. Empty = disable.
+GB10_LONG_C2_DRIVER_SIGNAL_ALLOWLIST="${GB10_LONG_C2_DRIVER_SIGNAL_ALLOWLIST:-NV_ERR_NO_MEMORY.*_memdescAllocInternal}"
 
 case "${GB10_LONG_C2_ENABLE_EXPERT_PARALLEL}" in
   1|true|TRUE|yes|YES)
@@ -295,12 +302,20 @@ capture_remote_driver_health "${HEAD_HOST}" head "${driver_health_dir}"
 capture_remote_driver_health "${WORKER_HOST}" worker "${driver_health_dir}"
 
 driver_health_signal_count=0
+driver_health_allowlisted_count=0
 for signal_file in \
     "${driver_health_dir}/head/kernel_gpu_signals.log" \
     "${driver_health_dir}/worker/kernel_gpu_signals.log"; do
   if [[ -s "${signal_file}" ]]; then
-    file_count="$(wc -l < "${signal_file}" | tr -d '[:space:]')"
-    driver_health_signal_count="$((driver_health_signal_count + file_count))"
+    file_total="$(wc -l < "${signal_file}" | tr -d '[:space:]')"
+    if [[ -n "${GB10_LONG_C2_DRIVER_SIGNAL_ALLOWLIST}" ]]; then
+      file_fail="$(grep -cvE "${GB10_LONG_C2_DRIVER_SIGNAL_ALLOWLIST}" "${signal_file}" 2>/dev/null | tr -d '[:space:]')"
+      [[ -z "${file_fail}" ]] && file_fail=0
+    else
+      file_fail="${file_total}"
+    fi
+    driver_health_signal_count="$((driver_health_signal_count + file_fail))"
+    driver_health_allowlisted_count="$((driver_health_allowlisted_count + file_total - file_fail))"
   fi
 done
 
@@ -315,6 +330,8 @@ fi
 DRIVER_HEALTH_ROOT="${driver_health_dir}" \
 DRIVER_HEALTH_OK="${driver_health_ok}" \
 DRIVER_HEALTH_SIGNAL_COUNT="${driver_health_signal_count}" \
+DRIVER_HEALTH_ALLOWLISTED="${driver_health_allowlisted_count}" \
+DRIVER_HEALTH_ALLOWLIST_PATTERN="${GB10_LONG_C2_DRIVER_SIGNAL_ALLOWLIST}" \
 DRIVER_HEALTH_ALLOW="${GB10_LONG_C2_ALLOW_DRIVER_SIGNALS}" \
 LOCAL_PYTHON="${LOCAL_PYTHON:-python3}" \
 "${LOCAL_PYTHON:-python3}" - <<'PY'
@@ -340,7 +357,12 @@ for label in ("head", "worker"):
 payload = {
     "ok": os.environ["DRIVER_HEALTH_OK"] == "1",
     "allow_driver_signals": os.environ["DRIVER_HEALTH_ALLOW"] == "1",
+    # signal_count = signals that COUNT toward fail (allowlisted ones excluded)
     "signal_count": int(os.environ["DRIVER_HEALTH_SIGNAL_COUNT"]),
+    # allowlisted_signal_count = known-benign signals seen but NOT failing the gate
+    # (default: NCCL 2.30.7 init cuMem OOM -- see driver_signal_allowlist)
+    "allowlisted_signal_count": int(os.environ.get("DRIVER_HEALTH_ALLOWLISTED", "0")),
+    "driver_signal_allowlist": os.environ.get("DRIVER_HEALTH_ALLOWLIST_PATTERN", ""),
     "hosts": hosts,
 }
 (root.parent / "driver_health_summary.json").write_text(

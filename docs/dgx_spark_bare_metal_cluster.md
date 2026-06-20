@@ -54,6 +54,30 @@ MLA behavior. Use NCCL `2.30.4` or newer; newer CUDA/Spark images may expose a n
 CUDA package suffix, so do not pin old `cuda13.2` package names unless that is
 the active CUDA runtime on the node.
 
+In practice on a `torch 2.11.0+cu130` venv, "`2.30.4` or newer" means **`2.30.7`**:
+the pip wheel `nvidia-nccl-cu13==2.30.4` (and `2.28.9`) crash vLLM worker-init
+(`WorkerProc initialization failed`, exit 6) on the 2-node mp serve; only `2.30.7`
+runs. Pin `nvidia-nccl-cu13==2.30.7` in the serving venv.
+
+Known non-fatal cost of the required `2.30.7` upgrade (do NOT treat as a quality
+regression): NCCL 2.30.7's communicator-init reserves roughly **3-4 GiB more device
+memory at init** than 2.28.x (before any weights load), which narrows GB10's unified
+memory-descriptor/carveout headroom. Under the Forum53 multi-user load peak this can
+trip a transient `NVRM ... NV_ERR_NO_MEMORY ... _memdescAllocInternal (mem_desc.c:1359)`
+on a node. It is **non-fatal** -- the model loads, the server serves, gates otherwise
+pass. Root-caused 2026-06-15 by a controlled OLD(NCCL 2.28)-vs-NEW(2.30.7) build A/B:
+the floor drops from ~18 GiB (NCCL 2.28) to ~14 GiB (NCCL 2.30.7) regardless of vLLM
+code, DeepGEMM, symmetric-memory all-reduce, MNNVL, NVLS, or CUMEM_HOST (all tested,
+none recover it) -- so it is the base init footprint of the required NCCL, with **no
+env-knob fix**. The only lever to reclaim the headroom is a lower
+`gpu_memory_utilization` (costs KV cache / multi-user concurrency, NOT prefill
+throughput). The 06-10 "clean" GB10 baseline simply predated the now-mandatory NCCL.
+The Forum53 gate allowlists exactly this signature via
+`GB10_FORUM53_DRIVER_SIGNAL_ALLOWLIST` (default `NV_ERR_NO_MEMORY.*_memdescAllocInternal`):
+it is excluded from the driver fail-count but still recorded
+(`allowlisted_signal_count` in `driver_health_summary.json`); all other signals (Xid,
+illegal access, device-side assert, GPU lost, other-site OOMs) still fail the gate.
+
 Use the active CUDA toolkit symlink (`/usr/local/cuda`) in public GB10 profiles
 unless a site-specific note proves a versioned path exists on every node.
 FlashInfer runtime helper JITs call `nvcc` during startup; if the profile points

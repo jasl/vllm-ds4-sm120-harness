@@ -245,10 +245,20 @@ if (( available_gib < MIN_AVAILABLE_MEM_GIB )); then
   exit 4
 fi
 
-if [[ "${ALLOW_CURRENT_BOOT_NVRM_OOM}" != "1" ]] \
-    && journalctl -b -k --no-pager 2>/dev/null \
-      | grep -E 'NVRM:.*(Out of memory|NV_ERR_NO_MEMORY)' >/dev/null; then
-  printf 'current boot already has NVIDIA driver OOM on %s; reboot before retrying\n' "${NODE_IP}" >&2
+# Allowlist the known non-fatal NCCL 2.30.7 communicator-init cuMem descriptor OOM
+# (NV_ERR_NO_MEMORY from _memdescAllocInternal) so it does NOT block serving on an
+# otherwise-healthy boot. It is the irreducible cost of the required NCCL >=2.30.7
+# upgrade (see docs/dgx_spark_bare_metal_cluster.md), not a fault. Any OTHER NVRM OOM
+# (different call site) still blocks. Set DRIVER_SIGNAL_ALLOWLIST='' to disable.
+DRIVER_SIGNAL_ALLOWLIST="${DRIVER_SIGNAL_ALLOWLIST:-NV_ERR_NO_MEMORY.*_memdescAllocInternal}"
+nvrm_oom_lines="$(journalctl -b -k --no-pager 2>/dev/null \
+  | grep -E 'NVRM:.*(Out of memory|NV_ERR_NO_MEMORY)' || true)"
+if [[ -n "${DRIVER_SIGNAL_ALLOWLIST}" && -n "${nvrm_oom_lines}" ]]; then
+  nvrm_oom_lines="$(printf '%s\n' "${nvrm_oom_lines}" \
+    | grep -vE "${DRIVER_SIGNAL_ALLOWLIST}" || true)"
+fi
+if [[ "${ALLOW_CURRENT_BOOT_NVRM_OOM}" != "1" && -n "${nvrm_oom_lines}" ]]; then
+  printf 'current boot already has a non-allowlisted NVIDIA driver OOM on %s; reboot before retrying\n' "${NODE_IP}" >&2
   exit 5
 fi
 
