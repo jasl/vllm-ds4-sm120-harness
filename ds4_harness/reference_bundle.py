@@ -431,16 +431,6 @@ def _copy_streaming_pressure_matrices(run_dir: Path, output_dir: Path) -> None:
         )
 
 
-def _copy_kv_layout_probes(run_dir: Path, output_dir: Path) -> None:
-    for variant in VARIANTS:
-        source_dir = run_dir / variant / "kv_layout_probe"
-        if not source_dir.exists():
-            continue
-        target_dir = output_dir / "kv_layout" / variant
-        _copy_json(source_dir / "kv_layout_probe.json", target_dir / "probe.json")
-        _copy_text(source_dir / "kv_layout_probe.md", target_dir / "probe.md")
-
-
 def _sanitize_command_paths(data: Any) -> Any:
     sanitized = _sanitize_json(data)
     if isinstance(sanitized, dict):
@@ -529,7 +519,6 @@ def _write_manifest(
         "generation": "Directory-driven writing, translation, and coding transcripts plus coding source sidecars.",
         "smoke": "no-MTP and MTP chat smoke request/response captures.",
         "toolcall15": "no-MTP and MTP ToolCall-15 traces and scores.",
-        "kv_layout": "Synthetic packed KV byte-layout snapshots for indexer-cache regressions.",
         "long_context": "Long-context sentinel retrieval probes for cache-layout regressions.",
         "long_context_latency": "Small-concurrency long-context latency and correctness matrices.",
         "prefix_cache": "Concurrent long-prefix cache reuse probes with request-level timing plus KV/runtime telemetry.",
@@ -660,8 +649,6 @@ paths, server logs, tokens, and private connection details.
 {oracle_bullet}
 - `smoke/`: no-MTP and MTP chat smoke captures in JSON and Markdown.
 - `toolcall15/`: no-MTP and MTP ToolCall-15 scores and traces.
-- `kv_layout/`: synthetic packed KV byte-layout snapshots for indexer-cache
-  regressions. Raw binary captures stay in the run artifact tree.
 - `long_context/`: long-context sentinel retrieval probes for cache-layout
   regressions. These diagnostic references do not change accuracy scores.
 - `long_context_latency/`: small-concurrency long-context streaming matrices
@@ -717,7 +704,6 @@ def build_reference_bundle(
     _write_readme(output_dir, label, run_dir)
     _copy_oracle(run_dir, output_dir)
     _copy_generation(run_dir, output_dir)
-    _copy_kv_layout_probes(run_dir, output_dir)
     _copy_long_context_probes(run_dir, output_dir)
     _copy_long_context_latency_matrices(run_dir, output_dir)
     _copy_prefix_cache_probes(run_dir, output_dir)

@@ -962,15 +962,8 @@ with `RUN_RANDOM_8K1K=1`, `RANDOM_8K1K_INPUT_LEN=8000`,
 `RANDOM_8K1K_NUM_PROMPTS=80`. Use it when comparing against public DS4 SM120
 FlashInfer sparse-MLA reports; do not use it alone to judge branch promotion.
 
-The default KV layout probe uses a synthetic packed FP8 indexer cache with
-`KV_LAYOUT_NUM_BLOCKS=2`, `KV_LAYOUT_BLOCK_SIZE=256`,
-`KV_LAYOUT_HEAD_DIM=448`, `KV_LAYOUT_SCALE_BYTES=8`, and
-`KV_LAYOUT_REQUIRE_HELPER_MATCH=1`. It writes JSON, Markdown, and a raw
-`kv_layout_probe_packed_cache.bin` under the run artifact tree before the live
-server starts.
-
 Set `B200_BASELINE_PHASES` to rerun only selected phases while still starting
-the requested server variant. Valid phase names are `kv_layout_probe`,
+the requested server variant. Valid phase names are
 `acceptance`, `long_context_probe`, `long_context_latency_matrix`,
 `frontier_context_sweep`, `ds4_story_recall_semantic`,
 `long_context_decode_concurrency`, `long_context_mixed_arrival`,
