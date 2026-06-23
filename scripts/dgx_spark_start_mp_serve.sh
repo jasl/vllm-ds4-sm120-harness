@@ -268,7 +268,7 @@ REMOTE
 
 start_worker() {
   run_remote_script "${WORKER_HOST}" \
-    "NODE_RANK=1 NODE_IP=$(shell_quote "${WORKER_ROCE_IP}")" <<'REMOTE'
+    "NODE_RANK=1 NODE_IP=$(shell_quote "${WORKER_ROCE_IP}") ROCE_IFACE=$(shell_quote "${WORKER_ROCE_IFACE:-${ROCE_IFACE}}") NCCL_IB_HCA=$(shell_quote "${WORKER_NCCL_IB_HCA:-${NCCL_IB_HCA}}")" <<'REMOTE'
 set -euo pipefail
 mkdir -p "${RUN_DIR}"
 cd "${VLLM_ROOT}"
@@ -371,7 +371,7 @@ REMOTE
 
 start_head() {
   run_remote_script "${HEAD_HOST}" \
-    "NODE_RANK=0 NODE_IP=$(shell_quote "${HEAD_ROCE_IP}")" <<'REMOTE'
+    "NODE_RANK=0 NODE_IP=$(shell_quote "${HEAD_ROCE_IP}") ROCE_IFACE=$(shell_quote "${HEAD_ROCE_IFACE:-${ROCE_IFACE}}") NCCL_IB_HCA=$(shell_quote "${HEAD_NCCL_IB_HCA:-${NCCL_IB_HCA}}")" <<'REMOTE'
 set -euo pipefail
 mkdir -p "${RUN_DIR}"
 cd "${VLLM_ROOT}"
