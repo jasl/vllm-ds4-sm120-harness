@@ -391,6 +391,14 @@ Last updated: 2026-06-16.
   swapAB as a smaller `3-6%` add-on and points at empty-tile skip as the larger
   EP-decode lever. Reproduce on the same RTX and GB10 profiles before using it
   as endpoint evidence.
+- DeepGEMM W4A8 MoE (`DEEPGEMM_MXFP4`, nv_dev `sm120_fp8_fp4`) auto-enable is
+  BLOCKED: a global `is_deep_gemm_supported()` flip selects the W4A8 MoE kernel
+  but crashes DSv4 at startup on GB10 — the MoE W4A8 scale packing requires
+  UE8M0 while the attention o_proj `fp8_einsum` SM12x triton fallback requires
+  float32, and UE8M0 is one global decision so no E8M0 setting serves both. Stay
+  on Marlin. Full writeup:
+  `docs/sm120/experiments/2026-06-26-deepgemm-w4a8-blocked/README.md`. Rejected
+  patch backed up at vllm branch `experiment/deepgemm-sm120-w4a8-blocked-20260626`.
 
 ## Promotion Matrix
 
