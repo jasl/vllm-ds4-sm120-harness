@@ -14,18 +14,23 @@
 set -uo pipefail
 TARGET_HEAD="${1:-}"            # optional: git SHA to checkout+bench; empty = bench current head
 H=/home/jasl/tmp/ds4-sm120-harness
-VLLM_ROOT=$H/vllm
-VENV=$VLLM_ROOT/.venv
+# VLLM_ROOT overridable so a prebuilt worktree can be benched WITHOUT a
+# git-checkout of the main tree (avoids clobbering local kernel WIP). The venv
+# is the shared main-tree venv (a worktree shares it via PYTHONPATH).
+VLLM_ROOT="${VLLM_ROOT:-$H/vllm}"
+VENV="${VLLM_VENV:-$H/vllm/.venv}"
 MODEL=deepseek-ai/DeepSeek-V4-Flash
 PORT=8000
 export SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o BatchMode=yes"
 export PATH="$HOME/.local/bin:/usr/local/cuda/bin:$PATH"
 LB="uvx --from git+https://github.com/eugr/llama-benchy@b220b7c9cae7af2d6bd9ebf6bfa9ac066cb40780 llama-benchy"
 
-# --- current GB10 RoCE topology (crossed cabling; override via env if it changes) ---
-GB10_HEAD_HOST="${GB10_HEAD_HOST:-10.0.0.116}"; GB10_WORKER_HOST="${GB10_WORKER_HOST:-10.0.0.118}"
-HEAD_ROCE_IP="${HEAD_ROCE_IP:-169.254.116.28}"; WORKER_ROCE_IP="${WORKER_ROCE_IP:-169.254.253.112}"
-HEAD_ROCE_IFACE="${HEAD_ROCE_IFACE:-enp1s0f1np1}"; HEAD_NCCL_IB_HCA="${HEAD_NCCL_IB_HCA:-rocep1s0f1}"
+# --- current GB10 RoCE topology (SWITCHED CRS804 fabric, rail-0; override via env) ---
+# NOTE: the old 169.254 direct-attach cabling (.116/.118) is dead; the switched
+# fabric uses 192.168.100.x on enp1s0f0np0/rocep1s0f0 for BOTH nodes (.116/.119).
+GB10_HEAD_HOST="${GB10_HEAD_HOST:-10.0.0.116}"; GB10_WORKER_HOST="${GB10_WORKER_HOST:-10.0.0.119}"
+HEAD_ROCE_IP="${HEAD_ROCE_IP:-192.168.100.116}"; WORKER_ROCE_IP="${WORKER_ROCE_IP:-192.168.100.119}"
+HEAD_ROCE_IFACE="${HEAD_ROCE_IFACE:-enp1s0f0np0}"; HEAD_NCCL_IB_HCA="${HEAD_NCCL_IB_HCA:-rocep1s0f0}"
 WORKER_ROCE_IFACE="${WORKER_ROCE_IFACE:-enp1s0f0np0}"; WORKER_NCCL_IB_HCA="${WORKER_NCCL_IB_HCA:-rocep1s0f0}"
 
 ROOT=/home/jasl/tmp/gb10_lb_standard/$(date +%Y%m%d%H%M%S); mkdir -p "$ROOT"
