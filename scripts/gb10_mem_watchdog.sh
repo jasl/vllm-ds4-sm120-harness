@@ -33,7 +33,14 @@ _gb10_kill_serve() { # kill the tokenspeed serve on both nodes (NOT vLLM pattern
 }
 
 gb10_mem_watchdog_start() {
+  # Kill policy (measured 07-09): a HEALTHY Tier-A gate transiently dips to
+  # ~4-6G right after a batch of long prefills and recovers on idle-release
+  # within ~60s (caching-allocator retention, not a leak). So a single sample
+  # below the floor must NOT kill: require TWO CONSECUTIVE low samples
+  # >= settle_s apart. A catastrophic reading (< panic_gib, default 3G) still
+  # kills immediately -- at that level the next allocation can wedge sshd.
   local head="$1" worker="$2" floor="${3:-8}" interval="${4:-3}"
+  local settle_s="${5:-60}" panic_gib="${6:-3}"
   # SAFETY: never target the vLLM baseline pair.
   case "$head$worker" in
     *10.0.0.116*|*10.0.0.119*)
@@ -41,22 +48,34 @@ gb10_mem_watchdog_start() {
   esac
   gb10_mem_watchdog_stop
   (
+    _check_one() { # $1=host -> 0 healthy, 1 killed
+      local m
+      m=$(_gb10_memavail_gib "$1")
+      [ -n "$m" ] || return 0
+      if [ "$m" -lt "$panic_gib" ] 2>/dev/null; then
+        echo "[watchdog] $1 MemAvailable ${m}G < panic ${panic_gib}G — KILL SERVE (freeze-abort)" >&2
+        _gb10_kill_serve "$head" "$worker"; return 1
+      fi
+      if [ "$m" -lt "$floor" ] 2>/dev/null; then
+        echo "[watchdog] $1 ${m}G < ${floor}G — settle ${settle_s}s before deciding" >&2
+        sleep "$settle_s"
+        m=$(_gb10_memavail_gib "$1")
+        if [ -n "$m" ] && [ "$m" -lt "$floor" ] 2>/dev/null; then
+          echo "[watchdog] $1 still ${m}G < ${floor}G post-settle — KILL SERVE (freeze-abort)" >&2
+          _gb10_kill_serve "$head" "$worker"; return 1
+        fi
+        echo "[watchdog] $1 recovered to ${m}G (idle-release) — continuing" >&2
+      fi
+      return 0
+    }
     while :; do
-      local mh mw
-      mh=$(_gb10_memavail_gib "$head"); mw=$(_gb10_memavail_gib "$worker")
-      if [ -n "$mh" ] && [ "$mh" -lt "$floor" ] 2>/dev/null; then
-        echo "[watchdog] $head MemAvailable ${mh}G < ${floor}G — KILL SERVE (freeze-abort)" >&2
-        _gb10_kill_serve "$head" "$worker"; exit 0
-      fi
-      if [ -n "$mw" ] && [ "$mw" -lt "$floor" ] 2>/dev/null; then
-        echo "[watchdog] $worker MemAvailable ${mw}G < ${floor}G — KILL SERVE (freeze-abort)" >&2
-        _gb10_kill_serve "$head" "$worker"; exit 0
-      fi
+      _check_one "$head" || exit 0
+      _check_one "$worker" || exit 0
       sleep "$interval"
     done
   ) &
   GB10_WATCHDOG_PID=$!
-  echo "[watchdog] armed head=$head worker=$worker floor=${floor}G interval=${interval}s pid=$GB10_WATCHDOG_PID" >&2
+  echo "[watchdog] armed head=$head worker=$worker floor=${floor}G panic=${panic_gib}G settle=${settle_s}s interval=${interval}s pid=$GB10_WATCHDOG_PID" >&2
 }
 
 gb10_mem_watchdog_stop() {
