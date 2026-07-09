@@ -20,14 +20,17 @@ LIMIT="${LONGGEN_GSM8K_LIMIT:-50}"           # ~3-4 min on the standard serve
 MIN_ACC="${LONGGEN_GSM8K_MIN_ACC:-0.90}"
 SERVE_LOG="${SERVE_LOG:-$HOME/tokenspeed-sm12x/serve_gb10.log}"
 
-ima_before=$(grep -c "illegal memory access" "${SERVE_LOG}" 2>/dev/null || echo 0)
+ima_before=$(grep -c "illegal memory access" "${SERVE_LOG}" 2>/dev/null | head -1)
+ima_before=${ima_before:-0}
 
 acc=$(BASE_URL="${BASE_URL}" SERVER_GUARD=0 LM_EVAL_TASKS=gsm8k LM_EVAL_LIMIT="${LIMIT}" \
   timeout 1800 bash "${SCRIPT_DIR}/run_lm_eval.sh" 2>&1 \
   | grep -oE 'exact_match_strict"?: [0-9.]+' | grep -oE '[0-9.]+$' | head -1)
 
-ima_after=$(grep -c "illegal memory access" "${SERVE_LOG}" 2>/dev/null || echo 0)
-engine_alive=$(pgrep -fc "[t]okenspeed::" || echo 0)
+ima_after=$(grep -c "illegal memory access" "${SERVE_LOG}" 2>/dev/null | head -1)
+ima_after=${ima_after:-0}
+engine_alive=$(pgrep -fc "[t]okenspeed::" | head -1)
+engine_alive=${engine_alive:-0}
 
 echo "longgen_gsm8k: acc=${acc:-none} ima_delta=$((ima_after - ima_before)) engine=${engine_alive}"
 

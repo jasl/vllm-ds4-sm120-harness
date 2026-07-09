@@ -34,6 +34,15 @@ API_HOST="${API_HOST:-0.0.0.0}"
 API_PORT="${API_PORT:-8000}"
 TP_SIZE="${TP_SIZE:-2}"
 PP_SIZE="${PP_SIZE:-1}"
+# N-node support (default 2-node; backward compatible). For N>2, set WORKER_HOSTS
+# and WORKER_ROCE_IPS as space-separated parallel lists (assigned node-ranks 1..N-1
+# in order). When unset they fall back to the single WORKER_HOST/WORKER_ROCE_IP, so
+# the 2-node path is unchanged. NNODES is derived from the worker count unless set.
+WORKER_HOSTS="${WORKER_HOSTS:-${WORKER_HOST}}"
+WORKER_ROCE_IPS="${WORKER_ROCE_IPS:-${WORKER_ROCE_IP}}"
+read -r -a _WORKER_HOSTS_ARR <<< "${WORKER_HOSTS}" || true
+read -r -a _WORKER_ROCE_IPS_ARR <<< "${WORKER_ROCE_IPS}" || true
+NNODES="${NNODES:-$(( 1 + ${#_WORKER_HOSTS_ARR[@]} ))}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-393216}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.70}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-2}"
@@ -120,6 +129,7 @@ remote_env_prefix() {
   printf 'API_PORT=%s ' "$(shell_quote "${API_PORT}")"
   printf 'TP_SIZE=%s ' "$(shell_quote "${TP_SIZE}")"
   printf 'PP_SIZE=%s ' "$(shell_quote "${PP_SIZE}")"
+  printf 'NNODES=%s ' "$(shell_quote "${NNODES}")"
   printf 'MAX_MODEL_LEN=%s ' "$(shell_quote "${MAX_MODEL_LEN}")"
   printf 'GPU_MEMORY_UTILIZATION=%s ' "$(shell_quote "${GPU_MEMORY_UTILIZATION}")"
   printf 'MAX_NUM_SEQS=%s ' "$(shell_quote "${MAX_NUM_SEQS}")"
@@ -267,8 +277,13 @@ REMOTE
 }
 
 start_worker() {
-  run_remote_script "${WORKER_HOST}" \
-    "NODE_RANK=1 NODE_IP=$(shell_quote "${WORKER_ROCE_IP}") ROCE_IFACE=$(shell_quote "${WORKER_ROCE_IFACE:-${ROCE_IFACE}}") NCCL_IB_HCA=$(shell_quote "${WORKER_NCCL_IB_HCA:-${NCCL_IB_HCA}}")" <<'REMOTE'
+  local whost="${1:-${WORKER_HOST}}"
+  local wrank="${2:-1}"
+  local wroce="${3:-${WORKER_ROCE_IP}}"
+  local wiface="${4:-${WORKER_ROCE_IFACE:-${ROCE_IFACE}}}"
+  local whca="${5:-${WORKER_NCCL_IB_HCA:-${NCCL_IB_HCA}}}"
+  run_remote_script "${whost}" \
+    "NODE_RANK=${wrank} NODE_IP=$(shell_quote "${wroce}") ROCE_IFACE=$(shell_quote "${wiface}") NCCL_IB_HCA=$(shell_quote "${whca}")" <<'REMOTE'
 set -euo pipefail
 mkdir -p "${RUN_DIR}"
 cd "${VLLM_ROOT}"
@@ -555,15 +570,21 @@ REMOTE
 }
 
 printf 'stopping stale helpers and reclaiming file cache...\n'
-stop_existing_and_reclaim "${WORKER_HOST}" "${WORKER_ROCE_IP}"
+for _i in "${!_WORKER_HOSTS_ARR[@]}"; do
+  stop_existing_and_reclaim "${_WORKER_HOSTS_ARR[$_i]}" "${_WORKER_ROCE_IPS_ARR[$_i]}"
+done
 stop_existing_and_reclaim "${HEAD_HOST}" "${HEAD_ROCE_IP}"
 
 printf 'running node preflight...\n'
-preflight_node "${HEAD_HOST}" "${HEAD_ROCE_IP}" "${WORKER_ROCE_IP}"
-preflight_node "${WORKER_HOST}" "${WORKER_ROCE_IP}" "${HEAD_ROCE_IP}"
+preflight_node "${HEAD_HOST}" "${HEAD_ROCE_IP}" "${_WORKER_ROCE_IPS_ARR[0]}"
+for _i in "${!_WORKER_HOSTS_ARR[@]}"; do
+  preflight_node "${_WORKER_HOSTS_ARR[$_i]}" "${_WORKER_ROCE_IPS_ARR[$_i]}" "${HEAD_ROCE_IP}"
+done
 
-printf 'starting vLLM mp worker and head...\n'
-start_worker
+printf 'starting vLLM mp worker(s) and head...\n'
+for _i in "${!_WORKER_HOSTS_ARR[@]}"; do
+  start_worker "${_WORKER_HOSTS_ARR[$_i]}" "$(( _i + 1 ))" "${_WORKER_ROCE_IPS_ARR[$_i]}"
+done
 start_head
 wait_for_health
 prewarm_serve

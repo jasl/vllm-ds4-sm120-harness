@@ -1,46 +1,54 @@
-# GB10 2×SM121 tokenspeed DeepSeek-V4-Flash — baseline of record (2026-07-10)
+# GB10 2×SM121 tokenspeed DeepSeek-V4-Flash — baseline of record (2026-07-10, final)
 
-**Supersedes the 2026-07-09 deep-longctx Tier-A baseline** (`8bf20a7d`). Nodes .117/.118
-(tokenspeed pair; vLLM baseline .116/.119 untouched).
+**The optimization benchmark for future rounds.** Supersedes the 07-09 Tier-A baseline
+(`8bf20a7d`) and the interim 07-10 entry (`5472e2f`). Nodes .117/.118 (tokenspeed pair;
+vLLM baseline .116/.119 untouched).
 
 ## Build / environment
 | | |
 |---|---|
-| tokenspeed | `feat/sm12x-engine` @ `5472e2f` — rebased onto upstream tip (incl **#614** sanitize-SWA-slot-mapping, which also fixed the latent MTP long-gen IMA), + noncoop persistent_topk `adc4d3d`, + **prefill-gap fixes**: FI 32-head prefill tile (orchestrator-only, `9b4c8c1`/`5472e2f`) and Triton split-K mHC prenorm (`edc85a8`) |
-| torch / FI / NCCL | 2.11.0 · flashinfer 0.6.14 · nvidia-nccl-cu13 2.30.7 |
+| tokenspeed | `feat/sm12x-engine` @ **`a906988`** — upstream tip (incl #614 sanitize-SWA-slot-mapping) + our SM12x stack, with this round's perf fixes: **FI 32-head prefill tile** (orchestrator-only, `9b4c8c1`+`5472e2f`), **Triton split-K mHC prenorm** (`edc85a8`), **TRT-LLM indexer Q-prep chain** (#563 picks `5248cb8`+`1c1a9f0` + sm12x delta `a906988`: arch→(12,9), 4096-token cap + exact token-local slice routing) |
+| torch / FI / NCCL | 2.11.0 · flashinfer 0.6.14 · nvidia-nccl-cu13 2.30.7 · TOKENSPEED_CUDA_ARCH=121a |
 | GPUs | 2× GB10 (SM121a), TP=2, CRS804 switched RoCE |
 
 ## Serve config (pinned standard, unchanged)
 2-node TP=2, MTP2, fp8 KV, prefix-cache ON, decode on BreakableCapture (piecewise
 collectives), prefill graph OFF, mml 40960, chunked-prefill 40960, util 0.85,
-MAXTOK=4000000, bf16 state cache. `num_device_pages=14894` (~3.81M KV tokens).
+MAXTOK=4000000, bf16 state cache, MXFP4 indexer cache. `num_device_pages=15259`
+(~3.91M KV tokens).
 
-## Gates (all on this exact serve life)
-- **GSM8K 200 (8-shot, completions, conc 4, max_gen 2048): 0.96 strict / 0.96 flexible, 0 IMA** —
-  first post-rebase tree to survive the long-generation load (see the 07-09/10 latent-IMA
-  hunt: unsanitized ragged-MTP SWA slot mapping, fixed upstream by #614; trigger row =
-  the smg health-probe 1-token request).
-- **arthur long-context coherence (conc 12, 900 lines): 24/24.**
+## Gates (this exact serve life, one boot)
+- **long-gen GSM8K gate (limit 50): PASS acc=0.96, 0 IMA** (`run_gb10_longgen_gsm8k_gate.sh`)
+- **arthur coherence (conc 12, 900 lines): 24/24**
+- engine alive, zero illegal-memory-access across the full battery
 
 ## Perf — llama-benchy STANDARD (pinned patched @b220b7c9, pp2048 tg128, C=1, runs 3, prefix-cache)
 | depth | ctx_pp t/s | pp2048 t/s | tg128 t/s |
 |---|---|---|---|
-| 8192  | **1706.3 ± 3.2** | **1235.5 ± 0.8** | 36.8 ± 5.2 |
-| 16384 | 1647.6 ± 2.9 | 1104.5 ± 0.9 | 36.2 ± 4.5 |
-| 32768 | 1425.3 ± 99.7 | 953.1 ± 5.9 | 32.5 ± 2.0 |
+| 8192  | **1801.7 ± 2.9** | **1284.5 ± 3.6** | 36.3 ± 5.3 |
+| 16384 | **1735.2 ± 4.6** | 1138.3 ± 52.3 | 29.3 ± 2.3 |
+| 32768 | **1634.8 ± 1.5** | 996.2 ± 2.9 | 32.6 ± 4.9 |
 
-vs the 07-09 pre-fix baseline (1282/967/33.9 @d8192): **ctx_pp +33%, pp2048 +28%**.
-vs vLLM same-tool overlap: d8192 ctx_pp **98.9%** of vLLM's 1726 (was 74%); d32768
-ctx_pp 0.89×, pp2048 0.88× (was 0.72×/0.73×).
+**vs the vLLM fork (same pinned tool, same fabric): ctx_pp d8192 = 104.4% of vLLM's
+1726, d32768 = 102.4% of vLLM's 1595.9 — tokenspeed cold prefill now LEADS at every
+measured depth.** (Campaign start, 07-09: 74%/72%.)
 
-## Provenance of the gains (30.5K cold-prefill nsys decomposition, 07-09)
-1.44× GPU-time gap to vLLM decomposed into: mHC prenorm fallback glue (−3.6s, Triton
-split-K port), FI sparse-MLA 64-pad waste (−2.1s, 32-head orchestrator tile), with MoE /
-dense-GEMM / einsum / NCCL at parity or ahead. Remaining identified tails: indexer
-scoring-shape forensics, PR#563 Q-prep, MoE epilogue fusion.
+Progression this campaign (ctx_pp d8192): 1282 → 1706 (32-tile + mHC prenorm) →
+**1802** (+ Q-prep chain) = **+40.5% total**.
 
-## ⚠ Gate-coverage lesson (permanent)
-Long-generation loads (GSM8K-class) MUST be part of any regression battery: arthur
-(384-tok gens) and benchy (128-tok) cannot reach ragged-MTP decode shapes; the latent
-slot-mapping IMA survived every prior gate for a full rebase cycle. Health probes are
-real traffic (1-token requests) and participate in batch shaping.
+## Provenance
+30.5K cold-prefill nsys decomposition (07-09) attributed the 1.44× gap to: mHC prenorm
+fallback glue (fixed: Triton split-K port), FI sparse-MLA 64-pad waste (fixed: 32-head
+orchestrator tile), indexer Q-prep (fixed: TRT-LLM chain, 7× at T=9473, exact sliced),
+with MoE / dense-GEMM / einsum / NCCL at parity or ahead. Remaining known tails:
+indexer scoring-shape forensics (our MXFP4 scorer already 4× vLLM's kernel per unit
+work — the residual serve-profile delta needs per-call-shape forensics), MoE epilogue
+(re-measure on RTX; GB10 is BW-bound there), #555 mixed-forward split (scheduler
+rebuild), aa2b057 host-sync removal (conflicts with our wrapper rework — take via
+upstream merge).
+
+## Safety notes carried forward
+- FI split-K decode kernels (num_tokens ≤ 64 dispatch) are broken at 32 padded heads —
+  the guard in `_forward_deepseek_v4_prefill_chunk` must stay until fixed in FlashInfer.
+- Long-gen loads are a permanent gate (the #614-class latent bug survived every
+  short-gen gate for a full rebase cycle); health probes are real 1-token traffic.
