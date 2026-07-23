@@ -18,31 +18,50 @@ from ds4_harness.checks import (
 
 Json = dict[str, Any]
 
-# vLLM routes thinking-mode into the chat template via `chat_template_kwargs`,
-# not via a top-level `thinking` key. The DSv4 chat-template code at
-# `vllm/tokenizers/deepseek_v4.py` reads `kwargs.get("thinking", False)` /
-# `kwargs.get("enable_thinking", False)`, where `kwargs` is the per-request
-# `chat_template_kwargs` merged with the server's `--default-chat-template-kwargs`.
-# Passing `{"thinking": {"type": "enabled"}}` at the request top level looks
-# like the Claude API shape, but vLLM's OpenAI front-end never forwards it to
-# the template — the result is `thinking_mode == "chat"` for every request,
-# regardless of mode label, and the model emits zero reasoning tokens.
-# Confirmed by qym-ll on vllm-project/vllm#41834 (comment 4426500856):
-# `--default-chat-template-kwargs '{"thinking": true}'` works; the same shape
-# applies per-request via `extra_body.chat_template_kwargs`.
-THINKING_MODE_EXTRA_BODY: dict[str, Json] = {
-    "non-thinking": {"chat_template_kwargs": {"thinking": False}},
+# DeepSeek-V4 thinking mode. Two request shapes reach the same tokenizer routing
+# in `vllm/tokenizers/deepseek_v4.py`, which reads `thinking`/`enable_thinking`
+# (OR'd) plus `reasoning_effort` (low/medium -> high, xhigh -> max, none -> off):
+#   1. Official DeepSeek shape (canonical below): top-level `thinking={"type":
+#      "enabled"|"disabled"}` + top-level `reasoning_effort`. vLLM's DSv4 API
+#      layer (`ChatCompletionRequest.apply_chat_template_kwargs`, our issue-#19
+#      fix, wired at chat_completion/serving.py) translates `thinking.type` into
+#      the template kwargs, so the top-level field is honored. This is what the
+#      DeepSeek platform docs and PR#41834 community clients now send.
+#   2. Legacy shape: `chat_template_kwargs={"thinking": bool}`. Still honored and
+#      kept below as explicit regression variants.
+# An earlier revision of this comment claimed the top-level `thinking` field was
+# silently dropped; that predated the #19 fix. Verified 2026-07-21 on GB10 that
+# both shapes toggle `reasoning_content` identically (enabled/true -> reasoning
+# emitted; disabled/false -> none).
+CANONICAL_THINKING_MODE_EXTRA_BODY: dict[str, Json] = {
+    "non-thinking": {"thinking": {"type": "disabled"}},
     "think-high": {
-        "chat_template_kwargs": {"thinking": True},
+        "thinking": {"type": "enabled"},
         "reasoning_effort": "high",
     },
     "think-max": {
-        "chat_template_kwargs": {"thinking": True},
+        "thinking": {"type": "enabled"},
         "reasoning_effort": "max",
     },
 }
 
-DEFAULT_THINKING_MODES = tuple(THINKING_MODE_EXTRA_BODY)
+# Legacy `chat_template_kwargs` shape, retained as explicit regression variants so
+# the older request form stays covered. Not part of the default battery.
+LEGACY_THINKING_MODE_EXTRA_BODY: dict[str, Json] = {
+    "non-thinking-legacy": {"chat_template_kwargs": {"thinking": False}},
+    "think-high-legacy": {
+        "chat_template_kwargs": {"thinking": True},
+        "reasoning_effort": "high",
+    },
+}
+
+THINKING_MODE_EXTRA_BODY: dict[str, Json] = {
+    **CANONICAL_THINKING_MODE_EXTRA_BODY,
+    **LEGACY_THINKING_MODE_EXTRA_BODY,
+}
+
+# Default battery = canonical (official) shapes only; legacy variants are opt-in.
+DEFAULT_THINKING_MODES = tuple(CANONICAL_THINKING_MODE_EXTRA_BODY)
 
 CODE_LANGUAGE_ALIASES: dict[str, tuple[str, ...]] = {
     "html": ("html", "htm"),
