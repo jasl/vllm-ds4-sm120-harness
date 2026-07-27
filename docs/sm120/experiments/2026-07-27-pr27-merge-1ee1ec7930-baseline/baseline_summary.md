@@ -187,6 +187,39 @@ FlashInfer 0.6.15.post1, quack 0.6.1, tilelang 0.1.9) and build `rc=0`, usable f
 **Known gap:** `_vllm_fa2_C` / `_vllm_fa3_C` are present on disk under `vllm/vllm_flash_attn/`
 but not importable, so the full kernel test suite does not run there yet. `.116` is unaffected.
 
+## Follow-on — `d64074e6f0`: bound the block-table gather
+
+Shipped after this baseline (tag `sm120-pr-41834-stable-preview-20260727d`).
+`_compute_global_topk_indices_and_lens_kernel` validated only `local_idx >= 0` before indexing
+`block_table[req_idx, local_idx // block_size]`. Those indices are data — they come from the
+indexer's top-k, which writes into a `torch.empty` buffer shared by every layer — so an unwritten
+or corrupted slot could gather past the end of the table and take down every TP rank. Added
+`& (block_indices < block_table_stride)`; out-of-range entries fall out as `-1` and are excluded
+from `topk_lens`.
+
+The path is unreachable on GB10 and this is insurance, not a live fix: `use_fp4_indexer_cache` is
+hard-asserted off outside Blackwell datacenter parts and nothing in the tree assigns it, so
+`q_scale` is always None and prefill always takes the fused DeepGEMM top-k path, which never
+materializes logits. That holds for the NVFP4 checkpoint too — NVFP4 is model weights, not the
+FP4 *indexer cache*. Upstream hit this on stock vLLM (#49896 root cause 3).
+
+Validation: arthur **c=1 2/2** — the right discriminator, since a wrongly-rejected legitimate
+index drops needles and GSM8K cannot resolve that — plus c=12 23/24, GSM8K 0.9538, IMA 0. The
+unit test is bug-encoding: it passes with the bound and fails with the bound reverted in place.
+
+## Node provisioning follow-up — `.117` / `.118` fully rebuilt
+
+The `_vllm_fa2_C` / `_vllm_fa3_C` import failure was not a build gap in the extensions: the first
+provisioning pass built only the *worktree* and left the main clone's `.so` from the torch-2.11
+era, and cd-ing into the main clone shadows the editable install, so the stale ABI won. A full
+rebuild (fresh venv, both trees, every `.so` purged) brings both nodes to parity with `.116`:
+`vllm_flash_attn` imports from both trees, and `tests/kernels/test_mhc_kernels.py` +
+`test_flashmla_sparse.py` run **67 passed / 11 skipped** on each, against 63 failed / 1 passed
+before. Test deps are not installed by `pip install -e .` — `.116` needs only pytest, tblib
+(`tests/conftest.py` imports it) and lm_eval. `deep_gemm` and `b12x` are deliberately absent:
+the SM12x fallbacks are pure Triton, and `_sparse_indexer_requires_deep_gemm` returns
+`use_fp4_cache` (False) on capability family 120.
+
 ## Reproduce
 
 ```bash
