@@ -1,0 +1,40 @@
+{
+  "case": "arthur_long_context_coherence",
+  "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+  "line_count": 900,
+  "concurrency": 1,
+  "repeat_count": 2,
+  "total_requests": 2,
+  "max_non_latin_fraction": 0.15,
+  "passed": 2,
+  "failures": 0,
+  "ok": true,
+  "prompt_sha256": "4ec487b50ef9c419b0d575156fd85ab6aebf7421fa902c25e6bee132f2ef00fb",
+  "required_terms": [
+    "alpha-cobalt-17",
+    "beta-quartz-29",
+    "gamma-onyx-43"
+  ],
+  "rows": [
+    {
+      "index": 0,
+      "ok": true,
+      "recall_ok": true,
+      "coherence_ok": true,
+      "non_latin_fraction": 0.0,
+      "recall_detail": "matched long-context sentinel terms",
+      "coherence_detail": "coherent",
+      "response_excerpt": "The first indexer validation code is alpha-cobalt-17, the middle indexer validation code is beta-quartz-29, and the final indexer validation code is gamma-onyx-43."
+    },
+    {
+      "index": 1,
+      "ok": true,
+      "recall_ok": true,
+      "coherence_ok": true,
+      "non_latin_fraction": 0.0,
+      "recall_detail": "matched long-context sentinel terms",
+      "coherence_detail": "coherent",
+      "response_excerpt": "The first indexer validation code is alpha-cobalt-17, the middle indexer validation code is beta-quartz-29, and the final indexer validation code is gamma-onyx-43."
+    }
+  ]
+}
