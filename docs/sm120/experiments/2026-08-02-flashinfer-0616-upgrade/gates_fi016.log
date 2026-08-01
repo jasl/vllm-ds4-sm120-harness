@@ -1,0 +1,26 @@
+=== gates @ 72f5a30158  Sun Aug  2 05:39:06 AM CST 2026 ===
+  serve rc=0
+  Available KV cache memory: 18.56 GiB
+  GPU KV cache size: 130,788 tokens
+############ GATE 1: #19 instruction-following ############
+RC=0
+PASS issue19_instruction_following_json_only: matched expectation
+############ GATE 2: arthur coherence c=1 ############
+RC=0
+PASS arthur_long_context_coherence: passed=2/2 concurrency=1 line_count=900
+############ GATE 3: DSpark draft acceptance (prose) ############
+  Mean acceptance length: 2.25
+  Per-position acceptance rate: 0.633, 0.333, 0.176, 0.081, 0.029, Avg Draft acceptance rate: 25.0%
+  Mean acceptance length: 2.11
+  Per-position acceptance rate: 0.612, 0.332, 0.126, 0.042, 0.000, Avg Draft acceptance rate: 22.2%
+  Mean acceptance length: 1.00
+  Per-position acceptance rate: 0.000, 0.000, 0.000, 0.000, 0.000, Avg Draft acceptance rate: 0.0%
+  summary: best_mean_len=2.34 best_avg_rate=26.7% samples=8 trailing_zero_positions=5
+DSPARK_ACCEPTANCE_DONE
+############ GATE 4: GSM8K ############
+RC=0
+"exact_match_flexible": 0.9431387414708112
+"exact_match_strict": 0.9370735405610311
+############ engine health ############
+  bad-signature lines: 0
+GATESFI016_DONE
