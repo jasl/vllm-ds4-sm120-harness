@@ -1,0 +1,16 @@
+  generated: 1859
+  generated: 2149
+  generated: 1797
+  generated: 2347
+  generated: 1808
+  generated: ERR RemoteDisconnected
+  generated: ERR RemoteDisconnected
+  generated: ERR ConnectionResetError
+=== SpecDecoding metrics for nst7 ===
+  Mean acceptance length: 1.75
+  Per-position acceptance rate: 0.481, 0.199, 0.061, 0.006, 0.000, 0.000, 0.000, Avg Draft acceptance rate: 10.7%
+  Mean acceptance length: 1.95
+  Per-position acceptance rate: 0.605, 0.226, 0.102, 0.011, 0.006, 0.000, 0.000, Avg Draft acceptance rate: 13.6%
+  Mean acceptance length: 1.61
+  Per-position acceptance rate: 0.413, 0.163, 0.033, 0.000, 0.000, 0.000, 0.000, Avg Draft acceptance rate: 8.7%
+ACCEPT_PROBE_DONE

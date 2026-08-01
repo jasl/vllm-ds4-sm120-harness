@@ -1,0 +1,16 @@
+  generated: 1846
+  generated: 2121
+  generated: 1795
+  generated: 2142
+  generated: 1889
+  generated: 2129
+  generated: 1804
+  generated: 2293
+=== SpecDecoding metrics for nst5g ===
+  Mean acceptance length: 2.23
+  Per-position acceptance rate: 0.678, 0.356, 0.144, 0.043, 0.005, Avg Draft acceptance rate: 24.5%
+  Mean acceptance length: 2.06
+  Per-position acceptance rate: 0.647, 0.266, 0.115, 0.032, 0.000, Avg Draft acceptance rate: 21.2%
+  Mean acceptance length: 1.82
+  Per-position acceptance rate: 0.488, 0.236, 0.081, 0.016, 0.000, Avg Draft acceptance rate: 16.4%
+ACCEPT_PROBE_DONE

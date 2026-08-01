@@ -1,0 +1,7 @@
+=== toolcall15 on 0731 + DSpark nst=5  Sun Aug  2 01:49:26 AM CST 2026 ===
+  head node tree: 9a94c54292
+  serve model: "id":"deepseek-ai/DeepSeek-V4-Flash-0731"
+  spec: speculative_config': {'method': 'dspark', 'num_speculative_tokens': 5, 'draft_sample_method': 'probabilistic'}, 'reasoning_config': ReasoningConfig(reasoning_pa
+  rc=1
+{"summary": {"scenario_sets": ["en"], "thinking_modes": ["non-thinking", "think-high", "think-max"], "rounds": 3, "cases": 45, "total_cases": 135, "points": 263, "max_points": 270, "score_percent": 97, "temperature": 1.0, "top_p": 1.0, "min_points": 2, "failures": 5}}
+TC15_0731_DONE

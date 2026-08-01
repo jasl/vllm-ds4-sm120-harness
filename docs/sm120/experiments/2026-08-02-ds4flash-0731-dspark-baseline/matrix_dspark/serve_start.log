@@ -1,0 +1,6 @@
+=== 0731 serve mode=dspark spec={"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic"} Sat Aug  1 11:16:11 PM CST 2026 ===
+=== SERVE_START_RC=0 Sat Aug  1 11:23:04 PM CST 2026 ===
+SERVE_UP served=deepseek-ai/DeepSeek-V4-Flash-0731
+Available KV cache memory: 17.3 GiB
+GPU KV cache size: 126,841 tokens
+SERVE0731_DONE rc=0

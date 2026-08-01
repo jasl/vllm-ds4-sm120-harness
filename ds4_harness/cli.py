@@ -184,7 +184,7 @@ from ds4_harness.very_long_context import (
 )
 
 
-DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Flash"
+DEFAULT_MODEL = os.environ.get("MODEL", "deepseek-ai/DeepSeek-V4-Flash-0731")
 DEFAULT_BENCH_DATASET = "hf"
 DEFAULT_BENCH_DATASET_PATH = "philschmid/mt-bench"
 

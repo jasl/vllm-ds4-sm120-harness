@@ -1,0 +1,32 @@
+stopping stale helpers and reclaiming file cache...
+before_drop_caches MemAvailable=117 GiB on 192.168.100.119
+drop_caches=ok on 192.168.100.119
+after_drop_caches MemAvailable=117 GiB on 192.168.100.119
+before_drop_caches MemAvailable=117 GiB on 192.168.100.116
+drop_caches=ok on 192.168.100.116
+after_drop_caches MemAvailable=117 GiB on 192.168.100.116
+running node preflight...
+python=/home/jasl/tmp/ds4-sm120-harness/vllm/.venv/bin/python
+torch=2.13.0+cu130 /home/jasl/tmp/ds4-sm120-harness/vllm/.venv/lib/python3.12/site-packages/torch/__init__.py
+vllm=/home/jasl/tmp/ds4-sm120-harness/vllm/vllm/__init__.py
+ninja=/home/jasl/tmp/ds4-sm120-harness/vllm/.venv/bin/ninja
+MemAvailable=117 GiB on 192.168.100.116
+python=/home/jasl/tmp/ds4-sm120-harness/vllm/.venv/bin/python
+torch=2.13.0+cu130 /home/jasl/tmp/ds4-sm120-harness/vllm/.venv/lib/python3.12/site-packages/torch/__init__.py
+vllm=/home/jasl/tmp/ds4-sm120-harness/vllm/vllm/__init__.py
+ninja=/home/jasl/tmp/ds4-sm120-harness/vllm/.venv/bin/ninja
+MemAvailable=117 GiB on 192.168.100.119
+starting vLLM mp worker(s) and head...
+worker_run_dir=/home/jasl/tmp/gb10_lb_standard/20260802005918/serve
+worker_pid=234749
+head_run_dir=/home/jasl/tmp/gb10_lb_standard/20260802005918/serve
+head_pid=320377
+health=200 bytes=0
+(Worker_TP0 pid=320869) INFO 08-02 01:04:03 [gpu_model_runner.py:5415] Model loading took 79.25 GiB memory and 228.298447 seconds
+(Worker_TP0 pid=320869) INFO 08-02 01:04:18 [gpu_worker.py:563] Available KV cache memory: 17.31 GiB
+(EngineCore pid=320748) INFO 08-02 01:04:18 [kv_cache_utils.py:2317] GPU KV cache size: 125,833 tokens
+(APIServer pid=320377) INFO:     Application startup complete.
+prewarming serve (random ISL=1024 OSL=8 prompts=4 c=1+4)...
+[prewarm] single-stream burst c=1 ISL=1024 OSL=8 prompts=4
+[prewarm] multi-stream burst c=4 ISL=1024 OSL=8 prompts=4
+[prewarm] done in 32s; log=/home/jasl/tmp/gb10_lb_standard/20260802005918/serve/prewarm.log

@@ -1,0 +1,28 @@
+=== GB10 llama-benchy STANDARD -> /home/jasl/tmp/gb10_lb_standard/20260721043717 ===
+head=562e79714c
+--- start 2-node serve (PINNED STANDARD: mml 49152, util 0.85, MTP2, fp8 KV, prefix-cache ON) ---
+serve rc=0
+--- llama-benchy STANDARD: pp2048 tg128, depth 8192/16384/32768, C=1, runs 3, --enable-prefix-caching ---
+lb rc=0
+=== llama-benchy STANDARD table (head 562e79714c) ===
+| model                         |            test |             t/s |     peak t/s |       ttfr (ms) |    est_ppt (ms) |   e2e_ttft (ms) |
+| deepseek-ai/DeepSeek-V4-Flash |  ctx_pp @ d8192 |  1824.48 ± 9.83 |              | 4492.22 ± 24.28 | 4490.17 ± 24.28 | 4492.22 ± 24.28 |
+| deepseek-ai/DeepSeek-V4-Flash |  ctx_tg @ d8192 |    41.53 ± 1.96 | 47.67 ± 1.25 |                 |                 |                 |
+| deepseek-ai/DeepSeek-V4-Flash |  pp2048 @ d8192 |  1396.26 ± 5.16 |              |  1465.96 ± 6.02 |  1466.80 ± 5.42 |  1468.85 ± 5.42 |
+| deepseek-ai/DeepSeek-V4-Flash |   tg128 @ d8192 |    41.70 ± 0.29 | 48.50 ± 0.50 |                 |                 |                 |
+| deepseek-ai/DeepSeek-V4-Flash | ctx_pp @ d16384 |  1797.32 ± 5.31 |              | 9117.91 ± 26.98 | 9115.86 ± 26.98 | 9119.27 ± 26.94 |
+| deepseek-ai/DeepSeek-V4-Flash | ctx_tg @ d16384 |    43.07 ± 2.99 | 47.33 ± 4.03 |                 |                 |                 |
+| deepseek-ai/DeepSeek-V4-Flash | pp2048 @ d16384 | 1309.22 ± 10.26 |              | 1566.43 ± 12.26 | 1564.38 ± 12.26 | 1567.75 ± 12.26 |
+| deepseek-ai/DeepSeek-V4-Flash |  tg128 @ d16384 |    41.01 ± 1.54 | 46.00 ± 0.82 |                 |                 |                 |
+| deepseek-ai/DeepSeek-V4-Flash | ctx_pp @ d32768 |  1718.82 ± 0.48 |              | 19066.27 ± 5.30 | 19064.22 ± 5.30 | 19068.92 ± 4.89 |
+| deepseek-ai/DeepSeek-V4-Flash | ctx_tg @ d32768 |    39.09 ± 1.95 | 42.00 ± 2.16 |                 |                 |                 |
+| deepseek-ai/DeepSeek-V4-Flash | pp2048 @ d32768 |  1194.20 ± 9.70 |              | 1717.12 ± 13.97 | 1715.07 ± 13.97 | 1719.74 ± 14.45 |
+| deepseek-ai/DeepSeek-V4-Flash |  tg128 @ d32768 |    32.77 ± 1.00 | 38.33 ± 1.25 |                 |                 |                 |
+=== prefix-cache hit rate (steady state) ===
+Prefix cache hit rate: 46.4%
+Prefix cache hit rate: 43.1%
+Prefix cache hit rate: 43.1%
+Prefix cache hit rate: 46.7%
+=== DONE (head 562e79714c) -> /home/jasl/tmp/gb10_lb_standard/20260721043717 ===
+BENCHY_RC=0
+BENCHY_DONE

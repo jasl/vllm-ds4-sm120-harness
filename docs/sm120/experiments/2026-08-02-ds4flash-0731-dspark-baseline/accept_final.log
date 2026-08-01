@@ -1,0 +1,13 @@
+  serve rc=0
+dspark_acceptance[dspark_0731] starting against /home/jasl/tmp/serve0731_dspark/serve/head.log
+  completions ok: 8/8
+=== dspark_acceptance[dspark_0731] ===
+  Mean acceptance length: 1.71
+  Per-position acceptance rate: 0.417, 0.191, 0.064, 0.025, 0.015, Avg Draft acceptance rate: 14.2%
+  Mean acceptance length: 2.08
+  Per-position acceptance rate: 0.583, 0.289, 0.118, 0.059, 0.034, Avg Draft acceptance rate: 21.7%
+  Mean acceptance length: 1.39
+  Per-position acceptance rate: 0.312, 0.065, 0.011, 0.000, 0.000, Avg Draft acceptance rate: 7.7%
+  summary: mean_len=1.39 avg_rate=7.7% trailing_zero_positions~=0
+DSPARK_ACCEPTANCE_DONE
+ACCEPT_FINAL_DONE

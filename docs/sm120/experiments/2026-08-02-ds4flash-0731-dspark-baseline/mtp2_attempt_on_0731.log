@@ -1,0 +1,42 @@
+=== 0731 serve mode=mtp2 spec={"method":"mtp","num_speculative_tokens":2} Sat Aug  1 10:36:11 PM CST 2026 ===
+=== SERVE_START_RC=6 Sat Aug  1 11:01:27 PM CST 2026 ===
+SERVE_FAILED mode=mtp2
+--- first error signature ---
+Error: /home/jasl/tmp/ds4-sm120-harness/vllm/.venv/lib/python3.12/site-packages/deep_gemm/_C.cpython-312-aarch64-linux-gnu.so: undefined symbol: _ZN3c104impl3cow23mat
+Error: 'model.layers.43.mtp_block.main_norm.weight'
+raise e
+raise e
+raise e
+raise RuntimeError
+--- tail ---
+(APIServer pid=219801)            ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=219801)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/entrypoints/openai/api_server.py", line 168, in build_async_engine_client_from_engine_args
+(APIServer pid=219801)     async_llm = AsyncLLM.from_vllm_config(
+(APIServer pid=219801)                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=219801)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/v1/engine/async_llm.py", line 220, in from_vllm_config
+(APIServer pid=219801)     return cls(
+(APIServer pid=219801)            ^^^^
+(APIServer pid=219801)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/v1/engine/async_llm.py", line 149, in __init__
+(APIServer pid=219801)     self.engine_core = EngineCoreClient.make_async_mp_client(
+(APIServer pid=219801)                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=219801)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/tracing/otel.py", line 178, in sync_wrapper
+(APIServer pid=219801)     return func(*args, **kwargs)
+(APIServer pid=219801)            ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=219801)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/v1/engine/core_client.py", line 139, in make_async_mp_client
+(APIServer pid=219801)     return AsyncMPClient(*client_args)
+(APIServer pid=219801)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=219801)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/tracing/otel.py", line 178, in sync_wrapper
+(APIServer pid=219801)     return func(*args, **kwargs)
+(APIServer pid=219801)            ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=219801)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/v1/engine/core_client.py", line 987, in __init__
+(APIServer pid=219801)     super().__init__(
+(APIServer pid=219801)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/v1/engine/core_client.py", line 609, in __init__
+(APIServer pid=219801)     with launch_core_engines(
+(APIServer pid=219801)   File "/usr/lib/python3.12/contextlib.py", line 144, in __exit__
+(APIServer pid=219801)     next(self.gen)
+(APIServer pid=219801)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/v1/engine/utils.py", line 1195, in launch_core_engines
+(APIServer pid=219801)     wait_for_engine_startup(
+(APIServer pid=219801)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/v1/engine/utils.py", line 1254, in wait_for_engine_startup
+(APIServer pid=219801)     raise RuntimeError(
+(APIServer pid=219801) RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}
+SERVE0731_DONE rc=6

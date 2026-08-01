@@ -1,0 +1,32 @@
+=== sync both serve nodes to 9a94c54292 ===
+  jasl-spark-1 @ 9a94c54292
+  jasl-spark-4 @ 9a94c54292
+
+##################### CELL: dspark #####################
+  serve rc=0
+    Available KV cache memory: 17.3 GiB
+    GPU KV cache size: 126,841 tokens
+  --- #19 instruction-following ---
+    rc=0  PASS issue19_instruction_following_json_only: matched expectation
+  --- arthur c=1 (recall discriminator) ---
+    rc=0  PASS arthur_long_context_coherence: passed=2/2 concurrency=1 line_count=900
+  --- GSM8K ---
+    rc=0  "exact_match_flexible": 0.9393479909021987
+  --- draft acceptance (prose) ---
+  --- health ---
+    ima_or_assert: 0
+
+##################### CELL: nospec #####################
+  serve rc=0
+    Available KV cache memory: 26.0 GiB
+    GPU KV cache size: 194,798 tokens
+  --- #19 instruction-following ---
+    rc=0  PASS issue19_instruction_following_json_only: matched expectation
+  --- arthur c=1 (recall discriminator) ---
+    rc=0  PASS arthur_long_context_coherence: passed=2/2 concurrency=1 line_count=900
+  --- GSM8K ---
+    rc=0  "exact_match_flexible": 0.9499620924943138
+  --- health ---
+    ima_or_assert: 0
+
+MATRIX_0731_DONE

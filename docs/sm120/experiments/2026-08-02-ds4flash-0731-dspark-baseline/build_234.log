@@ -1,0 +1,37 @@
+=== jasl-spark-1 build 399c3df4b3  Sat Aug  1 12:52:11 AM CST 2026 ===
+--- 0. no serve may run (a live serve holds ~109 GB; cicc gets OOM-killed) ---
+  mem avail: 117G
+--- 1. sync ---
+  describe: v0.26.1rc0-410-g399c3df4b3
+  main clone @ 399c3df4b3
+  worktree   @ 399c3df4b3
+--- 2. dep bumps this merge carries ---
+  tilelang 0.1.12
+--- 3. drop stale kernel caches (dep bump invalidates them) ---
+--- 4. build /home/jasl/tmp/ds4-sm120-harness/vllm  Sat Aug  1 12:56:26 AM CST 2026 ---
+=== vllm rc=0 Sat Aug  1 01:54:12 AM CST 2026 ===
+--- 4. build /home/jasl/tmp/vllm-merge-20260711  Sat Aug  1 01:54:12 AM CST 2026 ---
+=== vllm-merge-20260711 rc=0 Sat Aug  1 01:59:27 AM CST 2026 ===
+--- 5. re-pin nccl (-e . clobbers it) ---
+--- 6. ACCEPTANCE (import from BOTH trees) ---
+  ### /home/jasl/tmp/ds4-sm120-harness/vllm ###
+    vllm_flash_attn: OK
+    _custom_ops: OK
+    kernel_warmup: OK
+    sm12x_warmup: OK
+    DSpark registry: OK
+    dsv4 package: DSparkDeepseekV4ForCausalLM
+    tilelang: 0.1.12
+    HAS_TILELANG_MHC: True
+    SM120 sparse-MLA: True
+  ### /home/jasl/tmp/vllm-merge-20260711 ###
+    vllm_flash_attn: OK
+    _custom_ops: OK
+    kernel_warmup: OK
+    sm12x_warmup: OK
+    DSpark registry: OK
+    dsv4 package: DSparkDeepseekV4ForCausalLM
+    tilelang: 0.1.12
+    HAS_TILELANG_MHC: True
+    SM120 sparse-MLA: True
+BUILD234_DONE rc=0

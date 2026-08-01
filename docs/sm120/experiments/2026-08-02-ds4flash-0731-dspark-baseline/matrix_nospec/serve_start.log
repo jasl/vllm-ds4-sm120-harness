@@ -1,0 +1,6 @@
+=== 0731 serve mode=nospec spec=<none> Sun Aug  2 12:05:43 AM CST 2026 ===
+=== SERVE_START_RC=0 Sun Aug  2 12:11:23 AM CST 2026 ===
+SERVE_UP served=deepseek-ai/DeepSeek-V4-Flash-0731
+Available KV cache memory: 26.0 GiB
+GPU KV cache size: 194,798 tokens
+SERVE0731_DONE rc=0

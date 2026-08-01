@@ -1,0 +1,2 @@
+PASS issue19_instruction_following_json_only: matched expectation
+  content: ["vLLM", "NVIDIA", "CUDA", "LLM推理", "模型量化"]

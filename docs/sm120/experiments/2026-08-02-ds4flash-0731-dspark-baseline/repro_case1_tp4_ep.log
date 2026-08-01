@@ -1,0 +1,10 @@
+=== 4-node TP=4 + EP, DSpark nst=5, default backend Sat Aug  1 09:34:37 PM CST 2026 ===
+=== CASE1_4N_RC=0 Sat Aug  1 09:40:55 PM CST 2026 ===
+--- the reported signature ---
+--- any other fatal signature ---
+--- topology actually used ---
+tensor_parallel_size=4
+  serve: 0731
+Available KV cache memory: 56.9 GiB
+GPU KV cache size: 8,366,891 tokens
+CASE1_4N_DONE rc=0
