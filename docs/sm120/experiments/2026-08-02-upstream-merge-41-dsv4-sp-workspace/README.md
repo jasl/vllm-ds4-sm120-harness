@@ -169,6 +169,44 @@ order statistic from "best of 3" — the probe reports the best sample by design
 Compare the steady-state samples instead: 1.32 / 1.68 / 2.07 brackets the
 baseline's 2.08, i.e. unchanged.
 
+### Performance (`benchy_4450216c9e.out`)
+
+Canonical llama-benchy, DSpark nst=5 (verified from the serve's own
+`speculative_config` line, not from the script banner — see "Harness defects"),
+against the full recorded history via `scripts/benchy_history_band.py`:
+
+| metric | band (n=11) | this run | vs band |
+| --- | --- | --- | --- |
+| ctx_pp @ d8192 / d16384 / d32768 | — | 1805.56 / 1811.98 / 1734.29 | inside |
+| pp2048 @ d8192 / d16384 / d32768 | — | 1418.50 / 1349.81 / 1239.77 | inside |
+| tg128 @ d8192 / d16384 / d32768 | — | 42.17 / 41.33 / 39.03 | inside |
+| ctx_tg @ d8192 | 38.52 – 43.01 | 42.02 | inside |
+| ctx_tg @ d16384 | 35.07 – 43.07 | **31.51** | **below, −10.2%** |
+| ctx_tg @ d32768 | 38.02 – 42.73 | **45.89** | **above, +7.4%** |
+
+Ten of twelve metrics are inside the band, including every prefill metric and all
+of tg128. Two are out, and they need separate readings:
+
+**`ctx_tg @ d16384` is now low for the second consecutive `0731` run** — 35.07 in
+the 0731 baseline, 31.51 here, against 39.29–43.07 across ten old-checkpoint runs.
+(The band floor above reads 35.07 only because the 0731 baseline is itself now in
+the history.) The previous summary called the first reading a probable single-run
+artifact; two runs make that reading weaker. But this merge is **not** the cause:
+the 0731 baseline predates it and was already below the old band. The remaining
+candidates are the checkpoint change itself and metric noise, and the two 0731
+readings differ from each other by 10%, which favours noise. Unresolved either
+way — it needs repeats on one head, which is the only instrument that can separate
+them.
+
+**`ctx_tg @ d32768` is high** (+7.4%) where the 0731 baseline was mid-band (40.70).
+One depth up and a neighbouring depth down, inconsistent between two runs of the
+same model, is the signature of a noisy metric rather than a systematic move. Note
+the printed ± here is ±1.66 and ±1.94 — the within-invocation spread, which this
+branch's history shows is 5–30x smaller than the build-to-build spread.
+
+Nothing here blocks the merge: no prefill or tg128 metric moved, and the only
+persistent oddity predates the merge.
+
 ## Interpretation
 
 The merge is safe to ship. Sequence parallelism is inert here but correctly wired
@@ -191,8 +229,10 @@ path survives untouched.
 
 ## Open
 
-- benchy at this head (running at time of writing) — for gross regressions only;
-  this branch's own history spans 31% on tg128 and 4–10% on ctx_pp.
+- `ctx_tg @ d16384` has been below the old-checkpoint band on both `0731` runs so
+  far (35.07, 31.51 vs 39.29–43.07). Not caused by this merge. Separate
+  "checkpoint changed it" from "the metric is noisy" with 3x repeats on one head;
+  a single run cannot.
 - FlashInfer 0.6.16 upgrade (0.6.15.post1 pinned today). Relevant contents: SM120/
   SM121 sparse-attention support, unified MoE with SM12x B12x NVFP4 / W4A16
   backends, and on-disk JIT caching (cold start 3–30 ms, −1.6 GB installed). The

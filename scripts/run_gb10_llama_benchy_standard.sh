@@ -5,7 +5,10 @@
 # pass its git SHA as $1 (it is checked out + the serve restarted; no other change).
 #
 # Pinned standard (rationale in comments):
-#   - 2-node TP=2, MTP2, fp8 KV, prefix-cache ON, FULL_AND_PIECEWISE (default)
+#   - 2-node TP=2, fp8 KV, prefix-cache ON, FULL_AND_PIECEWISE (default)
+#   - speculator: DSpark nst=5 by default (0731 dropped the MTP heads); the
+#     historical rows before 2026-08 are MTP2. Override with
+#     SERVE_SPECULATIVE_CONFIG; the banner below prints what actually runs.
 #   - max-model-len 49152: fits the d32768 depth sweep (32768+2048) with headroom,
 #     small enough workspace that the depth context reliably prefix-caches (stable ctx_pp)
 #   - util 0.85, max-num-seqs 64, max-num-batched-tokens 8192
@@ -56,7 +59,10 @@ stop_serve(){
 warm_arp(){ ssh -n $SSH_OPTS "$GB10_HEAD_HOST" "nohup ping -i 0.5 -c 300 $WORKER_ROCE_IP >/dev/null 2>&1 &" </dev/null 2>/dev/null; ssh -n $SSH_OPTS "$GB10_WORKER_HOST" "nohup ping -i 0.5 -c 300 $HEAD_ROCE_IP >/dev/null 2>&1 &" </dev/null 2>/dev/null; sleep 2; }
 stop_serve; warm_arp
 
-echo "--- start 2-node serve (PINNED STANDARD: mml 49152, util 0.85, MTP2, fp8 KV, prefix-cache ON) ---"
+# Print the spec config that is actually about to be served, not a fixed
+# string: the banner used to say "MTP2" long after the default became
+# DSpark, which is exactly how a log comes to claim a config that never ran.
+echo "--- start 2-node serve (PINNED STANDARD: mml 49152, util 0.85, fp8 KV, prefix-cache ON, spec=${SPEC_CONFIG:-<none>}) ---"
 env \
   MODEL_ID="$MODEL" VLLM_ROOT="$VLLM_ROOT" VLLM_VENV="$VENV" \
   HEAD_HOST="$GB10_HEAD_HOST" WORKER_HOST="$GB10_WORKER_HOST" \
