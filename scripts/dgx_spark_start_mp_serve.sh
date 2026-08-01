@@ -11,14 +11,23 @@ set -euo pipefail
 
 required_vars=(
   HEAD_HOST
-  WORKER_HOST
   HEAD_ROCE_IP
-  WORKER_ROCE_IP
   ROCE_IFACE
   NCCL_IB_HCA
   VLLM_ROOT
   VLLM_VENV
 )
+
+# Workers may be given either as the 2-node singulars or as the N-node
+# space-separated lists; require one form or the other, not both.
+if [[ -z "${WORKER_HOSTS:-}" && -z "${WORKER_HOST:-}" ]]; then
+  printf "missing required environment variable: WORKER_HOST (or WORKER_HOSTS)\n" >&2
+  exit 2
+fi
+if [[ -z "${WORKER_ROCE_IPS:-}" && -z "${WORKER_ROCE_IP:-}" ]]; then
+  printf "missing required environment variable: WORKER_ROCE_IP (or WORKER_ROCE_IPS)\n" >&2
+  exit 2
+fi
 
 for var in "${required_vars[@]}"; do
   if [[ -z "${!var:-}" ]]; then
@@ -123,7 +132,7 @@ remote_env_prefix() {
   printf 'ROCE_IFACE=%s ' "$(shell_quote "${ROCE_IFACE}")"
   printf 'NCCL_IB_HCA=%s ' "$(shell_quote "${NCCL_IB_HCA}")"
   printf 'HEAD_ROCE_IP=%s ' "$(shell_quote "${HEAD_ROCE_IP}")"
-  printf 'WORKER_ROCE_IP=%s ' "$(shell_quote "${WORKER_ROCE_IP}")"
+  printf 'WORKER_ROCE_IP=%s ' "$(shell_quote "${WORKER_ROCE_IP:-${_WORKER_ROCE_IPS_ARR[0]}}")"
   printf 'MASTER_PORT=%s ' "$(shell_quote "${MASTER_PORT}")"
   printf 'API_HOST=%s ' "$(shell_quote "${API_HOST}")"
   printf 'API_PORT=%s ' "$(shell_quote "${API_PORT}")"
@@ -295,7 +304,7 @@ serve_args=(
   --tensor-parallel-size "${TP_SIZE}"
   --pipeline-parallel-size "${PP_SIZE}"
   --distributed-executor-backend mp
-  --nnodes 2
+  --nnodes "${NNODES}"
   --master-addr "${HEAD_ROCE_IP}"
   --master-port "${MASTER_PORT}"
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}"
@@ -398,7 +407,7 @@ serve_args=(
   --tensor-parallel-size "${TP_SIZE}"
   --pipeline-parallel-size "${PP_SIZE}"
   --distributed-executor-backend mp
-  --nnodes 2
+  --nnodes "${NNODES}"
   --master-addr "${HEAD_ROCE_IP}"
   --master-port "${MASTER_PORT}"
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}"

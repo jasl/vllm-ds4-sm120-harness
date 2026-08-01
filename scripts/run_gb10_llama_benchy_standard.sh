@@ -19,7 +19,11 @@ H=/home/jasl/tmp/ds4-sm120-harness
 # is the shared main-tree venv (a worktree shares it via PYTHONPATH).
 VLLM_ROOT="${VLLM_ROOT:-$H/vllm}"
 VENV="${VLLM_VENV:-$H/vllm/.venv}"
-MODEL=deepseek-ai/DeepSeek-V4-Flash
+# 0731 folded DSpark into the checkpoint and dropped the MTP heads, so both
+# the model and the speculative config must be overridable from the caller.
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
+DEFAULT_SPEC='{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic"}'
+SPEC_CONFIG="${SERVE_SPECULATIVE_CONFIG:-$DEFAULT_SPEC}"
 PORT=8000
 export SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o BatchMode=yes"
 export PATH="$HOME/.local/bin:/usr/local/cuda/bin:$PATH"
@@ -60,7 +64,7 @@ env \
   ROCE_IFACE=enp1s0f0np0 NCCL_IB_HCA=rocep1s0f0 \
   HEAD_ROCE_IFACE="$HEAD_ROCE_IFACE" HEAD_NCCL_IB_HCA="$HEAD_NCCL_IB_HCA" \
   WORKER_ROCE_IFACE="$WORKER_ROCE_IFACE" WORKER_NCCL_IB_HCA="$WORKER_NCCL_IB_HCA" \
-  SERVE_SPECULATIVE_CONFIG='{"method":"mtp","num_speculative_tokens":2}' \
+  SERVE_SPECULATIVE_CONFIG="$SPEC_CONFIG" \
   SERVE_PREFIX_CACHE_MODE=on \
   KV_CACHE_DTYPE=fp8 GPU_MEMORY_UTILIZATION=0.85 MAX_MODEL_LEN=49152 \
   MAX_NUM_SEQS=64 MAX_NUM_BATCHED_TOKENS=8192 ALLOW_CURRENT_BOOT_NVRM_OOM=1 \
