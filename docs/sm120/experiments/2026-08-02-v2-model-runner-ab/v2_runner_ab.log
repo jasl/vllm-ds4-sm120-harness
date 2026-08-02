@@ -1,0 +1,46 @@
+=== V1 vs V2 model runner @ 67f0057da4  Sun Aug  2 01:08:28 PM CST 2026 ===
+############ arm=v1 ############
+  serve rc=0
+  'Model Runner V2' log lines: 0
+0  (expect >0 for v2, 0 for v1)
+/home/jasl/tmp/v2_runner_ab.sh: line 48: [: 0
+0: integer expression expected
+  Available KV cache memory: 17.24 GiB
+  GPU KV cache size: 129,315 tokens
+  --- draft acceptance (prose) ---
+      Mean acceptance length: 2.14
+      Mean acceptance length: 1.95
+      Mean acceptance length: 1.88
+      Mean acceptance length: 2.09
+      Mean acceptance length: 2.12
+      Mean acceptance length: 2.01
+      Mean acceptance length: 2.02
+      Mean acceptance length: 2.19
+      Mean acceptance length: 1.82
+      summary: best_mean_len=2.19 best_avg_rate=23.7% samples=9 trailing_zero_positions=1
+  --- arthur long-context recall, c=1 ---
+    PASS arthur_long_context_coherence: passed=2/2 concurrency=1 line_count=900
+  --- #19 instruction following ---
+    PASS issue19_instruction_following_json_only: matched expectation
+  ARM_v1_RC=0
+############ arm=v2 ############
+  serve rc=0
+  'Model Runner V2' log lines: 3  (expect >0 for v2, 0 for v1)
+  Available KV cache memory: 21.98 GiB
+  GPU KV cache size: 162,357 tokens
+  --- draft acceptance (prose) ---
+      Mean acceptance length: 1.93
+      Mean acceptance length: 2.15
+      Mean acceptance length: 2.20
+      Mean acceptance length: 2.18
+      Mean acceptance length: 2.00
+      Mean acceptance length: 2.22
+      Mean acceptance length: 2.17
+      Mean acceptance length: 2.15
+      summary: best_mean_len=2.22 best_avg_rate=24.4% samples=8 trailing_zero_positions=0
+  --- arthur long-context recall, c=1 ---
+    PASS arthur_long_context_coherence: passed=2/2 concurrency=1 line_count=900
+  --- #19 instruction following ---
+    PASS issue19_instruction_following_json_only: matched expectation
+  ARM_v2_RC=0
+V2AB_DONE
