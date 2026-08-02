@@ -1,0 +1,50 @@
+=== V1 vs V2 thorough @ 67f0057da4  Sun Aug  2 04:44:16 PM CST 2026 ===
+############################ arm=v1 ############################
+  serve rc=0  wall=402s
+  runner check: 'Model Runner V2' lines=0 (expect >0 for v2, 0 for v1)
+  Available KV cache memory: 17.08 GiB
+  GPU KV cache size: 127,177 tokens
+  --- draft acceptance, 3 rounds ---
+1.96 2.15 2.00 2.06 2.00 2.03 2.04 1.80 1.33    <- round 1
+1.33 2.33 2.07 2.19 2.02 2.23 1.98 2.08 1.22    <- round 2
+1.22 2.26 2.04 2.07 2.16 1.89 2.13 1.89 2.02 1.20    <- round 3
+  --- #19 instruction following ---
+    PASS issue19_instruction_following_json_only: matched expectation
+  --- arthur recall c=1 ---
+    PASS arthur_long_context_coherence: passed=2/2 concurrency=1 line_count=900
+  --- arthur recall c=12 (batch-numerics surface) ---
+    FAIL arthur_long_context_coherence: passed=23/24 concurrency=12 line_count=900
+  --- toolcall, 45 cases x 3 modes x 3 rounds ---
+    score=97%  points=263/270  failures=5
+  --- GSM8K x3 ---
+    run 1: "exact_match_flexible": 0.9446550416982562 "exact_match_strict": 0.9416224412433661 
+    run 2: "exact_match_flexible": 0.9446550416982562 "exact_match_strict": 0.9431387414708112 
+    run 3: "exact_match_flexible": 0.9499620924943138 "exact_match_strict": 0.9476876421531463 
+  --- engine health ---
+    bad-signature lines: 0
+ARM_v1_RC=0
+############################ arm=v2 ############################
+  serve rc=0  wall=413s
+  runner check: 'Model Runner V2' lines=3 (expect >0 for v2, 0 for v1)
+  Available KV cache memory: 21.78 GiB
+  GPU KV cache size: 162,035 tokens
+  --- draft acceptance, 3 rounds ---
+1.30 2.22 2.12 2.19 2.25 2.15 2.33 2.19    <- round 1
+2.19 2.27 2.13 2.18 2.07 2.27 2.19 2.15 2.14    <- round 2
+2.14 2.29 2.13 1.91 2.05 2.03 1.98 2.12 1.66    <- round 3
+  --- #19 instruction following ---
+    PASS issue19_instruction_following_json_only: matched expectation
+  --- arthur recall c=1 ---
+    PASS arthur_long_context_coherence: passed=2/2 concurrency=1 line_count=900
+  --- arthur recall c=12 (batch-numerics surface) ---
+    FAIL arthur_long_context_coherence: passed=22/24 concurrency=12 line_count=900
+  --- toolcall, 45 cases x 3 modes x 3 rounds ---
+    score=97%  points=262/270  failures=6
+  --- GSM8K x3 ---
+    run 1: "exact_match_flexible": 0.9499620924943138 "exact_match_strict": 0.9431387414708112 
+    run 2: "exact_match_flexible": 0.9469294920394238 "exact_match_strict": 0.9438968915845337 
+    run 3: "exact_match_flexible": 0.9461713419257013 "exact_match_strict": 0.9423805913570887 
+  --- engine health ---
+    bad-signature lines: 0
+ARM_v2_RC=0
+V2_THOROUGH_DONE

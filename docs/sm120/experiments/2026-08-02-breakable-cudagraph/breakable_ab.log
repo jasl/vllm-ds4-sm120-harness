@@ -1,0 +1,35 @@
+=== breakable cudagraph A/B @ 67f0057da4  Sun Aug  2 04:02:38 PM CST 2026 ===
+############ arm=default (VLLM_USE_BREAKABLE_CUDAGRAPH=<unset>) ############
+  WARNING: vLLM still running on jasl-spark-1 after 120s
+  WARNING: vLLM still running on jasl-spark-4 after 120s
+  serve rc=0
+  --- compilation identity ---
+    Capturing CUDA graphs (decode, FULL)
+    Capturing CUDA graphs (mixed prefill-decode, PIECEWISE)
+    CompilationMode.VLLM_COMPILE
+  Available KV cache memory: 17.36 GiB
+  --- decode probe (fixed prompt, 3 reps) ---
+    rep0: 512 tok in 13.78s -> 37.16 tok/s
+    rep1: 512 tok in 14.19s -> 36.07 tok/s
+    rep2: 512 tok in 13.56s -> 37.75 tok/s
+  --- #19 instruction following ---
+    PASS issue19_instruction_following_json_only: matched expectation
+  ARM_default_RC=0
+############ arm=breakable (VLLM_USE_BREAKABLE_CUDAGRAPH=1) ############
+  WARNING: vLLM still running on jasl-spark-1 after 120s
+  WARNING: vLLM still running on jasl-spark-4 after 120s
+  serve rc=1
+  ERR (APIServer pid=867589)     super().__init__(
+  ERR (APIServer pid=867589)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/v1/engine/core_client.py", line 609, in __init__
+  ERR (APIServer pid=867589)     with launch_core_engines(
+  ERR (APIServer pid=867589)   File "/usr/lib/python3.12/contextlib.py", line 144, in __exit__
+  ERR (APIServer pid=867589)     next(self.gen)
+  ERR (APIServer pid=867589)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/v1/engine/utils.py", line 1194, in launch_core_engines
+  ERR (APIServer pid=867589)     wait_for_engine_startup(
+  ERR (APIServer pid=867589)   File "/home/jasl/tmp/vllm-merge-20260711/vllm/v1/engine/utils.py", line 1253, in wait_for_engine_startup
+  ERR (APIServer pid=867589)     raise RuntimeError(
+  ERR (APIServer pid=867589) RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}
+  ERR /usr/lib/python3.12/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  ERR   warnings.warn('resource_tracker: There appear to be %d '
+  ARM_breakable_RC=1
+BREAKABLE_AB_DONE
