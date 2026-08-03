@@ -328,25 +328,34 @@ def main() -> int:
             print(f"  {k:<17} {eff:>+8.2f}% {f'[{ci[0]:+.2f},{ci[1]:+.2f}]':>17} "
                   f"{p:>8.4f}  {note}")
 
-    # Per-pair, so a pair effect cannot hide inside a pooled range.
+    # Per-pair DIRECTION agreement -- deliberately not per-pair significance.
+    # Each pair holds at most half the blocks, so its own exact p can never clear
+    # Holm; asking whether it does would answer a question the data cannot. What
+    # matters is whether the two pairs point the same way. They have disagreed
+    # before on an unrelated gate, and their worktree binaries differ, so a
+    # pooled effect built from two opposing pair effects would be an artefact.
     pairs = sorted({p for p, _ in v1 + v2})
-    if len(pairs) > 1:
+    if len(pairs) > 1 and len(common) >= 2:
+        import math
+        import statistics
         print()
-        print("per-pair (the pooled verdict above is only trustworthy if these agree):")
-        for pair in pairs:
-            pa = [m for p, m in v1 if p == pair]
-            pb = [m for p, m in v2 if p == pair]
-            if not pa or not pb:
-                print(f"  {pair}: incomplete (V1 x{len(pa)}, V2 x{len(pb)})")
+        print("per-pair direction check (pooled effect is only trustworthy if these agree):")
+        print(f"  {'metric':<17} " + " ".join(f"{p:>16}" for p in pairs) + "  agree?")
+        for k in metrics:
+            if k.split(" @ ")[0] in UNRESOLVABLE:
                 continue
-            bits = []
-            for k in metrics:
-                a = [m[k] for m in pa if k in m]
-                b = [m[k] for m in pb if k in m]
-                v, _ = verdict(k, a, b, cvs.get(k, 0.0))
-                if v.startswith("DIFFERENT"):
-                    bits.append(k)
-            print(f"  {pair}: {'DIFFERENT on ' + ', '.join(bits) if bits else 'no metric differs'}")
+            effs = []
+            for pair in pairs:
+                rs = [math.log(blocks_v2[b][k] / blocks_v1[b][k])
+                      for b in common if b[0] == pair
+                      and k in blocks_v1[b] and k in blocks_v2[b]]
+                effs.append((math.exp(statistics.mean(rs)) - 1) * 100 if rs else None)
+            got = [e for e in effs if e is not None]
+            if len(got) < 2:
+                continue
+            agree = all(e > 0 for e in got) or all(e < 0 for e in got)
+            cells = " ".join(f"{e:>+15.2f}%" if e is not None else f"{'-':>16}" for e in effs)
+            print(f"  {k:<17} {cells}  {'yes' if agree else 'NO -- withhold'}")
     return 0
 
 
