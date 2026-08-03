@@ -89,6 +89,37 @@ the routing-site comment claimed.
 
 The 22/24 in the table above was V2's tail, not V2's centre.
 
+### 2026-08-04: this sampling is itself on the wrong axis
+
+Kept above as written, because the correction is more useful than a rewrite.
+
+Those eight samples per arm came from **one serve per arm**. On 2026-08-04 V2's
+c=12 turned out to be **bimodal by serve instance** -- same build, same pair,
+same gate config:
+
+```
+serve 1:  22 22 23          mean 22.3   (matches V1)
+serve 2:   6  9  6  8  8    mean  7.4
+serve 3:  23 23 24          mean 23.3
+```
+
+Tight within a serve, 3x apart across. So the n=8 above measured *within-serve*
+variance while the quantity that actually varies is *across-serve*: n was raised
+on the wrong axis, which is the original n=1 error one level up. V1 [20,24] vs
+V2 [6,13] with U=0 is a comparison of two single serves that each landed
+somewhere.
+
+The **conclusion survives** -- V1 stays the default -- but for a stronger reason
+than the one recorded here. It is not that V2 is uniformly worse; it is that
+roughly half of V2 serves land in a state that loses two thirds of the needles,
+with nothing predicting or detecting which. An unpredictable deficit is worse
+operationally than a consistent one.
+
+It probably also dissolves the pair disagreement in the Open list below: those
+were likely different serves drawing different modes, not a property of the
+hardware. See `2026-08-04` notes and the memory entry
+`project_v2_recall_bimodal_per_serve`.
+
 ## A caveat I raised and then had to withdraw
 
 I first reported `thinking_token_budget` as a **silent** functional regression
