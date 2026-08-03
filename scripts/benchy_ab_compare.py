@@ -6,20 +6,59 @@ the arms). The point of writing it early is that the rule below cannot be
 tuned after seeing which way the numbers fell -- which is the specific failure
 that put a wrong default on two public branches on 2026-08-03.
 
+## Threshold correction, made 2026-08-03 after 2 of 16 runs, before ANY comparison
+
+The first version of this file tested the gap against the 12-run HISTORICAL
+spread (ctx_pp 4.1-10.0%, pp2048 3.7-14.8%). That is the wrong yardstick and it
+was too conservative by 2-4x on exactly the metric this experiment is about.
+
+Those 12 runs span different vLLM SHAs, a model change (pre-0731 -> 0731) and a
+speculator change (MTP2 -> DSpark nst=5). Their spread is build + model + pair +
+drift + repeat noise. This A/B holds all of those fixed -- same build, same
+night, both arms inside one node pair -- so it only has to beat the BOOT-TO-BOOT
+REPEAT term. Pooling the archive's three same-build repeat sets (07-17 x2,
+07-21 x2, 07-27 x3; df=4) separates them:
+
+  metric            within-build CV   12-run CV   blocking gain
+  ctx_pp  @d8192          0.57%          1.58%        2.8x
+  ctx_pp  @d16384         0.39%          1.07%        2.8x
+  ctx_pp  @d32768         0.53%          2.33%        4.4x
+  pp2048  @d8192          1.31%          1.79%        1.4x
+  pp2048  @d16384         1.01%          1.22%        1.2x
+  pp2048  @d32768         1.21%          3.39%        2.8x
+  ctx_tg  @d8192          3.46%          3.39%        1.0x
+  ctx_tg  @d16384         2.30%          8.28%        3.6x
+  ctx_tg  @d32768         2.41%          5.25%        2.2x
+  tg128   @d8192          4.93%          5.20%        1.1x
+  tg128   @d16384         3.99%          6.54%        1.6x
+  tg128   @d32768         7.85%          6.62%        0.8x
+
+Timing matters for whether this rewrite is legitimate: it was made with one V1
+arm and one V2 arm recorded, on two different pairs, and with no comparison
+between them computed. The change follows from the archive's structure, not from
+which way tonight's numbers fell. sigma has df=4, so every threshold below is
+also reported against a 2.37x one-sided 95% upper bound; a verdict that survives
+only at the point estimate is labelled as such.
+
+tg128 is declared NOT RESOLVABLE up front, for either direction. Its
+within-build CV equals its entire historical spread -- it is essentially pure
+boot-to-boot noise with no structure for blocking to remove -- so no affordable
+n rescues it. Reporting "V1 and V2 are at parity on tg128" would be a claim this
+design cannot make.
+
 The rule, per metric:
 
-  DIFFERENT      the two arms' value ranges are DISJOINT *and* the gap between
-                 them exceeds this metric's recorded historical spread. Both
-                 conditions are required: benchy's own +/- is within-invocation
-                 and runs 5-30x smaller than the build-to-build spread, so
-                 disjoint ranges alone prove nothing at small n.
-  NO DIFFERENCE  ranges overlap, AND each arm's spread is at most the historical
-                 spread -- i.e. the measurement behaved normally and still saw
-                 nothing.
-  UNDERPOWERED   ranges overlap but at least one arm's own spread already
-                 exceeds the historical spread. The run was too noisy to have
-                 detected anything; this is NOT a null result and must not be
-                 reported as one.
+  NOT RESOLVABLE tg128, always. Numbers are printed for the record only.
+  DIFFERENT      arm ranges DISJOINT *and* the gap exceeds the metric's
+                 within-build CV x 2 (a ~2-sigma boot-to-boot separation).
+                 Reported as ROBUST if it also clears the df=4 upper bound
+                 (CV x 2 x 2.37), otherwise as MARGINAL.
+  NO DIFFERENCE  ranges overlap AND both arms' own spreads are within the
+                 within-build CV x 2 -- the measurement behaved as expected and
+                 still saw nothing.
+  UNDERPOWERED   ranges overlap but an arm is noisier than boot-to-boot repeat
+                 noise predicts, or they are disjoint by less than the
+                 threshold. NOT a null result.
 
 Arms are also reported PER PAIR, because the two GB10 node pairs have disagreed
 on an unrelated gate and their worktree binaries differ by a few bytes. If the
@@ -47,6 +86,50 @@ from benchy_history_band import collect_history, parse  # noqa: E402
 # for decode).
 ORDER = ["ctx_pp", "pp2048", "ctx_tg", "tg128"]
 
+# Metrics with no structure for within-pair blocking to remove. Declared before
+# the data, so a tg128 reading cannot be promoted to a finding after the fact.
+UNRESOLVABLE = {"tg128"}
+
+# df=4 one-sided 95% upper bound multiplier on the pooled within-build sigma.
+SIGMA_HI = 2.37
+
+
+def within_build_cv() -> dict[str, float]:
+    """Pooled boot-to-boot CV, from experiment dirs holding >1 distinct run.
+
+    A dir with several distinct measured value-sets is a same-build repeat set
+    (the harness archives r1/r2/r3 of one head together), which is exactly the
+    variance component this A/B has to beat.
+    """
+    import collections
+    import statistics
+
+    seen: dict[tuple, str] = {}
+    for p in sorted(pathlib.Path("docs/sm120/experiments").rglob("*")):
+        if p.suffix not in (".out", ".log"):
+            continue
+        metrics = parse(p)
+        if metrics:
+            seen.setdefault(tuple(sorted(metrics.items())),
+                            p.relative_to("docs/sm120/experiments").parts[0])
+
+    by_dir: dict[str, list[dict]] = collections.defaultdict(list)
+    for key, d in seen.items():
+        by_dir[d].append(dict(key))
+
+    out: dict[str, float] = {}
+    for k in {m for runs in by_dir.values() for r in runs for m in r}:
+        num, df = 0.0, 0
+        for runs in by_dir.values():
+            vals = [r[k] for r in runs if k in r]
+            if len(vals) > 1:
+                mu = statistics.mean(vals)
+                num += statistics.variance(vals) / mu**2 * (len(vals) - 1)
+                df += len(vals) - 1
+        if df:
+            out[k] = (num / df) ** 0.5 * 100
+    return out
+
 
 def pair_of(path: pathlib.Path) -> str:
     stem = path.stem
@@ -64,27 +147,31 @@ def load(paths: list[pathlib.Path]) -> list[tuple[str, dict[str, float]]]:
     return out
 
 
-def verdict(a: list[float], b: list[float], hist_spread_pct: float) -> tuple[str, str]:
-    """Apply the pre-registered rule. a=V1 values, b=V2 values."""
+def verdict(metric: str, a: list[float], b: list[float], cv: float) -> tuple[str, str]:
+    """Apply the pre-registered rule. a=V1 values, b=V2 values, cv=within-build CV%."""
+    if metric.split(" @ ")[0] in UNRESOLVABLE:
+        return "NOT RESOLVABLE", f"within-build CV {cv:.1f}% ~ full historical spread"
     if not a or not b:
         return "NO DATA", ""
+
+    thresh, thresh_hi = 2 * cv, 2 * cv * SIGMA_HI
     alo, ahi, blo, bhi = min(a), max(a), min(b), max(b)
     a_spread = 100 * (ahi - alo) / alo if len(a) > 1 else 0.0
     b_spread = 100 * (bhi - blo) / blo if len(b) > 1 else 0.0
-    detail = f"V1 spread {a_spread:.1f}%, V2 spread {b_spread:.1f}%, hist {hist_spread_pct:.1f}%"
 
-    disjoint = ahi < blo or bhi < alo
-    if disjoint:
+    if ahi < blo or bhi < alo:
         gap = (blo - ahi) if ahi < blo else (alo - bhi)
-        base = min(ahi, bhi)
-        gap_pct = 100 * gap / base
-        if gap_pct > hist_spread_pct:
-            faster = "V2" if blo > ahi else "V1"
-            return "DIFFERENT", f"{faster} higher, gap {gap_pct:.1f}% > hist {hist_spread_pct:.1f}%"
-        return "UNDERPOWERED", f"disjoint but gap {gap_pct:.1f}% <= hist {hist_spread_pct:.1f}%"
+        gap_pct = 100 * gap / min(ahi, bhi)
+        higher = "V2" if blo > ahi else "V1"
+        if gap_pct > thresh_hi:
+            return "DIFFERENT (robust)", f"{higher} higher by >={gap_pct:.1f}%, clears {thresh_hi:.1f}% (sigma_hi)"
+        if gap_pct > thresh:
+            return "DIFFERENT (marginal)", f"{higher} higher by >={gap_pct:.1f}%, clears {thresh:.1f}% but not {thresh_hi:.1f}%"
+        return "UNDERPOWERED", f"disjoint but gap {gap_pct:.1f}% <= 2xCV {thresh:.1f}%"
 
-    if max(a_spread, b_spread) > hist_spread_pct:
-        return "UNDERPOWERED", detail + " -- an arm is noisier than history"
+    detail = f"V1 spread {a_spread:.1f}%, V2 spread {b_spread:.1f}%, 2xCV {thresh:.1f}%"
+    if max(a_spread, b_spread) > thresh:
+        return "UNDERPOWERED", detail + " -- an arm exceeds boot-to-boot noise"
     return "NO DIFFERENCE", detail
 
 
@@ -101,11 +188,11 @@ def main() -> int:
         print("need at least one usable run per arm", file=sys.stderr)
         return 2
 
-    history = collect_history(args.exclude)
-    hist_spread = {}
-    for k, entries in history.items():
-        vals = [v for v, _ in entries]
-        hist_spread[k] = 100 * (max(vals) - min(vals)) / min(vals)
+    cvs = within_build_cv()
+    if not cvs:
+        print("no same-build repeat sets in the archive; cannot set a threshold",
+              file=sys.stderr)
+        return 2
 
     metrics = sorted(
         {k for _, m in v1 + v2 for k in m},
@@ -116,7 +203,7 @@ def main() -> int:
     print(f"V1 runs: {len(v1)}  ({', '.join(p for p, _ in v1)})")
     print(f"V2 runs: {len(v2)}  ({', '.join(p for p, _ in v2)})")
     print()
-    hdr = f"{'metric':<17} {'V1 range':>19} {'V2 range':>19} {'hist':>7}  verdict"
+    hdr = f"{'metric':<17} {'V1 range':>19} {'V2 range':>19} {'CV':>6}  verdict"
     print(hdr)
     print("-" * len(hdr))
 
@@ -124,14 +211,14 @@ def main() -> int:
     for k in metrics:
         a = [m[k] for _, m in v1 if k in m]
         b = [m[k] for _, m in v2 if k in m]
-        hs = hist_spread.get(k, 0.0)
-        v, why = verdict(a, b, hs)
+        cv = cvs.get(k, 0.0)
+        v, why = verdict(k, a, b, cv)
         tally[v] += 1
         fa = f"{min(a):.1f}-{max(a):.1f}" if a else "-"
         fb = f"{min(b):.1f}-{max(b):.1f}" if b else "-"
-        print(f"{k:<17} {fa:>19} {fb:>19} {hs:>6.1f}%  {v}")
+        print(f"{k:<17} {fa:>19} {fb:>19} {cv:>5.2f}%  {v}")
         if why:
-            print(f"{'':<17} {'':>19} {'':>19} {'':>7}  ({why})")
+            print(f"{'':<17} {'':>19} {'':>19} {'':>6}  ({why})")
 
     print()
     print("summary: " + ", ".join(f"{n}x {v}" for v, n in sorted(tally.items())))
@@ -151,8 +238,8 @@ def main() -> int:
             for k in metrics:
                 a = [m[k] for m in pa if k in m]
                 b = [m[k] for m in pb if k in m]
-                v, _ = verdict(a, b, hist_spread.get(k, 0.0))
-                if v == "DIFFERENT":
+                v, _ = verdict(k, a, b, cvs.get(k, 0.0))
+                if v.startswith("DIFFERENT"):
                     bits.append(k)
             print(f"  {pair}: {'DIFFERENT on ' + ', '.join(bits) if bits else 'no metric differs'}")
     return 0
