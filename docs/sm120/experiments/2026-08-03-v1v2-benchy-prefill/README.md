@@ -119,6 +119,47 @@ All four nodes at `2fb22567c5`, clean worktrees; torch 2.13.0+cu130, FlashInfer
 silently-False probe would reroute DSv4 off the SM120 kernels and read as an
 enormous pair effect); stale serves torn down on both pairs before the start.
 
+## First attempt: half the blocks were self-contaminated, and the assertions could not see it
+
+The first run of this design produced 8 blocks. **Four are void.** A follow-up chain that
+had been killed — or so I verified, with `pgrep` patterns that did not match the
+survivor — ran a second round CONCURRENTLY with the intended one on Pair A. Two serves
+fought over port 8000 on the same pair.
+
+Every per-arm assertion passed anyway. SHA, speculator, runner log line and available-KV
+were all correct, because each serve really did boot. Only the numbers gave it away:
+
+```
+tg128  @ d8192   20.10     (normal ~40)
+ctx_tg @ d32768   5.60     (normal ~40)
+```
+
+Detection, after the fact, is one line — any run tag appearing twice means concurrent
+invocations:
+
+```
+grep -oE "tag=[^ ]+" benchy_A.log | sort | uniq -c    # count > 1 == void
+```
+
+Discarded: Pair A blocks 3, 4 and the solo control. Kept: Pair B blocks 1–4 and Pair A
+blocks 1–2, six clean blocks, which showed every prefill cell with V2 ahead (ctx_pp
++1.02–1.64%, pp2048 +3.75–4.52%, all six blocks agreeing in sign, exact p=0.0312 — the
+floor at B=6, short of the 0.0083 Holm needs).
+
+**Those six are not pooled into the final result.** They were measured at `2fb22567c5`;
+the run below is at the merged head `54e0ebf330`, a different build. They inform
+expectation only.
+
+Three fixes, all in `fulltest.sh`:
+1. **`flock`, not `pgrep`, for single-instance.** A `pgrep -f <script>` guard also matches
+   `bash -n` syntax checks, the `setsid`/`nohup` wrapper, and the ssh command line that
+   launched it. It let the duplicate live, and later it aborted a legitimate start by
+   matching itself.
+2. **No chained successors.** Each phase is launched explicitly. Chained waiters are
+   invisible once detached and survive sloppy kills.
+3. **Refuse to start on a dirty pair** — abort if any serve process is alive on either
+   node, or if the worktree is not at the expected SHA.
+
 ## Results
 
-_pending — 8 blocks + 1 solo control, ETA 2026-08-03 ~22:00_
+_pending — re-run at the merged head `54e0ebf330`, 8 blocks across both pairs_
