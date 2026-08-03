@@ -1,7 +1,8 @@
 # V1 vs V2 model runner on 0731 + DSpark
 
-Status: accepted
-Date: 2026-08-02
+Status: **rejected** — V1 remains the default. Switched in `7e2914ed40`,
+reverted in `2fb22567c5` after deeper sampling of the c=12 cell.
+Date: 2026-08-02, revised 2026-08-03
 Owner/context: `67f0057da4`. Unblocked by jasl/vllm PR #36 — before that, V2 +
 folded DSpark could not boot under an explicitly-named draft at all.
 
@@ -33,7 +34,8 @@ rather than trusting the env var.
 | tool-calling, 135 cases | 97% (263/270) | 97% (262/270) | parity |
 | #19 instruction-following | PASS | PASS | parity |
 | arthur recall, c=1 | PASS 2/2 | PASS 2/2 | parity |
-| arthur recall, c=12 | 23/24 | 22/24 | see below |
+| arthur recall, c=12 (n=1) | 23/24 | 22/24 | **misleading — see below** |
+| arthur recall, c=12 (n=8) | 22.25 mean [20, 24] | **10.50 mean [6, 13]** | **V1, U=0** |
 | illegal-access / assert lines | 0 | 0 | parity |
 | serve boot wall | 402 s | 413 s | parity |
 
@@ -59,21 +61,38 @@ constraint.
 Why V2's footprint is smaller is still **not attributed**. It is recorded as a
 result, not explained.
 
-### arthur c=12: V1 23/24, V2 22/24
+### arthur c=12: this row was read wrong, and it decides the experiment
 
-Both "fail" the gate's threshold, and both sit inside the 22–24/24 band this
-branch has recorded for c=12 since the beginning — concurrency-dependent
-reduction order under greedy + speculative decode, not a recall loss. The
-discriminator for actual recall is c=1, where **both arms are exact at 2/2**.
+The single-sample reading below is what I originally wrote:
 
-V2 being one needle lower is inside that band and one sample. It is the softest
-number in the table and it is not a blocker, but it is also not nothing: if V2
-becomes the default, c=12 is worth watching across a few more runs.
+> Both "fail" the gate's threshold, and both sit inside the 22–24/24 band this
+> branch has recorded for c=12 since the beginning — concurrency-dependent
+> reduction order under greedy + speculative decode, not a recall loss. V2 being
+> one needle lower is inside that band and one sample.
 
-## The one real functional regression, and it is silent
+Two things are wrong with it. The 22–24 band was recorded for **MTP2 on V1**, so
+it is not the reference distribution for either arm here. And one sample per
+runner cannot distinguish "inside a band" from "the top of a much worse
+distribution" — with n=1 there is no distribution to be inside of.
 
-V2 **does not support the `thinking_token_budget` request parameter**, and the
-way it does not support it matters:
+Eight samples per arm, same serve, same head, DSpark on both:
+
+```
+V1  20 23 21 23 24 23 23 21     mean 22.25, range [20, 24]
+V2  13 12  8 13 11  6 12  9     mean 10.50, range [ 6, 13]
+```
+
+Completely separated — V1's worst run beats V2's best — so Mann-Whitney gives
+**U=0 at n=8,8**. V2 drops more than half the needles. c=1 stays exact (2/2) on
+both, so this is specifically a **concurrency** failure, which is exactly what
+the routing-site comment claimed.
+
+The 22/24 in the table above was V2's tail, not V2's centre.
+
+## A caveat I raised and then had to withdraw
+
+I first reported `thinking_token_budget` as a **silent** functional regression
+under V2, on the strength of this startup handler:
 
 ```python
 # vllm/config/vllm.py:2285-2289
@@ -84,36 +103,67 @@ if self.reasoning_config is not None:
     )
 ```
 
-That is a **startup `warning_once`**, not a per-request error. A request that
-carries `thinking_token_budget` under V2 is accepted and the cap is silently
-dropped — the client gets unbounded reasoning and no signal that its parameter
-was ignored.
+A `warning_once` at startup, plus a grep that found the only enforcement in
+`vllm/v1/sample/thinking_budget_state.py` wired into the **V1** input batch,
+looked like "accepted and quietly ignored". **That was wrong.** Upstream already
+rejects the parameter per request, in the engine's shared input processor:
 
-This does not affect our harness (nothing here sets it) but that is the wrong
-test on a shared branch. `thinking_token_budget` is a public OpenAI-API sampling
-parameter, DSv4 is a reasoning model, and this branch ships a DSv4 reasoning
-parser — capping the thinking block is exactly what a downstream user of this
-branch would reach for. An operator who misses one startup log line loses it on
-every request thereafter.
+```python
+# vllm/v1/engine/input_processor.py:121-126
+if self.use_v2_model_runner:
+    raise VLLMValidationError(
+        "thinking_token_budget is not yet supported by the V2 "
+        "model runner. Run vLLM with VLLM_USE_V2_MODEL_RUNNER=0 "
+        "to use thinking_token_budget."
+    )
+```
+
+A client that sets it under V2 gets a hard validation error naming the exact
+remedy, not silently unbounded reasoning. The startup warning is an extra
+operator-facing heads-up on top of that.
+
+The parameter is genuinely unsupported under V2 — that part stands, and it is a
+real reason a specific deployment might pin `VLLM_USE_V2_MODEL_RUNNER=0` — but it
+fails loudly, so it is not the silent behaviour change I described and does not
+weigh against a default switch. The lesson is narrow and repeatable: I searched
+the worker for the enforcement site and stopped there, without checking the layer
+above it that both runners share.
 
 ## Interpretation
 
-Measured against the stated bar, V2 does not merely reach parity — it is better
-on the two axes that were in question (KV headroom, draft acceptance) and equal
-on every correctness gate.
+**The default stays on V1.** It was moved to V2 in `7e2914ed40` and moved back
+in `2fb22567c5` the same day, on the c=12 sampling above.
 
-The argument against switching the default is therefore not about performance or
-correctness. It is that the switch silently removes a public API parameter for
-everyone else running this branch. That is a product decision rather than a
-measurement one, and it was not part of the criterion set for this experiment,
-so it is surfaced here rather than decided here.
+V2 is genuinely ahead on the two axes the experiment set out to test — KV
+headroom (+4.70 GiB, +27.5%, measured twice) and draft acceptance (mean 2.097 vs
+1.967, p<0.05) — and equal on GSM8K, tool-calling, #19, c=1 recall and engine
+health. On a branch where KV headroom is the binding constraint, that is a real
+pull. It is not worth losing half the needles under concurrency.
 
-If the default does move, the minimum accompanying change is to make the drop
-loud — reject or warn per request when `thinking_token_budget` is set under V2 —
-so that it fails visibly rather than quietly.
+The routing-site comment this experiment was meant to overturn — "V2 collapses
+under concurrency at long context" — **survives, and is now measured** rather
+than asserted. V2 remains available with `VLLM_USE_V2_MODEL_RUNNER=1`, and is
+worth retesting whenever upstream moves the runner, since the KV and acceptance
+wins are real and would be worth having if the concurrency behaviour changes.
+
+### What went wrong in the first pass
+
+Not a bad measurement — a bad *comparison*. Every number in the Result table is
+reproducible. The error was reading a single c=12 sample against a band recorded
+on a different configuration, and treating "inside the band" as evidence when
+n=1 admits no such statement. The two axes I sampled properly (acceptance, KV)
+are the two that held up; the one I sampled once is the one that reversed the
+conclusion.
+
+Cost of the shortcut: a wrong default shipped to two public branches for a day.
 
 ## Open
 
 - Attribute the +4.70 GiB rather than only recording it.
-- c=12 across more runs under V2, given 22/24 vs 23/24.
+- Why V2 loses needles under concurrency at all — the failure is measured, not
+  explained, and that is what an upstream report would need.
+- The two node pairs disagree on the magnitude: `.116`/`.119` read 22/18/19
+  where `.117`/`.118` read 6–13. Same commit, same config. Unexplained.
 - Whether upstream has `thinking_token_budget` support for V2 in flight.
+- No prefill/throughput comparison was run for either runner — benchy was never
+  pointed at this A/B.
