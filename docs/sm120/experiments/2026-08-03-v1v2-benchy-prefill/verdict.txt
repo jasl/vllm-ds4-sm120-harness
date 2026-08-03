@@ -1,0 +1,59 @@
+V1 runs: 10  (jasl-spark-1, jasl-spark-3, jasl-spark-3, jasl-spark-1, jasl-spark-1, jasl-spark-1, jasl-spark-1, jasl-spark-1, jasl-spark-1, jasl-spark-1)
+V2 runs: 10  (jasl-spark-1, jasl-spark-3, jasl-spark-3, jasl-spark-1, jasl-spark-1, jasl-spark-1, jasl-spark-1, jasl-spark-1, jasl-spark-1, jasl-spark-1)
+
+metric                       V1 range            V2 range     CV  verdict
+-------------------------------------------------------------------------
+ctx_pp @ d8192          1795.5-1817.6       1826.8-1843.3  0.66%  UNDERPOWERED
+                                                                  (disjoint but gap 0.5% <= 2xCV 1.3%)
+ctx_pp @ d16384         1786.5-1820.3       1799.3-1840.2  0.80%  UNDERPOWERED
+                                                                  (V1 spread 1.9%, V2 spread 2.3%, 2xCV 1.6% -- an arm exceeds boot-to-boot noise)
+ctx_pp @ d32768         1719.0-1748.1       1754.9-1770.1  0.85%  UNDERPOWERED
+                                                                  (disjoint but gap 0.4% <= 2xCV 1.7%)
+pp2048 @ d8192          1409.8-1433.2       1460.5-1502.6  2.11%  UNDERPOWERED
+                                                                  (disjoint but gap 1.9% <= 2xCV 4.2%)
+pp2048 @ d16384         1330.4-1367.0       1386.7-1419.6  2.07%  UNDERPOWERED
+                                                                  (disjoint but gap 1.4% <= 2xCV 4.1%)
+pp2048 @ d32768         1210.6-1240.5       1268.2-1293.4  2.12%  UNDERPOWERED
+                                                                  (disjoint but gap 2.2% <= 2xCV 4.2%)
+ctx_tg @ d8192              32.3-40.9           36.1-41.9  6.89%  UNDERPOWERED
+                                                                  (V1 spread 26.5%, V2 spread 16.0%, 2xCV 13.8% -- an arm exceeds boot-to-boot noise)
+ctx_tg @ d16384             29.8-38.9           35.0-38.4  7.70%  UNDERPOWERED
+                                                                  (V1 spread 30.7%, V2 spread 9.6%, 2xCV 15.4% -- an arm exceeds boot-to-boot noise)
+ctx_tg @ d32768             37.0-44.6           37.8-47.5  6.87%  UNDERPOWERED
+                                                                  (V1 spread 20.5%, V2 spread 25.7%, 2xCV 13.7% -- an arm exceeds boot-to-boot noise)
+tg128 @ d8192               32.5-46.0           38.0-47.8  8.18%  NOT RESOLVABLE
+                                                                  (within-build CV 8.2% ~ full historical spread)
+tg128 @ d16384              39.0-45.9           34.1-47.6  7.83%  NOT RESOLVABLE
+                                                                  (within-build CV 7.8% ~ full historical spread)
+tg128 @ d32768              30.8-44.7           36.6-43.9  8.68%  NOT RESOLVABLE
+                                                                  (within-build CV 8.7% ~ full historical spread)
+
+summary: 3x NOT RESOLVABLE, 9x UNDERPOWERED
+
+paired block estimator (10 blocks; exact sign-flip test, sigma from tonight):
+  floor on the exact p at B=10 is 2/2^B = 0.0020  ->  Holm across 6 prefill cells needs p<=0.0083, so B>=8 is MET
+  metric                V2/V1            95% CI        p  reading
+  ctx_pp @ d8192       +1.18%     [+0.82,+1.53]   0.0020  REAL (survives Holm across 6 prefill cells)
+  ctx_pp @ d16384      +1.11%     [+0.35,+1.87]   0.0137  REAL (survives Holm across 6 prefill cells)
+  ctx_pp @ d32768      +1.61%     [+1.17,+2.04]   0.0020  REAL (survives Holm across 6 prefill cells)
+  pp2048 @ d8192       +4.18%     [+3.28,+5.09]   0.0020  REAL (survives Holm across 6 prefill cells)
+  pp2048 @ d16384      +4.18%     [+3.36,+5.00]   0.0020  REAL (survives Holm across 6 prefill cells)
+  pp2048 @ d32768      +4.33%     [+3.56,+5.11]   0.0020  REAL (survives Holm across 6 prefill cells)
+  ctx_tg @ d8192       +6.19%    [+1.11,+11.53]   0.0215  exploratory, uncorrected -- not a finding
+  ctx_tg @ d16384      +8.35%    [-0.70,+18.22]   0.0703  exploratory, uncorrected -- not a finding
+  ctx_tg @ d32768      +8.67%    [+3.11,+14.52]   0.0039  exploratory, uncorrected -- not a finding
+  tg128 @ d8192        +2.36%    [-6.78,+12.39]   0.5859  NOT RESOLVABLE -- for the record only
+  tg128 @ d16384       -0.03%    [-9.63,+10.60]   0.9961  NOT RESOLVABLE -- for the record only
+  tg128 @ d32768       +3.76%    [-4.30,+12.50]   0.3340  NOT RESOLVABLE -- for the record only
+
+per-pair direction check (pooled effect is only trustworthy if these agree):
+  metric                jasl-spark-1     jasl-spark-3  agree?
+  ctx_pp @ d8192              +1.14%           +1.33%  yes
+  ctx_pp @ d16384             +1.27%           +0.47%  yes
+  ctx_pp @ d32768             +1.61%           +1.58%  yes
+  pp2048 @ d8192              +4.00%           +4.94%  yes
+  pp2048 @ d16384             +4.46%           +3.07%  yes
+  pp2048 @ d32768             +4.23%           +4.72%  yes
+  ctx_tg @ d8192              +6.63%           +4.45%  yes
+  ctx_tg @ d16384             +7.52%          +11.72%  yes
+  ctx_tg @ d32768             +5.90%          +20.46%  yes
