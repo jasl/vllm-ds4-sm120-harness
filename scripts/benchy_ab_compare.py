@@ -104,14 +104,20 @@ def within_build_cv() -> dict[str, float]:
     import collections
     import statistics
 
+    # Resolve against the repo, not the cwd: results are analysed from the run
+    # directory, and a silent empty history would drop the threshold to zero.
+    root = pathlib.Path(__file__).resolve().parent.parent / "docs/sm120/experiments"
+    if not root.is_dir():
+        root = pathlib.Path("docs/sm120/experiments")
+
     seen: dict[tuple, str] = {}
-    for p in sorted(pathlib.Path("docs/sm120/experiments").rglob("*")):
+    for p in sorted(root.rglob("*")):
         if p.suffix not in (".out", ".log"):
             continue
         metrics = parse(p)
         if metrics:
             seen.setdefault(tuple(sorted(metrics.items())),
-                            p.relative_to("docs/sm120/experiments").parts[0])
+                            p.relative_to(root).parts[0])
 
     by_dir: dict[str, list[dict]] = collections.defaultdict(list)
     for key, d in seen.items():
@@ -136,6 +142,18 @@ def pair_of(path: pathlib.Path) -> str:
     return stem.rsplit("_", 1)[-1] if "_" in stem else "?"
 
 
+def block_of(path: pathlib.Path) -> int | None:
+    """Block index from the filename: lb_<arm>_b<N>_<host> or the earlier _r<N>_.
+
+    A block is one adjacent V1/V2 couple on one node pair; pair identity and slow
+    drift cancel exactly inside it. Solo control runs use a high offset (b101+)
+    so they never pair up with anything.
+    """
+    import re
+    m = re.search(r"_[br](\d+)_", path.stem)
+    return int(m.group(1)) if m else None
+
+
 def load(paths: list[pathlib.Path]) -> list[tuple[str, dict[str, float]]]:
     out = []
     for p in paths:
@@ -143,6 +161,8 @@ def load(paths: list[pathlib.Path]) -> list[tuple[str, dict[str, float]]]:
         if not metrics:
             print(f"  warning: no benchy rows in {p}, skipping", file=sys.stderr)
             continue
+        metrics = dict(metrics)
+        metrics["_block"] = block_of(p)
         out.append((pair_of(p), metrics))
     return out
 
@@ -195,7 +215,7 @@ def main() -> int:
         return 2
 
     metrics = sorted(
-        {k for _, m in v1 + v2 for k in m},
+        {k for _, m in v1 + v2 for k in m if not k.startswith("_")},
         key=lambda s: (ORDER.index(s.split(" @ ")[0]) if s.split(" @ ")[0] in ORDER else 9,
                        int(s.rsplit("d", 1)[-1])),
     )
@@ -222,6 +242,91 @@ def main() -> int:
 
     print()
     print("summary: " + ", ".join(f"{n}x {v}" for v, n in sorted(tally.items())))
+
+    # --- paired block estimator -------------------------------------------
+    # The range test above is a coarse screen against an ARCHIVAL sigma. This is
+    # the estimator the design was actually built for: within a block (adjacent
+    # V1/V2 invocations on the same node pair) the pair identity and any slow
+    # drift cancel exactly, so log(V2/V1) per block isolates the runner effect,
+    # and its scatter ACROSS blocks estimates tonight's own noise -- no archive
+    # needed. Reported whenever runs carry a block index.
+    blocks_v1 = {(p, m.get("_block")): m for p, m in v1 if m.get("_block") is not None}
+    blocks_v2 = {(p, m.get("_block")): m for p, m in v2 if m.get("_block") is not None}
+    common = sorted(set(blocks_v1) & set(blocks_v2), key=lambda t: (t[0], t[1]))
+    if len(common) >= 2:
+        import itertools
+        import math
+        import statistics
+
+        def sign_flip_p(vals: list[float]) -> float:
+            """Exact two-sided permutation p-value.
+
+            Under no runner effect the sign of each block's log-ratio is
+            exchangeable, so enumerating all 2^B sign assignments gives an exact
+            p with no distributional assumption. At B<=10 that is <=1024 cases --
+            far better than leaning on a t-approximation at df=3.
+            """
+            obs = abs(statistics.mean(vals))
+            n = len(vals)
+            hits = sum(
+                1 for signs in itertools.product((1, -1), repeat=n)
+                if abs(statistics.mean([s * v for s, v in zip(signs, vals)])) >= obs - 1e-15
+            )
+            return hits / 2 ** n
+
+        minp = 2 / 2 ** len(common)
+        print()
+        print(f"paired block estimator ({len(common)} blocks; exact sign-flip test, "
+              f"sigma from tonight):")
+        print(f"  floor on the exact p at B={len(common)} is 2/2^B = {minp:.4f}"
+              f"  ->  Holm across 6 prefill cells needs p<={0.05/6:.4f}, "
+              f"so B>=8 is {'MET' if minp <= 0.05/6 else 'NOT MET (no cell can reach significance)'}")
+        print(f"  {'metric':<17} {'V2/V1':>9} {'95% CI':>17} {'p':>8}  reading")
+
+        rows, prefill_ps = [], {}
+        for k in metrics:
+            ratios = [math.log(blocks_v2[b][k] / blocks_v1[b][k])
+                      for b in common if k in blocks_v1[b] and k in blocks_v2[b]]
+            if len(ratios) < 2:
+                continue
+            mu = statistics.mean(ratios)
+            eff = (math.exp(mu) - 1) * 100
+            p = sign_flip_p(ratios)
+            # Interval alongside the p, so the size of the effect is visible and
+            # not just its significance. t-based, hence approximate; the p above
+            # is the exact one and governs.
+            se = statistics.stdev(ratios) / len(ratios) ** 0.5
+            t = {1: 12.71, 2: 4.30, 3: 3.18, 4: 2.78, 5: 2.57, 6: 2.45,
+                 7: 2.36, 8: 2.31, 9: 2.26}.get(len(ratios) - 1, 1.96)
+            ci = ((math.exp(mu - t * se) - 1) * 100, (math.exp(mu + t * se) - 1) * 100)
+            rows.append((k, eff, p, ci))
+            if k.split(" @ ")[0] in ("ctx_pp", "pp2048"):
+                prefill_ps[k] = p
+
+        # Holm across the SIX prefill cells only -- the pre-registered primary
+        # family. Decode cells stay uncorrected and are labelled exploratory, so
+        # they can never be promoted to a finding. The synthetic check that
+        # justified this produced exactly one spurious decode "effect" at 12
+        # uncorrected tests.
+        holm: dict[str, bool] = {}
+        ranked = sorted(prefill_ps.items(), key=lambda kv: kv[1])
+        mtotal = len(ranked)
+        still = True
+        for i, (k, p) in enumerate(ranked):
+            still = still and p <= 0.05 / (mtotal - i)
+            holm[k] = still
+
+        for k, eff, p, ci in rows:
+            fam = k.split(" @ ")[0]
+            if fam in UNRESOLVABLE:
+                note = "NOT RESOLVABLE -- for the record only"
+            elif fam in ("ctx_pp", "pp2048"):
+                note = ("REAL (survives Holm across 6 prefill cells)" if holm.get(k)
+                        else "not significant after Holm")
+            else:
+                note = "exploratory, uncorrected -- not a finding"
+            print(f"  {k:<17} {eff:>+8.2f}% {f'[{ci[0]:+.2f},{ci[1]:+.2f}]':>17} "
+                  f"{p:>8.4f}  {note}")
 
     # Per-pair, so a pair effect cannot hide inside a pooled range.
     pairs = sorted({p for p, _ in v1 + v2})
