@@ -1,8 +1,10 @@
 # V1 vs V2 model runner: prefill and decode throughput
 
 Status: **complete** — V2 is faster on prefill (all 6 cells REAL, Holm-corrected)
-Date: 2026-08-03
-Head: vLLM `2fb22567c5` (V1 default, after the V2 routing revert)
+Date: 2026-08-03 (first attempt) / 2026-08-04 (final)
+Head: **`54e0ebf330`** — the merged head. The first attempt ran at
+`2fb22567c5`; those blocks are recorded below but not pooled, being a
+different build.
 
 > Everything above the "Results" heading was written **before any arm finished**,
 > and the analysis code was committed before the runs started
