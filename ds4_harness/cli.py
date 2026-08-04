@@ -380,6 +380,14 @@ def _parse_str_csv(value: str, *, option: str) -> list[str]:
 
 
 def _thinking_strength_from_extra_body(extra_body: dict[str, Any]) -> str:
+    # Must accept BOTH wire shapes, exactly like generation._thinking_strength. Reading
+    # only the top-level `thinking` key silently mislabelled every nested-shape request:
+    # `non-thinking-nested` sends chat_template_kwargs={"thinking": False} and was
+    # recorded as strength "default" instead of "disabled". Kept in step with its twin
+    # by test_thinking_strength_resolvers_agree_across_every_mode.
+    chat_kwargs = extra_body.get("chat_template_kwargs")
+    if isinstance(chat_kwargs, dict) and chat_kwargs.get("thinking") is False:
+        return "disabled"
     thinking = extra_body.get("thinking")
     if isinstance(thinking, dict) and thinking.get("type") == "disabled":
         return "disabled"

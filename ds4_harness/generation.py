@@ -27,8 +27,9 @@ Json = dict[str, Any]
 #      fix, wired at chat_completion/serving.py) translates `thinking.type` into
 #      the template kwargs, so the top-level field is honored. This is what the
 #      DeepSeek platform docs and PR#41834 community clients now send.
-#   2. Legacy shape: `chat_template_kwargs={"thinking": bool}`. Still honored and
-#      kept below as explicit regression variants.
+#   2. Nested shape: `chat_template_kwargs={"thinking": bool}` — vLLM's generic
+#      chat-template passthrough. NOT dead weight: it is what several of our own
+#      live paths still send, so it is kept below as explicit regression variants.
 # An earlier revision of this comment claimed the top-level `thinking` field was
 # silently dropped; that predated the #19 fix. Verified 2026-07-21 on GB10 that
 # both shapes toggle `reasoning_content` identically (enabled/true -> reasoning
@@ -45,11 +46,26 @@ CANONICAL_THINKING_MODE_EXTRA_BODY: dict[str, Json] = {
     },
 }
 
-# Legacy `chat_template_kwargs` shape, retained as explicit regression variants so
-# the older request form stays covered. Not part of the default battery.
-LEGACY_THINKING_MODE_EXTRA_BODY: dict[str, Json] = {
-    "non-thinking-legacy": {"chat_template_kwargs": {"thinking": False}},
-    "think-high-legacy": {
+# Nested `chat_template_kwargs` shape. These were named "*-legacy" until 2026-08-04;
+# the label was wrong and actively dangerous, because this shape is NOT retired — it
+# is what several live paths send today:
+#
+#   * ds4_harness/coherence_gate.py       -> chat_template_kwargs={"enable_thinking": False}
+#     (the arthur long-context recall gate, run on every promotion)
+#   * ds4_harness/cases.py                -> same (replays aqua001's issue-#19 request
+#     verbatim, so its shape is part of the reproduction and must not be "modernised")
+#   * scripts/run_dspark_acceptance_probe.sh -> chat_template_kwargs={"thinking": False},
+#     byte-identical to `non-thinking-nested` below
+#   * scripts/run_sm120_promotion_phaseA.sh  -> chat_template_kwargs={"thinking":false}
+#     inline in the phase-A arithmetic gate (the #45309 cudagraph check)
+#
+# So these two modes are the ONLY coverage of a wire shape our own acceptance probe
+# still uses. Calling them "legacy" invited deletion; deleting them would have removed
+# that coverage while the senders kept running. Renamed by shape, not by vintage.
+# Not part of the default battery — opt-in via --thinking-mode.
+NESTED_THINKING_MODE_EXTRA_BODY: dict[str, Json] = {
+    "non-thinking-nested": {"chat_template_kwargs": {"thinking": False}},
+    "think-high-nested": {
         "chat_template_kwargs": {"thinking": True},
         "reasoning_effort": "high",
     },
@@ -57,10 +73,10 @@ LEGACY_THINKING_MODE_EXTRA_BODY: dict[str, Json] = {
 
 THINKING_MODE_EXTRA_BODY: dict[str, Json] = {
     **CANONICAL_THINKING_MODE_EXTRA_BODY,
-    **LEGACY_THINKING_MODE_EXTRA_BODY,
+    **NESTED_THINKING_MODE_EXTRA_BODY,
 }
 
-# Default battery = canonical (official) shapes only; legacy variants are opt-in.
+# Default battery = canonical (official) shapes only; nested variants are opt-in.
 DEFAULT_THINKING_MODES = tuple(CANONICAL_THINKING_MODE_EXTRA_BODY)
 
 CODE_LANGUAGE_ALIASES: dict[str, tuple[str, ...]] = {
@@ -450,9 +466,13 @@ def generation_result_row(
 
 
 def _thinking_strength(payload: Json) -> str:
-    # New shape: extra_body.chat_template_kwargs.thinking is the routing key.
-    # Legacy shape: top-level extra_body.thinking={"type":"enabled"|"disabled"}.
-    # Accept either so old transcripts replay correctly.
+    # Accepts both wire shapes, and must keep doing so: the nested shape is still sent
+    # by live paths (see NESTED_THINKING_MODE_EXTRA_BODY above), and archived
+    # transcripts recorded before 79be5f1 carry it too.
+    #   canonical: extra_body.thinking={"type":"enabled"|"disabled"}
+    #   nested:    extra_body.chat_template_kwargs.thinking (bool)
+    # Kept in step with cli._thinking_strength_from_extra_body by
+    # test_thinking_strength_resolvers_agree_across_every_mode.
     chat_kwargs = payload.get("chat_template_kwargs")
     if isinstance(chat_kwargs, dict):
         thinking_flag = chat_kwargs.get("thinking")

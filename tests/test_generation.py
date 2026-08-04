@@ -1,12 +1,83 @@
 import json
 
+import pytest
+
 from ds4_harness import cli
-from ds4_harness.generation import load_generation_prompts
+from ds4_harness.generation import (
+    DEFAULT_THINKING_MODES,
+    NESTED_THINKING_MODE_EXTRA_BODY,
+    THINKING_MODE_EXTRA_BODY,
+    load_generation_prompts,
+    thinking_extra_body,
+)
 
 
 def _write_prompt(path, body):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
+
+
+def test_thinking_extra_body_pins_both_wire_shapes():
+    """Lock the exact request shape of every thinking mode.
+
+    The canonical shapes were already asserted indirectly, through the CLI, by
+    test_generation_matrix_* and test_toolcall15_cli_runs_requested_thinking_matrix --
+    but those went red at 79be5f1 and stayed red, so in practice nothing guarded them.
+    The nested modes had no coverage at all: `non-thinking-nested` is byte-identical to
+    what scripts/run_dspark_acceptance_probe.sh sends, and this is still the only place
+    that shape is asserted -- see the note in generation.py on why it is not "legacy".
+    """
+    assert thinking_extra_body("non-thinking") == {"thinking": {"type": "disabled"}}
+    assert thinking_extra_body("think-high") == {
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "high",
+    }
+    assert thinking_extra_body("think-max") == {
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "max",
+    }
+
+    assert thinking_extra_body("non-thinking-nested") == {
+        "chat_template_kwargs": {"thinking": False}
+    }
+    assert thinking_extra_body("think-high-nested") == {
+        "chat_template_kwargs": {"thinking": True},
+        "reasoning_effort": "high",
+    }
+
+    # The default battery must stay canonical-only: nested modes are opt-in, and
+    # silently reintroducing one would change what every baseline run measures.
+    assert set(DEFAULT_THINKING_MODES).isdisjoint(NESTED_THINKING_MODE_EXTRA_BODY)
+    assert all("-nested" not in mode for mode in DEFAULT_THINKING_MODES)
+
+    with pytest.raises(KeyError):
+        thinking_extra_body("no-such-mode")
+
+
+def test_thinking_strength_resolvers_agree_across_every_mode():
+    """The two thinking-strength resolvers must not drift apart.
+
+    They already had: cli._thinking_strength_from_extra_body read only the top-level
+    `thinking` key, so every nested-shape request was recorded as strength "default"
+    when it was actually "disabled". Nothing caught it because each resolver was only
+    ever exercised through its own entry point, with the canonical shapes.
+    """
+    from ds4_harness.cli import _thinking_strength_from_extra_body
+    from ds4_harness.generation import _thinking_strength
+
+    for mode in THINKING_MODE_EXTRA_BODY:
+        extra_body = thinking_extra_body(mode)
+        assert _thinking_strength_from_extra_body(extra_body) == _thinking_strength(
+            extra_body
+        ), f"resolvers disagree on {mode}: {extra_body}"
+
+    # And the disabled modes must actually read as disabled, in both shapes -- agreement
+    # alone would also be satisfied by both being wrong in the same way.
+    assert _thinking_strength_from_extra_body(thinking_extra_body("non-thinking")) == "disabled"
+    assert (
+        _thinking_strength_from_extra_body(thinking_extra_body("non-thinking-nested"))
+        == "disabled"
+    )
 
 
 def test_load_generation_prompts_reads_markdown_metadata(tmp_path):
@@ -105,15 +176,24 @@ Translate this sentence into English: 隐私和延迟都很重要。
     )
 
     assert rc == 0
-    assert [payload["chat_template_kwargs"] for payload in captured_payloads] == [
-        {"thinking": False},
-        {"thinking": False},
+    # Canonical (official DeepSeek) shape since 79be5f1: thinking is a TOP-LEVEL
+    # field. The nested `chat_template_kwargs` shape still works and is covered by
+    # test_thinking_extra_body_pins_both_wire_shapes via the opt-in `*-nested` modes.
+    assert [payload["thinking"] for payload in captured_payloads] == [
+        {"type": "disabled"},
+        {"type": "disabled"},
     ]
+    assert not any("chat_template_kwargs" in payload for payload in captured_payloads)
     rows = [json.loads(line) for line in jsonl_output.read_text().splitlines()]
     assert [row["round"] for row in rows] == [1, 2]
     assert rows[0]["language"] == "zh"
     assert rows[0]["workload"] == "translation"
-    assert rows[0]["model"] == "deepseek-ai/DeepSeek-V4-Flash"
+    # No --model was passed, so this asserts that the DEFAULT reaches the row. Compare
+    # against the constant rather than a literal: `cli.DEFAULT_MODEL` is resolved at
+    # import time from `os.environ["MODEL"]`, so a hardcoded name makes the outcome
+    # depend on whether the developer happens to export MODEL (or on .env, which
+    # pytest does not load). That is how this assertion silently went stale.
+    assert rows[0]["model"] == cli.DEFAULT_MODEL
     assert rows[0]["thinking_mode"] == "non-thinking"
     assert rows[0]["thinking_strength"] == "disabled"
     assert rows[0]["temperature"] == 1.0
@@ -125,7 +205,7 @@ Translate this sentence into English: 隐私和延迟都很重要。
     assert "# Generation Transcript" in transcript
     assert "- OK: `True`" in transcript
     assert "- Detail: `matched expectation`" in transcript
-    assert "- Model: `deepseek-ai/DeepSeek-V4-Flash`" in transcript
+    assert f"- Model: `{cli.DEFAULT_MODEL}`" in transcript
     assert "- Thinking mode: `non-thinking`" in transcript
     assert "- Thinking strength: `disabled`" in transcript
     assert "- Temperature: `1.0`" in transcript
@@ -353,10 +433,14 @@ Write one sentence about local inference.
     )
 
     assert rc == 0
-    # New extra_body shape: vLLM routes thinking via chat_template_kwargs,
-    # not a top-level `thinking` key (see vllm-project/vllm#41834 thread).
-    assert captured["payload"]["chat_template_kwargs"] == {"thinking": True}
+    # Canonical (official DeepSeek) shape since 79be5f1: top-level `thinking` plus
+    # `reasoning_effort`. Our fork's issue-#19 fix
+    # (`ChatCompletionRequest.apply_chat_template_kwargs`) translates the top-level
+    # field into the tokenizer's chat_template_kwargs, so both shapes reach the same
+    # routing — the earlier comment here claimed the opposite and was stale.
+    assert captured["payload"]["thinking"] == {"type": "enabled"}
     assert captured["payload"]["reasoning_effort"] == "max"
+    assert "chat_template_kwargs" not in captured["payload"]
 
 
 def test_generation_matrix_applies_thinking_token_budgets_to_matching_modes(

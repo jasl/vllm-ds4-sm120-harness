@@ -340,12 +340,19 @@ def test_toolcall15_cli_runs_requested_thinking_matrix(monkeypatch, tmp_path):
     )
 
     assert rc == 0
-    # New extra_body shape: thinking is routed via chat_template_kwargs;
-    # the top-level `thinking` Claude-style key was a no-op on vLLM.
+    # Canonical (official DeepSeek) shape since 79be5f1: top-level `thinking` plus
+    # `reasoning_effort`. The claim in the previous comment — that the top-level key
+    # is a no-op on vLLM — predated our issue-#19 fix and is no longer true; the
+    # nested chat_template_kwargs shape lives on in the opt-in `*-nested` modes.
+    # The extra_body shapes come from generation.thinking_extra_body via cli.py, shared
+    # with the generation-matrix path. Note that only the SHAPES are shared: the derived
+    # `thinking_strength` has a separate resolver per entry point, and those did drift
+    # (cli.py's was blind to the nested shape) -- see
+    # test_thinking_strength_resolvers_agree_across_every_mode.
     assert [call[1]["extra_body"] for call in calls] == [
-        {"chat_template_kwargs": {"thinking": False}},
-        {"chat_template_kwargs": {"thinking": True}, "reasoning_effort": "high"},
-        {"chat_template_kwargs": {"thinking": True}, "reasoning_effort": "max"},
+        {"thinking": {"type": "disabled"}},
+        {"thinking": {"type": "enabled"}, "reasoning_effort": "high"},
+        {"thinking": {"type": "enabled"}, "reasoning_effort": "max"},
     ]
     assert [call[1]["temperature"] for call in calls] == [1.0, 1.0, 1.0]
     assert [call[1]["top_p"] for call in calls] == [1.0, 1.0, 1.0]

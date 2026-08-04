@@ -3366,6 +3366,12 @@ def run_minimal_b200_baseline(tmp_path, gpu_topology_slug):
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
     env = os.environ | {
+        # Pinned, not inherited: run_b200_baseline.sh takes MODEL from the environment
+        # (`MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"`), and this helper starts
+        # from os.environ. Without this, a developer with MODEL exported — plausible,
+        # since .env defines it and the shell drivers all read it — gets a failure in
+        # the model-name assertions that has nothing to do with what is under test.
+        "MODEL": "deepseek-ai/DeepSeek-V4-Flash",
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "OUT_DIR": str(out_dir),
