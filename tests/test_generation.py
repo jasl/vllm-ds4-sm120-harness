@@ -55,29 +55,39 @@ def test_thinking_extra_body_pins_both_wire_shapes():
 
 
 def test_thinking_strength_resolvers_agree_across_every_mode():
-    """The two thinking-strength resolvers must not drift apart.
+    """All three thinking-strength entry points must not drift apart.
 
-    They already had: cli._thinking_strength_from_extra_body read only the top-level
-    `thinking` key, so every nested-shape request was recorded as strength "default"
-    when it was actually "disabled". Nothing caught it because each resolver was only
-    ever exercised through its own entry point, with the canonical shapes.
+    They already had, in two different ways:
+      * cli._thinking_strength_from_extra_body read only the top-level `thinking` key,
+        so every nested-shape request was recorded as "default" not "disabled";
+      * long_context_probe._thinking_strength keyed off the mode NAME through a
+        three-entry allowlist, so it returned the raw mode string for anything 79be5f1
+        added -- `non-thinking-nested` was recorded as "non-thinking-nested".
+
+    Nothing caught either, because each was only exercised through its own entry point
+    and only with the canonical modes. All three now delegate to
+    generation.thinking_strength; this test is what keeps them delegating.
     """
     from ds4_harness.cli import _thinking_strength_from_extra_body
-    from ds4_harness.generation import _thinking_strength
+    from ds4_harness.generation import thinking_strength
+    from ds4_harness.long_context_probe import _thinking_strength as probe_strength
 
     for mode in THINKING_MODE_EXTRA_BODY:
         extra_body = thinking_extra_body(mode)
-        assert _thinking_strength_from_extra_body(extra_body) == _thinking_strength(
-            extra_body
-        ), f"resolvers disagree on {mode}: {extra_body}"
+        expected = thinking_strength(extra_body)
+        assert (
+            _thinking_strength_from_extra_body(extra_body) == expected
+        ), f"cli resolver disagrees on {mode}: {extra_body}"
+        assert (
+            probe_strength(mode) == expected
+        ), f"long_context_probe resolver disagrees on {mode}: {extra_body}"
 
-    # And the disabled modes must actually read as disabled, in both shapes -- agreement
-    # alone would also be satisfied by both being wrong in the same way.
-    assert _thinking_strength_from_extra_body(thinking_extra_body("non-thinking")) == "disabled"
-    assert (
-        _thinking_strength_from_extra_body(thinking_extra_body("non-thinking-nested"))
-        == "disabled"
-    )
+    # Agreement alone would also be satisfied by all three being wrong the same way, so
+    # pin the actual values too -- in BOTH wire shapes.
+    assert thinking_strength(thinking_extra_body("non-thinking")) == "disabled"
+    assert thinking_strength(thinking_extra_body("non-thinking-nested")) == "disabled"
+    assert thinking_strength(thinking_extra_body("think-high-nested")) == "high"
+    assert thinking_strength(thinking_extra_body("think-max")) == "max"
 
 
 def test_load_generation_prompts_reads_markdown_metadata(tmp_path):

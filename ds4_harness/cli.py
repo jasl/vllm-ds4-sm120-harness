@@ -42,6 +42,7 @@ from ds4_harness.generation import (
     generation_result_row,
     load_generation_prompts,
     thinking_extra_body,
+    thinking_strength,
     transcript_filename,
     write_generation_code_artifact,
     write_generation_transcript,
@@ -380,19 +381,11 @@ def _parse_str_csv(value: str, *, option: str) -> list[str]:
 
 
 def _thinking_strength_from_extra_body(extra_body: dict[str, Any]) -> str:
-    # Must accept BOTH wire shapes, exactly like generation._thinking_strength. Reading
-    # only the top-level `thinking` key silently mislabelled every nested-shape request:
-    # `non-thinking-nested` sends chat_template_kwargs={"thinking": False} and was
-    # recorded as strength "default" instead of "disabled". Kept in step with its twin
-    # by test_thinking_strength_resolvers_agree_across_every_mode.
-    chat_kwargs = extra_body.get("chat_template_kwargs")
-    if isinstance(chat_kwargs, dict) and chat_kwargs.get("thinking") is False:
-        return "disabled"
-    thinking = extra_body.get("thinking")
-    if isinstance(thinking, dict) and thinking.get("type") == "disabled":
-        return "disabled"
-    effort = extra_body.get("reasoning_effort")
-    return str(effort) if effort else "default"
+    # Thin alias over the single implementation. This was a second copy that read only
+    # the top-level `thinking` key, so every nested-shape request was recorded as
+    # strength "default" when it was actually "disabled". Do not reintroduce a body
+    # here -- add behaviour to generation.thinking_strength instead.
+    return thinking_strength(extra_body)
 
 
 def _print_case_result(case: SmokeCase, result: CheckResult, response: dict[str, Any]):

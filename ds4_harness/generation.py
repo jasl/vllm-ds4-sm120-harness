@@ -451,7 +451,7 @@ def generation_result_row(
         "model": payload.get("model"),
         "round": round_index,
         "thinking_mode": thinking_mode,
-        "thinking_strength": _thinking_strength(payload),
+        "thinking_strength": thinking_strength(payload),
         "temperature": payload.get("temperature"),
         "top_p": payload.get("top_p"),
         "variant": variant,
@@ -465,14 +465,23 @@ def generation_result_row(
     }
 
 
-def _thinking_strength(payload: Json) -> str:
-    # Accepts both wire shapes, and must keep doing so: the nested shape is still sent
-    # by live paths (see NESTED_THINKING_MODE_EXTRA_BODY above), and archived
-    # transcripts recorded before 79be5f1 carry it too.
-    #   canonical: extra_body.thinking={"type":"enabled"|"disabled"}
-    #   nested:    extra_body.chat_template_kwargs.thinking (bool)
-    # Kept in step with cli._thinking_strength_from_extra_body by
-    # test_thinking_strength_resolvers_agree_across_every_mode.
+def thinking_strength(payload: Json) -> str:
+    """Derive the thinking strength from a request payload. Single source of truth.
+
+    There were three separate implementations of this until 2026-08-04 and they had
+    drifted: cli.py's read only the canonical shape (recording every nested-shape
+    request as "default" instead of "disabled"), and long_context_probe.py's keyed off
+    the mode NAME through a three-entry allowlist, so it emitted the raw mode string
+    for anything 79be5f1 added. Both now delegate here. Add call sites, not copies.
+
+    Accepts both wire shapes, and must keep doing so: the nested shape is still sent by
+    live paths (see NESTED_THINKING_MODE_EXTRA_BODY above), and archived transcripts
+    recorded before 79be5f1 carry it too.
+        canonical: extra_body.thinking={"type":"enabled"|"disabled"}
+        nested:    extra_body.chat_template_kwargs.thinking (bool)
+
+    Guarded by test_thinking_strength_resolvers_agree_across_every_mode.
+    """
     chat_kwargs = payload.get("chat_template_kwargs")
     if isinstance(chat_kwargs, dict):
         thinking_flag = chat_kwargs.get("thinking")

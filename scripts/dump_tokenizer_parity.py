@@ -21,7 +21,9 @@ file is absent), three entries:
                                                chat_template_kwargs={"thinking": False})
   chat_thinking          : same, but {"thinking": True}
   chat_thinking_max      : same, but {"thinking": True} + reasoning_effort=max
-                           (the form the harness sends for think-max requests)
+
+These are TOKENIZER-level kwargs, which are deliberately not the shape the harness
+puts on the wire — see the note on CHAT_MODES below before changing them.
 
 Each entry has the prompt text, the token IDs as a list, the decoded string
 round-trip (for diff inspection), and the SHA-256 of the token-id list (a
@@ -87,8 +89,22 @@ DEFAULT_PROMPTS: dict[str, str] = {
     "very_short": "?",
 }
 
-# Per-mode chat_template_kwargs and extra args, mirroring
-# `ds4_harness.generation.THINKING_MODE_EXTRA_BODY`.
+# Per-mode kwargs as the TOKENIZER receives them. These deliberately do NOT mirror
+# `ds4_harness.generation.THINKING_MODE_EXTRA_BODY`, which is the shape the harness puts
+# on the WIRE. Since 79be5f1 the wire form is the official top-level
+# `thinking={"type": "enabled"|"disabled"}`; vLLM's DSv4 API layer translates that into
+# chat-template kwargs, and this script calls apply_chat_template directly, below that
+# layer. So the post-translation boolean form below is the correct input here.
+#
+# DO NOT "modernise" these to the top-level shape. `_DeepseekV4Tokenizer` reads
+# `thinking` as a plain bool (vllm/tokenizers/deepseek_v4.py: `thinking or
+# enable_thinking`), so a dict would be TRUTHY — {"type": "disabled"} would silently
+# select thinking mode and invert the non-thinking rows, producing a parity oracle that
+# looks fine and certifies the wrong token IDs.
+#
+# `reasoning_effort` is read by the tokenizer too (max/xhigh -> max, none -> chat mode,
+# anything else -> high), which is why chat_thinking_max is a distinct row rather than
+# a duplicate of chat_thinking.
 CHAT_MODES: list[tuple[str, dict[str, Any]]] = [
     ("chat_chat", {"chat_template_kwargs": {"thinking": False}}),
     ("chat_thinking", {"chat_template_kwargs": {"thinking": True}}),

@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from ds4_harness.checks import assistant_text
 from ds4_harness.client import post_json, post_json_with_retries
-from ds4_harness.generation import thinking_extra_body
+from ds4_harness.generation import thinking_extra_body, thinking_strength
 
 
 Json = dict[str, Any]
@@ -219,13 +219,13 @@ def _finish_reason(response: Json) -> str | None:
 
 
 def _thinking_strength(thinking_mode: str) -> str:
-    if thinking_mode == "non-thinking":
-        return "disabled"
-    if thinking_mode == "think-high":
-        return "high"
-    if thinking_mode == "think-max":
-        return "max"
-    return thinking_mode
+    # Derive from the payload the mode produces, never from its name. This used to be a
+    # three-entry allowlist that returned the raw mode string for anything else, so
+    # `non-thinking-nested` was recorded with strength "non-thinking-nested" instead of
+    # "disabled" -- keying off names is why it fell behind silently when 79be5f1 added
+    # modes. The mode is already validated by the thinking_extra_body call in
+    # run_long_context_probe, which runs before this.
+    return thinking_strength(thinking_extra_body(thinking_mode))
 
 
 def write_long_context_markdown(path: Path, row: Json) -> None:
