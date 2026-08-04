@@ -1,4 +1,13 @@
 load_harness_env() {
+  # HARNESS_SKIP_DOTENV=1 makes a run depend only on its explicit environment plus the
+  # defaults committed in the scripts themselves. Tests need this: .env is gitignored
+  # and per-developer, and because this function fills every UNSET variable, narrowing
+  # a test's environment would otherwise INCREASE what .env supplies -- swapping a
+  # dependence on the developer's shell for a dependence on their untracked file.
+  # Verified: with an otherwise empty environment this injects MODEL and NUM_PROMPTS.
+  case "${HARNESS_SKIP_DOTENV:-}" in
+    1 | true | TRUE | yes | YES) return 0 ;;
+  esac
   if [[ -f "${REPO_ROOT}/.env" ]]; then
     while IFS= read -r line || [[ -n "${line}" ]]; do
       line="${line#"${line%%[![:space:]]*}"}"

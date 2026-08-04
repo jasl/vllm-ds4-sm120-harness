@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 
 from ds4_harness import cli
@@ -147,23 +148,45 @@ def test_summarize_run_environment_records_non_git_sources_without_crashing(tmp_
     }
 
 
+def _isolated_git_env() -> dict[str, str]:
+    """Run git without the developer's global or system configuration.
+
+    This test used to shell out with no ``env=`` at all, so it inherited whatever the
+    machine had configured. ``init.defaultBranch`` is the visible one -- the branch
+    assertion below had to hedge ``in {"master", "main"}`` to tolerate it -- but
+    ``commit.gpgsign=true`` would block the commit on a passphrase and a global
+    ``core.hooksPath`` could fail it outright, neither of which has anything to do with
+    what is under test. Identity comes from the environment so no ``git config`` calls
+    are needed inside the fixture repo.
+    """
+    return {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "Test User",
+        "GIT_AUTHOR_EMAIL": "test@example.invalid",
+        "GIT_COMMITTER_NAME": "Test User",
+        "GIT_COMMITTER_EMAIL": "test@example.invalid",
+    }
+
+
 def test_summarize_run_environment_records_git_source_status(tmp_path):
     repo = tmp_path / "git-harness"
     repo.mkdir()
-    subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
+    git_env = _isolated_git_env()
     subprocess.run(
-        ["git", "config", "user.email", "test@example.invalid"],
+        ["git", "-c", "init.defaultBranch=main", "init"],
         cwd=repo,
         check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo,
-        check=True,
+        stdout=subprocess.PIPE,
+        env=git_env,
     )
     (repo / "README.md").write_text("baseline\n", encoding="utf-8")
-    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
-    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, env=git_env)
+    subprocess.run(
+        ["git", "commit", "-m", "initial"], cwd=repo, check=True, env=git_env
+    )
     (repo / "dirty.txt").write_text("dirty\n", encoding="utf-8")
 
     summary = summarize_run_environment(
@@ -176,7 +199,9 @@ def test_summarize_run_environment_records_git_source_status(tmp_path):
     assert harness["git_available"] is True
     assert len(harness["commit"]) == 40
     assert harness["short_commit"] == harness["commit"][:12]
-    assert harness["branch"] in {"master", "main"}
+    # Exact, not a hedge: init.defaultBranch is now pinned on the command line, so a
+    # machine configured with a different default no longer changes what this asserts.
+    assert harness["branch"] == "main"
     assert harness["dirty"] is True
     assert harness["dirty_file_count"] == 1
 

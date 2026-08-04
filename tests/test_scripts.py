@@ -1339,6 +1339,33 @@ def test_scripts_default_to_branch_timestamped_artifacts_dir():
         assert "/tmp/ds4-sm120" not in script
 
 
+def script_env(**overrides: str) -> dict[str, str]:
+    """Explicit environment for driving a harness shell script under test.
+
+    Do NOT go back to ``os.environ | {...}``. Two independent leaks come with it, and
+    fixing only the first makes the second worse:
+
+    1. Anything the developer exported reaches the script. A hardcoded model-name
+       assertion passed or failed depending on whether MODEL happened to be exported.
+    2. ``load_harness_env`` fills every UNSET variable from ``.env``, which is
+       gitignored and per-developer. Narrowing the environment therefore hands MORE
+       variables to ``.env`` -- so an allowlist alone would trade a dependence on the
+       shell for a dependence on an untracked file. HARNESS_SKIP_DOTENV closes that:
+       unset variables then fall back to the defaults committed in the scripts, which
+       is what a fresh clone and CI actually run.
+
+    PATH and HOME are passed through because the script needs a working interpreter and
+    toolchain; neither carries harness semantics. Everything else must be named by the
+    caller, so a variable is present only because a test chose it.
+    """
+    base = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": os.environ.get("HOME", str(Path.home())),
+        "HARNESS_SKIP_DOTENV": "1",
+    }
+    return base | {key: str(value) for key, value in overrides.items()}
+
+
 def _env_sample_values():
     values = {}
     for line in (ROOT / "env.sample").read_text(encoding="utf-8").splitlines():
@@ -1843,7 +1870,7 @@ def test_gb10_forum53_context_guard_rejects_unsafe_profile(tmp_path):
     script = ROOT / "scripts" / "run_gb10_forum53_multi_user_gate.sh"
     out_dir = tmp_path / "forum53"
     env = {
-        **os.environ,
+        **script_env(),
         "HEAD_HOST": "head.invalid",
         "WORKER_HOST": "worker.invalid",
         "HEAD_ROCE_IP": "192.0.2.10",
@@ -1887,7 +1914,7 @@ def test_gb10_forum53_high_pressure_profile_requires_guard_override(tmp_path):
     script = ROOT / "scripts" / "run_gb10_forum53_multi_user_gate.sh"
     out_dir = tmp_path / "forum53_high_pressure"
     env = {
-        **os.environ,
+        **script_env(),
         "HEAD_HOST": "head.invalid",
         "WORKER_HOST": "worker.invalid",
         "HEAD_ROCE_IP": "192.0.2.10",
@@ -2990,7 +3017,7 @@ def test_baseline_bundle_script_can_archive_runs_without_oracle(tmp_path):
     )
 
     output_dir = tmp_path / "baselines" / "20260505_official_b300_mtp2_clean"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": sys.executable,
         "BASELINE_RUN_DIR": str(run_dir),
         "BASELINE_OUTPUT_DIR": str(output_dir),
@@ -3168,7 +3195,7 @@ def test_bench_wrapper_can_run_with_mocked_python(tmp_path):
     )
     fake_python.chmod(fake_python.stat().st_mode | 0o111)
     out_dir = tmp_path / "out"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "OUT_DIR": str(out_dir),
         "GPU_STATS": "0",
@@ -3211,7 +3238,7 @@ def test_bench_wrapper_records_exit_code_on_bench_failure(tmp_path):
     )
     fake_python.chmod(fake_python.stat().st_mode | 0o111)
     out_dir = tmp_path / "out"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "OUT_DIR": str(out_dir),
         "GPU_STATS": "0",
@@ -3288,7 +3315,7 @@ def test_b200_baseline_driver_can_run_with_mocked_tools(tmp_path):
     fake_lm_eval.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
     fake_lm_eval.chmod(fake_lm_eval.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "LM_EVAL_BIN": str(fake_lm_eval),
@@ -3365,7 +3392,7 @@ def run_minimal_b200_baseline(tmp_path, gpu_topology_slug):
     )
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
-    env = os.environ | {
+    env = script_env() | {
         # Pinned, not inherited: run_b200_baseline.sh takes MODEL from the environment
         # (`MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"`), and this helper starts
         # from os.environ. Without this, a developer with MODEL exported — plausible,
@@ -3473,7 +3500,7 @@ def test_b200_baseline_driver_can_run_single_phase_with_mocked_tools(tmp_path):
     )
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "OUT_DIR": str(out_dir),
@@ -3546,7 +3573,7 @@ def test_b200_baseline_driver_captures_phase_stdio_to_artifacts(tmp_path):
     )
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "OUT_DIR": str(out_dir),
@@ -3618,7 +3645,7 @@ def test_b200_baseline_driver_can_run_variants_in_parallel_with_gpu_splits(tmp_p
     )
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "OUT_DIR": str(out_dir),
@@ -3681,7 +3708,7 @@ def test_b200_baseline_driver_rejects_unknown_phase_before_launch(tmp_path):
     )
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "OUT_DIR": str(out_dir),
@@ -3720,7 +3747,7 @@ def test_b200_baseline_driver_rejects_explicit_phase_disabled_by_run_flag_before
     )
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "OUT_DIR": str(out_dir),
@@ -3761,7 +3788,7 @@ def test_b200_baseline_driver_preflights_lm_eval_before_launch(tmp_path):
     )
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "OUT_DIR": str(out_dir),
@@ -3808,7 +3835,7 @@ def test_b200_baseline_driver_preflights_lm_eval_api_dependencies(tmp_path):
     fake_lm_eval.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
     fake_lm_eval.chmod(fake_lm_eval.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "OUT_DIR": str(out_dir),
@@ -3851,7 +3878,7 @@ def test_lm_eval_wrapper_runs_gsm8k_eval_with_guarded_artifacts(tmp_path):
     out_dir = tmp_path / "eval"
     baseline_summary = tmp_path / "baseline_lm_eval_summary.json"
     baseline_summary.write_text('{"ok": true, "tasks": []}\n', encoding="utf-8")
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "OUT_DIR": str(out_dir),
         "GPU_STATS": "0",
@@ -3923,7 +3950,7 @@ def test_b200_baseline_driver_archives_previous_managed_artifacts(tmp_path):
     (old_label_dir / "old.txt").write_text("old", encoding="utf-8")
     (old_extra_dir / "old.txt").write_text("old", encoding="utf-8")
 
-    env = os.environ | {
+    env = script_env() | {
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "ARTIFACT_ROOT": str(artifact_root),
