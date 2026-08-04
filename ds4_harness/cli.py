@@ -185,7 +185,12 @@ from ds4_harness.very_long_context import (
 )
 
 
-DEFAULT_MODEL = os.environ.get("MODEL", "deepseek-ai/DeepSeek-V4-Flash-0731")
+# Pinned, not read from the environment. Resolving this at import time from
+# os.environ["MODEL"] made every argparse default depend on the caller's shell, so a
+# test asserting the default passed or failed per developer, and the value a command
+# actually ran with was invisible in its own --help. Callers that need a different
+# model pass --model; every shell driver already does.
+DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4-Flash-0731"
 DEFAULT_BENCH_DATASET = "hf"
 DEFAULT_BENCH_DATASET_PATH = "philschmid/mt-bench"
 

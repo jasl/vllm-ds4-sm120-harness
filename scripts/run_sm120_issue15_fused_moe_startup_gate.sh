@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 ISSUE15_LABEL="${ISSUE15_LABEL:-sm120_issue15_fused_moe_startup}"
 ISSUE15_VARIANTS="${ISSUE15_VARIANTS:-mtp}"
 ISSUE15_TENSOR_PARALLEL_SIZE="${ISSUE15_TENSOR_PARALLEL_SIZE:-2}"

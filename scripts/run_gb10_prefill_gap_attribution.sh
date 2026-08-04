@@ -257,7 +257,7 @@ case "${GB10_PREFILL_GAP_D512_MULTI_PREFILL_ENV}" in
     ;;
 esac
 
-MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 API_PORT="${API_PORT:-8000}"
 TP_SIZE="${GB10_PREFILL_GAP_TP_SIZE:-2}"
 PP_SIZE="${GB10_PREFILL_GAP_PP_SIZE:-1}"

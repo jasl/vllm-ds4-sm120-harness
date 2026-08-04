@@ -16,7 +16,7 @@ if [[ ! -f "${PERF_BASELINE_JSON}" ]]; then
   exit 2
 fi
 
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8080}"
 configure_sm120_vllm_env

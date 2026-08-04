@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PYTHON="${PYTHON:-python}"
 LONG_CONTEXT_DECODE_VARIANT="${LONG_CONTEXT_DECODE_VARIANT:-manual}"
 LONG_CONTEXT_DECODE_CASE_NAME="${LONG_CONTEXT_DECODE_CASE_NAME:-long_context_decode_concurrency}"

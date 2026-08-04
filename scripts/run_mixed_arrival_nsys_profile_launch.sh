@@ -11,7 +11,7 @@
 #   PYTHON              Python interpreter for the client (default python).
 #   NSYS_BIN            Nsight Systems binary (default nsys).
 #   BASE_URL            Default http://127.0.0.1:8000.
-#   PROFILE_MODEL       Default deepseek-ai/DeepSeek-V4-Flash.
+#   PROFILE_MODEL       Default deepseek-ai/DeepSeek-V4-Flash-0731.
 #   PROFILE_LABEL       Default mixed_arrival_nsys.
 #   PROFILE_CASE_NAME   Default mixed_arrival_nsys.
 #   PROFILE_MIXED_ARRIVAL_CASE_SPECS
@@ -54,7 +54,7 @@ NSYS_BIN="${NSYS_BIN:-nsys}"
 SERVE_COMMAND="${SERVE_COMMAND:?set SERVE_COMMAND}"
 OUT_DIR="${OUT_DIR:?set OUT_DIR}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-PROFILE_MODEL="${PROFILE_MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+PROFILE_MODEL="${PROFILE_MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PROFILE_LABEL="${PROFILE_LABEL:-mixed_arrival_nsys}"
 PROFILE_CASE_NAME="${PROFILE_CASE_NAME:-mixed_arrival_nsys}"
 PROFILE_MIXED_ARRIVAL_CASE_SPECS="${PROFILE_MIXED_ARRIVAL_CASE_SPECS:-decode_then_124k:4000:4000:after_first_token:0:256:128}"

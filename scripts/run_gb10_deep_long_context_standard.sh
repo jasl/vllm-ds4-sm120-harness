@@ -24,7 +24,7 @@ load_harness_env
 source "${SCRIPT_DIR}/gb10_mem_watchdog.sh"
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PYTHON="${PYTHON:-python}"
 GB10_HEAD_HOST="${GB10_HEAD_HOST:-10.0.0.117}"
 GB10_WORKER_HOST="${GB10_WORKER_HOST:-10.0.0.118}"

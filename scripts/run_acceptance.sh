@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 ORACLE_DIR="${ORACLE_DIR:-}"
 ORACLE_TOP_N="${ORACLE_TOP_N:-20}"
 ORACLE_LOW_MARGIN_THRESHOLD="${ORACLE_LOW_MARGIN_THRESHOLD:-0.5}"

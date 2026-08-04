@@ -1200,7 +1200,10 @@ def test_workspace_high_concurrency_gate_wires_reported_shape():
     assert 'B200_KV_CACHE_DTYPE="${B200_KV_CACHE_DTYPE:-fp8}"' in script
     assert 'RANDOM_1K1K_C256_CONCURRENCY="${RANDOM_1K1K_C256_CONCURRENCY:-256}"' in script
     assert 'RANDOM_1K1K_C256_NUM_PROMPTS="${RANDOM_1K1K_C256_NUM_PROMPTS:-1280}"' in script
-    assert 'SM120_WORKSPACE_TOKENIZER="${SM120_WORKSPACE_TOKENIZER:-${MODEL:-deepseek-ai/DeepSeek-V4-Flash}}"' in script
+    assert (
+        'SM120_WORKSPACE_TOKENIZER="${SM120_WORKSPACE_TOKENIZER:-'
+        '${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}}"' in script
+    )
     assert 'BENCH_MODEL="${BENCH_MODEL:-${SM120_WORKSPACE_SERVED_MODEL_NAME}}"' in script
     assert 'BENCH_TOKENIZER="${BENCH_TOKENIZER:-${SM120_WORKSPACE_TOKENIZER}}"' in script
     assert 'BENCH_BACKEND="${BENCH_BACKEND:-openai-chat}"' in script
@@ -3392,13 +3395,10 @@ def run_minimal_b200_baseline(tmp_path, gpu_topology_slug):
     )
     fake_vllm.chmod(fake_vllm.stat().st_mode | 0o111)
     out_dir = tmp_path / "baseline"
+    # MODEL is deliberately NOT pinned here. script_env() no longer inherits os.environ,
+    # so an exported MODEL cannot leak in, and leaving it unset is what exercises
+    # run_b200_baseline.sh's own committed default -- the coverage a pin would hide.
     env = script_env() | {
-        # Pinned, not inherited: run_b200_baseline.sh takes MODEL from the environment
-        # (`MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"`), and this helper starts
-        # from os.environ. Without this, a developer with MODEL exported — plausible,
-        # since .env defines it and the shell drivers all read it — gets a failure in
-        # the model-name assertions that has nothing to do with what is under test.
-        "MODEL": "deepseek-ai/DeepSeek-V4-Flash",
         "PYTHON": str(fake_python),
         "VLLM_BIN": str(fake_vllm),
         "OUT_DIR": str(out_dir),
@@ -3441,7 +3441,10 @@ def test_b200_baseline_driver_enables_fp4_indexer_cache_for_b200_auto(tmp_path):
     out_dir = run_minimal_b200_baseline(tmp_path, "4x_nvidia_b200")
     command = (out_dir / "nomtp" / "serve_command.sh").read_text(encoding="utf-8")
     for expected in (
-        "deepseek-ai/DeepSeek-V4-Flash",
+        # Full name, including -0731. The bare "deepseek-ai/DeepSeek-V4-Flash" is a
+        # PREFIX of it, so asserting that would pass for either model and stop pinning
+        # the default this test exists to cover.
+        "deepseek-ai/DeepSeek-V4-Flash-0731",
         "--trust-remote-code",
         "--kv-cache-dtype fp8",
         "--block-size 256",

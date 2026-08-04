@@ -16,7 +16,7 @@
 #                       <venv>/bin/python, derive it from PYTHON.
 #   NSYS_BIN            Nsight Systems binary.
 #   BASE_URL            Default http://127.0.0.1:8000.
-#   PROFILE_MODEL       Default deepseek-ai/DeepSeek-V4-Flash.
+#   PROFILE_MODEL       Default deepseek-ai/DeepSeek-V4-Flash-0731.
 #   PREFILL_DECODE_PROFILE_LABEL
 #                       Default sm12x_prefill_decode_interference.
 #   PREFILL_DECODE_PROFILE_CASE_SPECS
@@ -48,7 +48,7 @@ NSYS_BIN="${NSYS_BIN:-nsys}"
 SERVE_COMMAND="${SERVE_COMMAND:?set SERVE_COMMAND}"
 OUT_DIR="${OUT_DIR:?set OUT_DIR}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-PROFILE_MODEL="${PROFILE_MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+PROFILE_MODEL="${PROFILE_MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PREFILL_DECODE_PROFILE_LABEL="${PREFILL_DECODE_PROFILE_LABEL:-sm12x_prefill_decode_interference}"
 PREFILL_DECODE_PROFILE_CASE_SPECS="${PREFILL_DECODE_PROFILE_CASE_SPECS:-long_long_c2:4000:4000:fixed_delay:0:128:128;decode_then_59k:1900:1900:after_first_token:0:256:128;decode_then_124k:4000:4000:after_first_token:0:256:128;long_decode_then_short:4000:192:after_first_token:0:256:64;short_decode_then_124k:192:4000:after_first_token:0:256:128;long_then_short:4000:192:fixed_delay:2:128:64}"
 PROFILE_REPEAT_COUNT="${PROFILE_REPEAT_COUNT:-1}"

@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PYTHON="${PYTHON:-python}"
 LONG_CONTEXT_VARIANT="${LONG_CONTEXT_VARIANT:-manual}"
 LONG_CONTEXT_CASE_NAME="${LONG_CONTEXT_CASE_NAME:-kv_indexer_long_context}"

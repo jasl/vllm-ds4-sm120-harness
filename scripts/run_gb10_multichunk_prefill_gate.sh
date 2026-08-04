@@ -12,7 +12,7 @@ import json, sys, time, urllib.request
 base = sys.argv[1] + "/v1/completions"
 def probe(nlines, tag, timeout=420):
     lines = [f"Record {i:05d} gate 9: token-{(i*2654435761)&0xFFFFFF:06x} value-{(i*40503)&0xFFFF:04x} status active." for i in range(nlines)]
-    body = json.dumps({"model": "deepseek-ai/DeepSeek-V4-Flash", "prompt": "\n".join(lines), "max_tokens": 1, "temperature": 0}).encode()
+    body = json.dumps({"model": "deepseek-ai/DeepSeek-V4-Flash-0731", "prompt": "\n".join(lines), "max_tokens": 1, "temperature": 0}).encode()
     req = urllib.request.Request(base, data=body, headers={"Content-Type": "application/json"})
     t0 = time.time()
     with urllib.request.urlopen(req, timeout=timeout) as r:

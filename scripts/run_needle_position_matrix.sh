@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PYTHON="${PYTHON:-python}"
 NEEDLE_POSITION_MATRIX_VARIANT="${NEEDLE_POSITION_MATRIX_VARIANT:-manual}"
 NEEDLE_POSITION_MATRIX_CASE_NAME="${NEEDLE_POSITION_MATRIX_CASE_NAME:-needle_position_matrix}"

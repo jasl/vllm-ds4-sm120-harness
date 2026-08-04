@@ -19,7 +19,7 @@
 # internal query chunks sweep the reachable combined_topk widths.
 #
 # Required env:
-#   MODEL          model id (default deepseek-ai/DeepSeek-V4-Flash)
+#   MODEL          model id (default deepseek-ai/DeepSeek-V4-Flash-0731)
 #   VLLM_VENV      path to the vLLM venv (must contain bin/vllm)
 #   VLLM_REPO      path to the vLLM source worktree to run (editable-install target;
 #                  must be checked out to the code under test). Used as PYTHONPATH.
@@ -34,7 +34,7 @@
 #   GATE_HEALTH_TRIES  health poll attempts x5s (default 300; fresh cache => slow)
 set -uo pipefail
 
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 VLLM_VENV="${VLLM_VENV:?set VLLM_VENV (path to vLLM venv with bin/vllm)}"
 VLLM_REPO="${VLLM_REPO:?set VLLM_REPO (vLLM worktree checked out to the code under test)}"
 HOST="${HOST:-127.0.0.1}"; PORT="${PORT:-8000}"

@@ -24,7 +24,7 @@
 # still need their own validation.
 #
 # Required env:
-#   MODEL_ID          model identifier (e.g. deepseek-ai/DeepSeek-V4-Flash)
+#   MODEL_ID          model identifier (e.g. deepseek-ai/DeepSeek-V4-Flash-0731)
 #   VLLM_VENV         path to the vLLM venv (must contain bin/vllm)
 #
 # Optional env:

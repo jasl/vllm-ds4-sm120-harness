@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 VLLM_BIN="${VLLM_BIN:-vllm}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 HOST="${HOST:-localhost}"
 PORT="${PORT:-8000}"
 BASE_URL="${BASE_URL:-http://${HOST}:${PORT}}"

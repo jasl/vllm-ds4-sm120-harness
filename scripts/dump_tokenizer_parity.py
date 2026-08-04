@@ -32,7 +32,7 @@ stable hash a port can compare against in CI).
 Usage
 -----
   python3 scripts/dump_tokenizer_parity.py \\
-      --model deepseek-ai/DeepSeek-V4-Flash \\
+      --model deepseek-ai/DeepSeek-V4-Flash-0731 \\
       --output-dir artifacts/tokenizer_parity \\
       [--prompt-file prompts/tokenizer_parity.yaml]
 
@@ -247,7 +247,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--model",
-        default="deepseek-ai/DeepSeek-V4-Flash",
+        default="deepseek-ai/DeepSeek-V4-Flash-0731",
         help="HF model id or local checkpoint path",
     )
     parser.add_argument(
@@ -268,8 +268,8 @@ def main() -> int:
     # transformers is the standard public tokenizer surface; the vllm
     # `tokenizer_mode=deepseek_v4` is server-side, not exposed for offline
     # tokenization. Falling back to AutoTokenizer is fine here because the
-    # parity target is the public DSv4 BPE + chat-template artifact, which
-    # `deepseek-ai/DeepSeek-V4-Flash` ships unmodified.
+    # parity target is the public DSv4 BPE + chat-template artifact, which the
+    # DSv4-Flash releases ship unmodified.
     from transformers import AutoTokenizer  # type: ignore[import]
 
     try:

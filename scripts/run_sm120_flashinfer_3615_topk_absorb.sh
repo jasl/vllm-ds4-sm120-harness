@@ -40,7 +40,7 @@ FIMAIN=/home/jasl/tmp/flashinfer-main-src                # has commit 49f2abf (#
 TOPK="$FI/include/flashinfer/topk.cuh"                   # JIT header (data/include -> include symlink)
 BAK="$TOPK.pre3615.bak"
 JITCACHE="$HOME/.cache/flashinfer"
-MODEL=deepseek-ai/DeepSeek-V4-Flash; SERVED=DS4
+MODEL=deepseek-ai/DeepSeek-V4-Flash-0731; SERVED=DS4
 HOST=127.0.0.1; PORT=8000
 ROOT=/home/jasl/tmp/fi3615_absorb/$(date +%Y%m%d%H%M%S); mkdir -p "$ROOT"
 

@@ -224,7 +224,7 @@ case "${GB10_FORUM53_ENABLE_EXPERT_PARALLEL}" in
     ;;
 esac
 
-MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 API_PORT="${API_PORT:-8000}"
 TP_SIZE="${GB10_FORUM53_TP_SIZE:-2}"
 PP_SIZE="${GB10_FORUM53_PP_SIZE:-1}"

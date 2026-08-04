@@ -542,7 +542,7 @@ def _write_manifest(
             "primary_run": run_dir.name,
             "raw_artifacts_are_not_required": True,
         },
-        "model": env.get("harness", {}).get("model", "deepseek-ai/DeepSeek-V4-Flash"),
+        "model": env.get("harness", {}).get("model", "deepseek-ai/DeepSeek-V4-Flash-0731"),
         "gpu": env.get("gpu", {}),
         "collect_env": collect_env,
         "serve_commands": _serve_commands(run_dir),

@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PYTHON="${PYTHON:-python}"
 ORACLE_LOGPROBS="${ORACLE_LOGPROBS:-20}"
 ORACLE_TIMEOUT="${ORACLE_TIMEOUT:-300}"

@@ -21,7 +21,7 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PYTHON="${PYTHON:-python}"
 COHERENCE_LINE_COUNT="${COHERENCE_LINE_COUNT:-900}"
 COHERENCE_CONCURRENCY="${COHERENCE_CONCURRENCY:-12}"

@@ -21,7 +21,7 @@ GUTIL="${4:-0.93}"
 VENV=/home/jasl/tmp/vllm-lucifer-pr3395-venv-20260614
 HARNESS=/home/jasl/tmp/ds4-sm120-harness
 FIMAIN=/home/jasl/tmp/flashinfer-main-built
-MODEL=deepseek-ai/DeepSeek-V4-Flash; SERVED=DS4
+MODEL=deepseek-ai/DeepSeek-V4-Flash-0731; SERVED=DS4
 HOST=127.0.0.1; PORT=8000
 LMBENCH=/home/jasl/tmp/llm_decode_bench.py
 ROOT=/home/jasl/tmp/promotion_phaseB/$(date +%Y%m%d%H%M%S); mkdir -p "$ROOT"

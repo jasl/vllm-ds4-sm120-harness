@@ -661,7 +661,7 @@ python -m ds4_harness.cli generation-matrix \
 
 python -m ds4_harness.cli toolcall15 \
   --base-url http://127.0.0.1:8000 \
-  --model deepseek-ai/DeepSeek-V4-Flash \
+  --model deepseek-ai/DeepSeek-V4-Flash-0731 \
   --scenario-set en \
   --thinking-mode non-thinking \
   --thinking-mode think-high \
@@ -674,7 +674,7 @@ python -m ds4_harness.cli toolcall15 \
 
 python -m ds4_harness.cli lm-eval \
   --base-url http://127.0.0.1:8000 \
-  --model deepseek-ai/DeepSeek-V4-Flash \
+  --model deepseek-ai/DeepSeek-V4-Flash-0731 \
   --task gsm8k \
   --num-fewshot 5 \
   --limit 200 \
@@ -764,7 +764,7 @@ they conflict with the explicit command.
 ```bash
 export VLLM_ENGINE_READY_TIMEOUT_S=3600
 
-vllm serve deepseek-ai/DeepSeek-V4-Flash \
+vllm serve deepseek-ai/DeepSeek-V4-Flash-0731 \
   --trust-remote-code \
   --kv-cache-dtype fp8 \
   --block-size 256 \

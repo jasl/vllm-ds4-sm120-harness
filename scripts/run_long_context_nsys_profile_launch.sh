@@ -11,7 +11,7 @@
 #   PYTHON              Python interpreter for the client (default python).
 #   NSYS_BIN            Nsight Systems binary (default nsys).
 #   BASE_URL            Default http://127.0.0.1:8000.
-#   PROFILE_MODEL       Default deepseek-ai/DeepSeek-V4-Flash.
+#   PROFILE_MODEL       Default deepseek-ai/DeepSeek-V4-Flash-0731.
 #   PROFILE_LINE_COUNT  Synthetic long-context line count (default 4096).
 #   PROFILE_PROMPT_FILE Prompt file path. When set, overrides line count.
 #   PROFILE_CONCURRENCY Concurrent captured requests (default 1).
@@ -46,7 +46,7 @@ NSYS_BIN="${NSYS_BIN:-nsys}"
 SERVE_COMMAND="${SERVE_COMMAND:?set SERVE_COMMAND}"
 OUT_DIR="${OUT_DIR:?set OUT_DIR}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-PROFILE_MODEL="${PROFILE_MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+PROFILE_MODEL="${PROFILE_MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PROFILE_LINE_COUNT="${PROFILE_LINE_COUNT:-4096}"
 PROFILE_PROMPT_FILE="${PROFILE_PROMPT_FILE:-}"
 PROFILE_CONCURRENCY="${PROFILE_CONCURRENCY:-1}"

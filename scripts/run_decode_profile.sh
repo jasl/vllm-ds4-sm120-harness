@@ -12,7 +12,7 @@
 #
 # Optional env:
 #   BASE_URL            Default http://127.0.0.1:8000
-#   PROFILE_MODEL       Default deepseek-ai/DeepSeek-V4-Flash
+#   PROFILE_MODEL       Default deepseek-ai/DeepSeek-V4-Flash-0731
 #   PROFILE_PROMPT      Default short paragraph
 #   PROFILE_MAX_TOKENS  Default 128 (decode-step count)
 #   PROFILE_WARMUP_TOKENS  Default 32
@@ -36,7 +36,7 @@ load_harness_env
 SERVE_COMMAND="${SERVE_COMMAND:?set SERVE_COMMAND}"
 OUT_DIR="${OUT_DIR:?set OUT_DIR}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-PROFILE_MODEL="${PROFILE_MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+PROFILE_MODEL="${PROFILE_MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PROFILE_PROMPT="${PROFILE_PROMPT:-Write a short paragraph about distributed inference systems.}"
 PROFILE_MAX_TOKENS="${PROFILE_MAX_TOKENS:-128}"
 PROFILE_WARMUP_TOKENS="${PROFILE_WARMUP_TOKENS:-32}"

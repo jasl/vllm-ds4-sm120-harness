@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PYTHON="${PYTHON:-python}"
 PREFIX_CACHE_STRESS_CASE_NAME="${PREFIX_CACHE_STRESS_CASE_NAME:-user_report_prefix_cache_http_metrics_stress}"
 PREFIX_CACHE_STRESS_TRIALS="${PREFIX_CACHE_STRESS_TRIALS:-5}"

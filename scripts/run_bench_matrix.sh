@@ -8,7 +8,7 @@ load_harness_env
 
 VLLM_ROOT="${VLLM_ROOT:-${REPO_ROOT}/vllm}"
 VLLM_BIN="${VLLM_BIN:-vllm}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 BENCH_MODEL="${BENCH_MODEL:-${MODEL}}"
 BENCH_TOKENIZER="${BENCH_TOKENIZER:-}"
 HOST="${HOST:-localhost}"

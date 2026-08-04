@@ -71,7 +71,7 @@ STREAMING_PRESSURE_MATRIX_CASE_NAME="${STREAMING_PRESSURE_MATRIX_CASE_NAME:-issu
 STREAMING_PRESSURE_MATRIX_CASE_SPECS="${STREAMING_PRESSURE_MATRIX_CASE_SPECS:-issue10_c2_59k:2:1:1900:64,issue10_c4_59k:4:1:1900:128}"
 STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW="${STREAMING_PRESSURE_MATRIX_FAIL_ON_SLOW:-0}"
 
-B200_EXTRA_SERVE_ARGS="${B200_EXTRA_SERVE_ARGS:---gpu-memory-utilization ${ISSUE10_GPU_MEMORY_UTILIZATION} --max-num-seqs ${ISSUE10_MAX_NUM_SEQS} --max-num-batched-tokens ${ISSUE10_MAX_NUM_BATCHED_TOKENS} --load-format safetensors --tokenizer ${MODEL:-deepseek-ai/DeepSeek-V4-Flash} --enable-chunked-prefill --enable-expert-parallel --disable-custom-all-reduce --default-chat-template-kwargs '{\"thinking\": true}' --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}' --override-generation-config '{\"temperature\": 1.0, \"top_p\": 1.0}'}"
+B200_EXTRA_SERVE_ARGS="${B200_EXTRA_SERVE_ARGS:---gpu-memory-utilization ${ISSUE10_GPU_MEMORY_UTILIZATION} --max-num-seqs ${ISSUE10_MAX_NUM_SEQS} --max-num-batched-tokens ${ISSUE10_MAX_NUM_BATCHED_TOKENS} --load-format safetensors --tokenizer ${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731} --enable-chunked-prefill --enable-expert-parallel --disable-custom-all-reduce --default-chat-template-kwargs '{\"thinking\": true}' --compilation-config '{\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"custom_ops\":[\"all\"]}' --override-generation-config '{\"temperature\": 1.0, \"top_p\": 1.0}'}"
 
 export B200_BASELINE_LABEL B200_BASELINE_VARIANTS B200_BASELINE_PHASES
 export B200_TENSOR_PARALLEL_SIZE B200_BLOCK_SIZE B200_KV_CACHE_DTYPE

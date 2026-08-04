@@ -36,7 +36,7 @@ for var in "${required_vars[@]}"; do
   fi
 done
 
-MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 CUDA_HOME_REMOTE="${CUDA_HOME_REMOTE:-/usr/local/cuda}"
 MASTER_PORT="${MASTER_PORT:-29519}"
 API_HOST="${API_HOST:-0.0.0.0}"

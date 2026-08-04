@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PYTHON="${PYTHON:-python}"
 PREFIX_CACHE_VARIANT="${PREFIX_CACHE_VARIANT:-manual}"
 PREFIX_CACHE_CASE_NAME="${PREFIX_CACHE_CASE_NAME:-prefix_cache_interleaved_long_conversation}"

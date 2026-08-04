@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/run_context.sh"
 load_harness_env
 
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8080}"
 # The harness ``.env`` historically shipped a hardcoded

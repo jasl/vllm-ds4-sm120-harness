@@ -9,7 +9,7 @@ load_harness_env
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
-MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL="${MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 PYTHON="${PYTHON:-python}"
 EXTERNAL_COMMAND="${EXTERNAL_COMMAND:-}"
 EXTERNAL_COMMAND_LABEL="${EXTERNAL_COMMAND_LABEL:-external_command}"

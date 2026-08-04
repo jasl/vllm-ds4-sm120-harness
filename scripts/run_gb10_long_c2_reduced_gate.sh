@@ -171,7 +171,7 @@ case "${GB10_LONG_C2_ENABLE_EXPERT_PARALLEL}" in
     ;;
 esac
 
-MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash}"
+MODEL_ID="${MODEL_ID:-deepseek-ai/DeepSeek-V4-Flash-0731}"
 API_PORT="${API_PORT:-8000}"
 TP_SIZE="${GB10_LONG_C2_TP_SIZE:-2}"
 PP_SIZE="${GB10_LONG_C2_PP_SIZE:-1}"

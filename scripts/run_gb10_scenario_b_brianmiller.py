@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000") + "/v1/completions"
-MODEL = sys.argv[2] if len(sys.argv) > 2 else "deepseek-ai/DeepSeek-V4-Flash"
+MODEL = sys.argv[2] if len(sys.argv) > 2 else "deepseek-ai/DeepSeek-V4-Flash-0731"
 
 
 def send(prompt, max_tokens, temperature=0.7, timeout=1800):
