@@ -42,6 +42,21 @@ At 364,073 tokens the top-512 budget covers 0.14% of the context — effectively
 coverage as at the reported 400K knee (0.128%) — and retrieval is still perfect at every
 needle position.
 
+### Provenance defect found after publication, and re-validation
+
+Discovered 2026-08-05: the four nodes' vllm worktrees were at THREE different SHAs
+during this matrix (.116 `0f59188db1`, .117 `d42b8d9f55`, .118/.119 `54e0ebf330` —
+a 10-commit skew including `mla_attention.py` and `fp8.py`), so the TP=4 serve ran
+four ranks on three code versions while only the head node's SHA was asserted. The
+"on `0f59188db1`" claim above originally held for one rank of four.
+
+Re-validated the same day on trees verified identical (`assert_vllm_tree_parity`,
+all four nodes clean at `0f59188db1`): the 4,400-line row reproduces exactly —
+`prompt_tokens` 123,273 (token-identical filler), **2/2 at every position, 10/10**,
+and boot KV capacity 3,614,884 tokens vs 3,593,684 recorded (+0.6%, inside the known
+~1 GiB serve-to-serve noise). One row re-run rather than all five: the row at 0.42%
+budget coverage sits mid-matrix, and the mixed-code concern is uniform across rows.
+
 ## What this does and does not establish
 
 **Establishes:** single-needle retrieval on this stack is intact to at least 364K. No

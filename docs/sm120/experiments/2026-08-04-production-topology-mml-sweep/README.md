@@ -39,7 +39,7 @@ Cold prefill is probed with **random token IDs** rather than text: the length is
 exact, and a prefix-cache hit is impossible. A warmup request precedes each series so
 JIT/cudagraph compilation stays out of the measurement.
 
-### Two hygiene failures worth recording
+### Three hygiene failures worth recording
 
 **1. A silently failing checkout.** The first two arms ran
 
@@ -68,6 +68,18 @@ fd 9, and *outlive a kill of the parent* — so after killing the driver the loc
 held by two orphans and the relaunch blocked on itself. Fixed by closing the fd in the
 children (`... &` -> `... 9>&- &`). Note `pkill` reported success regardless; its exit
 code was never checked.
+
+**3. Discovered 2026-08-05, after publication: the SHA was only ever asserted on the
+head node.** Every rank imports vllm from its own node's copy of the worktree, nothing
+in the launch path synced them, and the four Sparks were at THREE different SHAs
+(.116 `0f59188db1` 08-04, .117 `d42b8d9f55`, .118/.119 `54e0ebf330` 08-03 — a
+10-commit / 38-file skew including `mla_attention.py` and `fp8.py`). So the fix for
+failure 1 verified the head and the TP=4 arm still ran four ranks on three code
+versions; the 2x TP=2 arms each mixed two. Every "on `0f59188db1`" claim in this
+document originally meant "on `0f59188db1` on one of the participating nodes."
+`assert_vllm_tree_parity` in `dgx_spark_start_mp_serve.sh` now fingerprints every
+node's tree (HEAD SHA + dirty-file digest) and refuses to launch on mismatch. The
+re-validation below was run behind that check.
 
 ## Results
 
@@ -122,6 +134,34 @@ throughput.
 **Both topologies saturate at total concurrency ~8.** Going 8 -> 16, 2x TP=2 decode
 *falls* 112.0 -> 97.9 while per-request drops 20.2 -> 11.6 and TTFT nearly doubles. The
 extra concurrency becomes queueing, not throughput.
+
+### 2b. Re-validated on synced trees (2026-08-05)
+
+Because of hygiene failure 3, the mml=131072 comparison was re-run with all four
+nodes verified at `0f59188db1` (clean) by `assert_vllm_tree_parity` — the parity
+line appears in every boot log of this run. Same script (`topo_longctx.sh`), same
+config, same matched total concurrency 8:
+
+| depth | metric | 2x TP=2 re-run (recorded) | TP=4 re-run (recorded) | delta re-run (recorded) |
+|---|---|---|---|---|
+| 16384 | pp2048 t/s | 2791.9 (2838.2) | 1699.8 (1704.8) | **+64.2%** (+66%) |
+| 16384 | tg128 t/s | 92.2 (93.3) | 65.8 (63.0) | **+40.1%** (+48%) |
+| 16384 | TTFT | 4.79 s (4.71) | 6.84 s (6.82) | **-30.0%** (-31%) |
+| 32768 | pp2048 t/s | 2698.3 (2757.8) | 1659.3 (1664.9) | **+62.6%** (+66%) |
+| 32768 | tg128 t/s | 77.6 (84.3) | 58.4 (60.5) | **+32.9%** (+39%) |
+| 32768 | TTFT | 4.99 s (4.87) | 7.04 s (7.02) | **-29.1%** (-31%) |
+
+Zero preemptions in every arm, as before. The TP=4 single full-window request read
+996.1 t/s incremental pp2048 at d122880 (recorded 1009, -1.3%) and 38.7 t/s tg128
+(recorded 43.1, -10.3% — a c=1 single-run tg128, whose known spread is 9-12%).
+
+**Verdict: every recorded conclusion survives.** Absolute numbers reproduce within
+0.3-8% (prefill within 2.2% everywhere; the largest gap is d32768 tg128 at -7.9%,
+inside the documented tg128 spread), and every ratio lands within a few points of
+the recorded one. Notably TP=4 — the arm whose ranks had been the MOST mixed, three
+code versions across four nodes — reproduces to -0.3% on both prefill rows, which is
+strong evidence the 38 skewed files were perf-inert for this serving path and the
+original comparison was sound despite the provenance defect.
 
 ### 3. Cold prefill — the numbers that did not previously exist
 
