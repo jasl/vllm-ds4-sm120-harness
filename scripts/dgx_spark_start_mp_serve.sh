@@ -285,6 +285,58 @@ ping -c 1 -W 2 "${PEER_IP}" >/dev/null
 REMOTE
 }
 
+vllm_tree_fingerprint() {
+  local host="$1"
+  run_remote_script "${host}" "" <<'REMOTE'
+set -euo pipefail
+if ! git -C "${VLLM_ROOT}" rev-parse HEAD >/dev/null 2>&1; then
+  printf 'nogit\n'
+  exit 0
+fi
+cd "${VLLM_ROOT}"
+dirty="$(git status --porcelain -uall)"
+digest=clean
+if [[ -n "${dirty}" ]]; then
+  digest="$({ printf '%s\n' "${dirty}"
+              printf '%s\n' "${dirty}" | awk '{print $NF}' | sort \
+                | xargs -r md5sum 2>/dev/null
+            } | md5sum | awk '{print $1}')"
+fi
+printf '%s+%s\n' "$(git rev-parse HEAD)" "${digest}"
+REMOTE
+}
+
+# Every rank imports vllm from its node's own copy of VLLM_ROOT, and nothing in
+# the launch path syncs them: on 2026-08-05 the four Sparks sat at three
+# different SHAs, and a two-node serve whose ranks disagreed about whether a
+# startup warmup should run deadlocked its first collective for 37 minutes.
+# Fingerprint = HEAD SHA + digest of (porcelain listing + dirty-file md5sums),
+# so both commit skew and uncommitted-edit skew abort before any GPU work.
+assert_vllm_tree_parity() {
+  if [[ "${SKIP_VLLM_TREE_PARITY:-0}" == "1" ]]; then
+    printf 'vllm tree parity: SKIPPED (SKIP_VLLM_TREE_PARITY=1)\n'
+    return 0
+  fi
+  local ref_fp fp host
+  ref_fp="$(vllm_tree_fingerprint "${HEAD_HOST}" | tail -n 1)"
+  if [[ "${ref_fp}" == "nogit" ]]; then
+    printf 'vllm tree parity: %s is not a git tree on the head; skipping\n' \
+      "${VLLM_ROOT}"
+    return 0
+  fi
+  for host in "${_WORKER_HOSTS_ARR[@]}"; do
+    fp="$(vllm_tree_fingerprint "${host}" | tail -n 1)"
+    if [[ "${fp}" != "${ref_fp}" ]]; then
+      printf 'vllm tree parity FAILED: %s\n  head:   %s\n  %s: %s\n' \
+        "${VLLM_ROOT}" "${ref_fp}" "${host}" "${fp}" >&2
+      printf 'ranks would serve different code; sync the worker tree to the head SHA (and copy any dirty files), or set SKIP_VLLM_TREE_PARITY=1 to force\n' >&2
+      exit 6
+    fi
+  done
+  printf 'vllm tree parity: OK (%s on all %s nodes)\n' \
+    "${ref_fp:0:12}" "${NNODES}"
+}
+
 start_worker() {
   local whost="${1:-${WORKER_HOST}}"
   local wrank="${2:-1}"
@@ -589,6 +641,7 @@ preflight_node "${HEAD_HOST}" "${HEAD_ROCE_IP}" "${_WORKER_ROCE_IPS_ARR[0]}"
 for _i in "${!_WORKER_HOSTS_ARR[@]}"; do
   preflight_node "${_WORKER_HOSTS_ARR[$_i]}" "${_WORKER_ROCE_IPS_ARR[$_i]}" "${HEAD_ROCE_IP}"
 done
+assert_vllm_tree_parity
 
 printf 'starting vLLM mp worker(s) and head...\n'
 for _i in "${!_WORKER_HOSTS_ARR[@]}"; do
