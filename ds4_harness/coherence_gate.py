@@ -20,6 +20,7 @@ long_context_probe.
 
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -60,6 +61,24 @@ class CoherenceResult:
     non_latin_fraction: float
 
 
+_SPECIAL_TOKEN_RE = re.compile(r"<｜[^｜<>]{1,40}｜>")
+
+
+def find_leaked_special_tokens(text: str) -> list[str]:
+    """DeepSeek control tokens that escaped into decoded output.
+
+    Reported by brianmiller (vllm-project/vllm#41834): under concurrent mixed
+    prefill+decode, MTP speculative decode injected a spurious
+    ``<｜begin▁of▁sentence｜>`` mid-generation, after which the continuation
+    degraded. The text on either side of it stays fluent English, so every
+    other signal here -- replacement characters, script mixing, degenerate
+    repetition -- scores it coherent. A control token in decoded output is
+    always a defect regardless of what surrounds it, which is why this is a
+    separate check rather than another heuristic threshold.
+    """
+    return _SPECIAL_TOKEN_RE.findall(text)
+
+
 def _looks_degenerate(text: str) -> bool:
     compact = "".join(text.split())
     if len(compact) < 24:
@@ -89,6 +108,13 @@ def assess_english_coherence(
     stripped = text.strip()
     if len(stripped) < min_chars:
         return CoherenceResult(False, f"response too short: {len(stripped)} chars", 0.0)
+    leaked = find_leaked_special_tokens(text)
+    if leaked:
+        return CoherenceResult(
+            False,
+            f"leaked control token(s) into output: {sorted(set(leaked))}",
+            0.0,
+        )
     if "�" in text:
         return CoherenceResult(False, "contains U+FFFD replacement character", 0.0)
     letters = [ch for ch in text if ch.isalpha()]
