@@ -40,6 +40,7 @@ link them here after the package has at least a `README.md` and `evidence.md`.
 | [Fused Grouped-SWA Microbench](experiments/2026-06-13-fused-grouped-swa-microbench/README.md) | Component-level fused grouped-SWA plus compressed-state merge, plus rejected endpoint follow-up on RTX / SM120 | component watchlist, endpoint rejected | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 | [Indexed D512 Min-Token Gate](experiments/2026-06-13-indexed-d512-min-token-gate/README.md) | Fork-independent min-token admission sweep for existing indexed D512 sparse prefill on RTX / SM120 | observation | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 | [RTX LLM Decode Bench](experiments/2026-06-14-rtx-llm-decode-bench/README.md) | Community `llm_decode_bench.py` optional harness integration, RTX / SM120 decode and prefill comparison, Lucifer+PR3395 reproduction, and pitfall log | observation | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
+| [2026-08-07 Baseline of Record (db8f836e8b)](experiments/2026-08-07-baseline-of-record-db8f836e8b.md) | Post fix-wave reference set on 2x GB10 TP=2: benchy pp 1225-1432 / tg spec 47.7-55.3, GSM8K 0.9439 strict, arthur 2/2 + 23/24, multi-needle 48/48 at 42K/80K | baseline-of-record | — |
 
 ## Legacy Notes
 
