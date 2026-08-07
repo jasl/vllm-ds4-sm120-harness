@@ -66,9 +66,17 @@ the condition verified in effect rather than assumed. Nothing reproduced.
 | gate-verbatim prompt | exact gate text; uniform vs prose filler | 24 | 0 | [`gate_repro.out`](gate_repro.out) |
 | thinking mode | non-thinking (gate's mode) vs default; `avg_reasoning_chars` 0 vs 364/396 confirms the arms differed | 32 | 0 | [`think_repro.out`](think_repro.out) |
 | question shape | ask-all / ask-3rd-only / reversed order / 1-needle control | 32 | 0 | [`bisect.out`](bisect.out) |
-| prefix cache | cache on, hits confirmed in the serve log | 16 | 0 | [`pfx_repro.out`](pfx_repro.out) |
+| prefix cache | ~~cache on, hits confirmed~~ — **this arm is void, see below** | 16 | 0 | [`pfx_repro.out`](pfx_repro.out) |
 | load-state phases 1+3 | see Part 3 | 16 | 0 | [`load_state.out`](load_state.out) |
 | **total** | | **156** | **0** | |
+
+**⚠ The prefix-cache arm did not test what it claimed.** Every one of its 16
+requests — including repeats of a byte-identical payload — reports
+`cached=0/27957`, so by its own readback it achieved *zero* prefix reuse and
+therefore never exercised the condition. Whether that is a true 0% or a broken
+readback cannot be told from the file, which is exactly the problem: **the arm
+is uninterpretable and must not be counted as evidence.** The same applies, more
+weakly, to every other serial probe here — none of them measured reuse at all.
 
 Two things stand out. The depth sweep is **identical between runners** — 3/3 at
 all six positions on both — so serially V1 and V2 are indistinguishable on the
@@ -136,6 +144,15 @@ correct pattern: **3 markers in all six**, matching `gate_repro`'s V2 arm.
 The conclusion stands, but an assertion that cannot fire is worse than none —
 it reads as verification. Assert that the assertion *can* fail.
 
+**This happened twice in one night.** The prefix-cache probe reported
+`cached=0/27957` on sixteen consecutive requests, including byte-identical
+repeats — i.e. it reported that its own experimental condition was never in
+effect — and that readback was carried forward as "hits confirmed" anyway.
+Both failures share a shape: a number was printed, nobody checked it was the
+number that would appear if the setup were *wrong*, and a null result was
+banked as a positive one. The countermeasure is the same in both cases — run
+the check against the negative control and confirm it changes.
+
 **★ 156 clean serial requests is the result, not a failed hunt.** It converts
 "V2 has a mysterious recall bug" into "V2 has thinner margin under concurrency"
 — a smaller, and much better-supported, claim.
@@ -144,12 +161,38 @@ it reads as verification. Assert that the assertion *can* fail.
 "[20,24] ⇒ gone, ≤13 ⇒ persists"; 14–19 was unbucketed and 5 of 6 serves landed
 there. Registering a rule is not enough if it has a hole.
 
-## Open
+## Open — and one uncontrolled variable
 
-Why V2 has less margin than V1 is **not** answered here — only bounded. It is
-concurrency-only, leaves no persistent state, and does not show up serially at
-any needle depth. The leading hypotheses to test are scheduler-level rather
-than kernel-level: at ~123K × 12 the KV pool (127K tokens on V1, 162K on V2)
-holds barely one request, so the gate runs deep in preemption/recompute, and
-the two runners schedule that differently. Tracked in
-`project_v2_recall_bimodal_per_serve`.
+Why V2 has less margin than V1 is **not** answered here, only bounded.
+
+Two scheduler-level hypotheses were killed by reading the serve telemetry
+rather than by running anything. At c=12 the engine logs:
+
+```
+Running: 12 reqs, Waiting: 0 reqs, GPU KV cache usage: 29.7%, Prefix cache hit rate: 83.8%
+```
+
+All twelve run concurrently, **nothing queues, and KV sits at 29.7%** of a
+420,272-token pool (V1: 352,294; the 127K/162K figures in the 08-02 doc are
+from the mml-49152 era). So there is no capacity pressure and no
+preemption/recompute churn, and a planned 2×2 KV-capacity factorial was
+cancelled before it burned an hour of GPU.
+
+What that same line exposes is an **uncontrolled variable**. The gate builds
+one prompt and sends the identical payload `concurrency × repeat_count` times,
+so at c=12 the batch runs at **83.8% prefix-cache reuse** — while every serial
+probe in Part 2 ran at a *reported* 0% reuse. The one condition that separates
+passing from failing is the one never actually varied.
+
+Next, in order:
+
+1. **c=12 with prefix caching OFF, both runners.** If recall returns to ~24,
+   the mechanism is prefix-block reuse, not batch numerics. Cheap and decisive.
+2. **Serial with *verified* reuse** — same payload repeatedly, hit rate read
+   from the serve log rather than from the response field. If that also fails,
+   "concurrency-only" is wrong and the real variable is reuse, with concurrency
+   merely being what creates it. Note phase 3 of Part 3 ran serially on a warm
+   cache and passed 8/8, which argues reuse alone is not sufficient — but its
+   readback is the same untrustworthy one, so it does not settle it.
+
+Tracked in `project_v2_recall_bimodal_per_serve`.
