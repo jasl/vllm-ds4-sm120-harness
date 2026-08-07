@@ -1,0 +1,9 @@
+=== V2 re-eval, tree 62f2a9b4a2, 2026-08-07T20:16:09+08:00 ===
+SERVE1  c12=passed=17/24  c1=passed=2/2  (v2_markers=0)
+SERVE2  c12=passed=16/24  c1=passed=1/2  (v2_markers=0)
+SERVE3  c12=passed=21/24  c1=passed=2/2  (v2_markers=0)
+SERVE4  c12=passed=17/24  c1=passed=0/2  (v2_markers=0)
+SERVE5  c12=passed=19/24  c1=passed=2/2  (v2_markers=0)
+SERVE6  c12=passed=20/24  c1=passed=2/2  (v2_markers=0)
+=== V2_REEVAL_DONE 2026-08-07T21:04:00+08:00 ===
+rule: all six c12 in [20,24] => bimodality gone; any <=13 => low mode persists
