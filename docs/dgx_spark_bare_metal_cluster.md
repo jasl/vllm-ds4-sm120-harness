@@ -1136,3 +1136,15 @@ do not use it as a GB10 recommendation.
 - A pure source checkout without compiled extensions fails with
   `No module named 'vllm._C'`: run against the built/installed target checkout
   and venv, not an unbuilt archive copy.
+
+## Build trap: FetchContent caches ignore moved GIT_TAG pins
+
+`.deps/<name>-src` checkouts are cached by directory existence: when a sync
+moves a CMake `GIT_TAG` pin (vllm_flash_attn, flashkda, deepgemm,
+triton_kernels), the existing `-src` directory is silently reused and the OLD
+source compiles — stale kernels with no build error. Deleting `-src` alone is
+not enough: the `-subbuild` gitclone stamp resets it back on the next
+configure. After any sync that moves a dep pin, remove BOTH
+`.deps/<name>-src` and `.deps/<name>-subbuild` (or diff each checkout's HEAD
+against the pin) before rebuilding. Reported by alexbi29
+(vllm-project/vllm#41834) after four stale checkouts on one tip.
