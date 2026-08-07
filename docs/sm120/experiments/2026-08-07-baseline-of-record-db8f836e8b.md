@@ -1,5 +1,13 @@
 # Baseline of record — 2026-08-07, tree `db8f836e8b`
 
+> **SUPERSEDED** by [`2026-08-08-baseline-of-record-4ebd1fb698.md`](2026-08-08-baseline-of-record-4ebd1fb698.md),
+> which is on the branch head. Two corrections carried there: the two `tg128`
+> columns below are **mean and peak of one DSpark arm**, not a base arm and a
+> spec arm (only one serve is ever started, with spec on) — so the base-vs-spec
+> reasoning in the note under the perf table compares a mean to a peak; and the
+> single `arthur c=12` row of 23/24 is the top of the band, not the band
+> (three samples on one serve give 19/22/21).
+
 Reference set for future optimisation work. Everything below ran on the pushed
 tree after the 08-06/07 fix wave (upstream merge `6d1358ebd3` + BOS-leak fix
 `d8885a3335` + DSpark aux `+1` fix `71096d3f72` + `#35`/`#31`/`#30` fixes +
