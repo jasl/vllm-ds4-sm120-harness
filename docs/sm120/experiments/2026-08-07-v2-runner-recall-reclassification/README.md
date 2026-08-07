@@ -1,6 +1,32 @@
 # Model Runner V2 recall — reclassified from "defect" to "thinner concurrency margin"
 
-Status: **V1 remains the default — but for a much weaker reason than before.**
+> ## ⛔ TWO CENTRAL CLAIMS BELOW ARE REFUTED (2026-08-08)
+>
+> Kept in full, unedited, because how they failed is the useful part. See
+> [`../2026-08-08-prefix-cache-writer-race/`](../2026-08-08-prefix-cache-writer-race/README.md)
+> for what replaced them.
+>
+> 1. **"The catastrophic low mode is gone."** It is not. A V2 serve on the same
+>    tree returned **3 / 4 / 5 out of 24** — tight within the serve, which is the
+>    historical low-mode signature exactly. Six clean serves did not show it;
+>    that bounds the *rate*, not the existence. The honest claim was always
+>    "the rate fell", and P(0 of 6) only looked decisive because it was computed
+>    against the *old* rate.
+> 2. **"Gamma-only partial recall ⇒ batch numerics."** Wrong on both halves.
+>    Failing requests lose **all three sentinels**, not the last one, and they
+>    answer *coherently* with the filler checksums at the document's first /
+>    middle / final lines — i.e. they saw a document with no sentinels in it.
+>    Every failure falls in request index 0–11 (the first concurrent wave);
+>    index ≥12 has never failed. This was visible in the per-request JSON the
+>    whole time; the summary line `passed=N/24` was read instead.
+>
+> The reclassification headline — "not a V2 structural defect, just thinner
+> margin" — is therefore **withdrawn**. There is a real, reproducible defect,
+> it is in the prefix-cache path, and V1 is exposed to it too (22/24 rather
+> than 24/24).
+
+Status: ~~V1 remains the default — but for a much weaker reason than before.~~
+**Superseded — see the banner above.**
 Date: 2026-08-07 (evening), superseding the 2026-08-03 revert rationale.
 Tree: `4ebd1fb698` (current head of both `codex/ds4-sm120-min-enable` and
 `ds4-sm120-preview-dev`), i.e. the post-08-06/07-fix-wave pushed tree.
