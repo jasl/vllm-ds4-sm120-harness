@@ -3,7 +3,7 @@
 > ## ⛔ TWO CENTRAL CLAIMS BELOW ARE REFUTED (2026-08-08)
 >
 > Kept in full, unedited, because how they failed is the useful part. See
-> [`../2026-08-08-prefix-cache-writer-race/`](../2026-08-08-prefix-cache-writer-race/README.md)
+> [`../2026-08-08-prefix-reuse-defect/`](../2026-08-08-prefix-reuse-defect/README.md)
 > for what replaced them.
 >
 > 1. **"The catastrophic low mode is gone."** It is not. A V2 serve on the same
