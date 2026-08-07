@@ -1,8 +1,33 @@
-# Confirmed: concurrent writers poison the prefix cache, persistently
+# Concurrent writers can poison the prefix cache, and the damage persists
 
 Date: 2026-08-08. Tree `4ebd1fb698` (branch head). Runner: V2 unless stated.
 Companion to [`README.md`](README.md), which narrowed the fault to the reuse
 path; this file identifies **which half of reuse** is broken.
+
+> ## ⚠ The poisoning is STOCHASTIC — corrected 2026-08-08, later the same night
+>
+> This file was first titled "Confirmed: … persistently" and written as if a
+> concurrent cold batch *always* poisons the cache. It does not. Two later runs
+> of the same procedure did **not** poison, one of them with a cold-batch score
+> of 4/12 — identical to the run that *did* poison. **How badly the cold batch
+> goes does not determine whether the cache ends up poisoned.**
+>
+> Tally so far — poisoned in **6** observations, not poisoned in **2**:
+>
+> | poisoned | not poisoned |
+> |---|---|
+> | `conc_first` (cold 4/12 → serial FAIL → 1/12) | `pread` run 1 (cold 11/12 → serial pass) |
+> | V2 gate ×3 (wave 2 loses 11 of 12) | `pread` run 2 (cold 4/12 → serial pass) |
+> | prewarm V2 c=12 (SOLO 0/1, WARM 1/12) | |
+> | prewarm V2 c=5 (SOLO 0/1, WARM 0/5) | |
+>
+> What survives unchanged: the paired comparison below (1/12 versus 12/12), the
+> wave structure across six V1 and three V2 gate runs, and the fact that once
+> poisoning happens it persists until the blocks are evicted. What was
+> overstated: that a concurrent cold batch reliably reproduces it. It is
+> frequent, not certain — which is also why this defect survived months of
+> investigation as an unexplained "per-serve bimodality": it cannot be
+> reproduced on demand in a single run.
 
 ## The result
 
