@@ -1148,3 +1148,53 @@ configure. After any sync that moves a dep pin, remove BOTH
 `.deps/<name>-src` and `.deps/<name>-subbuild` (or diff each checkout's HEAD
 against the pin) before rebuilding. Reported by alexbi29
 (vllm-project/vllm#41834) after four stale checkouts on one tip.
+
+## Build trap: the venvs are uv-created and most have no `pip`
+
+Every node's `vllm/.venv` was created by `uv`, and a uv venv does **not** ship
+`pip` unless it was seeded. As of 2026-08-08 the fleet was split — `.116` and
+`.119` had `pip` (added at some point after creation), `.117` and `.118` did
+not — so the same rebuild command succeeded on two nodes and failed on the
+other two with:
+
+```
+/home/jasl/tmp/ds4-sm120-harness/vllm/.venv/bin/python: No module named pip
+```
+
+That failure is loud, but its aftermath is not: the git checkout has already
+moved by the time the build fails, leaving the tree at the new SHA while the
+compiled `.so` files are still the old ones. A serve started in that state runs
+new Python against a stale extension, which is the "stale native artifacts mixed
+with new Python code" failure this document warns about elsewhere. **If a build
+fails, put the tree back on the SHA its binaries were built from** before doing
+anything else.
+
+### Standard: use `uv pip` against the existing venv
+
+`uv` is installed on all four nodes. Use it for every install into a venv,
+regardless of whether that venv happens to have `pip`:
+
+```bash
+uv pip install --python /home/jasl/tmp/ds4-sm120-harness/vllm/.venv/bin/python \
+  -e . --no-build-isolation --no-deps
+```
+
+`--no-deps` matters: a rebuild should recompile this source tree and nothing
+else. Dependency resolution during a rebuild is how the FlashInfer and NCCL
+pins get silently moved (see the NCCL override note above). Snapshot the pinned
+versions before and after and restore anything that moved.
+
+### Standard: seed `pip` when creating a NEW venv
+
+```bash
+uv venv --python 3.12 --seed /path/to/.venv
+```
+
+`--seed` preinstalls `pip`, so tooling that shells out to `python -m pip` keeps
+working. Do **not** recreate an existing serving venv just to gain `pip` — that
+means reinstalling torch, FlashInfer, tilelang and the rest, and those pins are
+load-bearing. Use `uv pip` on it instead.
+
+Note the fleet runs **Python 3.12.3**, not 3.13. Changing the interpreter
+version is a separate, deliberate decision — not something to do incidentally
+while fixing a venv.
