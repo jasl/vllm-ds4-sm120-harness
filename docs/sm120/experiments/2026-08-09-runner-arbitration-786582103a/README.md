@@ -102,17 +102,34 @@ performance a clear V2 win, and one of the two claimed advantages confirmed
 **V1 stays supported.** `VLLM_USE_V2_MODEL_RUNNER=0` forces it and the env check
 precedes every routing rule; a test pins both the default and the escape hatch.
 
-### The guard is a deployment setting, not a shipped default
+### The guard is on by default where the race can bite
 
-Defaulting `VLLM_ALLOW_SPEC_DEC_SAME_STEP_PREFIX_HIT` to 2 in `envs.py` was tried
-and reverted after measuring it: `tests/v1/core` goes from 1 failure to 12,
-because `test_prefix_caching.py` calls `allocate_slots` repeatedly to represent
-*successive* scheduling steps while calling `new_step_starts()` once in the whole
-file. With the guard on those look like one step and are correctly deferred. The
-tests are step-agnostic rather than wrong, but flipping the default would fork 11
-upstream tests and break every future test written the same way, for no benefit
-that setting the variable in the deployment does not already give. The harness
-serve script sets it (and forwards it to worker ranks) instead.
+Defaulting it to 2 in `envs.py` was tried and reverted after measuring it:
+`tests/v1/core` goes from 1 failure to 12, because `test_prefix_caching.py`
+calls `allocate_slots` repeatedly to represent *successive* scheduling steps
+while calling `new_step_starts()` once in the whole file.
+
+**That left a worse hole, which is worth recording.** Shipping V2 as the default
+runner while the guard defaulted off meant a plain serve got V2 + prefix caching
++ DSpark with no guard — the configuration measured at mean 11.5 with a 3/24
+floor. The previous default was V1 without a guard at 20.7, so the out-of-the-box
+configuration had been made *worse* by two changes that were each an improvement
+on their own. Our serve script set the variable, so none of the measurements
+above ever saw it; only a user following the PR would have.
+
+The fix (`15dc5af4dd`) couples the decisions where they belong: the env var
+distinguishes UNSET from an explicit 0/1/2, and `KVCacheCoordinator` raises the
+default to 2 when prefix caching and speculative decoding are both on. A manager
+constructed directly still resolves to OFF, which is what keeps the
+step-agnostic tests green; two eagle tests that build a coordinator gained one
+`new_step_starts()` each, since they were asserting the race rather than a cache
+hit. An explicit value always wins, so `=0` stays a real escape hatch — pinned by
+a test, because a guard you cannot switch off is one you cannot rule out when
+diagnosing something else.
+
+★ **Two safe-looking changes can compose into an unsafe default.** Neither commit
+was wrong alone. Nothing in the process checked the combination, because both
+arms of every measurement set the variable explicitly.
 
 ## Method notes
 
