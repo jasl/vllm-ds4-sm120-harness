@@ -77,8 +77,28 @@ SERVE_COMPILATION_CONFIG="${SERVE_COMPILATION_CONFIG:-}"
 SERVE_SPECULATIVE_CONFIG="${SERVE_SPECULATIVE_CONFIG:-}"
 SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS="${SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS:-}"
 SERVE_PREFIX_CACHE_MODE="${SERVE_PREFIX_CACHE_MODE:-auto}"
+# Same-step ghost-block guard (vllm-project/vllm#42359, ported to this fork).
+# Without it a block's hash is visible to other requests before the forward pass
+# writes its KV, and a serve that loses the race keeps serving from the poisoned
+# blocks. Measured on DSv4, 4 fresh serves per arm: off -> 3 of 4 serves lose
+# long-context recall, 2 into single digits (arthur c=12 mean 11.5, min 3);
+# on -> 4 of 4 at 20-23 (mean 22.0), Mann-Whitney p=0.0043. It also lifts the V1
+# runner from 20.7 to 23.0, so it is not a V2-only fix.
+# 2 (not 1) because upstream gates on use_eagle, which on DSv4 covers only 2 of
+# 5 managers and leaves the main MLA path unguarded.
+# vLLM's own default stays 0 so the upstream test suite -- whose prefix-caching
+# tests do not model step boundaries -- keeps passing; turning it on belongs
+# here, in the deployment.
+VLLM_ALLOW_SPEC_DEC_SAME_STEP_PREFIX_HIT="${VLLM_ALLOW_SPEC_DEC_SAME_STEP_PREFIX_HIT:-2}"
+export VLLM_ALLOW_SPEC_DEC_SAME_STEP_PREFIX_HIT
 SERVE_EXTRA_ARGS="${SERVE_EXTRA_ARGS:-}"
 SERVE_REMOTE_ENV_VARS="${SERVE_REMOTE_ENV_VARS:-}"
+# The worker ranks must run the same guard setting as the head, or the two ranks
+# schedule differently. Append it to whatever the caller asked to forward.
+case ",${SERVE_REMOTE_ENV_VARS}," in
+  *,VLLM_ALLOW_SPEC_DEC_SAME_STEP_PREFIX_HIT,*) ;;
+  *) SERVE_REMOTE_ENV_VARS="${SERVE_REMOTE_ENV_VARS:+${SERVE_REMOTE_ENV_VARS},}VLLM_ALLOW_SPEC_DEC_SAME_STEP_PREFIX_HIT" ;;
+esac
 SERVE_NSYS_MODE="${SERVE_NSYS_MODE:-none}"
 NSYS_BIN_REMOTE="${NSYS_BIN_REMOTE:-nsys}"
 NSYS_TRACE="${NSYS_TRACE:-cuda,nvtx}"
