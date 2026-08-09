@@ -85,8 +85,11 @@ probe "empty-header" -H "Authorization: "
 # smg itself must not be reachable directly — it has no client auth at all, so
 # an exposed port would bypass every check above.
 if [ -n "${SMG_DIRECT_URL:-}" ]; then
-  c=$(curl -s -o /dev/null -w '%{http_code}' -m 8 "$SMG_DIRECT_URL/v1/models" 2>/dev/null || echo 000)
-  [ "$c" = 000 ] && check "smg not directly reachable" PASS "connection refused at $SMG_DIRECT_URL" \
+  # curl's %{http_code} already prints 000 when the connection fails, so a
+  # `|| echo 000` fallback would concatenate into 000000 and never compare
+  # equal — the check would report FAIL on the very outcome it wants.
+  c=$(curl -s -o /dev/null -w '%{http_code}' -m 8 "$SMG_DIRECT_URL/v1/models" 2>/dev/null)
+  [ "${c:-000}" = 000 ] && check "smg not directly reachable" PASS "connection refused at $SMG_DIRECT_URL" \
     || check "smg not directly reachable" FAIL "HTTP $c — smg is exposed and has NO client auth"
 fi
 

@@ -44,7 +44,13 @@ services:
       # session. The circuit breaker below is traffic-driven and self-heals,
       # which is the behaviour this deployment actually wants.
       - --disable-health-check
-      - --cb-failure-threshold=10
+      # Lowered from the default 10, and measured: with the default, taking a
+      # replica down made ~4 consecutive user requests fail before the breaker
+      # opened and traffic moved to the survivor. Retries count toward the
+      # threshold, so 10 attempts is only ~3-4 requests at --retry-max-retries=2.
+      # At 3 the window is roughly one request. Planned downtime is routine
+      # here, so failing fast on a dead worker beats tolerating a flap.
+      - --cb-failure-threshold=${CB_FAILURE_THRESHOLD:-3}
       - --cb-timeout-duration-secs=60
       - --cb-success-threshold=3
 
@@ -54,7 +60,23 @@ services:
       # re-pays the cold prefill (89 s at 131K, 214 s at 260K). This is a
       # quality-of-experience requirement, not tuning.
       - --policy=cache_aware
-      - --max-concurrent-requests=${MAX_CONCURRENT_REQUESTS:-8}
+
+      # --- admission ------------------------------------------------------
+      # MEASURED, and not what the flag name suggests: this is a token-bucket
+      # RATE LIMITER, not a concurrency cap. smg's own help says "Maximum
+      # number of concurrent requests allowed (for rate limiting). Set to -1 to
+      # disable", and --rate-limit-tokens-per-second defaults to this value.
+      #
+      # Set to 8 it REJECTS the excess rather than queueing it: a burst of 16
+      # concurrent requests returned 9 completions and 7 x HTTP 408, all within
+      # 2 seconds -- so not queue timeouts either, despite --queue-size 32 and
+      # --queue-timeout-secs 600. At -1 the same burst is 16/16 in 2 s.
+      #
+      # Admission is therefore left to vLLM, which has a real scheduler and a
+      # real queue (MAX_NUM_SEQS=64 per replica). The measured "concurrency 8
+      # is where throughput peaks" is a throughput fact, and queueing above it
+      # is the right response to it -- rejecting is not.
+      - --max-concurrent-requests=${MAX_CONCURRENT_REQUESTS:--1}
       - --queue-size=32
 
       # --- timeouts, sized for long context ------------------------------

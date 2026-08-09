@@ -139,6 +139,28 @@ exceed 8, so balancing never preempts cache locality. That is the behaviour we w
 it needs no flag — but it also means **raising `--max-concurrent-requests` above ~64
 would silently start trading cache hits for balance.**
 
+### `--max-concurrent-requests` — CORRECTED 2026-08-10: use `-1`
+
+**The value below is wrong and the flag was misread.** It is not a concurrency
+cap. smg's own help: *"Maximum number of concurrent requests allowed (for rate
+limiting). Set to -1 to disable rate limiting"*, and
+`--rate-limit-tokens-per-second` defaults to it. It is a token bucket, and above
+the limit it **rejects** rather than queues.
+
+Measured on the deployed gateway: 16 concurrent requests at `8` returned **9
+completions and 7 x HTTP 408, all within 2 seconds** — so not queue timeouts
+either, despite `--queue-size 32` and `--queue-timeout-secs 600`. At `-1` the
+same burst is **16/16 in 2 s**.
+
+The throughput measurement below stands; the conclusion drawn from it does not.
+Peak throughput near concurrency 8 is a reason to let requests **wait**, which
+vLLM's scheduler already does, not a reason to turn them away at the gateway.
+
+The `--balance-abs-threshold` note below also assumed a cap that does not exist,
+so it does not apply.
+
+### The original text, kept for the record
+
 ### `--max-concurrent-requests 8`
 
 Measured saturation, not a guess. Both topologies peak at total concurrency ~8; going to
