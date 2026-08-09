@@ -1,0 +1,116 @@
+# Caddy in front of smg.
+#
+# ── Why Caddy does the authentication ───────────────────────────────────────
+# smg has no client-facing API key for inference. Checked against the binary
+# (`docker run --rm lightseekorg/smg:1.9.0 launch --help`), its three auth
+# options are:
+#
+#   --api-key                 "authorization with the WORKER"  -> upstream, not clients
+#   --control-plane-api-keys  control plane (management) only  -> not inference
+#   --jwt-issuer/--jwt-jwks-uri   full OIDC, needs an identity provider
+#
+# So there is no "give each friend a key" switch. Anything that can reach smg's
+# port can run inference on it. Caddy therefore carries the authentication, and
+# smg is never published to a host port — see docker-compose.yml.
+#
+# The upstream vLLM replicas are themselves unauthenticated (scripts/
+# dgx_spark_start_mp_serve.sh sets no --api-key); they are safe only because
+# nothing but the gateway can route to them. Keep it that way.
+#
+# Copy to Caddyfile, then set one TOKEN_* per person in gateway.env.
+
+{
+	admin off # no admin API surface
+	servers {
+		timeouts {
+			read_body 7200s
+			read_header 30s
+			write 7200s
+			idle 7200s
+		}
+	}
+}
+
+:8443 {
+	log {
+		output stdout
+		format console
+		# {gw_user} identifies the caller; the token itself is never logged.
+	}
+
+	# One line per person. Generate tokens with:  openssl rand -hex 32
+	# The value on the right is the name that appears in the access log, which
+	# is how "who used what" is answered — smg does not track users itself.
+	#
+	# `map` must live INSIDE the site block: at the top level Caddy parses it
+	# as a site address and refuses to start.
+	map {http.request.header.Authorization} {gw_user} {
+		"Bearer {$TOKEN_OWNER}"    "owner"
+		"Bearer {$TOKEN_FRIEND_1}" "friend-1"
+		"Bearer {$TOKEN_FRIEND_2}" "friend-2"
+		default                    ""
+	}
+
+	# --- health, for the DDNS front end -----------------------------------
+	# Unauthenticated on purpose, and deliberately NOT a proxy to smg or the
+	# replicas: taking the GPUs back for development is expected, and must not
+	# make the front end believe the site is down.
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# --- authentication ----------------------------------------------------
+	# Anything without a recognised token stops here. This runs before the
+	# path allowlist so unauthenticated probes learn nothing about which
+	# paths exist.
+	@unauthenticated expression {gw_user} == ""
+	handle @unauthenticated {
+		respond "not found" 404 # 404, not 401: reveal nothing to a scanner
+	}
+
+	# --- what an authenticated caller may reach ---------------------------
+	# Inference only. smg's worker-management and control-plane routes are
+	# not in this list, so they are unreachable from outside regardless of
+	# what smg itself would have allowed.
+	@inference {
+		path /v1/chat/completions
+		path /v1/completions
+		path /v1/embeddings
+		path /v1/models
+		path /v1/responses
+	}
+
+	handle @inference {
+		reverse_proxy {$UPSTREAM} {
+			# Disable response buffering so SSE streams token by token rather
+			# than arriving in one lump at the end. Caddy auto-detects
+			# text/event-stream; this is explicit so it cannot regress quietly.
+			flush_interval -1
+
+			transport http {
+				dial_timeout 10s
+				# A cold prefill sends NOTHING on the wire until the engine
+				# yields its first token: measured 89 s at 131K and 214 s at
+				# 260K context. These are idle timeouts, so they must clear the
+				# longest silent stretch with room to spare. They are also set
+				# LONGER than smg's --request-timeout-secs (1800) on purpose:
+				# smg knows what the request is doing and should be the one to
+				# give up, with Caddy only as a backstop.
+				read_timeout {$PROXY_TIMEOUT}
+				write_timeout {$PROXY_TIMEOUT}
+				response_header_timeout {$PROXY_TIMEOUT}
+			}
+
+			# The friend's token must not travel upstream: the replicas would
+			# log it, and they have no use for it.
+			header_up -Authorization
+			header_up X-Gateway-User {gw_user}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# --- authenticated, but asking for something else ----------------------
+	handle {
+		respond "not found" 404
+	}
+}

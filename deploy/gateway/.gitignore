@@ -1,0 +1,3 @@
+# Real deployment config — never commit hostnames or keys.
+gateway.env
+caddy/Caddyfile
