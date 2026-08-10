@@ -58,25 +58,32 @@ Three vocabularies meet here and none of them agree:
 
 Measured on the deployment:
 
-| effort | `/v1/chat/completions` | `/v1/responses` (direct) | through smg |
-|---|---|---|---|
-| `none` | accepted | accepted, thinking off | accepted |
-| `low` | accepted | accepted | accepted |
-| `medium` | accepted | accepted | accepted |
-| `high` | accepted | accepted | accepted |
-| `xhigh` | accepted | accepted | accepted |
-| **`max`** | accepted | **accepted** (after our fix) | **400** |
+| effort | `/v1/chat/completions` direct | `/v1/responses` direct | chat via smg | responses via smg |
+|---|---|---|---|---|
+| `none` | accepted | accepted, thinking off | accepted | accepted |
+| `low` `medium` `high` | accepted | accepted | accepted | accepted |
+| `xhigh` | accepted | accepted | accepted | **400** |
+| **`max`** | accepted | **accepted** (after our fix) | **accepted** | **400** |
+
+Only smg's **Responses** schema rejects `max` and `xhigh`. Chat completions
+passes them through, which is the endpoint nearly every client uses.
 
 Before our fix, `/v1/responses` rejected `max` at schema validation because it
 reuses the OpenAI SDK's `Reasoning` type. `/v1/chat/completions` had always
 accepted it — the two endpoints disagreed about the same model.
 
-**smg still rejects it.** Its HTTP schema
+**smg rejects it on `/v1/responses` only.** That schema
 (`crates/protocols/src/responses.rs`) declares
-`enum ReasoningEffort { Minimal, Low, Medium, High }`, and PR #2080 does not
-touch that file — it changes the tokenizer and the gRPC path. So the remaining
-work there is a few lines adding a `Max` variant, best proposed after #2080
-lands rather than against it.
+`enum ReasoningEffort { Minimal, Low, Medium, High }`. PR #2080 **merged
+2026-08-10** without touching it — verified on `main` after the merge — so
+upgrading smg does not help. The remaining work is a `Max` variant, and #2080
+now argues for it: it added `V0731 => ["low", "high", "max"]`, so smg's own
+tokenizer recognises a tier its HTTP schema turns away.
+
+Measured through the gateway on chat completions, three reasoning problems
+summed: `low` 9,038 chars, `high` 19,277, `max` 22,050. Monotonic, and the
+prompts are genuinely distinct — `high` is "Absolute maximum…", `max` is
+"Beyond maximum…".
 
 ## The mapping, which upstream already had
 

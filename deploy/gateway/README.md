@@ -96,17 +96,20 @@ Invalid JSON data: Failed to deserialize the JSON body into the target type: rea
 
 That is smg's own Rust deserialiser, not vLLM. Measured per layer:
 
-| layer | `effort: "max"` |
+| endpoint | `effort: "max"` through the gateway |
 |---|---|
-| vLLM, direct to a replica | **accepted** |
-| smg | **400 Bad Request** |
-| public endpoint | rejected |
+| `/v1/chat/completions` | **accepted** — and measurably deeper than `high` |
+| `/v1/responses` | **400 Bad Request** |
 
-So widening vLLM's schema (which this deployment carries) is not sufficient on
-its own — smg's `ReasoningEffort` stops short of DeepSeek's top tier in exactly
-the same way the OpenAI SDK's does. `high` works and is measurably deeper than
-`low` (+52% reasoning characters on the same prompt), so nothing is blocked in
-practice; `max` simply is not reachable through the gateway yet.
+Only the Responses path is blocked. An earlier version of this note said "smg
+rejects `max`" without qualification; that is wrong for the endpoint nearly
+every client actually uses.
+
+smg's `ReasoningEffort` stops short of DeepSeek's top tier in exactly the same
+way the OpenAI SDK's does, but only on the Responses schema. Measured through
+the gateway over three reasoning problems: `low` 9,038 chars, `high` 19,277,
+`max` 22,050 — monotonic, and `max` is a genuinely distinct prompt
+("Beyond maximum…" versus `high`'s "Absolute maximum…"), not an alias.
 
 The general point is worth keeping: **a gateway that parses and re-serialises
 request bodies can reject things the engine accepts.** Test API-surface changes
@@ -114,9 +117,13 @@ through the gateway, not only against the engine.
 
 smg's HTTP schema is `crates/protocols/src/responses.rs`, which declares
 `enum ReasoningEffort { Minimal, Low, Medium, High }`. Upstream PR
-[#2080](https://github.com/smg-project/smg/pull/2080) adds per-checkpoint effort
-detection but does **not** touch that file, so it will not lift this by itself;
-the remaining change is a `Max` variant, best proposed once #2080 lands.
+[#2080](https://github.com/smg-project/smg/pull/2080) **merged 2026-08-10** and
+does not touch that file — checked on `main` after the merge, the enum is
+unchanged. Upgrading smg will not lift this.
+
+The remaining change is a `Max` variant, and #2080 supplies the argument for it:
+it added a per-checkpoint table declaring `V0731 => ["low", "high", "max"]`, so
+smg's own tokenizer now recognises a tier its HTTP schema rejects.
 
 Worth knowing while waiting: on the 0731 checkpoint every tier shifted down one,
 so **`high` is the original checkpoint's top tier** — see
