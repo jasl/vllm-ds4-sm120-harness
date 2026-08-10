@@ -107,6 +107,17 @@ The general point is worth keeping: **a gateway that parses and re-serialises
 request bodies can reject things the engine accepts.** Test API-surface changes
 through the gateway, not only against the engine.
 
+smg's HTTP schema is `crates/protocols/src/responses.rs`, which declares
+`enum ReasoningEffort { Minimal, Low, Medium, High }`. Upstream PR
+[#2080](https://github.com/smg-project/smg/pull/2080) adds per-checkpoint effort
+detection but does **not** touch that file, so it will not lift this by itself;
+the remaining change is a `Max` variant, best proposed once #2080 lands.
+
+Worth knowing while waiting: on the 0731 checkpoint every tier shifted down one,
+so **`high` is the original checkpoint's top tier** — see
+`docs/sm120/reference-configs/dsv4-reasoning-effort.md`. Not reaching `max` is
+a smaller loss than it sounds.
+
 ## Adding or removing a person
 
 Three places, all on the gateway host:
