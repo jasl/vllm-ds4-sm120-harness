@@ -80,6 +80,33 @@ token — measured 89 s at 131K context and 214 s at 260K. Any default of 30 s o
 Caddy's are deliberately the longest: smg knows what the request is doing and
 should be the component that gives up, with Caddy only as a backstop.
 
+## smg validates request bodies too, and its schema is narrower
+
+`/v1/responses` with `{"reasoning": {"effort": "max"}}` is rejected at the
+gateway with
+
+```
+Invalid JSON data: Failed to deserialize the JSON body into the target type: reasoning.
+```
+
+That is smg's own Rust deserialiser, not vLLM. Measured per layer:
+
+| layer | `effort: "max"` |
+|---|---|
+| vLLM, direct to a replica | **accepted** |
+| smg | **400 Bad Request** |
+| public endpoint | rejected |
+
+So widening vLLM's schema (which this deployment carries) is not sufficient on
+its own — smg's `ReasoningEffort` stops short of DeepSeek's top tier in exactly
+the same way the OpenAI SDK's does. `high` works and is measurably deeper than
+`low` (+52% reasoning characters on the same prompt), so nothing is blocked in
+practice; `max` simply is not reachable through the gateway yet.
+
+The general point is worth keeping: **a gateway that parses and re-serialises
+request bodies can reject things the engine accepts.** Test API-surface changes
+through the gateway, not only against the engine.
+
 ## Adding or removing a person
 
 Three places, all on the gateway host:

@@ -127,18 +127,33 @@ else
 fi
 rm -f "$tmp"
 
-# --- 4. both replicas are actually in rotation -----------------------------
-# Distinct conversation prefixes so cache_aware spreads them; then read smg's
-# own log for which worker served what.
-for i in 1 2 3 4 5 6; do
-  curl -s -o /dev/null -m 120 "${auth[@]}" -H 'Content-Type: application/json' \
-    -d "$(printf '{"model":"%s","messages":[{"role":"user","content":"Unique probe %d — reply OK"}],"max_tokens":5,"temperature":0}' "$MODEL" "$i")" \
-    "$GATEWAY_URL/v1/chat/completions" &
-done
-wait
-seen=$(docker logs smg --since 3m 2>&1 | grep -oE 'http://[0-9a-zA-Z_.-]+:[0-9]+' | sort -u | wc -l | tr -d ' ')
-[ "${seen:-0}" -ge 2 ] && check "both replicas in rotation" PASS "$seen distinct workers in smg log" \
-  || check "both replicas in rotation" FAIL "only ${seen:-0} distinct worker(s) seen"
+# --- 4. both replicas are in rotation --------------------------------------
+# Asked of smg's own /workers, which reports each worker's health and status.
+#
+# Two earlier versions of this check asserted the wrong thing and reported FAIL
+# on a healthy deployment. The first grepped smg's log for worker URLs, which
+# smg does not emit per request. The second counted vLLM's own request counter
+# across a burst -- reliable numbers, but the wrong property: `cache_aware`
+# routing deliberately concentrates by prefix, so one burst went 6/6 and the
+# next went 8/0 on the same healthy pair. Load spread on a small burst is not
+# a property this deployment has, and asserting it produces noise.
+#
+# What actually matters is that neither worker has silently dropped out -- a
+# stuck-open circuit breaker, say. smg answers that directly.
+workers_json=$(docker exec gateway-caddy wget -q -O- -T 8 http://smg:3000/workers 2>/dev/null)
+if [ -z "$workers_json" ]; then
+  check "both replicas in rotation" SKIP "could not reach smg /workers from the caddy container"
+else
+  ready=$(printf '%s' "$workers_json" | python3 -c "
+import json,sys
+ws = json.load(sys.stdin).get('workers', [])
+ok = [w for w in ws if w.get('is_healthy') and w.get('status') == 'ready']
+print(f\"{len(ok)}/{len(ws)} \" + ' '.join(f\"{w.get('url')}={w.get('status')}\" for w in ws))
+" 2>/dev/null)
+  n_ready=${ready%%/*}
+  [ "${n_ready:-0}" -ge 2 ] && check "both replicas in rotation" PASS "$ready" \
+    || check "both replicas in rotation" FAIL "$ready"
+fi
 
 # --- 5. THE ONE THAT MATTERS: recovery after a long outage -----------------
 # smg's active health checker has a terminal Failed state reached after
