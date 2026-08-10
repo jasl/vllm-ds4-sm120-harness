@@ -60,10 +60,15 @@ development always exceeds that, so with the default the gateway would need a
 restart after *every* development session.
 
 `--disable-health-check` hands liveness to the circuit breaker instead, which is
-traffic-driven and self-heals: 10 consecutive failures opens it, 60 s later it
+traffic-driven and self-heals: consecutive failures open it, 60 s later it
 half-opens, 3 successes close it. The cost is that the first request or two
 after a replica returns pays a connect timeout. That is the right trade when
 planned downtime is routine.
+
+`--cb-failure-threshold` is **3**, down from the default 10, and that was
+measured: with the default, taking a replica down mid-flight failed roughly
+four consecutive user requests before the breaker opened and traffic moved to
+the survivor, because retries count toward the threshold.
 
 ### Every timeout is sized for silent cold prefill
 
@@ -147,7 +152,9 @@ looks different from an absent condition. It covers:
   bare `Bearer`, wrong token, empty header
 - that smg is not directly reachable (pass `SMG_DIRECT_URL`)
 - a chat completion, and that SSE arrives incrementally rather than buffered
-- that both replicas take traffic
+- that both replicas are in rotation — asked of smg's `/workers`, not inferred
+  from load spread: `cache_aware` concentrates by prefix, so the same healthy
+  pair went 6/6 on one burst and 8/0 on the next
 - **recovery after an outage longer than 9 minutes, without restarting smg** —
   the check the liveness configuration exists for. It needs
   `REPLICA_STOP_CMD`/`REPLICA_START_CMD`; without them it SKIPs loudly rather
@@ -162,8 +169,12 @@ them from measurements in
 - **Two replicas, not one TP=4 instance** — ~66% more prefill and ~40% more
   decode at this concurrency, with 31% lower TTFT. TP=4 wins only a single
   long cold prompt with no concurrency.
-- **`--max-concurrent-requests 8`** — measured saturation. At 16 the hardware
-  accepts the load and makes everyone slower: aggregate decode 112.0 → 97.9
-  t/s, per-request 20.2 → 11.6 t/s, TTFT 4.3 → 7.8 s.
+- **`--max-concurrent-requests -1`** — rate limiting off. Despite the name the
+  flag is a token bucket that **rejects** rather than queues: at `8`, a burst of
+  16 concurrent requests returned 9 completions and 7 × HTTP 408 within two
+  seconds. Peak throughput really is near concurrency 8 (at 16, aggregate decode
+  112.0 → 97.9 t/s, per-request 20.2 → 11.6, TTFT 4.3 → 7.8 s) — but the right
+  response to that is to let requests wait in vLLM's scheduler, not to turn
+  them away at the door.
 - **`--policy cache_aware`** — the replicas share no KV. A follow-up turn that
   lands on the wrong one re-pays the cold prefill, and nothing recovers it.
