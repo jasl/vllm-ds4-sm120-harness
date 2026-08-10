@@ -137,6 +137,63 @@ NOT fix it — only the server-level default does. The two reach the response-si
 parser by different routes, which is the remaining thread if anyone wants the
 root cause rather than the workaround.
 
+
+## Sampling parameters: what the model card recommends, and what we run
+
+The 0731 card, verified 2026-08-10:
+
+> we recommend setting the sampling parameters to `temperature = 1.0`, with
+> `top_p = 0.95` for **agentic scenarios** and `top_p = 1.0` **otherwise**
+
+The recommendation is **conditional**, which is easy to lose when it gets
+repeated as "0731 wants top_p 0.95".
+
+| | card | what we serve |
+|---|---|---|
+| `temperature` | 1.0 | **1.0** |
+| `top_p`, general | 1.0 | **1.0** |
+| `top_p`, agentic | 0.95 | client passes it per request |
+
+We serve the checkpoint's own `generation_config.json`
+(`{"temperature": 1.0, "top_p": 1.0}`), read by
+`ModelConfig.get_diff_sampling_param()` — confirmed on the running engine:
+
+```
+get_diff_sampling_param() -> {'temperature': 1.0, 'top_p': 1.0}
+```
+
+**Do not move the server default to 0.95.** It would match neither the
+checkpoint's shipped config nor the card's "otherwise" case, and it would apply
+an agentic-only value to ordinary chat. Agentic clients send `top_p: 0.95`
+themselves; the two uses then each get the right value instead of one being
+made wrong for the other.
+
+Change the server default only if the deployment is *predominantly* agentic —
+that is a serving-policy decision, and it should be made explicitly rather than
+by reading the card's first clause.
+
+★ `scripts/dgx_spark_start_mp_serve.sh` does contain a `--temperature 1.0`, but
+it belongs to the prewarm benchmark, not the serve. It does not set a default.
+
+### Output length at `high` / `max`
+
+The card suggests a maximum output length of **384K tokens** for those tiers.
+We run `MAX_MODEL_LEN=262144`, below that, on purpose: the quality knee for this
+model is around 400K (64K native window, YaRN 16x, `index_topk: 512` covering
+0.128% of a 400K context), and a 384K cold prefill would cost roughly six
+minutes. Not a misconfiguration — a known ceiling, recorded so it is not
+rediscovered as one.
+
+### When the checkpoint changes
+
+Re-check this section. The values live in the checkpoint, not in our config, so
+a new snapshot can move them without anything in this repo changing:
+
+```bash
+cat $(find ~/.cache/huggingface/hub/models--deepseek-ai--<CKPT> \
+  -name generation_config.json | head -1)
+```
+
 ## Defaults still disagree, deliberately
 
 vLLM's `DEFAULT_REASONING_EFFORT` is `low`; DeepSeek documents `high`. We did
