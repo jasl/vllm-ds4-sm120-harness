@@ -97,11 +97,22 @@ services:
     # is exactly why this service publishes no host port and Caddy performs
     # the authentication. Do not add a `ports:` entry here.
     healthcheck:
-      test: ["CMD", "/bin/sh", "-c", "exec 3<>/dev/tcp/127.0.0.1/3000"]
+      # Queries /health over HTTP with the image's own python. The obvious
+      # `/dev/tcp` one-liner does NOT work here: /bin/sh in this image is dash,
+      # /dev/tcp is a bash feature, and the check reported the container
+      # unhealthy for hours while it served traffic perfectly -- which is worse
+      # than having no healthcheck, because it teaches you to ignore the status.
+      # The image ships no curl or wget, so python it is.
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request,sys;
+          sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:3000/health',
+          timeout=4).status == 200 else 1)"
       interval: 30s
-      timeout: 5s
+      timeout: 8s
       retries: 3
-      start_period: 10s
+      start_period: 20s
     logging:
       driver: json-file
       options: { max-size: "50m", max-file: "5" }
