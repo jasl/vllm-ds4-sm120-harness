@@ -78,20 +78,57 @@ touch that file — it changes the tokenizer and the gRPC path. So the remaining
 work there is a few lines adding a `Max` variant, best proposed after #2080
 lands rather than against it.
 
-## The mapping we added
+## The mapping, which upstream already had
 
-Values outside the model's three tiers used to be accepted and then quietly
-behave like `low` — `medium` produced 1633 reasoning characters against `low`'s
-1534, while `high` produced 2337. They are now folded explicitly:
+`DeepSeekV4Tokenizer.apply_chat_template` folds every spelling onto the model's
+three tiers before the encoder ever sees it
+(`vllm/tokenizers/deepseek_v4.py`, from upstream #50580):
 
-| in | → | rationale |
+| in | → | note |
 |---|---|---|
-| `minimal` | `low` | nearest tier below |
-| `medium` | `high` | OpenAI's default tier → DeepSeek's default tier, so a caller who never sets effort lands in the same place on either vocabulary |
-| `xhigh` | `max` | same reasoning at the top end |
+| `none` | — | thinking switched off; no tier chosen |
+| `max` | `max` | passes through |
+| `low`, `minimal`, `medium` | **`low`** | all three collapse to the tier with no prompt at all |
+| anything else, incl. `xhigh` | **`high`** | the catch-all, so a typo reasons at `high` rather than erroring |
 
-Anything else raises, so a typo surfaces as a 400 rather than as a request that
-quietly reasons at the wrong depth.
+This is worth reading twice, because two entries are not what the names suggest:
+**`medium` is `low`, not something between**, and **`xhigh` is `high`, not
+`max`**. The measurements match: on one prompt `low` gave 1534 reasoning
+characters, `medium` 1633, `high` 2337.
+
+★ **We add no mapping of our own.** A first draft of the `max` fix added a
+second normalisation table in `deepseek_v4_encoding`; it was dropped once this
+one was found, rather than left in as a competing source of truth. The trap is
+worth naming: `encode_messages` asserts that effort is one of the three tiers,
+and it is tempting to read a value that never trips that assert as "silently
+swallowed". It is not — it was rewritten one layer up. Follow the value
+upstream before concluding anything was lost.
+
+
+## The default that makes `/v1/responses` behave
+
+Production sets, per replica:
+
+```
+--default-chat-template-kwargs '{"thinking":true}'
+```
+
+Without it, `/v1/responses` called **without** a `reasoning` object — which is
+what a stock OpenAI SDK does, and which is perfectly valid — renders in
+non-thinking mode while the model thinks regardless. The reasoning and a bare
+`</think>` then land inside `output_text`, looking like a normal answer:
+
+| | `output` | `message` text |
+|---|---|---|
+| with the flag | `['reasoning', 'message']` | `8` |
+| without it | `['message']` | `We need answer Chinese…</think>8` |
+
+`/v1/chat/completions` is unaffected either way; the flag aligns the two paths.
+
+★ Note that a **request-level** `chat_template_kwargs: {"thinking": true}` does
+NOT fix it — only the server-level default does. The two reach the response-side
+parser by different routes, which is the remaining thread if anyone wants the
+root cause rather than the workaround.
 
 ## Defaults still disagree, deliberately
 

@@ -31,6 +31,25 @@ MAX_NUM_SEQS="${MAX_NUM_SEQS:-64}"
 MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-8192}"
 SPEC='{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic"}'
 
+# MEASURED, and not optional. Without it, /v1/responses called WITHOUT a
+# `reasoning` object -- which is what a stock OpenAI SDK does -- renders in
+# non-thinking mode, while the model thinks regardless. The result is the
+# model's internal monologue and a bare `</think>` inside output_text, looking
+# like a normal answer.
+#
+# Side-by-side on the same request, one replica with this set and one without:
+#   with     output=['reasoning','message']  reasoning='我们只需要回答数字。3+5=8。' message='8'
+#   without  output=['message']              message='We need answer Chinese...</th…'
+#
+# /v1/chat/completions is unaffected either way; this aligns the two paths.
+# Single-quoted and assigned in two steps: a `${VAR:-{"..."}}` default needs
+# the inner brace escaped, and `\}` survives into the value, yielding invalid
+# JSON that vLLM would reject at startup.
+DEFAULT_CT_KWARGS_FALLBACK='{"thinking":true}'
+DEFAULT_CT_KWARGS="${DEFAULT_CT_KWARGS:-$DEFAULT_CT_KWARGS_FALLBACK}"
+python3 -c 'import json,sys; json.loads(sys.argv[1])' "$DEFAULT_CT_KWARGS" ||
+  { echo "DEFAULT_CT_KWARGS is not valid JSON: $DEFAULT_CT_KWARGS"; exit 2; }
+
 OUT="$PROD/run/$LABEL"
 mkdir -p "$OUT"
 
@@ -47,6 +66,7 @@ env MODEL_ID="$MODEL_ID" VLLM_ROOT="$PROD/vllm" VLLM_VENV="$PROD/venv" TP_SIZE=2
   MAX_MODEL_LEN="$MAX_MODEL_LEN" MAX_NUM_SEQS="$MAX_NUM_SEQS" \
   MAX_NUM_BATCHED_TOKENS="$MAX_NUM_BATCHED_TOKENS" \
   SERVE_SPECULATIVE_CONFIG="$SPEC" \
+  SERVE_DEFAULT_CHAT_TEMPLATE_KWARGS="$DEFAULT_CT_KWARGS" \
   ALLOW_CURRENT_BOOT_NVRM_OOM=1 STARTUP_TIMEOUT=2400 RUN_DIR="$OUT/serve" \
   bash "$HARNESS/scripts/dgx_spark_start_mp_serve.sh" > "$OUT/start.log" 2>&1
 
