@@ -155,6 +155,18 @@ print(f\"{len(ok)}/{len(ws)} \" + ' '.join(f\"{w.get('url')}={w.get('status')}\"
     || check "both replicas in rotation" FAIL "$ready"
 fi
 
+# --- 4b. the advertised context window is what we configured ---------------
+# A client sized for the documented window gets a 400 if the engine came up
+# with a smaller one -- and that failure lands on the user, not here. Assert
+# the served value rather than trusting the launcher's default survived.
+if [ -n "${EXPECT_MAX_MODEL_LEN:-}" ]; then
+  served=$(curl -s -m 10 "${auth[@]}" "$GATEWAY_URL/v1/models" 2>/dev/null |
+    python3 -c "import json,sys; print(json.load(sys.stdin)['data'][0].get('max_model_len','?'))" 2>/dev/null)
+  [ "$served" = "$EXPECT_MAX_MODEL_LEN" ] \
+    && check "context window is $EXPECT_MAX_MODEL_LEN" PASS "engine reports $served" \
+    || check "context window is $EXPECT_MAX_MODEL_LEN" FAIL "engine reports $served"
+fi
+
 # --- 5. THE ONE THAT MATTERS: recovery after a long outage -----------------
 # smg's active health checker has a terminal Failed state reached after
 # 3 x --health-failure-threshold consecutive failures. With --disable-health-check

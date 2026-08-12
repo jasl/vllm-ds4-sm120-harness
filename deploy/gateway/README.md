@@ -162,6 +162,10 @@ looks different from an absent condition. It covers:
 - that both replicas are in rotation — asked of smg's `/workers`, not inferred
   from load spread: `cache_aware` concentrates by prefix, so the same healthy
   pair went 6/6 on one burst and 8/0 on the next
+- that the served `max_model_len` is the configured one (pass
+  `EXPECT_MAX_MODEL_LEN`) — a client sized for the documented window gets a 400
+  if the engine came up smaller, and that failure surfaces to the user rather
+  than here
 - **recovery after an outage longer than 9 minutes, without restarting smg** —
   the check the liveness configuration exists for. It needs
   `REPLICA_STOP_CMD`/`REPLICA_START_CMD`; without them it SKIPs loudly rather

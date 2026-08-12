@@ -21,12 +21,22 @@ ROCE_IFACE="${ROCE_IFACE:-enp1s0f0np0}"
 NCCL_IB_HCA="${NCCL_IB_HCA:-rocep1s0f0}"
 LABEL="${LABEL:-$(hostname)}"
 
-# mml 262144 is measured, and counter-intuitive: raising it INCREASES KV
-# capacity at constant memory (129,901 tok at 49,152 vs 605,013 at 262,144),
-# because mml is a structural parameter of the KV pool, not a per-request
-# reservation. The ceiling is a quality bound -- this model degrades past
-# ~400K -- not a capacity one.
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-262144}"
+# 278528 = 272 Ki, chosen to clear the 272K context that Codex-style clients
+# assume: a client sized for 272,000 tokens gets a 400 from a 262,144 ceiling,
+# and the failure lands on the user rather than on a config review.
+#
+# Raising it is counter-intuitively free, and measured: mml is a structural
+# parameter of the KV pool, not a per-request reservation, so a larger window
+# INCREASES capacity at constant memory (129,901 tok at 49,152 vs 605,013 at
+# 262,144). The real ceiling is quality -- this model degrades past ~400K
+# (64K native window, YaRN 16x, index_topk 512 covering 0.128% of 400K) --
+# and 272 Ki stays well under it.
+#
+# ! The capacity figures above were measured at 262,144. Re-read the engine's
+#   "GPU KV cache size" line after changing this rather than assuming they carry
+#   over; a cold prefill at this depth also costs roughly 225 s, still far
+#   inside smg's 1800 s request timeout.
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-278528}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-64}"
 MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-8192}"
 # Overridable: the DSpark drafter config below belongs to the -0731 checkpoint.
