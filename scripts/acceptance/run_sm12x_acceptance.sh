@@ -187,12 +187,21 @@ say ""; say "--- escape hatches ---"
 for arm in v1 noguard; do
   settle
   R2="$OUT/$arm"; mkdir -p "$R2"
+  # The v1 arm needs a cudagraph mode without PIECEWISE. Since upstream #51768,
+  # _validate_mrv1_piecewise_cudagraph raises at config time for DeepSeek V4
+  # under V1 + PIECEWISE, and PIECEWISE is in the O2/O3 default
+  # (FULL_AND_PIECEWISE) -- so the env alone selects V1 and then fails to boot,
+  # which reads as "the escape hatch is broken" rather than "the arm is
+  # under-specified". Setting it here keeps D1 a test of runner selection.
+  cc=""
   if [ "$arm" = v1 ]; then
     extra=(VLLM_USE_V2_MODEL_RUNNER=0 SERVE_REMOTE_ENV_VARS=VLLM_USE_V2_MODEL_RUNNER)
+    cc='{"cudagraph_mode":"FULL_DECODE_ONLY"}'
   else
     extra=(VLLM_ALLOW_SPEC_DEC_SAME_STEP_PREFIX_HIT=0 SERVE_REMOTE_ENV_VARS=VLLM_ALLOW_SPEC_DEC_SAME_STEP_PREFIX_HIT)
   fi
-  env "${extra[@]}" MODEL_ID="$MODEL" VLLM_ROOT="$WT" VLLM_VENV="$VENV" TP_SIZE=2 \
+  env "${extra[@]}" SERVE_COMPILATION_CONFIG="$cc" \
+    MODEL_ID="$MODEL" VLLM_ROOT="$WT" VLLM_VENV="$VENV" TP_SIZE=2 \
     HEAD_HOST=10.0.0.116 WORKER_HOST=10.0.0.119 \
     HEAD_ROCE_IP=192.168.100.116 WORKER_ROCE_IP=192.168.100.119 \
     ROCE_IFACE=enp1s0f0np0 NCCL_IB_HCA=rocep1s0f0 \
