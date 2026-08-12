@@ -155,16 +155,41 @@ print(f\"{len(ok)}/{len(ws)} \" + ' '.join(f\"{w.get('url')}={w.get('status')}\"
     || check "both replicas in rotation" FAIL "$ready"
 fi
 
-# --- 4b. the advertised context window is what we configured ---------------
-# A client sized for the documented window gets a 400 if the engine came up
-# with a smaller one -- and that failure lands on the user, not here. Assert
-# the served value rather than trusting the launcher's default survived.
+# --- 4b. the context window a client actually gets --------------------------
+# Probed behaviourally, not read from /v1/models: smg rewrites that payload
+# into its own minimal form and drops max_model_len entirely, so reading the
+# field through the gateway returns nothing even when the engine is correct.
+# The same is true of any gateway that re-serialises responses.
+#
+# What matters to a client is the ceiling it hits, so ask for one token past it
+# and read the number out of the refusal. A window that silently reverted shows
+# up here as the wrong number rather than as a 400 someone reports next week.
 if [ -n "${EXPECT_MAX_MODEL_LEN:-}" ]; then
-  served=$(curl -s -m 10 "${auth[@]}" "$GATEWAY_URL/v1/models" 2>/dev/null |
-    python3 -c "import json,sys; print(json.load(sys.stdin)['data'][0].get('max_model_len','?'))" 2>/dev/null)
-  [ "$served" = "$EXPECT_MAX_MODEL_LEN" ] \
-    && check "context window is $EXPECT_MAX_MODEL_LEN" PASS "engine reports $served" \
-    || check "context window is $EXPECT_MAX_MODEL_LEN" FAIL "engine reports $served"
+  # One token past the ceiling. Written to a file: argv cannot carry ~1 MB.
+  python3 -c "open('/tmp/_over.txt','w').write('x ' * $(( ${EXPECT_MAX_MODEL_LEN} + 4096 )))"
+  msg=$(python3 - "$GATEWAY_URL" "$MODEL" "${API_KEY:-}" <<'PYW'
+import json, sys, urllib.request, urllib.error
+url, model, key = sys.argv[1], sys.argv[2], sys.argv[3]
+body = json.dumps({"model": model,
+                   "messages": [{"role": "user", "content": open('/tmp/_over.txt').read()}],
+                   "max_tokens": 8}).encode()
+h = {"Content-Type": "application/json"}
+if key:
+    h["Authorization"] = f"Bearer {key}"
+try:
+    urllib.request.urlopen(urllib.request.Request(url + "/v1/chat/completions", data=body, headers=h), timeout=300)
+    print("ACCEPTED")
+except urllib.error.HTTPError as e:
+    print(e.read().decode()[:400].replace("\n", " "))
+except Exception as e:
+    print(f"{type(e).__name__}: {e}")
+PYW
+)
+  if printf '%s' "$msg" | grep -q "$EXPECT_MAX_MODEL_LEN"; then
+    check "context window is $EXPECT_MAX_MODEL_LEN" PASS "over-limit request refused naming $EXPECT_MAX_MODEL_LEN"
+  else
+    check "context window is $EXPECT_MAX_MODEL_LEN" FAIL "$(printf '%s' "$msg" | head -c 150)"
+  fi
 fi
 
 # --- 5. THE ONE THAT MATTERS: recovery after a long outage -----------------

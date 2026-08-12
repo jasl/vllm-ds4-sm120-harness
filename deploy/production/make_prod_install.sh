@@ -116,6 +116,30 @@ if [ "$src_h" != "$prod_h" ]; then
   exit 1
 fi
 
+# The digest above only proves prod matches ITS OWN source tree on THIS node.
+# It says nothing about whether that source was ever updated and rebuilt: on a
+# node whose SRC_TREE is stale, src and prod agree perfectly and both are old.
+# That happened on 2026-08-12 -- two of four nodes took the new tracked files
+# and kept binaries from the previous SHA, and the digest check passed.
+#
+# vllm.__version__ comes from the generated _version.py, a BUILD output, so it
+# encodes the SHA the artifacts were compiled at rather than the one checked
+# out. Comparing it to the SHA being promoted is what catches a stale source.
+built_at=$("$PROD/venv/bin/python" -c "
+import sys
+sys.path.insert(0, '$PROD/vllm')
+import vllm; print(vllm.__version__)
+" 2>/dev/null | tail -1)
+printf "    built at        : %s\n" "$built_at"
+case "$built_at" in
+  *"${SHA:0:9}"*) : ;;
+  *)
+    echo "FAIL: the artifacts were built at '$built_at', which does not carry ${SHA:0:9}."
+    echo "      SRC_TREE ($SRC_TREE) was not updated and rebuilt on this node."
+    exit 1
+    ;;
+esac
+
 # Import with the launcher's PYTHONPATH, and again without it: both must land
 # in production, or only one of them is really being exercised. stderr is kept
 # -- the missing _version.py showed up only as a RuntimeWarning.
