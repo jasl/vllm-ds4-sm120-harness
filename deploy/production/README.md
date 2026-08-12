@@ -31,6 +31,26 @@ references to the development paths.
 p=$(pgrep -f 'vllm.entrypoints' | head -1); grep -c '/tmp/' /proc/$p/maps
 ```
 
+## Upgrading an existing install
+
+Two flags, both off by default, both required when the thing they cover moved:
+
+```bash
+REFRESH_TREE=1 REFRESH_VENV=1 SRC_TREE=… SRC_REPO=… ./make_prod_install.sh <sha>
+```
+
+- **`REFRESH_TREE=1`** whenever the source tree was rebuilt (any `.cu`/`.cpp`/
+  `CMakeLists` change). `git reset --hard` updates tracked files only, and the
+  build outputs are untracked — without this, production takes the new Python
+  and keeps the **old binaries**. It does not error; it runs the wrong kernels.
+- **`REFRESH_VENV=1`** whenever the source venv's packages moved (a FlashInfer
+  or torch bump). Otherwise the venv block is skipped for an existing install
+  and production runs new code against the old runtime.
+
+Neither omission is visible in the tree SHA, which is why the script now hashes
+the `.so` set and refuses to finish on a mismatch, and prints the runtime
+package versions rather than only the SHA.
+
 ## Bring-up
 
 Run on every node, with the same SHA:

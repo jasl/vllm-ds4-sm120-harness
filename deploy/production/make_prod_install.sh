@@ -33,7 +33,13 @@ mkdir -p "$PROD"
 # "No module named 'vllm._version'": the build also emits ~14 generated .py
 # files and whole directories (vllm_flash_attn, third_party/triton_kernels).
 # Enumerating what a build produces is a losing game.
-if [ ! -e "$PROD/vllm/.git" ]; then
+# REFRESH_TREE=1 is required whenever the source tree was REBUILT -- any change
+# to a .cu/.cpp/CMakeLists. `git reset --hard` below updates tracked files only,
+# and the build outputs (*.so, generated .py, vllm_flash_attn/, triton_kernels/)
+# are untracked, so without this an existing install takes the new Python and
+# keeps the OLD binaries. That combination does not error; it just runs the
+# wrong kernels. The artifact check at the end refuses to let it pass silently.
+if [ ! -e "$PROD/vllm/.git" ] || [ "${REFRESH_TREE:-0}" = "1" ]; then
   rm -rf "$PROD/vllm"
   cp -a "$SRC_TREE" "$PROD/vllm"
   # The copied .git is a FILE pointing into the development repo's worktrees
@@ -60,9 +66,17 @@ got=$(git -C "$PROD/vllm" rev-parse --short=10 HEAD)
 [ "$got" = "${SHA:0:10}" ] || { echo "FAIL: $REF is at $got, wanted ${SHA:0:10}"; exit 1; }
 
 # --- 2. venv --------------------------------------------------------------
-if [ ! -x "$PROD/venv/bin/python" ]; then
+# REFRESH_VENV=1 is required whenever the source venv's packages moved -- a
+# FlashInfer bump, a torch bump, anything. Without it this block is skipped for
+# an existing install, and production ends up running new code against the old
+# runtime: no error, just a mismatch nobody looks for. The tree SHA check below
+# passes either way, which is exactly why it cannot be the only gate.
+if [ ! -x "$PROD/venv/bin/python" ] || [ "${REFRESH_VENV:-0}" = "1" ]; then
   rm -rf "$PROD/venv"
   cp -a "$SRC_VENV" "$PROD/venv"
+  echo "    venv copied from $SRC_VENV"
+else
+  echo "    venv kept (set REFRESH_VENV=1 if the source venv's packages moved)"
 fi
 
 # Repoint the editable install. The launcher also sets PYTHONPATH, which would
@@ -88,6 +102,20 @@ printf "    dirty           : %s\n" "$(git -C "$PROD/vllm" status --porcelain --
 printf "    standalone repo : %s\n" "$([ -d "$PROD/vllm/.git" ] && echo yes || echo NO)"
 printf "    build artifacts : %s .so\n" "$(find "$PROD/vllm" -name '*.so' | wc -l)"
 
+# Do the binaries in production match the ones that were built and tested?
+# Comparing the tree SHA cannot answer this -- the SHA is a property of tracked
+# files, and the binaries are untracked. Hash them.
+src_h=$(find "$SRC_TREE" -name '*.so' -type f -exec sha256sum {} + 2>/dev/null |
+  sed "s|$SRC_TREE/||" | sort | sha256sum | cut -c1-16)
+prod_h=$(find "$PROD/vllm" -name '*.so' -type f -exec sha256sum {} + 2>/dev/null |
+  sed "s|$PROD/vllm/||" | sort | sha256sum | cut -c1-16)
+printf "    artifact digest : src=%s prod=%s\n" "$src_h" "$prod_h"
+if [ "$src_h" != "$prod_h" ]; then
+  echo "FAIL: production's compiled artifacts differ from the built tree."
+  echo "      Re-run with REFRESH_TREE=1 -- a git reset does not replace untracked build outputs."
+  exit 1
+fi
+
 # Import with the launcher's PYTHONPATH, and again without it: both must land
 # in production, or only one of them is really being exercised. stderr is kept
 # -- the missing _version.py showed up only as a RuntimeWarning.
@@ -99,5 +127,19 @@ print("compiled ext      :", importlib.import_module("vllm._C_stable_libtorch").
 PY
 
 "$PROD/venv/bin/python" -c "import vllm; print('without PYTHONPATH:', vllm.__file__)" 2>&1 | sed 's/^/    /'
+
+# The tree SHA says nothing about the runtime the tree runs against. Print the
+# versions that actually decide behaviour so a stale venv is visible here
+# rather than in a serve three steps later.
+"$PROD/venv/bin/python" - 2>&1 <<'PYV' | sed 's/^/    /'
+import importlib.metadata as m
+ks = ["torch", "nvidia-nccl-cu13", "flashinfer-python", "flashinfer-cubin",
+      "apache-tvm-ffi", "tilelang"]
+for k in ks:
+    try:
+        print(f"runtime {k:<20} {m.version(k)}")
+    except Exception:
+        pass
+PYV
 
 echo "=== $(hostname) done ==="
