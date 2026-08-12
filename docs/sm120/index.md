@@ -22,6 +22,7 @@ they are useful as active navigation points.
 | --- | --- | --- | --- |
 | [SM12x Backend Parity Roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) | watchlist | EP-off backend parity, upstream arch coverage, FlashInfer/b12x, black-benediction | 2026-06-14 |
 | [Upstream MRv2 And Breakable CUDA Graph Watch](decisions/watchlist/2026-06-13-upstream-mrv2-cudagraph-watch.md) | watchlist | upstream `#42667`, Model Runner v2 MoE routing, breakable CUDA graph correctness | 2026-06-13 |
+| [MXFP4 MoE Backend On SM12x: Keep Marlin](decisions/accepted/mxfp4-moe-backend-sm12x.md) | accepted | `--moe-backend` for DSv4 MXFP4 experts, MTP-on; CUTLASS is the faster kernel but costs 34% acceptance | 2026-08-13 |
 
 ## Current Experiment Packages
 
@@ -41,6 +42,7 @@ link them here after the package has at least a `README.md` and `evidence.md`.
 | [Indexed D512 Min-Token Gate](experiments/2026-06-13-indexed-d512-min-token-gate/README.md) | Fork-independent min-token admission sweep for existing indexed D512 sparse prefill on RTX / SM120 | observation | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 | [RTX LLM Decode Bench](experiments/2026-06-14-rtx-llm-decode-bench/README.md) | Community `llm_decode_bench.py` optional harness integration, RTX / SM120 decode and prefill comparison, Lucifer+PR3395 reproduction, and pitfall log | observation | [backend parity roadmap](decisions/watchlist/2026-06-12-backend-parity-roadmap.md) |
 | [2026-08-07 Baseline of Record (db8f836e8b)](experiments/2026-08-07-baseline-of-record-db8f836e8b.md) | Post fix-wave reference set on 2x GB10 TP=2: benchy pp 1225-1432 / tg spec 47.7-55.3, GSM8K 0.9439 strict, arthur 2/2 + 23/24, multi-needle 48/48 at 42K/80K | baseline-of-record | — |
+| [MXFP4 MoE Backend Sweep on FlashInfer 0.6.17](experiments/2026-08-13-moe-backend-sweep-fi0617/README.md) | `auto`/Marlin vs `flashinfer_cutlass`/`_trtllm`/`_b12x` at `195c4ce7d1`; CUTLASS runs +11.9% decode steps/s yet loses 25.8% because acceptance drops 33.7% | accepted | [keep Marlin](decisions/accepted/mxfp4-moe-backend-sm12x.md) |
 
 ## Legacy Notes
 
