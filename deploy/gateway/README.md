@@ -70,6 +70,26 @@ measured: with the default, taking a replica down mid-flight failed roughly
 four consecutive user requests before the breaker opened and traffic moved to
 the survivor, because retries count toward the threshold.
 
+#### The cost of traffic-driven liveness: a stopped replica is still in rotation
+
+With active health checking off, smg has no independent notion of whether a
+worker is alive — `ready` in `/workers` means *configured and not
+circuit-broken*. A replica you stopped on purpose still reports `ready` until a
+real request fails against it.
+
+That makes the serving port of every configured replica **reserved**, including
+on nodes that are deliberately idle. A near-miss: a test serve of a *different
+checkpoint* was started on a listed node's `:8000`. It failed to bind, but had it
+come up, the gateway could not have distinguished it from that replica returning
+— and would have answered production traffic from the wrong model, with the
+right HTTP status and no error anywhere.
+
+So: **run test serves on a different port** (`API_PORT=8001`), or take the node
+out of `--worker-urls` first. "Prepared but not started" is not "out of
+rotation". `verify_gateway.sh` now probes each listed worker's `/v1/models`
+directly and fails loudly if any worker in rotation answers with an unexpected
+model id, rather than trusting smg's `ready`.
+
 ### Every timeout is sized for silent cold prefill
 
 A cold prefill sends **nothing** on the wire until the engine yields its first
@@ -159,9 +179,18 @@ looks different from an absent condition. It covers:
   bare `Bearer`, wrong token, empty header
 - that smg is not directly reachable (pass `SMG_DIRECT_URL`)
 - a chat completion, and that SSE arrives incrementally rather than buffered
-- that both replicas are in rotation — asked of smg's `/workers`, not inferred
-  from load spread: `cache_aware` concentrates by prefix, so the same healthy
-  pair went 6/6 on one burst and 8/0 on the next
+- **that every worker in rotation which answers serves the expected model id** —
+  probed directly against each worker's `/v1/models`, and a listed worker that is
+  down is reported `DOWN` rather than counted. This check took four attempts to
+  get right: it grepped logs smg does not write, then asserted load spread that
+  `cache_aware` deliberately does not provide (the same healthy pair went 6/6 on
+  one burst and 8/0 on the next), then trusted smg's `ready`, which with active
+  health checking off only means *configured and not circuit-broken*
+
+Give it a token. `API_KEY`, or `TOKEN_OWNER` from `gateway.env`. Run without one
+and the inference checks SKIP with the authenticated path marked UNTESTED —
+earlier they ran anonymously, collected the 404s Caddy correctly returns, and
+reported a healthy gateway as broken.
 - that the served `max_model_len` is the configured one (pass
   `EXPECT_MAX_MODEL_LEN`) — a client sized for the documented window gets a 400
   if the engine came up smaller, and that failure surfaces to the user rather
