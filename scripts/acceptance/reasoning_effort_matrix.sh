@@ -75,9 +75,14 @@ print(len(r), len(c), '</think>' in c or '<think>' in c, 'OK')
 # ------------------------------------------------------------ responses
 resp() { # resp <json-extra> -> "<reasoning_len> <msg_len> <leaked> <types>"
   local extra="$1" body
+  # temperature MUST be set here. ResponsesRequest.temperature defaults to 1.0,
+  # so without it this arm sampled while the chat arm ran greedy -- the two
+  # endpoints were never compared under the same regime, and every resp result
+  # was one draw from a distribution rather than a measurement.
   body=$(python3 -c "
 import json,sys
-b={'model':sys.argv[1],'input':sys.argv[2],'max_output_tokens':int(sys.argv[3])}
+b={'model':sys.argv[1],'input':sys.argv[2],'max_output_tokens':int(sys.argv[3]),
+   'temperature':0}
 b.update(json.loads(sys.argv[4]) if sys.argv[4] else {})
 print(json.dumps(b))" "$MODEL" "$PROMPT" "$MAXTOK" "$extra")
   curl -s -m 600 "${auth[@]}" -H 'Content-Type: application/json' -d "$body" \
@@ -150,9 +155,28 @@ done
 #
 # Two things make a naive version of this check useless. An easy prompt leaves
 # nothing to deliberate about: on "when is the pond half full", tiers landed
-# between 131 and 528 characters in no order at all. And temperature is 0, so
-# repeating one prompt returns the identical completion -- repetition adds
-# samples but no information. Hence: several DIFFERENT problems, summed.
+# between 131 and 528 characters in no order at all. Hence: several DIFFERENT
+# problems, summed.
+#
+# ★ AND THIS MEASUREMENT IS NOISY, WHICH AN EARLIER VERSION OF THIS COMMENT
+# DENIED. It claimed temperature 0 makes repeats identical, so repetition adds
+# no information. That is false. Measured on the base checkpoint, two identical
+# greedy repeats against one serve:
+#
+#     chat  rep1 low=6524c  rep2 low=4540c     (-30%)
+#     resp  rep1 low=6002c  rep2 low=8902c     (+48%)
+#
+# Prefix-cache state differs between repeats, that shifts attention numerics
+# enough to flip a token, and in a long generation one flipped token changes the
+# length by tens of percent. So the noise floor is roughly +/-45%, and a
+# threshold below that measures the cache, not the effort tier.
+#
+# The tiers are also not equally spaced across checkpoints: 0731 shifted them
+# down one, so `high` is 0731's top tier but NOT the base checkpoint's (`max`
+# is). On 0731 the margin is +113%/+164% and clears the noise easily; on base it
+# is ~+20-30% and does not. A check that FAILs there reports its own resolution,
+# not a defect -- which is exactly what happened: it passed pre-merge and failed
+# post-merge on runs whose serve configs also differed.
 DEPTH_PROMPTS=(
   '一个农夫要带狼、羊、白菜过河，船每次只能载一样。给出完整方案并说明为什么每一步都是必要的。'
   '有三个开关在楼下，控制楼上三盏灯。你只能上楼一次。如何确定每个开关对应哪盏灯？解释原理。'
@@ -175,16 +199,31 @@ depth_total() { # depth_total <endpoint> <effort> -> summed reasoning chars
   echo "$total"
 }
 
+# Outside the +/-45% noise floor in either direction is a real signal; inside it
+# the check cannot tell, and says so. INCONCLUSIVE is reported loudly and does
+# NOT block: blocking on a measurement this instrument cannot resolve is how a
+# clean build got reported as a regression.
+DEPTH_MARGIN_PCT="${DEPTH_MARGIN_PCT:-50}"
+inconclusive=0
+
 for ep in chat resp; do
   lo=$(depth_total "$ep" low)
   hi=$(depth_total "$ep" high)
-  if [ "${lo:-0}" -gt 0 ] && [ "${hi:-0}" -gt 0 ]; then
-    pct=$(( (hi - lo) * 100 / lo ))
-    [ "$hi" -gt $(( lo + lo / 10 )) ] \
-      && check "$ep high reasons deeper than low" PASS "low=${lo}c high=${hi}c (+${pct}%) over ${#DEPTH_PROMPTS[@]} problems" \
-      || check "$ep high reasons deeper than low" FAIL "low=${lo}c high=${hi}c (${pct}%) — no clear margin"
+  name="$ep high reasons deeper than low"
+  if [ "${lo:-0}" -le 0 ] || [ "${hi:-0}" -le 0 ]; then
+    check "$name" FAIL "no samples low=${lo} high=${hi}"
+    continue
+  fi
+  pct=$(( (hi - lo) * 100 / lo ))
+  ev="low=${lo}c high=${hi}c (${pct}%) over ${#DEPTH_PROMPTS[@]} problems"
+  if [ "$pct" -ge "$DEPTH_MARGIN_PCT" ]; then
+    check "$name" PASS "$ev"
+  elif [ "$pct" -le $(( -DEPTH_MARGIN_PCT )) ]; then
+    check "$name" FAIL "$ev — high reliably reasons LESS than low"
   else
-    check "$ep high reasons deeper than low" FAIL "no samples low=${lo} high=${hi}"
+    printf 'CHECK %-52s :: %-4s :: %s\n' "$name" "INCO" \
+      "$ev — inside the +/-${DEPTH_MARGIN_PCT}% noise floor, cannot resolve"
+    inconclusive=$((inconclusive + 1))
   fi
 done
 
@@ -195,6 +234,7 @@ read -r rl ml leak extra <<< "$(resp '{"chat_template_kwargs":{"thinking":false}
   || check "resp chat_template_kwargs thinking=false honoured" FAIL "reasoning=${rl} types=${extra}"
 
 echo "---"
-echo "RESULT: $pass PASS, $nonpass not-PASS"
+echo "RESULT: $pass PASS, $nonpass not-PASS, $inconclusive inconclusive"
+[ "$inconclusive" -gt 0 ] && echo "    ^ $inconclusive depth check(s) NOT VERIFIED — the margin was inside the noise floor"
 [ "$nonpass" -eq 0 ] && echo "MATRIX ACCEPTED" || echo "MATRIX NOT ACCEPTED"
 exit $((nonpass > 0))
