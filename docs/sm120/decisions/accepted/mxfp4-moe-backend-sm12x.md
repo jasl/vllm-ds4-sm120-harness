@@ -12,9 +12,15 @@ condition is load-bearing, see Why
 Leave `--moe-backend` unset. `auto` selects Marlin W4A16 and that remains the
 fastest route we have measured for MXFP4 experts on SM121.
 
-`flashinfer_cutlass` is the only alternative that both accepts MXFP4 and has an
-SM121 kernel, and it loses decode throughput by 26%. FlashInfer 0.6.17's
-reworked SM12x MoE kernels do not change this.
+`flashinfer_cutlass` is the only alternative **that was measured** — it accepts
+MXFP4, has an SM121 kernel, and loses decode throughput by 26%. FlashInfer
+0.6.17's reworked SM12x MoE kernels do not change that.
+
+It is not the only *legal* alternative, and an earlier version of this line said
+it was. `triton`, `triton_unfused`, `humming` and the `*_afp8` variants are also
+accepted for MXFP4; none was tested, and being accepted by the config layer says
+nothing about whether an SM121 kernel exists — `flashinfer_trtllm` is accepted
+too and has none. See "Why" below for the full status of each.
 
 ## Evidence
 

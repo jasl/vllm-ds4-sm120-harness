@@ -62,11 +62,19 @@ flashinfer_b12x
   Expected one of ['deep_gemm', 'flashinfer_trtllm', 'flashinfer_trtllm_afp8',
   'flashinfer_cutlass', 'flashinfer_cutlass_afp8', 'triton', 'triton_unfused',
   'humming', 'marlin', 'aiter', 'aiter_mxfp4_fp8', 'aiter_mxfp4_mxfp4', 'xpu',
-  'cpu']
+  'cpu', 'emulation']
 
 flashinfer_cutlass
   RuntimeError: Ninja build failed. Ninja output: ...
 ```
+
+The trailing `'emulation'` is reconstructed from the mapping the exception is
+raised from (`vllm/model_executor/layers/fused_moe/oracle/mxfp4.py:279`), not
+read from the log. The captured line stops at `'cpu'` because my own
+`grep -oE "...{0,220}"` truncated it there, and the truncated capture was first
+written up as if it were the complete message. **A quote is only as complete as
+the capture that produced it** — when a list matters, read it from the source
+that generates it.
 
 Only the first two are backend verdicts. The third is a build that ran out of
 memory: 97 CUTLASS grouped-GEMM units for `fused_moe_120`, ninja at `-j nproc`

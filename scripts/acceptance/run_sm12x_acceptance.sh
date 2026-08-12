@@ -65,12 +65,21 @@ done
 say ""; say "--- unit tests on $SHA ---"
 cd "$WT"
 $PY -m pytest tests/v1/core -q > "$OUT/unit_core.log" 2>&1
+prc=$?
 c=$(grep -aoE "[0-9]+ passed" "$OUT/unit_core.log" | tail -1)
 f=$(grep -aoE "[0-9]+ failed" "$OUT/unit_core.log" | tail -1)
 fl=$(grep -aE "^FAILED" "$OUT/unit_core.log" | sed 's/^FAILED //' | cut -d' ' -f1 | tr '\n' ' ')
+# A run that aborts before pytest prints a summary -- collection error, missing
+# path, conftest ImportError -- emits NEITHER "N passed" nor "N failed". Judging
+# on those greps alone, an aborted run reads as "no failures" and PASSes having
+# executed nothing. The exit code is the thing that cannot be absent: 0 all
+# passed, 1 tests failed, 2 interrupted, 3 internal, 4 usage, 5 nothing
+# collected.
+if [ -z "$c" ] || { [ "$prc" -ne 0 ] && [ "$prc" -ne 1 ]; }; then
+  check "B1 tests/v1/core" FAIL "pytest rc=$prc with no summary — collection or usage error, nothing ran: $(tail -2 "$OUT/unit_core.log" | tr '\n' ' ' | cut -c1-120)"
 # the sole permitted failure reproduces identically on the pre-merge tree
-if [ -z "$f" ] || [ "$(echo "$fl" | tr -d ' ')" = "tests/v1/core/test_scheduler.py::test_async_scheduling_pp_allows_rescheduling_with_output_placeholders" ]; then
-  check "B1 tests/v1/core" PASS "${c:-0 passed} ${f:-0 failed} [only the pre-existing failure]"
+elif [ -z "$f" ] || [ "$(echo "$fl" | tr -d ' ')" = "tests/v1/core/test_scheduler.py::test_async_scheduling_pp_allows_rescheduling_with_output_placeholders" ]; then
+  check "B1 tests/v1/core" PASS "${c} ${f:-0 failed} [only the pre-existing failure] rc=$prc"
 else
   check "B1 tests/v1/core" FAIL "${c} ${f} :: $fl"
 fi

@@ -8,10 +8,17 @@ refreshed SM12x MoE kernels now beat the Marlin path we default to.
 ## Question
 
 FlashInfer 0.6.17 ships reworked SM12x MoE kernels. Our serve never enters
-FlashInfer for MoE — `auto` selects Marlin W4A16 — so a same-config A/B across
-FlashInfer versions is guaranteed to show nothing.
+FlashInfer **for MoE** — `auto` selects Marlin W4A16 — so a same-config A/B
+across FlashInfer versions cannot show anything *about the MoE path*: the
+release changes a component the configuration does not use.
 
-The question worth fleet time is the other one: **is an upstream kernel now
+That scoping matters and an earlier version of this section dropped it, saying a
+same-config A/B was "guaranteed to show nothing" full stop. Not true: DeepSeek-V4
+**attention** on SM12x does run FlashInfer kernels, so a version A/B can move on
+the attention path while MoE stays untouched. The statement holds for this
+experiment, not for the release.
+
+The question worth fleet time is the other one: **is an upstream MoE kernel now
 better than the path we chose instead?** That is a comparison between routes,
 not between versions, and it is answerable.
 
@@ -84,19 +91,27 @@ Read from the **worker** log; the head log only says "see root cause above".
   JIT build ran out of memory (see below). Retried with a cap; that is the row
   in the table.
 
-The engine's own rejection message enumerates every backend legal for MXFP4:
+Every backend legal for MXFP4, read from the mapping the rejection is raised
+from (`vllm/model_executor/layers/fused_moe/oracle/mxfp4.py:279`) rather than
+from the log line — the log line I first quoted was truncated by my own `grep`
+at 220 characters, and I presented it as the complete message. It is not; it
+ends with one more entry:
+
 `deep_gemm`, `flashinfer_trtllm`, `flashinfer_trtllm_afp8`, `flashinfer_cutlass`,
 `flashinfer_cutlass_afp8`, `triton`, `triton_unfused`, `humming`, `marlin`,
-`aiter*`, `xpu`, `cpu`.
+`aiter`, `aiter_mxfp4_fp8`, `aiter_mxfp4_mxfp4`, `xpu`, `cpu`, **`emulation`**.
 
 ### What this sweep does not cover
 
 - `deep_gemm` — **not attemptable here**: the package is not installed, and the
   SM120 W4A8 kernels live in DeepGEMM's `nv_dev` branch rather than any release.
-- `triton`, `triton_unfused`, `humming`, `*_afp8` — **untested.** Portable enough
-  that they would probably start; none of them is new in 0.6.17, so none was in
-  scope for "did upstream's refresh change the answer". Recording the gap rather
-  than implying coverage.
+- `triton`, `triton_unfused`, `humming`, `*_afp8`, `emulation` — **untested, and
+  I do not know whether they start.** An earlier version of this line said they
+  "would probably start", which was a guess dressed as a finding: being listed in
+  the mapping means the flag parses, not that a kernel exists for SM121 — exactly
+  the distinction `flashinfer_trtllm` failed on. None of them is new in 0.6.17,
+  so none was in scope for "did upstream's refresh change the answer". The gap is
+  recorded, not estimated.
 - `aiter*` is ROCm, `xpu`/`cpu` are other devices — not applicable.
 - One workload shape only (pp2048/d256, c=8). A long-context or high-concurrency
   shape could shift the kernel-speed term, though it would have to overcome a

@@ -216,7 +216,7 @@ fi
 # What matters to a client is the ceiling it hits, so ask for one token past it
 # and read the number out of the refusal. A window that silently reverted shows
 # up here as the wrong number rather than as a 400 someone reports next week.
-if [ -n "${EXPECT_MAX_MODEL_LEN:-}" ]; then
+if [ -n "${EXPECT_MAX_MODEL_LEN:-}" ] && need_auth "context window is ${EXPECT_MAX_MODEL_LEN}"; then
   # One token past the ceiling. Written to a file: argv cannot carry ~1 MB.
   python3 -c "open('/tmp/_over.txt','w').write('x ' * $(( ${EXPECT_MAX_MODEL_LEN} + 4096 )))"
   msg=$(python3 - "$GATEWAY_URL" "$MODEL" "${API_KEY:-}" <<'PYW'
@@ -249,15 +249,57 @@ fi
 # 3 x --health-failure-threshold consecutive failures. With --disable-health-check
 # the circuit breaker owns liveness instead, and it self-heals. This check is
 # what proves that is true HERE, rather than merely documented.
+
+# worker_counter <url> -> vLLM's own completed-request total, or "" if unreachable.
+# Read from the worker, not from smg: it is the only number that rises if and
+# only if smg actually routed a request there.
+worker_counter() {
+  python3 - "$1" <<'PYC' 2>/dev/null
+import re, sys, urllib.request
+try:
+    with urllib.request.urlopen(sys.argv[1] + "/metrics", timeout=8) as r:
+        body = r.read().decode()
+except Exception:
+    sys.exit(0)
+tot = 0.0
+for m in re.finditer(r'^vllm:request_success_total\{[^}]*\}\s+([0-9.eE+]+)$', body, re.M):
+    tot += float(m.group(1))
+print(int(tot))
+PYC
+}
+
+worker_urls() {
+  docker exec gateway-caddy wget -q -O- -T 8 http://smg:3000/workers 2>/dev/null | python3 -c "
+import json,sys
+try: print(' '.join(w['url'] for w in json.load(sys.stdin).get('workers', []) if w.get('url')))
+except Exception: pass
+" 2>/dev/null
+}
+
 if [ -z "$REPLICA_STOP_CMD" ] || [ -z "$REPLICA_START_CMD" ]; then
   check "recovery after >9min outage" SKIP "set REPLICA_STOP_CMD and REPLICA_START_CMD to run this"
   echo "    ^ NOT VERIFIED. This is the check the whole liveness configuration exists for."
-else
-  echo "    stopping replica B ..."
+elif need_auth "recovery after >9min outage"; then
+  urls=$(worker_urls)
+  if [ -z "$urls" ]; then
+    check "recovery after >9min outage" SKIP "could not read smg /workers — cannot identify which replica to watch"
+  else
+  # Its own payload. This block used to reuse $body from the chat-completion
+  # check; when that assignment moved behind need_auth, $body became unbound
+  # here and, under set -u, the curl subshell died and the check reported FAIL
+  # with an empty evidence string after a 13-minute outage.
+  rbody=$(printf '{"model":"%s","messages":[{"role":"user","content":"Reply with exactly: OK"}],"max_tokens":10,"temperature":0}' "$MODEL")
+
+  echo "    stopping a replica ..."
   eval "$REPLICA_STOP_CMD" >/dev/null 2>&1
   sleep 5
-  # Serve while one replica is down: must still answer, via the survivor.
-  d=$(curl -s -m 300 "${auth[@]}" -H 'Content-Type: application/json' -d "$body" \
+
+  # Which one went down is discovered, not assumed: REPLICA_STOP_CMD is opaque.
+  downed=""
+  for u in $urls; do [ -z "$(worker_counter "$u")" ] && downed="$u"; done
+  echo "    replica down: ${downed:-none detected}"
+
+  d=$(curl -s -m 300 "${auth[@]}" -H 'Content-Type: application/json' -d "$rbody" \
     "$GATEWAY_URL/v1/chat/completions" 2>&1)
   echo "$d" | grep -q '"choices"' \
     && check "serves with one replica down" PASS "answered from the survivor" \
@@ -265,22 +307,37 @@ else
 
   echo "    waiting ${RECOVERY_WAIT_SECS}s (past the ~9 min terminal-Failed window) ..."
   sleep "$RECOVERY_WAIT_SECS"
-  echo "    restarting replica B ..."
+  echo "    restarting it ..."
   eval "$REPLICA_START_CMD" >/dev/null 2>&1
-
-  # Give it time to load, then drive traffic: the circuit breaker is
-  # traffic-driven, so it needs requests to notice recovery.
   sleep 120
+
+  # The property is "smg sent traffic to the recovered replica without being
+  # restarted". Evidence is that replica's OWN completed-request counter rising
+  # while we drive traffic at the gateway.
+  #
+  # This previously counted distinct http://host:port strings in smg's log --
+  # the technique this same file documents, 120 lines above, as one smg does not
+  # emit. It also counted URL-shaped strings rather than recovery, so it could
+  # read 2 from retry chatter against a still-dead worker and PASS.
+  before=$(worker_counter "$downed")
   for i in $(seq 1 12); do
     curl -s -o /dev/null -m 120 "${auth[@]}" -H 'Content-Type: application/json' \
       -d "$(printf '{"model":"%s","messages":[{"role":"user","content":"recovery probe %d"}],"max_tokens":5,"temperature":0}' "$MODEL" "$i")" \
       "$GATEWAY_URL/v1/chat/completions"
     sleep 10
   done
-  back=$(docker logs smg --since 4m 2>&1 | grep -oE 'http://[0-9a-zA-Z_.-]+:[0-9]+' | sort -u | wc -l | tr -d ' ')
-  [ "${back:-0}" -ge 2 ] \
-    && check "replica returns WITHOUT restarting smg" PASS "$back workers serving again" \
-    || check "replica returns WITHOUT restarting smg" FAIL "still ${back:-0} worker(s) — it did NOT self-heal"
+  after=$(worker_counter "$downed")
+
+  if [ -z "$downed" ]; then
+    check "replica returns WITHOUT restarting smg" SKIP "no replica was observed to go down — REPLICA_STOP_CMD may not have taken effect"
+  elif [ -z "$after" ]; then
+    check "replica returns WITHOUT restarting smg" FAIL "$downed still unreachable after restart + ${RECOVERY_WAIT_SECS}s + 2min traffic"
+  elif [ "${after:-0}" -gt "${before:-0}" ]; then
+    check "replica returns WITHOUT restarting smg" PASS "$downed served $((after - before)) request(s) after recovery, smg never restarted"
+  else
+    check "replica returns WITHOUT restarting smg" FAIL "$downed is up but served 0 requests (counter ${before:-?} -> ${after:-?}) — the breaker did NOT reopen to it"
+  fi
+  fi
 fi
 
 echo "---"

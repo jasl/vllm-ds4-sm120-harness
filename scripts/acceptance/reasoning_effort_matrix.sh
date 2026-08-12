@@ -183,8 +183,8 @@ DEPTH_PROMPTS=(
   'A、B、C 三人中恰有一人说谎。A说"B说谎"，B说"C说谎"，C说"A和B都说谎"。谁在说谎？给出推理过程。'
 )
 
-depth_total() { # depth_total <endpoint> <effort> -> summed reasoning chars
-  local ep="$1" e="$2" total=0 saved="$PROMPT"
+depth_total() { # depth_total <endpoint> <effort> -> "<chars> <measured> <lost>"
+  local ep="$1" e="$2" total=0 n=0 bad=0 saved="$PROMPT"
   for p in "${DEPTH_PROMPTS[@]}"; do
     PROMPT="$p"
     if [ "$ep" = chat ]; then
@@ -192,11 +192,21 @@ depth_total() { # depth_total <endpoint> <effort> -> summed reasoning chars
     else
       read -r rl _ _ _ <<< "$(resp "{\"reasoning\":{\"effort\":\"$e\"}}")"
     fi
-    [ "$rl" = ERR ] && rl=0
-    total=$((total + rl))
+    # A dropped sample must not be scored as ZERO REASONING. Scoring it 0 makes
+    # the arm that lost a request look shallower, which flatters `low` and
+    # inflates the ratio into a PASS -- while the evidence string still claims
+    # "over 3 problems". `ERR` is jq_get's transport/HTTP sentinel and
+    # `PARSE_ERROR` its JSON sentinel; both mean no measurement, not a small one.
+    case "$rl" in
+      ERR|PARSE_ERROR|"") bad=$((bad + 1)) ;;
+      *[!0-9]*)           bad=$((bad + 1)) ;;
+      *)                  total=$((total + rl)); n=$((n + 1)) ;;
+    esac
   done
   PROMPT="$saved"
-  echo "$total"
+  # "<summed chars> <problems measured> <problems lost>" -- the caller decides
+  # what an incomplete set means rather than being handed a number that hides it.
+  echo "$total $n $bad"
 }
 
 # Outside the +/-45% noise floor in either direction is a real signal; inside it
@@ -207,15 +217,21 @@ DEPTH_MARGIN_PCT="${DEPTH_MARGIN_PCT:-50}"
 inconclusive=0
 
 for ep in chat resp; do
-  lo=$(depth_total "$ep" low)
-  hi=$(depth_total "$ep" high)
+  read -r lo lo_n lo_bad <<< "$(depth_total "$ep" low)"
+  read -r hi hi_n hi_bad <<< "$(depth_total "$ep" high)"
   name="$ep high reasons deeper than low"
   if [ "${lo:-0}" -le 0 ] || [ "${hi:-0}" -le 0 ]; then
     check "$name" FAIL "no samples low=${lo} high=${hi}"
     continue
   fi
+  # An unequal number of problems on the two sides is not a depth comparison at
+  # all -- the smaller sum is smaller because it has fewer terms.
+  if [ "${lo_bad:-0}" -ne 0 ] || [ "${hi_bad:-0}" -ne 0 ] || [ "${lo_n:-0}" -ne "${hi_n:-0}" ]; then
+    check "$name" FAIL "incomparable: low measured ${lo_n}/${#DEPTH_PROMPTS[@]} (lost ${lo_bad}), high measured ${hi_n}/${#DEPTH_PROMPTS[@]} (lost ${hi_bad})"
+    continue
+  fi
   pct=$(( (hi - lo) * 100 / lo ))
-  ev="low=${lo}c high=${hi}c (${pct}%) over ${#DEPTH_PROMPTS[@]} problems"
+  ev="low=${lo}c high=${hi}c (${pct}%) over ${lo_n} problems"
   if [ "$pct" -ge "$DEPTH_MARGIN_PCT" ]; then
     check "$name" PASS "$ev"
   elif [ "$pct" -le $(( -DEPTH_MARGIN_PCT )) ]; then

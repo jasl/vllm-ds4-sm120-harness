@@ -9,10 +9,19 @@
 #
 # The question this answers is "is an upstream kernel now better than the path
 # we chose instead" -- NOT "did a FlashInfer bump speed up our current config".
-# Those are different questions, and only the first is worth the fleet time:
-# when our MoE never enters FlashInfer, a FlashInfer release cannot move it, so
-# a same-config A/B across versions is guaranteed to show nothing and proves
-# nothing. Re-run this after any release that touches SM12x MoE.
+# Those are different questions, and only the first is worth this fleet time:
+# our MoE never enters FlashInfer, so a FlashInfer release cannot move the MoE
+# path, and a same-config A/B would be measuring a component the change does not
+# touch.
+#
+# Scope that claim to MoE, which an earlier version of this comment did not. A
+# FlashInfer bump is NOT inert for us in general -- DeepSeek-V4 attention on
+# SM12x runs FlashInfer kernels, so a same-config A/B across versions can move
+# on the attention path even while the MoE path is untouched. "Guaranteed to
+# show nothing" was true of this experiment and false as a statement about the
+# release.
+#
+# Re-run this after any release that touches SM12x MoE.
 #
 # Three things this does that a naive sweep does not, each one having produced a
 # wrong answer here before:
@@ -57,6 +66,8 @@ SSH_USER="${SSH_USER:-$USER}"
 ROCE_IFACE="${ROCE_IFACE:-enp1s0f0np0}"
 NCCL_IB_HCA="${NCCL_IB_HCA:-rocep1s0f0}"
 JIT_JOBS="${JIT_JOBS:-6}"
+# A loaded replica holds most of the unified pool; above this, nothing is loaded.
+FREE_GIB_IDLE="${FREE_GIB_IDLE:-80}"
 
 # `auto` is the control arm: whatever the engine picks unprompted. Keep it
 # first, so a fleet that has drifted shows up before three hours of arms.
@@ -70,11 +81,28 @@ JIT_CACHE="${JIT_CACHE:-$HOME/.cache/flashinfer/${FI_VER}/121a/cached_ops/fused_
 
 on_node() { ssh -o BatchMode=yes -o ConnectTimeout=25 "${SSH_USER}@$1" "$2" </dev/null 2>&1; }
 
+# Teardown must be CONFIRMED, not assumed. A stop that has not finished leaves
+# the previous arm's serve answering on the port, and the next arm then measures
+# the previous backend while its log says otherwise. Confirmed by two facts a
+# shell of ours cannot imitate: free memory (a loaded replica holds most of the
+# unified pool) and the serving port.
 stop_all() {
   for h in "$HEAD_HOST" "$WORKER_HOST"; do
     on_node "$h" "bash $STOP_CMD" >/dev/null 2>&1
   done
-  sleep 5
+  local i free_a free_b port
+  for i in $(seq 1 30); do
+    free_a=$(on_node "$HEAD_HOST" 'free -g | awk "/Mem:/{print \$7}"' | tr -d '\r')
+    free_b=$(on_node "$WORKER_HOST" 'free -g | awk "/Mem:/{print \$7}"' | tr -d '\r')
+    port=$(curl -s -o /dev/null -w '%{http_code}' -m 5 http://127.0.0.1:8000/health 2>/dev/null)
+    if [ "${free_a:-0}" -ge "$FREE_GIB_IDLE" ] && [ "${free_b:-0}" -ge "$FREE_GIB_IDLE" ] \
+       && [ "$port" = 000 ]; then
+      return 0
+    fi
+    sleep 10
+  done
+  echo "    !! STOP NOT CONFIRMED after 300s (free ${free_a}G/${free_b}G, health $port)" >&2
+  return 1
 }
 
 prewarm() { # prewarm <host> -- build the JIT units deliberately, capped, with
@@ -140,8 +168,11 @@ echo ""
 
 for be in $BACKENDS; do
   mkdir -p "$OUTDIR/$be"
-  stop_all
   printf "  --- %s ---\n" "$be"
+  if ! stop_all; then
+    printf "    SKIPPED  previous arm did not shut down; measuring now would read the WRONG backend\n"
+    continue
+  fi
   if [ "$be" != auto ]; then
     prewarm "$HEAD_HOST"
     prewarm "$WORKER_HOST"
@@ -157,6 +188,13 @@ for be in $BACKENDS; do
   sel=$(grep -aoE "MarlinExperts|CutlassExpert[a-zA-Z]*|FlashInfer[a-zA-Z]*Expert[a-zA-Z]*|TrtLlm[a-zA-Z]*|B12X[a-zA-Z]*" \
         "$OUTDIR/$be/serve/head.log" 2>/dev/null | sort -u | tr '\n' ',')
   printf "    engine selected: %s\n" "${sel:-unknown}"
+  if [ -z "$sel" ]; then
+    # Not benign: the whole point of this line is to prove the flag took effect.
+    # With no readback the arm cannot be attributed to a backend at all, and a
+    # silent fallback is indistinguishable from a genuine null result.
+    printf "    SKIPPED  no kernel readback in the serve log; arm not attributable\n"
+    continue
+  fi
   if [ "$be" != auto ] && [ "${sel#*Marlin}" != "$sel" ]; then
     printf "    !! fell back to Marlin -- this arm measures the baseline, not %s\n" "$be"
   fi
