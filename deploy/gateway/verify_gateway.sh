@@ -19,7 +19,12 @@ set -uo pipefail
 
 GATEWAY_URL="${GATEWAY_URL:-http://127.0.0.1:8443}"
 MODEL="${MODEL:?set MODEL to the served model id}"
-API_KEY="${API_KEY:-}"
+# Fall back to the name the deployed gateway.env actually uses. Without this the
+# script ran unauthenticated against an authenticating gateway, every inference
+# probe came back 404 -- which is Caddy correctly rejecting an anonymous request
+# -- and the checks reported it as "chat completion FAIL :: not found". A
+# working gateway looked broken, and the authenticated path went untested.
+API_KEY="${API_KEY:-${TOKEN_OWNER:-}}"
 REPLICA_STOP_CMD="${REPLICA_STOP_CMD:-}"
 REPLICA_START_CMD="${REPLICA_START_CMD:-}"
 RECOVERY_WAIT_SECS="${RECOVERY_WAIT_SECS:-660}" # > 9 min, past the terminal-Failed window
@@ -33,8 +38,18 @@ check() { # check <name> <PASS|FAIL|SKIP> <evidence>
   [ "$2" = PASS ] && pass=$((pass + 1)) || nonpass=$((nonpass + 1))
 }
 
+# Anything needing a token must SKIP loudly rather than run anonymously: an
+# anonymous probe of an authenticating gateway measures the rejection, not the
+# service.
+need_auth() { # need_auth <check name> -> 0 if a token is present
+  [ -n "$API_KEY" ] && return 0
+  check "$1" SKIP "no token — set API_KEY or TOKEN_OWNER; the authenticated path is UNTESTED"
+  return 1
+}
+
 echo "=== gateway verification $(date -Is) ==="
 echo "    gateway=$GATEWAY_URL model=$MODEL auth=$([ -n "$API_KEY" ] && echo yes || echo no)"
+[ -n "$API_KEY" ] || echo "    !! no token: every inference check below will SKIP, not test"
 
 # --- 1. the allowlist actually blocks -------------------------------------
 code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 "$GATEWAY_URL/healthz")
@@ -94,38 +109,48 @@ if [ -n "${SMG_DIRECT_URL:-}" ]; then
 fi
 
 # --- 2. inference works ----------------------------------------------------
-body=$(printf '{"model":"%s","messages":[{"role":"user","content":"Reply with exactly: OK"}],"max_tokens":10,"temperature":0}' "$MODEL")
-resp=$(curl -s -m 300 "${auth[@]}" -H 'Content-Type: application/json' \
-  -d "$body" "$GATEWAY_URL/v1/chat/completions" 2>&1)
-if echo "$resp" | grep -q '"choices"'; then
-  check "chat completion" PASS "$(echo "$resp" | head -c 90 | tr -d '\n')"
-else
-  check "chat completion" FAIL "$(echo "$resp" | head -c 160 | tr -d '\n')"
+if need_auth "chat completion"; then
+  body=$(printf '{"model":"%s","messages":[{"role":"user","content":"Reply with exactly: OK"}],"max_tokens":10,"temperature":0}' "$MODEL")
+  resp=$(curl -s -m 300 "${auth[@]}" -H 'Content-Type: application/json' \
+    -d "$body" "$GATEWAY_URL/v1/chat/completions" 2>&1)
+  if echo "$resp" | grep -q '"choices"'; then
+    check "chat completion" PASS "$(echo "$resp" | head -c 90 | tr -d '\n')"
+  else
+    check "chat completion" FAIL "$(echo "$resp" | head -c 160 | tr -d '\n')"
+  fi
 fi
 
 # --- 3. streaming arrives incrementally, not as one lump -------------------
 # A buffering proxy still produces correct output, so correctness alone does
 # not prove streaming works. Timing the first chunk against the last is what
 # distinguishes them.
-sbody=$(printf '{"model":"%s","messages":[{"role":"user","content":"Count from 1 to 20, one number per line."}],"max_tokens":120,"temperature":0,"stream":true}' "$MODEL")
-tmp=$(mktemp)
-curl -s -N -m 300 "${auth[@]}" -H 'Content-Type: application/json' \
-  -d "$sbody" "$GATEWAY_URL/v1/chat/completions" 2>/dev/null \
-  | while IFS= read -r line; do printf '%s %s\n' "$(date +%s.%N)" "$line"; done > "$tmp"
-chunks=$(grep -c '^[0-9.]* data: ' "$tmp" 2>/dev/null || echo 0)
-if [ "$chunks" -ge 3 ]; then
-  first=$(grep -m1 '^[0-9.]* data: ' "$tmp" | cut -d' ' -f1)
-  last=$(grep '^[0-9.]* data: ' "$tmp" | tail -1 | cut -d' ' -f1)
-  spread=$(awk -v a="$first" -v b="$last" 'BEGIN{printf "%.2f", b-a}')
-  # If every chunk lands in the same instant, something buffered the whole
-  # response and released it at once.
-  ok=$(awk -v s="$spread" 'BEGIN{print (s>0.05)?"yes":"no"}')
-  [ "$ok" = yes ] && check "SSE streams incrementally" PASS "$chunks chunks over ${spread}s" \
-    || check "SSE streams incrementally" FAIL "$chunks chunks all within ${spread}s — buffered"
-else
-  check "SSE streams incrementally" FAIL "only $chunks data chunks"
+if need_auth "SSE streams incrementally"; then
+  sbody=$(printf '{"model":"%s","messages":[{"role":"user","content":"Count from 1 to 20, one number per line."}],"max_tokens":120,"temperature":0,"stream":true}' "$MODEL")
+  tmp=$(mktemp)
+  curl -s -N -m 300 "${auth[@]}" -H 'Content-Type: application/json' \
+    -d "$sbody" "$GATEWAY_URL/v1/chat/completions" 2>/dev/null \
+    | while IFS= read -r line; do printf '%s %s\n' "$(date +%s.%N)" "$line"; done > "$tmp"
+  # `grep -c` PRINTS 0 and EXITS 1 when there is no match, so a `|| echo 0`
+  # fallback appends a second line and the variable becomes "0\n0" -- which
+  # then fails `[ -ge ]` with "integer expected" and takes the else branch for
+  # a reason that has nothing to do with streaming. Same shape as the `|| echo
+  # 000` defect in the smg-reachability check above.
+  chunks=$(grep -c '^[0-9.]* data: ' "$tmp" 2>/dev/null)
+  chunks=${chunks:-0}
+  if [ "$chunks" -ge 3 ]; then
+    first=$(grep -m1 '^[0-9.]* data: ' "$tmp" | cut -d' ' -f1)
+    last=$(grep '^[0-9.]* data: ' "$tmp" | tail -1 | cut -d' ' -f1)
+    spread=$(awk -v a="$first" -v b="$last" 'BEGIN{printf "%.2f", b-a}')
+    # If every chunk lands in the same instant, something buffered the whole
+    # response and released it at once.
+    ok=$(awk -v s="$spread" 'BEGIN{print (s>0.05)?"yes":"no"}')
+    [ "$ok" = yes ] && check "SSE streams incrementally" PASS "$chunks chunks over ${spread}s" \
+      || check "SSE streams incrementally" FAIL "$chunks chunks all within ${spread}s — buffered"
+  else
+    check "SSE streams incrementally" FAIL "only $chunks data chunk(s) — $(head -c 100 "$tmp" | tr -d '\n')"
+  fi
+  rm -f "$tmp"
 fi
-rm -f "$tmp"
 
 # --- 4. both replicas are in rotation --------------------------------------
 # Asked of smg's own /workers, which reports each worker's health and status.
