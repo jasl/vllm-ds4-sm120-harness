@@ -154,15 +154,21 @@ gs=$(grep -aoE '"exact_match_strict": [0-9.]+' "$R/gsm8k.log" | tail -1 | grep -
 ok=$(awk -v v="${gs:-0}" 'BEGIN{print (v>=0.92)?1:0}')
 [ "$ok" = "1" ] && check "C8 GSM8K strict >= 0.92" PASS "$gs" || check "C8 GSM8K strict >= 0.92" FAIL "${gs:-none}"
 
+# --line-counts is not optional. The probe's own defaults reach 13000 lines
+# (~364k tokens), past any window this deployment serves, so those rows come
+# back as HTTP 400 rather than as a recall result -- and a checker that only
+# counts rows reporting "N/8" skips them and calls four clean rows a pass.
 "$PY" ds4_harness/multi_needle_probe.py \
   --base-url http://127.0.0.1:8000 --model "$MODEL" \
   --line-counts 1500,2850 --needle-count 8 --distractor-count 8 \
   --repeat-count 3 --seed 20260808 > "$R/needle.log" 2>&1
 nl=$(grep -acE '8/8 needles' "$R/needle.log"); lk=$(grep -aoE 'leaked=[0-9]+' "$R/needle.log" | grep -vc 'leaked=0')
-[ "$nl" -ge 6 ] && [ "$lk" = "0" ] && check "C9 multi-needle 48/48, zero leaks" PASS "$nl rows all 8/8, leaks 0" \
-  || check "C9 multi-needle 48/48, zero leaks" FAIL "$nl rows 8/8, $lk rows leaked"
-
-# ---------------------------------------------- C10 perf, on the final head
+# A row that never produced a result matches neither the 8/8 count nor the
+# non-zero-leak count, so failures must be counted separately.
+fl=$(grep -acE 'FAILED' "$R/needle.log")
+{ [ "$nl" -ge 6 ] && [ "$lk" = "0" ] && [ "$fl" = "0" ]; } \
+  && check "C9 multi-needle 48/48, zero leaks" PASS "$nl rows all 8/8, leaks 0, 0 failed" \
+  || check "C9 multi-needle 48/48, zero leaks" FAIL "$nl rows 8/8, $lk leaked, $fl FAILED"
 say ""; say "--- benchy on the final head (perf must not have regressed) ---"
 settle
 env VLLM_ROOT="$WT" bash "$H/scripts/run_gb10_llama_benchy_standard.sh" > "$OUT/benchy.log" 2>&1
