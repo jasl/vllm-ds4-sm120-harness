@@ -163,21 +163,48 @@ fi
 # next went 8/0 on the same healthy pair. Load spread on a small burst is not
 # a property this deployment has, and asserting it produces noise.
 #
-# What actually matters is that neither worker has silently dropped out -- a
-# stuck-open circuit breaker, say. smg answers that directly.
+# The third version asserted the wrong thing too. Active health checking is
+# disabled here on purpose, so smg's `ready` means "configured and not
+# circuit-broken" -- NOT "answering". A replica that is deliberately stopped
+# still reports ready, and the check called that PASS while nothing was
+# listening on it.
+#
+# The property worth guarding is sharper, and it is one a near-miss made
+# concrete: a test serve was started on a node that is in this worker list, and
+# had it bound the serving port, the gateway could not have told it apart from
+# the replica returning -- and would have answered production traffic from a
+# DIFFERENT MODEL. So: probe each listed worker directly, and require that every
+# worker that ANSWERS serves the expected model. A listed worker that is down is
+# reported as down, not as ready.
 workers_json=$(docker exec gateway-caddy wget -q -O- -T 8 http://smg:3000/workers 2>/dev/null)
 if [ -z "$workers_json" ]; then
-  check "both replicas in rotation" SKIP "could not reach smg /workers from the caddy container"
+  check "rotation serves only the expected model" SKIP "could not reach smg /workers from the caddy container"
 else
-  ready=$(printf '%s' "$workers_json" | python3 -c "
-import json,sys
+  verdict=$(printf '%s' "$workers_json" | MODEL="$MODEL" python3 -c "
+import json, os, sys, urllib.request
+want = os.environ['MODEL']
 ws = json.load(sys.stdin).get('workers', [])
-ok = [w for w in ws if w.get('is_healthy') and w.get('status') == 'ready']
-print(f\"{len(ok)}/{len(ws)} \" + ' '.join(f\"{w.get('url')}={w.get('status')}\" for w in ws))
+live, down, wrong = [], [], []
+for w in ws:
+    url = w.get('url')
+    try:
+        with urllib.request.urlopen(f'{url}/v1/models', timeout=8) as r:
+            ids = [m.get('id') for m in json.load(r).get('data', [])]
+        (live if want in ids else wrong).append(f'{url}={\",\".join(ids) or \"no-models\"}')
+    except Exception:
+        down.append(f'{url}=DOWN')
+parts = [f'{len(live)}/{len(ws)} answering with {want}']
+parts += wrong + down
+print('WRONGMODEL' if wrong else ('NONE' if not live else 'OK'), '|', '  '.join(parts))
 " 2>/dev/null)
-  n_ready=${ready%%/*}
-  [ "${n_ready:-0}" -ge 2 ] && check "both replicas in rotation" PASS "$ready" \
-    || check "both replicas in rotation" FAIL "$ready"
+  state=${verdict%% |*}
+  detail=${verdict#*| }
+  case "$state" in
+    OK) check "rotation serves only the expected model" PASS "$detail" ;;
+    WRONGMODEL) check "rotation serves only the expected model" FAIL "A WORKER SERVES A DIFFERENT MODEL — $detail" ;;
+    NONE) check "rotation serves only the expected model" FAIL "no worker answered — $detail" ;;
+    *) check "rotation serves only the expected model" SKIP "probe failed: ${verdict:-no output}" ;;
+  esac
 fi
 
 # --- 4b. the context window a client actually gets --------------------------
