@@ -98,8 +98,13 @@ if [ "$trc" = "124" ]; then
   check "B2 tests/v1/spec_decode" TIMEOUT "wedged after 30m; GPU suite, spawns its own engine; see note"
   pkill -9 -f "[p]ytest tests/v1/spec_decode" 2>/dev/null
   pkill -9 -f "[V]LLM::" 2>/dev/null; sleep 5
+elif [ -z "$c" ]; then
+  # "no failures" is not a pass when nothing ran. A collection error, a bad
+  # path, or a conftest ImportError prints neither "N passed" nor "N failed",
+  # and the old form reported PASS "none collected" for all three.
+  check "B2 tests/v1/spec_decode" FAIL "nothing collected (rc=$trc) :: $(tail -2 "$OUT/unit_spec.log" | tr '\n' ' ' | cut -c1-110)"
 elif [ -z "$f" ]; then
-  check "B2 tests/v1/spec_decode" PASS "${c:-none collected}"
+  check "B2 tests/v1/spec_decode" PASS "$c"
 else
   check "B2 tests/v1/spec_decode" FAIL "${c} ${f} :: $fl"
 fi
