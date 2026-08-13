@@ -342,8 +342,26 @@ def run_multi_needle_probe(
                     row["needles_hit"] == row["needles_total"] and not row["truncated"]
                 )
             except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError) as exc:
-                row["ok"] = False
-                row["error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+                detail = f"{type(exc).__name__}: {str(exc)[:200]}"
+                body = ""
+                if isinstance(exc, urllib.error.HTTPError):
+                    try:
+                        body = exc.read().decode()[:300]
+                    except Exception:
+                        body = ""
+                # A prompt longer than the served window is NOT a retrieval
+                # failure -- the server is correctly refusing it. Recorded
+                # separately so a caller can tell "did not fit" from "the model
+                # got it wrong". The two were indistinguishable, and the default
+                # 13000-line row exceeds every window this fleet serves, so two
+                # rows failed on every run while the gate still reported 8/8.
+                if "maximum context length" in body or "max_model_len" in body:
+                    row["ok"] = False
+                    row["skipped_window"] = True
+                    row["error"] = f"prompt exceeds the served window ({detail})"
+                else:
+                    row["ok"] = False
+                    row["error"] = detail
             rows.append(row)
     return rows
 
@@ -351,6 +369,12 @@ def run_multi_needle_probe(
 def format_rows(rows: list[Json]) -> str:
     out = []
     for row in rows:
+        if row.get("skipped_window"):
+            out.append(
+                f"  lines={row['line_count']:>6} r{row['repeat']}: "
+                f"SKIPPED(window) prompt longer than the serve's max_model_len"
+            )
+            continue
         if row.get("error"):
             out.append(f"  lines={row['line_count']:>6} r{row['repeat']}: FAILED {row['error']}")
             continue
@@ -373,7 +397,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--line-counts",
         type=lambda v: [int(x) for x in v.split(",") if x.strip()],
-        default=[1100, 4400, 13000],
+        default=[1100, 4400],
+        # 13000 was in this default and is unsatisfiable on every serve this
+        # fleet runs: ~28 tok/line puts it near 400k, past a 131072 dev window
+        # AND past production's 278528. It produced two rejected rows on every
+        # run. 4400 measures ~123k tokens, which fits. Size explicitly with
+        # --line-counts when probing a larger window.
     )
     parser.add_argument("--needle-count", type=int, default=8)
     parser.add_argument("--distractor-count", type=int, default=8)

@@ -180,9 +180,13 @@ nl=$(grep -acE '8/8 needles' "$R/needle.log"); lk=$(grep -aoE 'leaked=[0-9]+' "$
 # A row that never produced a result matches neither the 8/8 count nor the
 # non-zero-leak count, so failures must be counted separately.
 fl=$(grep -acE 'FAILED' "$R/needle.log")
-{ [ "$nl" -ge 6 ] && [ "$lk" = "0" ] && [ "$fl" = "0" ]; } \
+# A row the server refused for exceeding its window is not a retrieval failure,
+# but it is not evidence either -- count it so "5 rows 8/8, 0 failed" cannot read
+# as a pass that quietly measured one row less than it claims.
+sk=$(grep -acE 'SKIPPED\(window\)' "$R/needle.log")
+{ [ "$nl" -ge 6 ] && [ "$lk" = "0" ] && [ "$fl" = "0" ] && [ "$sk" = "0" ]; } \
   && check "C9 multi-needle 48/48, zero leaks" PASS "$nl rows all 8/8, leaks 0, 0 failed" \
-  || check "C9 multi-needle 48/48, zero leaks" FAIL "$nl rows 8/8, $lk leaked, $fl FAILED"
+  || check "C9 multi-needle 48/48, zero leaks" FAIL "$nl rows 8/8, $lk leaked, $fl FAILED, $sk over-window"
 say ""; say "--- benchy on the final head (perf must not have regressed) ---"
 settle
 env VLLM_ROOT="$WT" bash "$H/scripts/run_gb10_llama_benchy_standard.sh" > "$OUT/benchy.log" 2>&1
