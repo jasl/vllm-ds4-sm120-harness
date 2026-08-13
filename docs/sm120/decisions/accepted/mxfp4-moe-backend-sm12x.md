@@ -52,7 +52,20 @@ Everything else is closed rather than slower:
 
 - `flashinfer_trtllm` — no SM121 kernel (DC-Blackwell only)
 - `flashinfer_b12x` — NVFP4-class, rejected for MXFP4 experts
-- `deep_gemm` — package not installed; SM120 W4A8 lives in DeepGEMM `nv_dev`
+- `deep_gemm` — **MEASURED 2026-08-13, still unusable.** The earlier line here
+  said "package not installed", which was wrong: DeepGEMM is vendored through
+  CMake FetchContent, not pip, so `importlib.metadata` was the wrong instrument.
+  It is present and importable (`vllm.third_party.deep_gemm`). What blocks it is
+  our own `support_deep_gemm()` gate excluding capability family 120, and that
+  gate is correct: with the pin now at deepseek-ai `nv_dev` tip `8b1392b9` —
+  which carries 27 of DeepGEMM's own SM120 files, including
+  `sm120_fp8_fp4_gemm_1d1d.cuh` and the `tf32_hc_prenorm` GEMM DSv4's mHC uses —
+  re-admitting family 120 still aborts at
+  `utils/layout.hpp:107: sf.size(-2) == ceil_div(mn, gran_mn)`, both under
+  `--moe-backend deep_gemm` and under `auto`. Control arm in the same run
+  selected `MarlinExperts` and served (60.15 tok/s, accept 1.98), so the probe
+  discriminates. Scope: DSv4 MXFP4 MoE on SM121. Says nothing about other models
+  or about SM120 RTX, where the scale-factor layout may differ.
 - `triton`, `triton_unfused`, `humming`, `*_afp8` — legal for MXFP4, **untested**
 
 ## Reopen If
@@ -60,7 +73,10 @@ Everything else is closed rather than slower:
 - A FlashInfer release touches SM12x MoE again. The 0.6.17 refresh was
   substantial and still did not change the answer, but the acceptance gap is the
   thing to re-measure, not the kernel time.
-- DeepGEMM ships SM120 kernels in a release, or the `nv_dev` path is unblocked.
+- DeepGEMM's `layout.hpp` scale-factor contract changes, or DSv4's MXFP4 scale
+  tensors are reshaped to satisfy it. Merely shipping SM120 kernels is NOT the
+  reopen condition — that already happened (nv_dev tip `8b1392b9`) and the abort
+  is unchanged.
 - The drafter changes — method, `num_speculative_tokens`, or draft sampling.
   The whole result hangs on acceptance.
 - Someone wants the untested arms (`triton`, `humming`, `*_afp8`) ruled in or
